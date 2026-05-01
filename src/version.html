@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
+    <title>关于版本</title>
+    <script src="constants.js"></script>
+
+    <style>
+        :root {
+            --google-grey-200-rgb: 232, 234, 237;
+            --google-grey-900-rgb: 32, 33, 36;
+            --primary-color: rgb(var(--google-grey-900-rgb));
+            --active-background-color: rgba(var(--google-grey-900-rgb), .16);
+            --hover-background-color: rgba(var(--google-grey-900-rgb), .1);
+            --background-color: white;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --primary-color: rgb(var(--google-grey-200-rgb));
+                --active-background-color: rgba(var(--google-grey-200-rgb), .16);
+                --hover-background-color: rgba(var(--google-grey-200-rgb), .1);
+                --background-color: rgb(var(--google-grey-900-rgb));
+            }
+        }
+
+        body {
+            color: var(--primary-color);
+            font-size: 100%;
+            margin: 0;
+            background: var(--background-color);
+        }
+
+        #outer {
+            margin-inline-end: auto;
+            margin-inline-start: auto;
+            margin-top: 10px;
+            min-width: 800px;
+            width: 60%;
+        }
+
+        #inner {
+            padding-top: 10px;
+            word-break: break-word;
+        }
+
+        .label {
+            font-size: 0.9em;
+            font-weight: bold;
+            padding-inline-end: 5px;
+            text-align: end;
+            vertical-align: top;
+            white-space: nowrap;
+        }
+
+        #logo {
+            float: right;
+            margin-inline-start: 40px;
+            text-align: end;
+            width: 400px;
+        }
+
+        #logo img {
+            max-width: 100%;
+            height: auto;
+        }
+
+        #company {
+            font-size: 0.7em;
+            text-align: end;
+        }
+
+        #copyright {
+            font-size: 0.7em;
+            text-align: end;
+        }
+
+        #useragent {
+            font-family: monospace;
+        }
+
+        .version {
+            font-family: monospace;
+            max-width: 430px;
+            padding-inline-start: 5px;
+            vertical-align: bottom;
+        }
+
+        .version-wide {
+            font-family: monospace;
+            max-width: auto;
+            padding-inline-start: 5px;
+            vertical-align: bottom;
+        }
+
+        #copy-to-clipboard {
+            background-color: var(--background-color);
+            border: none;
+            border-radius: 2px;
+            cursor: pointer;
+        }
+
+        #copy-to-clipboard-icon {
+            background-color: var(--primary-color);
+            display: inline-block;
+            height: 1em;
+            padding: 0;
+            position: relative;
+            top: .2em;
+            width: 1em;
+            -webkit-mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>');
+            -webkit-mask-size: cover;
+        }
+
+        #copy-to-clipboard:hover {
+            background-color: var(--hover-background-color);
+        }
+
+        #copy-to-clipboard:active {
+            background-color: var(--active-background-color);
+        }
+
+        #messages {
+            clip: rect(0 0 0 0);
+            height: 1px;
+            overflow: hidden;
+            position: fixed;
+            width: 1px;
+        }
+    </style>
+</head>
+<body>
+    <div id="outer">
+        <div id="logo">
+            <!-- <img alt="OpenCosy浏览器徽标" src="version.png" width="128" height="128"> -->
+            <div id="company">© 2026 热土工作室</div>
+            <div id="copyright">© 2026 热土工作室 | Licensed under Apache 2.0</div>
+        </div>
+        <table id="inner" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+                <td class="label">OpenCosy浏览器</td>
+                <td class="version" id="version">
+                    <span id="copy-content">
+                        <span id="browser-version">正在获取...</span>
+                    </span>
+                    <button id="copy-to-clipboard" aria-label="复制版本字符串">
+                        <div id="copy-to-clipboard-icon"></div>
+                    </button>
+                </td>
+            </tr>
+            <tr>
+                <td class="label">Chromium 版本</td>
+                <td class="version" id="chrome-version">正在获取...</td>
+            </tr>
+            <tr>
+                <td class="label">Node.js版本</td>
+                <td class="version" id="node-version">正在获取...</td>
+            </tr>
+            <tr>
+                <td class="label">操作系统</td>
+                <td class="version" id="platform">正在获取...</td>
+            </tr>
+            <tr>
+                <td class="label">运行目录</td>
+                <td class="version" id="current-dir">正在获取...</td>
+            </tr>
+            <tr>
+                <td class="label">用户代理</td>
+                <td class="version" id="user-agent">正在获取...</td>
+            </tr>
+        </table>
+    </div>
+
+    <div id="messages" role="alert" aria-live="polite" aria-relevant="additions">
+    </div>
+
+    <script>
+        function getSystemInfo() {
+            if (typeof COSY_CONSTANTS !== 'undefined' && COSY_CONSTANTS.APP_INFO) {
+                document.getElementById('browser-version').textContent = COSY_CONSTANTS.APP_INFO.fullVersion;
+                document.getElementById('copyright').textContent = COSY_CONSTANTS.APP_INFO.copyright;
+            } else {
+                document.getElementById('browser-version').textContent = 'v1.0.0';
+                document.getElementById('copyright').textContent = 'Licensed under Apache 2.0';
+            }
+
+            const chromeVersion = navigator.userAgent.match(/Chrome\/([0-9.]+)/);
+            document.getElementById('chrome-version').textContent = chromeVersion ?
+                chromeVersion[1] : '未知';
+
+            if (typeof process !== 'undefined' && process.versions) {
+                document.getElementById('node-version').textContent = process.versions.node;
+            } else {
+                document.getElementById('node-version').textContent = '不可用';
+            }
+
+            document.getElementById('platform').textContent = navigator.platform;
+
+            if (typeof process !== 'undefined' && process.cwd) {
+                try {
+                    document.getElementById('current-dir').textContent = process.cwd();
+                } catch (error) {
+                    document.getElementById('current-dir').textContent = '不可用';
+                }
+            } else {
+                document.getElementById('current-dir').textContent = '不可用';
+            }
+
+            document.getElementById('user-agent').textContent = navigator.userAgent;
+        }
+
+        function copyVersionToClipboard() {
+            const versionText = document.getElementById('copy-content').textContent.trim();
+            navigator.clipboard.writeText(versionText).then(() => {
+                console.log('版本信息已复制到剪贴板');
+            }).catch(err => {
+                console.error('复制失败:', err);
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            getSystemInfo();
+
+            const copyButton = document.getElementById('copy-to-clipboard');
+            if (copyButton) {
+                copyButton.addEventListener('click', copyVersionToClipboard);
+            }
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'r') {
+                e.preventDefault();
+                location.reload();
+            }
+
+            if (e.key === 'Escape') {
+                if (history.length > 1) {
+                    history.back();
+                } else {
+                    if (window.close) {
+                        window.close();
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>

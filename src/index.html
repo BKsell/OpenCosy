@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenCosy浏览器</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="constants.js"></script>
+</head>
+<body>
+    <div class="browser-window">
+        <div class="titlebar">
+            <div class="titlebar-title" id="titlebar-title">OpenCosy浏览器</div>
+            <div class="titlebar-controls">
+                <button class="titlebar-button" id="minimize">−</button>
+                <button class="titlebar-button" id="maximize">□</button>
+                <button class="titlebar-button close" id="close">×</button>
+            </div>
+        </div>
+        
+        <div class="toolbar">
+            <div class="navigation-controls">
+                <button class="nav-button" id="back">←</button>
+                <button class="nav-button" id="forward">→</button>
+                <button class="nav-button" id="refresh">↻</button>
+                <button class="nav-button" id="home">⌂</button>
+            </div>
+            
+            <div class="address-bar-container">
+                <div class="address-bar">
+                    <input type="text" id="url-input" placeholder="搜索或输入网址">
+                    <button class="go-button" id="go">→</button>
+                </div>
+            </div>
+            
+            <div class="toolbar-actions">
+                <button class="action-button" id="settings" title="设置">⚙</button>
+                <button class="action-button" id="downloads" title="下载">↓</button>
+                <button class="action-button" id="new-tab" title="新建标签页">+</button>
+                <button class="action-button more-options" id="more-options" title="更多选项">
+                    <span class="more-options-icon">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </span>
+                </button>
+            </div>
+        </div>
+        
+        <div class="tab-bar">
+            <div class="tabs-container" id="tabs-container">
+            </div>
+            <button class="new-tab-button" id="add-tab">+</button>
+        </div>
+        
+        <div class="content-area" id="content-area">
+        </div>
+        
+        <div class="status-bar">
+            <div class="status-text" id="status">就绪</div>
+        </div>
+    </div>
+    
+    <script src="renderer.js"></script>
+    <script>
+        // 更新标题栏显示名称
+        document.addEventListener('DOMContentLoaded', function() {
+            if (typeof COSY_CONSTANTS !== 'undefined' && COSY_CONSTANTS.APP_INFO) {
+                const titlebarTitle = document.getElementById('titlebar-title');
+                if (titlebarTitle) {
+                    titlebarTitle.textContent = COSY_CONSTANTS.APP_INFO.name;
+                }
+            }
+        });
+    </script>
+</body>
+</html>

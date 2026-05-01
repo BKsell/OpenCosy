@@ -1,0 +1,74 @@
+{
+  "name": "opencosy-browser",
+  "version": "1.0.0",
+  "description": "OpenCosy浏览器 - 基于Electron的多标签页浏览器",
+  "homepage": "./",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder",
+    "dist": "electron-builder --publish=never",
+    "build:win": "electron-builder --win",
+    "build:linux": "electron-builder --linux"
+  },
+  "keywords": ["browser", "electron", "opencosy"],
+  "author": {
+    "name": "OpenCosy"
+  },
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "electron": "^41.0.0",
+    "electron-builder": "^24.0.0"
+  },
+  "build": {
+    "appId": "com.opencosy.browser",
+    "productName": "OpenCosy浏览器",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "package.json",
+      "src/**/*",
+      "ico.png",
+      "!src/**/*.map",
+      "!src/**/*.log",
+      "!src/**/test*",
+      "!src/**/*.test.*"
+    ],
+    "protocols": [
+      {
+        "name": "OpenCosy Browser",
+        "schemes": ["cosy", "http", "https"]
+      }
+    ],
+    "win": {
+      "icon": "ico.png",
+      "target": ["nsis", "portable"]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "linux": {
+      "target": [ "tar.gz"],
+      "category": "Network",
+      "desktop": {
+        "Name": "OpenCosy浏览器",
+        "Comment": "基于Electron的多标签页浏览器",
+        "Categories": "Network;WebBrowser;"
+      }
+      ,
+      "maintainer": "OpenCosy",
+      "icon": "ico.png"
+    },
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/electron/dist/**/*"
+    ],
+    "compression": "maximum"
+  }
+}

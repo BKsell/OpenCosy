@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>错误页面 - OpenCosy浏览器</title>
+    <script src="constants.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: #ffffff;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .error-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            max-width: 800px;
+            padding: 40px;
+            gap: 60px;
+        }
+
+        .error-content {
+            flex: 1;
+        }
+
+        .error-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 30px;
+            gap: 20px;
+        }
+
+        .error-icon {
+            font-size: 64px;
+            color: #ff6b6b;
+        }
+
+        .error-info {
+            text-align: left;
+        }
+
+        .error-code {
+            font-size: 48px;
+            font-weight: 300;
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        .error-message {
+            font-size: 18px;
+            color: #666;
+        }
+
+        .error-details {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 30px;
+            text-align: left;
+            display: none;
+        }
+
+        .error-details.show {
+            display: block;
+        }
+
+        .detail-item {
+            margin-bottom: 15px;
+        }
+
+        .detail-label {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .detail-value {
+            color: #666;
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn-primary {
+            background: var(--theme-color, #0078d4);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--theme-color, #0078d4);
+            opacity: 0.9;
+        }
+
+        .btn-secondary {
+            background: #f3f1f2;
+            color: #333;
+            border: 1px solid #dfe4e1;
+        }
+
+        .btn-secondary:hover {
+            background: #e8e6e7;
+        }
+
+        .qr-section {
+            flex-shrink: 0;
+            margin-top: 0;
+            padding-top: 0;
+            border-top: none;
+        }
+
+        .qr-code {
+            width: 140px;
+            height: 140px;
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .qr-code img {
+            max-width: 100%;
+            max-height: 100%;
+        }
+
+        @media (max-width: 600px) {
+            .error-container {
+                flex-direction: column;
+                padding: 20px;
+                align-items: center;
+            }
+
+            .error-code {
+                font-size: 36px;
+            }
+
+            .error-message {
+                font-size: 16px;
+            }
+
+            .action-buttons {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .btn {
+                width: 100%;
+                max-width: 200px;
+            }
+
+            .qr-section {
+                order: 2;
+                margin-top: 30px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="error-container">
+        <div class="error-content">
+            <div class="error-header">
+                <div class="error-icon" id="error-icon">⚠️</div>
+                <div class="error-info">
+                    <div class="error-code" id="error-code">404</div>
+                    <div class="error-message" id="error-message">无法访问此网站</div>
+                </div>
+            </div>
+
+            <div class="bsod-message" id="bsod-message" style="font-size: 16px; margin-bottom: 20px; color: #666;">
+                抱歉，您访问的页面出现了一些问题。
+            </div>
+
+            <div class="action-buttons">
+                <button class="btn btn-primary" onclick="window.history.back()">返回上一页</button>
+                <button class="btn btn-secondary" onclick="reloadPage()">重新加载</button>
+                <button class="btn btn-secondary" id="details-btn" onclick="toggleDetails()">详细信息</button>
+            </div>
+
+            <div class="error-details" id="error-details">
+                <div class="detail-item">
+                    <div class="detail-label">错误代码：</div>
+                    <div class="detail-value" id="detail-code">404 Not Found</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">错误原因：</div>
+                    <div class="detail-value" id="detail-reason">请求的页面不存在或已被移除</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">访问网址：</div>
+                    <div class="detail-value" id="detail-url">正在获取...</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">发生时间：</div>
+                    <div class="detail-value" id="detail-time">正在获取...</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">浏览器错误代码：</div>
+                    <div class="detail-value" id="detail-browser-code">-6 (ERR_NAME_NOT_RESOLVED)</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function getUrlParams() {
+            const params = new URLSearchParams(window.location.search);
+            return {
+                code: params.get('code') || '404',
+                message: params.get('message') || '无法访问此网站',
+                reason: params.get('reason') || '请求的页面不存在或已被移除',
+                url: params.get('url') || '未知',
+                browserCode: params.get('browserCode') || '-6',
+                browserMessage: params.get('browserMessage') || 'ERR_NAME_NOT_RESOLVED'
+            };
+        }
+
+        function updateErrorDisplay() {
+            const params = getUrlParams();
+
+            document.getElementById('error-code').textContent = params.code;
+            document.getElementById('error-message').textContent = params.message;
+            document.getElementById('detail-code').textContent = `${params.code} ${getStatusCodeText(params.code)}`;
+            document.getElementById('detail-reason').textContent = params.reason;
+            document.getElementById('detail-url').textContent = params.url;
+            document.getElementById('detail-browser-code').textContent = `${params.browserCode} (${params.browserMessage})`;
+
+            const now = new Date();
+            document.getElementById('detail-time').textContent = now.toLocaleString('zh-CN');
+
+            setErrorIcon(params.code);
+        }
+
+        function setErrorIcon(code) {
+            const iconElement = document.getElementById('error-icon');
+            let icon = '⚠️';
+
+            switch(code) {
+                case '404':
+                    icon = '🔍';
+                    break;
+                case '403':
+                    icon = '🚫';
+                    break;
+                case '500':
+                    icon = '⚙️';
+                    break;
+                case '502':
+                case '503':
+                    icon = '🌐';
+                    break;
+                case '400':
+                    icon = '❌';
+                    break;
+                default:
+                    icon = '⚠️';
+            }
+
+            iconElement.textContent = icon;
+        }
+
+        function getStatusCodeText(code) {
+            const statusTexts = {
+                '400': 'Bad Request',
+                '401': 'Unauthorized',
+                '403': 'Forbidden',
+                '404': 'Not Found',
+                '500': 'Internal Server Error',
+                '502': 'Bad Gateway',
+                '503': 'Service Unavailable',
+                '504': 'Gateway Timeout'
+            };
+            return statusTexts[code] || 'Unknown Error';
+        }
+
+        function reloadPage() {
+            const params = getUrlParams();
+            if (params.url && params.url !== '未知') {
+                window.location.href = params.url;
+            } else {
+                window.location.reload();
+            }
+        }
+
+        function toggleDetails() {
+            const detailsElement = document.getElementById('error-details');
+            const detailsBtn = document.getElementById('details-btn');
+
+            if (detailsElement.classList.contains('show')) {
+                detailsElement.classList.remove('show');
+                detailsBtn.textContent = '详细信息';
+            } else {
+                detailsElement.classList.add('show');
+                detailsBtn.textContent = '隐藏信息';
+            }
+        }
+
+        function applyThemeColor(color = '#0078d4') {
+            document.documentElement.style.setProperty('--theme-color', color);
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            updateErrorDisplay();
+
+            try {
+                const settings = JSON.parse(localStorage.getItem('cosySettings') || '{}');
+                if (settings.themeColor) {
+                    applyThemeColor(settings.themeColor);
+                }
+            } catch (error) {
+                console.error('获取主题颜色失败:', error);
+            }
+
+            if (window.require) {
+                const { ipcRenderer } = require('electron');
+                ipcRenderer.on('update-theme-color', (event, color) => {
+                    applyThemeColor(color);
+                });
+            }
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                const detailsElement = document.getElementById('error-details');
+                if (detailsElement.classList.contains('show')) {
+                    toggleDetails();
+                }
+            }
+        });
+    </script>
+</body>
+</html>

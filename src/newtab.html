@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>新标签页 - OpenCosy浏览器</title>
+    <script src="constants.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .background-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url('Backdrop.jpg') center/cover no-repeat;
+            z-index: 1;
+        }
+
+        .background-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.3);
+            z-index: 1;
+        }
+
+        .newtab-container {
+            text-align: center;
+            max-width: 600px;
+            padding: 40px;
+            position: relative;
+            z-index: 2;
+        }
+
+        .logo {
+            font-size: 64px;
+            font-weight: 300;
+            margin-bottom: 10px;
+            text-shadow: 0 2px 15px rgba(0,0,0,0.5);
+            letter-spacing: 2px;
+        }
+
+        .subtitle {
+            font-size: 18px;
+            margin-bottom: 40px;
+            opacity: 0.9;
+            text-shadow: 0 1px 5px rgba(0,0,0,0.5);
+        }
+
+        .search-box {
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
+            position: relative;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 18px 30px;
+            font-size: 16px;
+            border: none;
+            border-radius: 50px;
+            outline: none;
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            color: #ffffff;
+            text-align: center;
+        }
+
+        .search-input:hover, .search-input:focus {
+            background: rgba(255, 255, 255, 0.25);
+            box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.3);
+            transform: scale(1.02);
+        }
+
+        .search-input::placeholder {
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .footer {
+            position: absolute;
+            bottom: 20px;
+            font-size: 12px;
+            opacity: 0.7;
+            z-index: 2;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+        }
+
+        @media (max-width: 768px) {
+            .logo {
+                font-size: 48px;
+            }
+
+            .subtitle {
+                font-size: 16px;
+            }
+
+            .search-input {
+                padding: 15px 20px;
+                font-size: 14px;
+            }
+
+            .newtab-container {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="background-container" id="background-container"></div>
+
+    <div class="newtab-container">
+        <div class="logo">OpenCosy</div>
+        <div class="subtitle">快速、安全、舒适</div>
+
+        <div class="search-box">
+            <input type="text" class="search-input" placeholder="搜索网页或输入网址" id="search-input">
+        </div>
+    </div>
+
+    <div class="footer" id="footer">
+        OpenCosy浏览器
+    </div>
+
+    <script>
+        function navigateTo(url) {
+            window.location.href = url;
+        }
+
+        document.getElementById('search-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                const query = this.value.trim();
+                if (query) {
+                    let isValidProtocol = false;
+                    try {
+                        const urlObj = new URL(query);
+                        isValidProtocol = ['http:', 'https:', 'file:', 'cosy:'].includes(urlObj.protocol);
+                    } catch {}
+
+                    if (isValidProtocol) {
+                        navigateTo(query);
+                    } else if (query.includes('.') && !query.includes(' ')) {
+                        navigateTo('https://' + query);
+                    } else {
+                        const settings = JSON.parse(localStorage.getItem('cosySettings') || '{}');
+                        const searchEngine = settings.searchEngine || 'bing';
+
+                        let searchUrl;
+                        switch (searchEngine) {
+                            case 'google':
+                                searchUrl = 'https://www.google.com/search?q=';
+                                break;
+                            case 'baidu':
+                                searchUrl = 'https://www.baidu.com/s?wd=';
+                                break;
+                            case 'bing':
+                            default:
+                                searchUrl = 'https://www.bing.com/search?q=';
+                                break;
+                        }
+
+                        navigateTo(searchUrl + encodeURIComponent(query));
+                    }
+                }
+            }
+        });
+
+        function setDefaultBackground() {
+            setBackgroundImage('Backdrop.jpg');
+        }
+
+        function setBackgroundImage(imageUrl) {
+            const backgroundContainer = document.getElementById('background-container');
+            if (backgroundContainer) {
+                backgroundContainer.style.backgroundImage = `url('${imageUrl}')`;
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const searchInput = document.getElementById('search-input');
+            if (searchInput) {
+                searchInput.focus();
+            }
+
+            if (typeof COSY_CONSTANTS !== 'undefined' && COSY_CONSTANTS.APP_INFO) {
+                const footer = document.getElementById('footer');
+                if (footer) {
+                    footer.textContent = `${COSY_CONSTANTS.APP_INFO.name}`;
+                }
+            }
+
+            setDefaultBackground();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,411 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: #f1f3f2;
+    overflow: hidden;
+    user-select: none;
+}
+
+/* 毛玻璃效果基础样式 */
+.glass {
+    position: relative;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(2px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    box-shadow: 
+        0 8px 32px rgba(31, 38, 135, 0.2),
+        inset 0 4px 20px rgba(255, 255, 255, 0.3);
+}
+
+/* 低透明度毛玻璃效果 */
+.glass-light {
+    position: relative;
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(1px) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 
+        0 4px 16px rgba(31, 38, 135, 0.1),
+        inset 0 2px 10px rgba(255, 255, 255, 0.2);
+}
+
+/* 高透明度毛玻璃效果 */
+.glass-heavy {
+    position: relative;
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(4px) saturate(200%);
+    border: 1px solid rgba(255, 255, 255, 0.9);
+    box-shadow: 
+        0 12px 40px rgba(31, 38, 135, 0.3),
+        inset 0 6px 30px rgba(255, 255, 255, 0.4);
+}
+
+.browser-window {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: #ffffff;
+}
+
+.titlebar {
+    height: 32px;
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(1px) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 
+        0 4px 16px rgba(31, 38, 135, 0.1),
+        inset 0 2px 10px rgba(255, 255, 255, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 8px;
+    color: #333;
+    -webkit-app-region: drag;
+}
+
+.titlebar-title {
+    font-size: 12px;
+    font-weight: 500;
+    flex: 1;
+    text-align: center;
+}
+
+.titlebar-controls {
+    display: flex;
+    gap: 8px;
+    -webkit-app-region: no-drag;
+    margin-left: auto;
+}
+
+.titlebar-button {
+    width: 12px;
+    height: 12px;
+    border: none;
+    border-radius: 50%;
+    background: #ccc;
+    color: #000;
+    font-size: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.titlebar-button.close {
+    background: #ff5f57;
+}
+
+.titlebar-button:hover {
+    opacity: 0.8;
+}
+
+.titlebar-title {
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.toolbar {
+    height: 48px;
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(1px) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 
+        0 4px 16px rgba(31, 38, 135, 0.1),
+        inset 0 2px 10px rgba(255, 255, 255, 0.2);
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    gap: 12px;
+}
+
+.navigation-controls {
+    display: flex;
+    gap: 4px;
+}
+
+.nav-button {
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: transparent;
+    border-radius: 4px;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+}
+
+.nav-button:hover {
+    background: #dfe4e1;
+}
+
+.nav-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.address-bar-container {
+    flex: 1;
+    min-width: 200px;
+    max-width: none;
+}
+
+.address-bar {
+    display: flex;
+    background: #ffffff;
+    border: 1px solid #dfe4e1;
+    border-radius: 20px;
+    overflow: hidden;
+    height: 32px;
+}
+
+#url-input {
+    flex: 1;
+    border: none;
+    outline: none;
+    padding: 0 16px;
+    font-size: 14px;
+    background: transparent;
+}
+
+.go-button {
+    width: 32px;
+    border: none;
+    background: #dfe4e1;
+    color: #333;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.go-button:hover {
+    background: #c8d0cc;
+}
+
+.toolbar-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.action-button {
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: transparent;
+    border-radius: 4px;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+}
+
+.action-button:hover {
+    background: #dfe4e1;
+}
+
+.more-options-icon {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    gap: 2px;
+}
+
+.more-options-icon span {
+    width: 3px;
+    height: 3px;
+    background: #333;
+    border-radius: 50%;
+    transition: background 0.2s;
+}
+
+.more-options:hover .more-options-icon span {
+    background: var(--theme-color, #0078d4);
+}
+
+.more-options:active .more-options-icon span {
+    background: var(--theme-color, #0078d4);
+    filter: brightness(0.8);
+}
+
+.tab-bar {
+    height: 36px;
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(1px) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 
+        0 4px 16px rgba(31, 38, 135, 0.1),
+        inset 0 2px 10px rgba(255, 255, 255, 0.2);
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    gap: 4px;
+}
+
+.tabs-container {
+    display: flex;
+    flex: 1;
+    overflow-x: auto;
+    gap: 1px;
+}
+
+.tab {
+    min-width: 200px;
+    max-width: 300px;
+    height: 32px;
+    background: #dfe4e1;
+    border-radius: 8px 8px 0 0;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    cursor: pointer;
+    transition: background 0.2s;
+    position: relative;
+}
+
+.tab.active {
+    background: #ffffff;
+    border-bottom: 2px solid #dfe4e1;
+}
+
+.tab:hover:not(.active) {
+    background: #f1f3f2;
+}
+
+.tab-favicon {
+    width: 16px;
+    height: 16px;
+    margin-right: 8px;
+    object-fit: contain;
+}
+
+/* 文字图标的样式 */
+.text-favicon {
+    width: 16px;
+    height: 16px;
+    margin-right: 8px;
+    background-color: var(--theme-color, #0078d4);
+    color: white;
+    border-radius: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.tab-title {
+    flex: 1;
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tab-close {
+    width: 20px;
+    height: 20px;
+    border: none;
+    background: transparent;
+    border-radius: 50%;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s, background 0.2s;
+}
+
+.tab:hover .tab-close {
+    opacity: 1;
+}
+
+.tab-close:hover {
+    background: #dfe4e1;
+}
+
+.new-tab-button {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    border-radius: 4px;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+}
+
+.new-tab-button:hover {
+    background: #dfe4e1;
+}
+
+.content-area {
+    flex: 1;
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(4px) saturate(200%);
+    border: 1px solid rgba(255, 255, 255, 0.9);
+    box-shadow: 
+        0 12px 40px rgba(31, 38, 135, 0.3),
+        inset 0 6px 30px rgba(255, 255, 255, 0.4);
+    position: relative;
+}
+
+.browser-view {
+    width: 100%;
+    height: 100%;
+    border: none;
+}
+
+.status-bar {
+    height: 22px;
+    background: #f3f1f2;
+    border-top: 1px solid #dfe4e1;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    font-size: 11px;
+    color: #666;
+}
+
+.loading-indicator {
+    width: 16px;
+    height: 16px;
+    border: 2px solid #f3f1f2;
+    border-top: 2px solid #dfe4e1;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-right: 8px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.tab.loading .tab-title::after {
+    content: '...';
+    animation: dots 1.5s steps(4, end) infinite;
+}
+
+@keyframes dots {
+    0%, 20% { content: '.'; }
+    40% { content: '..'; }
+    60%, 100% { content: '...'; }
+}
