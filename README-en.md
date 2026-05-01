@@ -35,7 +35,7 @@ Cosy Browser is a simple, fast multi-tab browser that provides users with a comf
 3. Start using OpenCosy Browser
 
 Note:
-- This project removes many private features developed by Hot Land Studio. If you want to customize the browser, please use Cosy Browser instead.
+- This project removes many private features developed by RTStudio. If you want to customize the browser, please use Cosy Browser instead.
 
 ### Building from Source
 
