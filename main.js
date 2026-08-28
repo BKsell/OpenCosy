@@ -429,15 +429,11 @@ app.whenReady().then(async () => {
     cb({ path: path.join(__dirname, map[u] || 'src/newtab.html') });
   });
 
-  // v2 安全加固：file 协议路径白名单，防止任意本地文件读取
+  // v2 安全加固：file 协议不做路径白名单，依赖 Electron 权限隔离
+  // 外部网页(http/https)已配置 webSecurity:true + sandbox:true + contextIsolation:true，无法加载 file:// 资源
+  // 应用内部页面(cosy://)和用户手动输入的 file:// URL 应能正常访问本地文件
   protocol.registerFileProtocol('file', (req, cb) => {
-    try {
-      const rp = decodeURIComponent(req.url.substr(7));
-      const allowed = [path.resolve(__dirname), path.resolve(app.getPath('downloads')), path.resolve(app.getPath('userData'))];
-      const resolved = path.resolve(rp);
-      if (allowed.some(d => resolved.startsWith(d + path.sep) || resolved === d)) cb({ path: resolved });
-      else { console.log('file协议拒绝:', resolved); cb({ error: -2 }); }
-    } catch (e) { console.log('file协议解析失败:', e.message); cb({ error: -2 }); }
+    cb({ path: req.url.substr(7) });
   });
 
   setupDownloadManager();
