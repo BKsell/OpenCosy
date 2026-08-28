@@ -209,44 +209,76 @@ class TabManager {
     }
 
     addTabToUI(tabData) {
+        // v2 安全加固: 使用 DOM API 替代 innerHTML，防止网站标题/ID 注入 XSS
         const tabsContainer = document.getElementById('tabs-container');
-        
+
         const tabElement = document.createElement('div');
         tabElement.className = 'tab';
         tabElement.setAttribute('data-tab-id', tabData.id);
-        
-        // 处理图标显示，添加错误处理
-        let faviconHtml = '';
-        if (tabData.favicon) {
-            faviconHtml = `<img src="${tabData.favicon}" class="tab-favicon" alt="" onerror="this.style.display='none'; this.parentNode.querySelector('.text-favicon').style.display='flex';">`;
+
+        // 处理图标显示（仅允许 http/https/data 协议，防止 javascript: URL）
+        if (tabData.favicon && this.isSafeFaviconUrl(tabData.favicon)) {
+            const faviconImg = document.createElement('img');
+            faviconImg.src = tabData.favicon;
+            faviconImg.className = 'tab-favicon';
+            faviconImg.alt = '';
+            faviconImg.onerror = function () {
+                this.style.display = 'none';
+                const tf = this.parentNode.querySelector('.text-favicon');
+                if (tf) tf.style.display = 'flex';
+            };
+            tabElement.appendChild(faviconImg);
         }
-        
-        // 获取标题的第一个字符作为文字图标
-        let faviconText = 'N'; // 默认使用N表示null
+
+        // 文字图标作为备选（textContent 自动转义）
+        let faviconText = 'N';
         if (tabData.title && tabData.title.trim()) {
             faviconText = tabData.title.trim().charAt(0);
         }
-        
-        // 添加文字图标作为备选
-        faviconHtml += `<div class="text-favicon" style="display: ${tabData.favicon ? 'none' : 'flex'}">${faviconText}</div>`;
-        
-        tabElement.innerHTML = `
-            ${faviconHtml}
-            <span class="tab-title">${tabData.title}</span>
-            <button class="tab-close" onclick="tabManager.closeTab('${tabData.id}')">×</button>
-        `;
-        
+        const textFavicon = document.createElement('div');
+        textFavicon.className = 'text-favicon';
+        textFavicon.style.display = (tabData.favicon && this.isSafeFaviconUrl(tabData.favicon)) ? 'none' : 'flex';
+        textFavicon.textContent = faviconText;
+        tabElement.appendChild(textFavicon);
+
+        // 标题使用 textContent 防止 XSS
+        const titleSpan = document.createElement('span');
+        titleSpan.className = 'tab-title';
+        titleSpan.textContent = tabData.title || '';
+        tabElement.appendChild(titleSpan);
+
+        // 关闭按钮使用 addEventListener 替代内联 onclick，防止 ID 注入
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'tab-close';
+        closeBtn.textContent = '×';
+        closeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.closeTab(tabData.id);
+        });
+        tabElement.appendChild(closeBtn);
+
         tabElement.addEventListener('click', (e) => {
             if (!e.target.classList.contains('tab-close')) {
                 this.switchToTab(tabData.id);
             }
         });
-        
+
         tabsContainer.appendChild(tabElement);
         this.tabs.push(tabData);
-        
+
         if (this.tabs.length === 1) {
             this.switchToTab(tabData.id);
+        }
+    }
+
+    // v2 安全加固: 校验 favicon URL 仅允许安全协议
+    isSafeFaviconUrl(url) {
+        if (!url || typeof url !== 'string') return false;
+        try {
+            const u = new URL(url);
+            return ['http:', 'https:', 'data:'].includes(u.protocol);
+        } catch {
+            return false;
         }
     }
 
