@@ -307,7 +307,7 @@
         
         function showMessage(message, type = 'success') {
             const statusEl = document.getElementById('status-message');
-            statusEl.innerHTML = `<div class="status-message status-${type}">${message}</div>`;
+  statusEl.innerHTML = `<div class="status-message status-${type}"></div>`; statusEl.firstChild.textContent = message;
             setTimeout(() => {
                 statusEl.innerHTML = '';
             }, 5000);
