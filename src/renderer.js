@@ -117,10 +117,11 @@ class TabManager {
         const titlebar = document.querySelector('.titlebar');
         const toolbar = document.querySelector('.toolbar');
         const tabBar = document.querySelector('.tab-bar');
+        const isVertical = !!document.querySelector('.tab-bar-vertical');
         const heights = {
             titlebar: titlebar ? titlebar.offsetHeight : 36,
             toolbar: toolbar ? toolbar.offsetHeight : 52,
-            tabbar: tabBar ? tabBar.offsetHeight : 40
+            tabbar: isVertical ? 0 : (tabBar ? tabBar.offsetHeight : 40)
         };
         ipcRenderer.send('ui-heights', heights);
     }
@@ -167,11 +168,11 @@ class TabManager {
             });
         }
 
-        // 双击标签栏空白新建标签
-        const tabBar = document.querySelector('.tab-bar');
+        // 双击标签栏空白新建标签（支持水平和垂直布局）
+        const tabBar = document.querySelector('.tab-bar') || document.querySelector('.tab-bar-vertical');
         if (tabBar) {
             tabBar.addEventListener('dblclick', (e) => {
-                if (!e.target.closest('.tab') && !e.target.closest('.new-tab-button')) {
+                if (!e.target.closest('.tab') && !e.target.closest('.new-tab-button') && !e.target.closest('.new-tab-button-vertical') && !e.target.closest('.collapse-button')) {
                     this.createNewTab();
                 }
             });
