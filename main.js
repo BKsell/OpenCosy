@@ -276,7 +276,8 @@ function updateBrowserViewBounds() {
         let x, y, bw, bh;
         if (cachedTabLayout === 'vertical') {
           const tw = isTabBarCollapsed ? 50 : 200;
-          x = tw; y = 75; bw = w - tw; bh = h - 75;
+          const topOffset = uiHeights.titlebar + uiHeights.toolbar;
+          x = tw; y = topOffset; bw = w - tw; bh = h - topOffset;
         } else {
           const topOffset = uiHeights.titlebar + uiHeights.toolbar + uiHeights.tabbar;
           x = 0; y = topOffset; bw = w; bh = h - topOffset;
