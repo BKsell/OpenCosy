@@ -326,6 +326,13 @@
             renderDownloads();
         });
         
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
         // 渲染下载列表
         function renderDownloads() {
             const listContainer = document.getElementById('download-list');
