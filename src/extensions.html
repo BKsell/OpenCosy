@@ -363,41 +363,92 @@
             }
         }
         
+        // v2 安全加固: 校验图标 URL 仅允许安全协议
+        function isSafeExtensionIcon(url) {
+            if (!url || typeof url !== 'string') return false;
+            try {
+                const u = new URL(url);
+                return ['http:', 'https:', 'data:', 'file:'].includes(u.protocol);
+            } catch {
+                return false;
+            }
+        }
+
+        const DEFAULT_EXT_ICON = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjQ4IiBoZWlnaHQ9IjQ4IiBmaWxsPSIjMDA3OGQ0IiByeD0iOCIvPgo8dGV4dCB4PSI1MCUiIHk9IjUwJSIgZG9taW5hbnQtYmFzZWxpbmU9Im1pZGRsZSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0id2hpdGUiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiI+RTwvdGV4dD4KPC9zdmc+';
+
         function renderExtensions() {
+            // v2 安全加固: 使用 DOM API 替代 innerHTML，防止插件 manifest 字段注入 XSS
             const container = document.getElementById('extensions-list');
-            
+            container.innerHTML = '';
+
             if (extensions.length === 0) {
-                container.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-icon">🔌</div>
-                        <p>暂无安装的插件</p>
-                        <p style="font-size: 14px; margin-top: 10px;">点击上方"浏览文件夹"按钮添加您的第一个插件</p>
-                    </div>
-                `;
+                const empty = document.createElement('div');
+                empty.className = 'empty-state';
+                const icon = document.createElement('div');
+                icon.className = 'empty-icon';
+                icon.textContent = '🔌';
+                const p1 = document.createElement('p');
+                p1.textContent = '暂无安装的插件';
+                const p2 = document.createElement('p');
+                p2.style.fontSize = '14px';
+                p2.style.marginTop = '10px';
+                p2.textContent = '点击上方"浏览文件夹"按钮添加您的第一个插件';
+                empty.appendChild(icon);
+                empty.appendChild(p1);
+                empty.appendChild(p2);
+                container.appendChild(empty);
                 return;
             }
-            
-            container.innerHTML = extensions.map(ext => `
-                <div class="extension-card">
-                    <div class="extension-header">
-                        <img src="${ext.icon || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjQ4IiBoZWlnaHQ9IjQ4IiBmaWxsPSIjMDA3OGQ0IiByeD0iOCIvPgo8dGV4dCB4PSI1MCUiIHk9IjUwJSIgZG9taW5hbnQtYmFzZWxpbmU9Im1pZGRsZSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0id2hpdGUiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiI+RTwvdGV4dD4KPC9zdmc+'}" 
-                             class="extension-icon" 
-                             alt="${ext.name}">
-                        <div class="extension-info">
-                            <div class="extension-name">${ext.name}</div>
-                            <div class="extension-version">版本: ${ext.version}</div>
-                        </div>
-                    </div>
-                    <div class="extension-description">${ext.description || '暂无描述'}</div>
-                    <div class="extension-controls">
-                        <button class="toggle-button ${ext.enabled ? 'toggle-enabled' : 'toggle-disabled'}" 
-                                onclick="toggleExtension('${ext.id}', ${!ext.enabled})">
-                            ${ext.enabled ? '已启用' : '已禁用'}
-                        </button>
-                        <button class="remove-button" onclick="removeExtension('${ext.id}')">移除</button>
-                    </div>
-                </div>
-            `).join('');
+
+            extensions.forEach(ext => {
+                const card = document.createElement('div');
+                card.className = 'extension-card';
+
+                const header = document.createElement('div');
+                header.className = 'extension-header';
+
+                const iconImg = document.createElement('img');
+                iconImg.className = 'extension-icon';
+                iconImg.src = isSafeExtensionIcon(ext.icon) ? ext.icon : DEFAULT_EXT_ICON;
+                iconImg.alt = String(ext.name || '插件');
+                header.appendChild(iconImg);
+
+                const info = document.createElement('div');
+                info.className = 'extension-info';
+                const nameDiv = document.createElement('div');
+                nameDiv.className = 'extension-name';
+                nameDiv.textContent = String(ext.name || '未知插件');
+                const verDiv = document.createElement('div');
+                verDiv.className = 'extension-version';
+                verDiv.textContent = '版本: ' + String(ext.version || '未知');
+                info.appendChild(nameDiv);
+                info.appendChild(verDiv);
+                header.appendChild(info);
+                card.appendChild(header);
+
+                const desc = document.createElement('div');
+                desc.className = 'extension-description';
+                desc.textContent = String(ext.description || '暂无描述');
+                card.appendChild(desc);
+
+                const controls = document.createElement('div');
+                controls.className = 'extension-controls';
+
+                const toggleBtn = document.createElement('button');
+                toggleBtn.className = 'toggle-button ' + (ext.enabled ? 'toggle-enabled' : 'toggle-disabled');
+                toggleBtn.textContent = ext.enabled ? '已启用' : '已禁用';
+                toggleBtn.addEventListener('click', () => toggleExtension(ext.id, !ext.enabled));
+                controls.appendChild(toggleBtn);
+
+                const removeBtn = document.createElement('button');
+                removeBtn.className = 'remove-button';
+                removeBtn.textContent = '移除';
+                removeBtn.addEventListener('click', () => removeExtension(ext.id));
+                controls.appendChild(removeBtn);
+
+                card.appendChild(controls);
+                container.appendChild(card);
+            });
         }
         
         async function toggleExtension(extensionId, enabled) {
