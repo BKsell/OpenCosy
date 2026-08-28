@@ -127,31 +127,32 @@ class TabManager {
     }
 
     setupEventListeners() {
-        document.getElementById('add-tab').addEventListener('click', () => {
-            this.createNewTab();
+        // 按钮点击事件配置表
+        const buttonActions = [
+            { id: 'add-tab', action: () => this.createNewTab() },
+            { id: 'new-tab', action: () => this.createNewTab() },
+            { id: 'settings', action: () => this.createNewTab('cosy://setting') },
+            { id: 'downloads', action: () => this.createNewTab('cosy://downloadlist') },
+            { id: 'go', action: () => this.navigateFromAddressBar() },
+            { id: 'back', action: () => this.goBack() },
+            { id: 'forward', action: () => this.goForward() },
+            { id: 'refresh', action: () => this.refresh() },
+            { id: 'home', action: () => this.navigateCurrentTab('cosy://newtab') },
+            { id: 'minimize', action: () => window.electron.minimize() },
+            { id: 'maximize', action: () => window.electron.maximize() },
+            { id: 'close', action: () => window.electron.close() },
+        ];
+        buttonActions.forEach(({ id, action }) => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('click', action);
         });
 
-        document.getElementById('new-tab').addEventListener('click', () => {
-            this.createNewTab();
-        });
-
-        document.getElementById('settings').addEventListener('click', () => {
-            this.createNewTab('cosy://setting');
-        });
-
-        document.getElementById('downloads').addEventListener('click', () => {
-            this.createNewTab('cosy://downloadlist');
-        });
-
-        document.getElementById('url-input').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                this.navigateFromAddressBar();
-            }
-        });
-
-        document.getElementById('url-input').addEventListener('focus', (e) => {
-            e.target.select();
-        });
+        // 地址栏事件
+        const urlInput = document.getElementById('url-input');
+        if (urlInput) {
+            urlInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') this.navigateFromAddressBar(); });
+            urlInput.addEventListener('focus', (e) => e.target.select());
+        }
 
         // 中键关闭标签页
         const tabsContainer = document.getElementById('tabs-container');
@@ -172,60 +173,24 @@ class TabManager {
         const tabBar = document.querySelector('.tab-bar') || document.querySelector('.tab-bar-vertical');
         if (tabBar) {
             tabBar.addEventListener('dblclick', (e) => {
-                if (!e.target.closest('.tab') && !e.target.closest('.new-tab-button') && !e.target.closest('.new-tab-button-vertical') && !e.target.closest('.collapse-button')) {
-                    this.createNewTab();
-                }
+                const excluded = '.tab, .new-tab-button, .new-tab-button-vertical, .collapse-button';
+                if (!e.target.closest(excluded)) this.createNewTab();
             });
         }
 
-        document.getElementById('go').addEventListener('click', () => {
-            this.navigateFromAddressBar();
-        });
-
-        document.getElementById('back').addEventListener('click', () => {
-            this.goBack();
-        });
-
-        document.getElementById('forward').addEventListener('click', () => {
-            this.goForward();
-        });
-
-        document.getElementById('refresh').addEventListener('click', () => {
-            this.refresh();
-        });
-
-        document.getElementById('home').addEventListener('click', () => {
-            this.navigateCurrentTab('cosy://newtab');
-        });
-
-        document.getElementById('minimize').addEventListener('click', () => {
-            window.electron.minimize();
-        });
-
-        document.getElementById('maximize').addEventListener('click', () => {
-            window.electron.maximize();
-        });
-
-        document.getElementById('close').addEventListener('click', () => {
-            window.electron.close();
-        });
-
-        // 折叠标签页按钮点击事件（仅在垂直模式下存在）
+        // 折叠标签页按钮（仅垂直模式）
         const collapseTabbarBtn = document.getElementById('collapse-tabbar');
         if (collapseTabbarBtn) {
-            collapseTabbarBtn.addEventListener('click', () => {
-                this.toggleTabBarCollapse();
-            });
+            collapseTabbarBtn.addEventListener('click', () => this.toggleTabBarCollapse());
         }
 
-        // 更多选项按钮点击事件
-        document.getElementById('more-options').addEventListener('click', (event) => {
-            this.showMoreOptionsMenu(event);
-        });
+        // 更多选项按钮
+        const moreOptionsBtn = document.getElementById('more-options');
+        if (moreOptionsBtn) {
+            moreOptionsBtn.addEventListener('click', (event) => this.showMoreOptionsMenu(event));
+        }
 
-        // 添加右键菜单事件监听
         this.setupContextMenu();
-        // 标签页右键菜单
         this.setupTabContextMenu();
     }
 
@@ -327,49 +292,25 @@ class TabManager {
     }
 
     toggleFullscreenUI(isFullscreen) {
-        const titlebar = document.querySelector('.titlebar');
-        const toolbar = document.querySelector('.toolbar');
-        const tabBar = document.querySelector('.tab-bar');
-        const statusBar = document.querySelector('.status-bar');
-        
-        if (isFullscreen) {
-            if (titlebar) titlebar.style.display = 'none';
-            if (toolbar) toolbar.style.display = 'none';
-            if (tabBar) tabBar.style.display = 'none';
-            if (statusBar) statusBar.style.display = 'none';
-        } else {
-            if (titlebar) titlebar.style.display = 'flex';
-            if (toolbar) toolbar.style.display = 'flex';
-            if (tabBar) tabBar.style.display = 'flex';
-            if (statusBar) statusBar.style.display = 'flex';
-        }
+        const selectors = ['.titlebar', '.toolbar', '.tab-bar', '.status-bar'];
+        selectors.forEach(sel => {
+            const el = document.querySelector(sel);
+            if (el) el.style.display = isFullscreen ? 'none' : 'flex';
+        });
     }
 
     async createNewTab(url) {
-        // 读取用户的默认标签页设置
-        const settings = JSON.parse(localStorage.getItem('cosySettings') || '{}');
-        const defaultTab = settings.defaultTab || 'newtab';
-        const customUrl = settings.customUrl || '';
-        
-        // 如果没有传入URL，则根据默认标签页设置生成URL
         if (!url) {
-            switch (defaultTab) {
-                case 'bing':
-                    url = 'https://www.bing.com';
-                    break;
-                case 'custom':
-                    url = customUrl || 'cosy://newtab'; // 如果自定义URL为空，则使用新标签页
-                    break;
-                case 'newtab':
-                default:
-                    url = 'cosy://newtab';
-                    break;
-            }
+            const settings = JSON.parse(localStorage.getItem('cosySettings') || '{}');
+            const defaultTabs = {
+                bing: 'https://www.bing.com',
+                custom: settings.customUrl || 'cosy://newtab',
+                newtab: 'cosy://newtab',
+            };
+            url = defaultTabs[settings.defaultTab] || 'cosy://newtab';
         }
-        
         try {
-            const result = await ipcRenderer.invoke('create-tab', url);
-            return result;
+            return await ipcRenderer.invoke('create-tab', url);
         } catch (error) {
             console.error('创建标签页失败:', error);
         }
@@ -640,40 +581,27 @@ class TabManager {
     }
 
     formatUrl(input) {
-        // 使用URL对象来判断协议，而不是字符串匹配
+        // 先尝试作为完整 URL 解析
         try {
             const urlObj = new URL(input);
-            // 如果是有效的URL且协议是http, https, file, cosy之一，直接返回
             if (['http:', 'https:', 'file:', 'cosy:'].includes(urlObj.protocol)) {
                 return input;
             }
-        } catch {
-            // 如果不是有效的URL，继续处理
-        }
-        
+        } catch { /* 不是有效 URL，继续处理 */ }
+
+        // 看起来像域名（含点且无空格）则补 https
         if (input.includes('.') && !input.includes(' ')) {
             return 'https://' + input;
         }
-        
-        // 读取保存的搜索引擎设置
+
+        // 否则按搜索词处理
         const settings = JSON.parse(localStorage.getItem('cosySettings') || '{}');
-        const searchEngine = settings.searchEngine || 'bing';
-        
-        // 根据设置选择搜索引擎
-        let searchUrl;
-        switch (searchEngine) {
-            case 'google':
-                searchUrl = 'https://www.google.com/search?q=';
-                break;
-            case 'baidu':
-                searchUrl = 'https://www.baidu.com/s?wd=';
-                break;
-            case 'bing':
-            default:
-                searchUrl = 'https://www.bing.com/search?q=';
-                break;
-        }
-        
+        const searchEngines = {
+            google: 'https://www.google.com/search?q=',
+            baidu: 'https://www.baidu.com/s?wd=',
+            bing: 'https://www.bing.com/search?q=',
+        };
+        const searchUrl = searchEngines[settings.searchEngine] || searchEngines.bing;
         return searchUrl + encodeURIComponent(input);
     }
 
