@@ -58,8 +58,10 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200, height: 800, minWidth: 800, minHeight: 600,
     webPreferences: {
+      // v2 安全加固: 禁用 remote 模块（已废弃，可被 XSS 利用访问主进程 API）
+      // TODO: 后续应禁用 nodeIntegration + 启用 contextIsolation + preload script
       nodeIntegration: true, contextIsolation: false, webSecurity: true,
-      allowRunningInsecureContent: false, enableRemoteModule: true
+      allowRunningInsecureContent: false, enableRemoteModule: false
     },
     titleBarStyle: 'hidden', frame: false, show: false,
     icon: path.join(__dirname, 'ico.png')
