@@ -40,7 +40,7 @@
     "protocols": [
       {
         "name": "OpenCosy Browser",
-        "schemes": ["cosy", "http", "https"]
+        "schemes": ["cosy"]
       }
     ],
     "win": {
