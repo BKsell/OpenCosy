@@ -429,12 +429,6 @@ app.whenReady().then(async () => {
     cb({ path: path.join(__dirname, map[u] || 'src/newtab.html') });
   });
 
-  // v2 安全加固：file 协议不做路径白名单，依赖 Electron 权限隔离
-  // 外部网页(http/https)已配置 webSecurity:true + sandbox:true + contextIsolation:true，无法加载 file:// 资源
-  // 应用内部页面(cosy://)和用户手动输入的 file:// URL 应能正常访问本地文件
-  protocol.registerFileProtocol('file', (req, cb) => {
-    cb({ path: req.url.substr(7) });
-  });
 
   setupDownloadManager();
   session.defaultSession.setUserAgent(generateUserAgent());
@@ -609,7 +603,7 @@ function createContextMenu(type, text = '') {
   return menu;
 }
 
-const userDataPath = path.join(os.homedir(), 'AppData', 'Roaming', 'OpenCosy', 'browser', 'userdata');
+const userDataPath = path.join(app.getPath('userData'), 'browser', 'userdata');
 const extensionsPath = path.join(userDataPath, 'extensions');
 const configPath = path.join(extensionsPath, 'config.json');
 
