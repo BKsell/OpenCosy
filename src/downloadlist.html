@@ -215,8 +215,24 @@
     
     <script>
         const { ipcRenderer } = require('electron');
-        
+
         let downloads = [];
+
+        // v2 安全加固: HTML 转义函数，防止下载文件名/ID 注入 XSS
+        function escapeHtml(str) {
+            if (str === null || str === undefined) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        // v2 安全加固: 安全地为内联 onclick 生成字符串参数
+        function jsStr(str) {
+            return JSON.stringify(String(str || ''));
+        }
         
         // 加载主题颜色
         function loadThemeColor() {
@@ -325,11 +341,13 @@
                 return;
             }
             
+            // v2 安全加固: 所有用户可控字段（filename/id/savePath/speed/progress）均转义
+            const safeProgress = Math.max(0, Math.min(100, Number(download.progress) || 0));
             listContainer.innerHTML = downloads.map(download => `
-                <div class="download-item" data-id="${download.id}">
+                <div class="download-item" data-id="${escapeHtml(download.id)}">
                     <div class="file-icon">📄</div>
                     <div class="file-info">
-                        <div class="file-name">${download.filename}</div>
+                        <div class="file-name">${escapeHtml(download.filename)}</div>
                         <div class="file-meta">
                             <span>${formatSize(download.totalBytes)}</span>
                             <span>${formatDate(download.startTime)}</span>
@@ -337,31 +355,31 @@
                         </div>
                         ${download.status === 'downloading' ? `
                             <div class="progress-bar">
-                                <div class="progress-fill" style="width: ${download.progress}%"></div>
+                                <div class="progress-fill" style="width: ${safeProgress}%"></div>
                             </div>
-                            <div class="progress-text">${formatSize(download.receivedBytes)} / ${formatSize(download.totalBytes)} (${download.progress}%) - ${download.speed}</div>
+                            <div class="progress-text">${formatSize(download.receivedBytes)} / ${formatSize(download.totalBytes)} (${safeProgress}%) - ${escapeHtml(download.speed)}</div>
                         ` : ''}
                     </div>
                     <div class="file-actions">
                         ${download.status === 'complete' ? `
-                            <button class="action-btn btn-primary" onclick="openFile('${download.savePath}')">打开</button>
-                            <button class="action-btn btn-secondary" onclick="openFolder('${download.savePath}')">文件夹</button>
-                            <button class="action-btn btn-danger" onclick="removeDownload('${download.id}')">删除</button>
+                            <button class="action-btn btn-primary" onclick="openFile(${jsStr(download.savePath)})">打开</button>
+                            <button class="action-btn btn-secondary" onclick="openFolder(${jsStr(download.savePath)})">文件夹</button>
+                            <button class="action-btn btn-danger" onclick="removeDownload(${jsStr(download.id)})">删除</button>
                         ` : ''}
                         ${download.status === 'pending' ? `
                             <button class="action-btn btn-secondary">等待中</button>
                         ` : ''}
                         ${download.status === 'downloading' ? `
-                            <button class="action-btn btn-secondary" onclick="pauseDownload('${download.id}')">暂停</button>
-                            <button class="action-btn btn-danger" onclick="cancelDownload('${download.id}')">取消</button>
+                            <button class="action-btn btn-secondary" onclick="pauseDownload(${jsStr(download.id)})">暂停</button>
+                            <button class="action-btn btn-danger" onclick="cancelDownload(${jsStr(download.id)})">取消</button>
                         ` : ''}
                         ${download.status === 'paused' ? `
-                            <button class="action-btn btn-primary" onclick="resumeDownload('${download.id}')">继续</button>
-                            <button class="action-btn btn-danger" onclick="cancelDownload('${download.id}')">取消</button>
+                            <button class="action-btn btn-primary" onclick="resumeDownload(${jsStr(download.id)})">继续</button>
+                            <button class="action-btn btn-danger" onclick="cancelDownload(${jsStr(download.id)})">取消</button>
                         ` : ''}
                         ${download.status === 'error' ? `
-                            <button class="action-btn btn-secondary" onclick="retryDownload('${download.id}')">重试</button>
-                            <button class="action-btn btn-danger" onclick="removeDownload('${download.id}')">删除</button>
+                            <button class="action-btn btn-secondary" onclick="retryDownload(${jsStr(download.id)})">重试</button>
+                            <button class="action-btn btn-danger" onclick="removeDownload(${jsStr(download.id)})">删除</button>
                         ` : ''}
                     </div>
                 </div>
@@ -446,11 +464,13 @@
                 if (progressBar && !progressBar.parentNode.contains(progressBar)) {
                     const fileInfo = downloadItem.querySelector('.file-info');
                     if (fileInfo) {
+                        // v2 安全加固: progress 限制 0-100，speed 转义
+                        const sp = Math.max(0, Math.min(100, Number(download.progress) || 0));
                         const progressHTML = `
                             <div class="progress-bar">
-                                <div class="progress-fill" style="width: ${download.progress}%"></div>
+                                <div class="progress-fill" style="width: ${sp}%"></div>
                             </div>
-                            <div class="progress-text">${formatSize(download.receivedBytes)} / ${formatSize(download.totalBytes)} (${download.progress}%) - ${download.speed}</div>
+                            <div class="progress-text">${formatSize(download.receivedBytes)} / ${formatSize(download.totalBytes)} (${sp}%) - ${escapeHtml(download.speed)}</div>
                         `;
                         fileInfo.insertAdjacentHTML('beforeend', progressHTML);
                     }
@@ -468,36 +488,36 @@
                 }
             }
             
-            // 更新按钮
+            // 更新按钮（v2 安全加固: 内联 onclick 参数使用 jsStr 安全转义）
             const fileActions = downloadItem.querySelector('.file-actions');
             if (fileActions) {
                 let buttonsHtml = '';
-                
+
                 if (download.status === 'complete') {
                     buttonsHtml = `
-                        <button class="action-btn btn-primary" onclick="openFile('${download.savePath}')">打开</button>
-                        <button class="action-btn btn-secondary" onclick="openFolder('${download.savePath}')">文件夹</button>
-                        <button class="action-btn btn-danger" onclick="removeDownload('${download.id}')">删除</button>
+                        <button class="action-btn btn-primary" onclick="openFile(${jsStr(download.savePath)})">打开</button>
+                        <button class="action-btn btn-secondary" onclick="openFolder(${jsStr(download.savePath)})">文件夹</button>
+                        <button class="action-btn btn-danger" onclick="removeDownload(${jsStr(download.id)})">删除</button>
                     `;
                 } else if (download.status === 'pending') {
                     buttonsHtml = `<button class="action-btn btn-secondary">等待中</button>`;
                 } else if (download.status === 'downloading') {
                     buttonsHtml = `
-                        <button class="action-btn btn-secondary" onclick="pauseDownload('${download.id}')">暂停</button>
-                        <button class="action-btn btn-danger" onclick="cancelDownload('${download.id}')">取消</button>
+                        <button class="action-btn btn-secondary" onclick="pauseDownload(${jsStr(download.id)})">暂停</button>
+                        <button class="action-btn btn-danger" onclick="cancelDownload(${jsStr(download.id)})">取消</button>
                     `;
                 } else if (download.status === 'paused') {
                     buttonsHtml = `
-                        <button class="action-btn btn-primary" onclick="resumeDownload('${download.id}')">继续</button>
-                        <button class="action-btn btn-danger" onclick="cancelDownload('${download.id}')">取消</button>
+                        <button class="action-btn btn-primary" onclick="resumeDownload(${jsStr(download.id)})">继续</button>
+                        <button class="action-btn btn-danger" onclick="cancelDownload(${jsStr(download.id)})">取消</button>
                     `;
                 } else if (download.status === 'error') {
                     buttonsHtml = `
-                        <button class="action-btn btn-secondary" onclick="retryDownload('${download.id}')">重试</button>
-                        <button class="action-btn btn-danger" onclick="removeDownload('${download.id}')">删除</button>
+                        <button class="action-btn btn-secondary" onclick="retryDownload(${jsStr(download.id)})">重试</button>
+                        <button class="action-btn btn-danger" onclick="removeDownload(${jsStr(download.id)})">删除</button>
                     `;
                 }
-                
+
                 fileActions.innerHTML = buttonsHtml;
             }
         }
