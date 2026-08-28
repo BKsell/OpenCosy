@@ -174,9 +174,17 @@ function loadTabContent(tab) {
       }
     });
     function showErr(tab, code, desc, url) {
-      const p = new URLSearchParams({ code: getHttpStatusCode(code), message: getErrorMessage(code), reason: desc, url, browserCode: code, browserMessage: getBrowserErrorText(code) });
+      const p = new URLSearchParams({
+        code: getHttpStatusCode(code),
+        message: getErrorMessage(code),
+        reason: desc,
+        url,
+        browserCode: code,
+        browserMessage: getBrowserErrorText(code)
+      });
       tab.view.webContents.loadURL(`file://${__dirname}/src/error.html?${p.toString()}`);
-      tab.url = url; tab.title = `错误 - ${getHttpStatusCode(code)}`;
+      tab.url = url;
+      tab.title = `错误 - ${getHttpStatusCode(code)}`;
       mainWindow.webContents.send('tab-updated', { id: tab.id, url, title: tab.title });
     }
     tab.view.webContents.on('page-favicon-updated', (e, favicons) => {
@@ -218,15 +226,31 @@ function loadTabContent(tab) {
       const fp = pages[host];
       if (fp) tab.view.webContents.loadFile(fp);
       else {
-        const p = new URLSearchParams({ code: '404', message: '页面未找到', reason: '未注册的cosy协议地址', url: tab.url, browserCode: -3, browserMessage: 'ERR_UNKNOWN_COSY_URL' });
+        const p = new URLSearchParams({
+          code: '404',
+          message: '页面未找到',
+          reason: '未注册的cosy协议地址',
+          url: tab.url,
+          browserCode: -3,
+          browserMessage: 'ERR_UNKNOWN_COSY_URL'
+        });
         tab.view.webContents.loadURL(`file://${__dirname}/src/error.html?${p.toString()}`);
-        tab.title = '错误 - 404'; tab.favicon = 'src/error.png';
+        tab.title = '错误 - 404';
+        tab.favicon = 'src/error.png';
         mainWindow.webContents.send('tab-updated', { id: tab.id, url: tab.url, title: tab.title });
       }
     } catch {
-      const p = new URLSearchParams({ code: '400', message: '无效的URL', reason: '无法解析cosy协议地址', url: tab.url, browserCode: -3, browserMessage: 'ERR_UNKNOWN_COSY_URL' });
+      const p = new URLSearchParams({
+        code: '400',
+        message: '无效的URL',
+        reason: '无法解析cosy协议地址',
+        url: tab.url,
+        browserCode: -3,
+        browserMessage: 'ERR_UNKNOWN_COSY_URL'
+      });
       tab.view.webContents.loadURL(`file://${__dirname}/src/error.html?${p.toString()}`);
-      tab.title = '错误 - 400'; tab.favicon = 'src/error.png';
+      tab.title = '错误 - 400';
+      tab.favicon = 'src/error.png';
       mainWindow.webContents.send('tab-updated', { id: tab.id, url: tab.url, title: tab.title });
     }
   } else tab.view.webContents.loadURL(tab.url);
@@ -239,10 +263,16 @@ function updateBrowserViewBounds() {
       const [w, h] = mainWindow.getSize();
       const sp = path.join(app.getPath('userData'), 'cosySettings.json');
       let layout = 'horizontal';
-      try { if (fsSync.existsSync(sp)) layout = JSON.parse(fsSync.readFileSync(sp, 'utf-8')).tabLayout || 'horizontal'; } catch (e) { console.error(e); }
+      try {
+        if (fsSync.existsSync(sp)) layout = JSON.parse(fsSync.readFileSync(sp, 'utf-8')).tabLayout || 'horizontal';
+      } catch (e) { console.error(e); }
       let x, y, bw, bh;
-      if (layout === 'vertical') { const tw = isTabBarCollapsed ? 50 : 200; x = tw; y = 75; bw = w - tw; bh = h - 75; }
-      else { x = 0; y = 116; bw = w; bh = h - 116; }
+      if (layout === 'vertical') {
+        const tw = isTabBarCollapsed ? 50 : 200;
+        x = tw; y = 75; bw = w - tw; bh = h - 75;
+      } else {
+        x = 0; y = 116; bw = w; bh = h - 116;
+      }
       tab.view.setBounds({ x, y, width: bw, height: bh });
     }
   }
@@ -264,8 +294,15 @@ function closeTab(i) {
     if (tabs.length === 0) {
       const sp = path.join(app.getPath('userData'), 'cosySettings.json');
       let du = 'cosy://newtab';
-      try { if (fsSync.existsSync(sp)) { const s = JSON.parse(fsSync.readFileSync(sp, 'utf-8')); if (s.defaultTab === 'bing') du = 'https://www.bing.com'; else if (s.defaultTab === 'custom' && s.customUrl) du = s.customUrl; } } catch (e) { console.error(e); }
-      createNewTab(du); currentTabIndex = 0;
+      try {
+        if (fsSync.existsSync(sp)) {
+          const s = JSON.parse(fsSync.readFileSync(sp, 'utf-8'));
+          if (s.defaultTab === 'bing') du = 'https://www.bing.com';
+          else if (s.defaultTab === 'custom' && s.customUrl) du = s.customUrl;
+        }
+      } catch (e) { console.error(e); }
+      createNewTab(du);
+      currentTabIndex = 0;
     } else if (currentTabIndex >= tabs.length) currentTabIndex = tabs.length - 1;
     if (tabs.length > 0) switchToTab(currentTabIndex);
     mainWindow.webContents.send('tab-closed', i);
@@ -277,16 +314,41 @@ function setupDownloadManager() {
     const url = item.getURL(), filename = item.getFilename(), total = item.getTotalBytes();
     let di = downloads.find(d => d.url === url && d.item === null && d.isItemValid === false);
     let isNew = false;
-    if (di) { di.item = item; di.filename = filename; di.totalBytes = total; di.isItemValid = true; di.status = 'downloading'; }
+    if (di) {
+      di.item = item;
+      di.filename = filename;
+      di.totalBytes = total;
+      di.isItemValid = true;
+      di.status = 'downloading';
+    }
     else {
       event.preventDefault();
-      di = { id: Date.now().toString(), url, filename, totalBytes: total, receivedBytes: 0, progress: 0, speed: '0 B/s', status: 'pending', startTime: Date.now(), savePath: null, item: null, lastUpdate: Date.now(), lastReceivedBytes: 0, isItemValid: false };
+      di = {
+        id: Date.now().toString(),
+        url,
+        filename,
+        totalBytes: total,
+        receivedBytes: 0,
+        progress: 0,
+        speed: '0 B/s',
+        status: 'pending',
+        startTime: Date.now(),
+        savePath: null,
+        item: null,
+        lastUpdate: Date.now(),
+        lastReceivedBytes: 0,
+        isItemValid: false
+      };
       downloads.push(di); isNew = true;
     }
     currentDownloadInfo = di;
     if (isNew) { createNewTab('cosy://download'); return; }
     if (di.savePath) item.setSavePath(di.savePath);
-    else { const dp = path.join(app.getPath('downloads'), filename); item.setSavePath(dp); di.savePath = dp; }
+    else {
+      const dp = path.join(app.getPath('downloads'), filename);
+      item.setSavePath(dp);
+      di.savePath = dp;
+    }
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('download-status-changed', { id: di.id, status: 'downloading' });
     item.on('updated', (e, state) => {
       if (state === 'progressing') {
@@ -300,8 +362,16 @@ function setupDownloadManager() {
     });
     item.on('done', (e, state) => {
       di.isItemValid = false;
-      if (state === 'completed') { di.status = 'complete'; di.savePath = item.getSavePath(); if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('download-complete', { id: di.id, savePath: di.savePath }); }
-      else { di.status = 'error'; if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('download-error', { id: di.id }); }
+      if (state === 'completed') {
+        di.status = 'complete';
+        di.savePath = item.getSavePath();
+        if (mainWindow && !mainWindow.isDestroyed())
+          mainWindow.webContents.send('download-complete', { id: di.id, savePath: di.savePath });
+      } else {
+        di.status = 'error';
+        if (mainWindow && !mainWindow.isDestroyed())
+          mainWindow.webContents.send('download-error', { id: di.id });
+      }
     });
     if (isNew) createNewTab('cosy://download');
   });
@@ -316,10 +386,21 @@ function formatSpeed(bps) {
 function generateUserAgent() {
   const p = os.platform(), a = os.arch(), r = os.release();
   let oi;
-  if (p === 'win32') { oi = r.startsWith('10.') ? 'Windows NT 10.0' : r.startsWith('6.3') ? 'Windows NT 6.3' : r.startsWith('6.2') ? 'Windows NT 6.2' : r.startsWith('6.1') ? 'Windows NT 6.1' : 'Windows NT 10.0'; oi += a === 'x64' ? '; Win64; x64' : '; WOW64'; }
-  else if (p === 'darwin') { const mv = r.split('.').slice(0, 2).join('.'); oi = `Macintosh; Intel Mac OS X ${mv.replace('.', '_')}`; }
-  else if (p === 'linux') oi = a === 'x64' ? 'X11; Linux x86_64' : a === 'arm64' ? 'X11; Linux aarch64' : 'X11; Linux i686';
-  else oi = 'X11; Unknown';
+  if (p === 'win32') {
+    oi = r.startsWith('10.') ? 'Windows NT 10.0'
+       : r.startsWith('6.3') ? 'Windows NT 6.3'
+       : r.startsWith('6.2') ? 'Windows NT 6.2'
+       : r.startsWith('6.1') ? 'Windows NT 6.1'
+       : 'Windows NT 10.0';
+    oi += a === 'x64' ? '; Win64; x64' : '; WOW64';
+  } else if (p === 'darwin') {
+    const mv = r.split('.').slice(0, 2).join('.');
+    oi = `Macintosh; Intel Mac OS X ${mv.replace('.', '_')}`;
+  } else if (p === 'linux') {
+    oi = a === 'x64' ? 'X11; Linux x86_64' : a === 'arm64' ? 'X11; Linux aarch64' : 'X11; Linux i686';
+  } else {
+    oi = 'X11; Unknown';
+  }
   return `Mozilla/5.0 (${oi}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.7559.60 OpenCosyBrowser/1.0.0`;
 }
 
@@ -384,7 +465,12 @@ ipcMain.on('toggle-tabbar-collapse', (e, c) => { isTabBarCollapsed = c; updateBr
 
 ipcMain.handle('navigate-tab', (e, { tabId, url }) => {
   const t = tabs.find(x => x.id === tabId);
-  if (t) { t.url = url; loadTabContent(t); mainWindow.webContents.send('tab-updated', { id: t.id, url }); return { success: true }; }
+  if (t) {
+    t.url = url;
+    loadTabContent(t);
+    mainWindow.webContents.send('tab-updated', { id: t.id, url });
+    return { success: true };
+  }
   return { success: false };
 });
 
@@ -408,10 +494,24 @@ ipcMain.on('start-download', (e, data) => {
         if (!rs.startsWith(dd + path.sep) && rs !== dd) { console.log('下载路径拒绝:', data.savePath); return; }
         sp = rs;
       } else sp = path.join(app.getPath('downloads'), currentDownloadInfo.filename);
-      if (currentDownloadInfo.item && currentDownloadInfo.isItemValid) { currentDownloadInfo.item.setSavePath(sp); currentDownloadInfo.savePath = sp; currentDownloadInfo.status = 'downloading'; }
-      else { currentDownloadInfo.savePath = sp; currentDownloadInfo.status = 'pending'; currentDownloadInfo.item = null; currentDownloadInfo.isItemValid = false; session.defaultSession.downloadURL(currentDownloadInfo.url); }
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('download-started', { id: currentDownloadInfo.id });
-    } catch (err) { console.log('下载错误:', err.message); currentDownloadInfo.isItemValid = false; currentDownloadInfo.status = 'error'; }
+      if (currentDownloadInfo.item && currentDownloadInfo.isItemValid) {
+        currentDownloadInfo.item.setSavePath(sp);
+        currentDownloadInfo.savePath = sp;
+        currentDownloadInfo.status = 'downloading';
+      } else {
+        currentDownloadInfo.savePath = sp;
+        currentDownloadInfo.status = 'pending';
+        currentDownloadInfo.item = null;
+        currentDownloadInfo.isItemValid = false;
+        session.defaultSession.downloadURL(currentDownloadInfo.url);
+      }
+      if (mainWindow && !mainWindow.isDestroyed())
+        mainWindow.webContents.send('download-started', { id: currentDownloadInfo.id });
+    } catch (err) {
+      console.log('下载错误:', err.message);
+      currentDownloadInfo.isItemValid = false;
+      currentDownloadInfo.status = 'error';
+    }
   }
 });
 
@@ -419,9 +519,19 @@ ipcMain.on('show-save-dialog', (e, data) => {
   dialog.showSaveDialog(mainWindow, { defaultPath: path.join(app.getPath('downloads'), data.defaultName || 'download'), filters: [{ name: 'All Files', extensions: ['*'] }] }).then(r => {
     if (!r.canceled && r.filePath) {
       if (currentDownloadInfo && currentDownloadInfo.item && currentDownloadInfo.isItemValid) {
-        try { const s = currentDownloadInfo.item.getState(); if (s === 'progressing' || s === 'interrupted') currentDownloadInfo.item.cancel(); currentDownloadInfo.isItemValid = false; currentDownloadInfo.status = 'error'; } catch (err) { console.log(err); }
+        try {
+          const s = currentDownloadInfo.item.getState();
+          if (s === 'progressing' || s === 'interrupted') currentDownloadInfo.item.cancel();
+          currentDownloadInfo.isItemValid = false;
+          currentDownloadInfo.status = 'error';
+        } catch (err) { console.log(err); }
       }
-      if (currentDownloadInfo) { currentDownloadInfo.savePath = r.filePath; currentDownloadInfo.status = 'pending'; currentDownloadInfo.item = null; currentDownloadInfo.isItemValid = false; }
+      if (currentDownloadInfo) {
+        currentDownloadInfo.savePath = r.filePath;
+        currentDownloadInfo.status = 'pending';
+        currentDownloadInfo.item = null;
+        currentDownloadInfo.isItemValid = false;
+      }
       if (data.url) session.defaultSession.downloadURL(data.url);
       e.reply('download-started', { id: currentDownloadInfo ? currentDownloadInfo.id : null });
     }
@@ -507,9 +617,29 @@ const userDataPath = path.join(os.homedir(), 'AppData', 'Roaming', 'OpenCosy', '
 const extensionsPath = path.join(userDataPath, 'extensions');
 const configPath = path.join(extensionsPath, 'config.json');
 
-async function ensureDirs() { try { await fs.mkdir(userDataPath, { recursive: true }); await fs.mkdir(extensionsPath, { recursive: true }); } catch (e) { console.error(e); } }
-async function readExtConfig() { try { await ensureDirs(); if (fsSync.existsSync(configPath)) return JSON.parse(await fs.readFile(configPath, 'utf8')); } catch (e) { console.error(e); } return { extensions: [] }; }
-async function saveExtConfig(c) { try { await ensureDirs(); await fs.writeFile(configPath, JSON.stringify(c, null, 2)); return true; } catch (e) { console.error(e); return false; } }
+async function ensureDirs() {
+  try {
+    await fs.mkdir(userDataPath, { recursive: true });
+    await fs.mkdir(extensionsPath, { recursive: true });
+  } catch (e) { console.error(e); }
+}
+
+async function readExtConfig() {
+  try {
+    await ensureDirs();
+    if (fsSync.existsSync(configPath))
+      return JSON.parse(await fs.readFile(configPath, 'utf8'));
+  } catch (e) { console.error(e); }
+  return { extensions: [] };
+}
+
+async function saveExtConfig(c) {
+  try {
+    await ensureDirs();
+    await fs.writeFile(configPath, JSON.stringify(c, null, 2));
+    return true;
+  } catch (e) { console.error(e); return false; }
+}
 async function validateExt(fp) {
   try {
     const mp = path.join(fp, 'manifest.json');
@@ -532,9 +662,30 @@ async function copyExt(src, id) {
     return true;
   } catch (e) { console.error(e); return false; }
 }
-async function loadEnabledExtensions() { try { const c = await readExtConfig(); for (const e of c.extensions) if (e.enabled) await loadExt(e); } catch (e) { console.error(e); } }
-async function loadExt(e) { try { const p = path.join(extensionsPath, e.id); if (fsSync.existsSync(p)) { await session.defaultSession.loadExtension(p); console.log('插件加载:', e.name); } } catch (err) { console.error(err); } }
-async function unloadExt(id) { try { for (const e of session.defaultSession.getAllExtensions()) if (e.id === id) { await session.defaultSession.removeExtension(id); break; } } catch (e) { console.error(e); } }
+async function loadEnabledExtensions() {
+  try {
+    const c = await readExtConfig();
+    for (const e of c.extensions)
+      if (e.enabled) await loadExt(e);
+  } catch (e) { console.error(e); }
+}
+
+async function loadExt(e) {
+  try {
+    const p = path.join(extensionsPath, e.id);
+    if (fsSync.existsSync(p)) {
+      await session.defaultSession.loadExtension(p);
+      console.log('插件加载:', e.name);
+    }
+  } catch (err) { console.error(err); }
+}
+
+async function unloadExt(id) {
+  try {
+    for (const e of session.defaultSession.getAllExtensions())
+      if (e.id === id) { await session.defaultSession.removeExtension(id); break; }
+  } catch (e) { console.error(e); }
+}
 
 ipcMain.handle('add-extension', async (e, fp) => {
   try {
