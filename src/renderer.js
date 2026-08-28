@@ -23,9 +23,71 @@ class TabManager {
     initialize() {
         this.setupEventListeners();
         this.setupIpcListeners();
+        this.setupKeyboardShortcuts();
         // 应用主题颜色
         this.loadAndApplyThemeColor();
+        // 上报UI元素实际高度，主进程用于计算WebContentsView位置
+        this.reportUiHeights();
+        window.addEventListener('resize', () => this.reportUiHeights());
         // 主进程已经创建了第一个标签页，这里不需要再创建
+    }
+
+    setupKeyboardShortcuts() {
+        document.addEventListener('keydown', (e) => {
+            const ctrl = e.ctrlKey || e.metaKey;
+            if (ctrl && e.key === 't') { e.preventDefault(); this.createNewTab(); }
+            else if (ctrl && e.key === 'w') { e.preventDefault(); this.closeCurrentTab(); }
+            else if (ctrl && e.key === 'r') { e.preventDefault(); this.refresh(); }
+            else if (e.key === 'F5') { e.preventDefault(); this.refresh(); }
+            else if (ctrl && e.key === 'l') { e.preventDefault(); this.focusAddressBar(); }
+            else if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); this.goBack(); }
+            else if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); this.goForward(); }
+            else if (ctrl && e.key === 'Tab') {
+                e.preventDefault();
+                const next = (this.tabs.findIndex(t => t.id === this.currentTabId) + 1) % this.tabs.length;
+                this.switchToTab(this.tabs[next].id);
+            }
+            else if (ctrl && e.shiftKey && e.key === 'Tab') {
+                e.preventDefault();
+                const idx = this.tabs.findIndex(t => t.id === this.currentTabId);
+                const prev = (idx - 1 + this.tabs.length) % this.tabs.length;
+                this.switchToTab(this.tabs[prev].id);
+            }
+            else if (ctrl && e.key >= '1' && e.key <= '9') {
+                e.preventDefault();
+                const idx = parseInt(e.key) - 1;
+                if (idx < this.tabs.length) this.switchToTab(this.tabs[idx].id);
+            }
+            else if (ctrl && e.key === 'p') { e.preventDefault(); ipcRenderer.send('print-page'); }
+            else if (ctrl && e.key === 'f') { e.preventDefault(); ipcRenderer.send('find-in-page'); }
+            else if (e.key === 'F11') { e.preventDefault(); ipcRenderer.send('toggle-fullscreen'); }
+            else if (ctrl && e.key === '=') { e.preventDefault(); ipcRenderer.send('zoom-in'); }
+            else if (ctrl && e.key === '-') { e.preventDefault(); ipcRenderer.send('zoom-out'); }
+            else if (ctrl && e.key === '0') { e.preventDefault(); ipcRenderer.send('zoom-reset'); }
+            else if (ctrl && e.key === 'j') { e.preventDefault(); this.createNewTab('cosy://downloadlist'); }
+            else if (ctrl && e.key === ',') { e.preventDefault(); this.createNewTab('cosy://setting'); }
+            else if (ctrl && e.shiftKey && e.key === 'T') { e.preventDefault(); ipcRenderer.send('restore-closed-tab'); }
+            else if (e.key === 'F12') { e.preventDefault(); ipcRenderer.send('toggle-devtools'); }
+            else if (ctrl && e.shiftKey && e.key === 'I') { e.preventDefault(); ipcRenderer.send('toggle-devtools'); }
+            else if (ctrl && e.key === 'u') { e.preventDefault(); ipcRenderer.send('view-source'); }
+            else if (ctrl && e.key === 's') { e.preventDefault(); ipcRenderer.send('save-page'); }
+            else if (ctrl && e.shiftKey && e.key === 'C') {
+                e.preventDefault();
+                ipcRenderer.invoke('get-current-url').then(url => {
+                    if (url) navigator.clipboard.writeText(url).catch(() => {});
+                });
+            }
+            else if (ctrl && e.shiftKey && e.key === 'N') { e.preventDefault(); ipcRenderer.send('open-incognito'); }
+        });
+    }
+
+    focusAddressBar() {
+        const input = document.getElementById('url-input');
+        if (input) { input.focus(); input.select(); }
+    }
+
+    closeCurrentTab() {
+        if (this.currentTabId) this.closeTab(this.currentTabId);
     }
     
     loadAndApplyThemeColor() {
@@ -51,6 +113,18 @@ class TabManager {
         document.documentElement.style.setProperty('--theme-color', color);
     }
 
+    reportUiHeights() {
+        const titlebar = document.querySelector('.titlebar');
+        const toolbar = document.querySelector('.toolbar');
+        const tabBar = document.querySelector('.tab-bar');
+        const heights = {
+            titlebar: titlebar ? titlebar.offsetHeight : 36,
+            toolbar: toolbar ? toolbar.offsetHeight : 52,
+            tabbar: tabBar ? tabBar.offsetHeight : 40
+        };
+        ipcRenderer.send('ui-heights', heights);
+    }
+
     setupEventListeners() {
         document.getElementById('add-tab').addEventListener('click', () => {
             this.createNewTab();
@@ -73,6 +147,35 @@ class TabManager {
                 this.navigateFromAddressBar();
             }
         });
+
+        document.getElementById('url-input').addEventListener('focus', (e) => {
+            e.target.select();
+        });
+
+        // 中键关闭标签页
+        const tabsContainer = document.getElementById('tabs-container');
+        if (tabsContainer) {
+            tabsContainer.addEventListener('mousedown', (e) => {
+                if (e.button === 1) {
+                    const tabEl = e.target.closest('.tab');
+                    if (tabEl) {
+                        e.preventDefault();
+                        const tabId = tabEl.getAttribute('data-tab-id');
+                        if (tabId) this.closeTab(tabId);
+                    }
+                }
+            });
+        }
+
+        // 双击标签栏空白新建标签
+        const tabBar = document.querySelector('.tab-bar');
+        if (tabBar) {
+            tabBar.addEventListener('dblclick', (e) => {
+                if (!e.target.closest('.tab') && !e.target.closest('.new-tab-button')) {
+                    this.createNewTab();
+                }
+            });
+        }
 
         document.getElementById('go').addEventListener('click', () => {
             this.navigateFromAddressBar();
@@ -121,6 +224,69 @@ class TabManager {
 
         // 添加右键菜单事件监听
         this.setupContextMenu();
+        // 标签页右键菜单
+        this.setupTabContextMenu();
+    }
+
+    setupTabContextMenu() {
+        const tabsContainer = document.getElementById('tabs-container');
+        if (!tabsContainer) return;
+        tabsContainer.addEventListener('contextmenu', (e) => {
+            const tabEl = e.target.closest('.tab');
+            if (!tabEl) return;
+            e.preventDefault();
+            const tabId = tabEl.getAttribute('data-tab-id');
+            const tabIndex = this.tabs.findIndex(t => t.id === tabId);
+            if (tabIndex === -1) return;
+            const menu = [
+                { label: '重新加载', action: () => { ipcRenderer.send('reload-tab'); } },
+                { label: '关闭标签页', action: () => this.closeTab(tabId) },
+                { label: '关闭其他标签页', action: () => this.closeOtherTabs(tabIndex) },
+                { label: '关闭右侧标签页', action: () => this.closeRightTabs(tabIndex) },
+                { type: 'separator' },
+                { label: '复制链接', action: () => {
+                    const tab = this.tabs[tabIndex];
+                    if (tab) navigator.clipboard.writeText(tab.url).catch(() => {});
+                }}
+            ];
+            this.showCustomMenu(e.clientX, e.clientY, menu);
+        });
+    }
+
+    showCustomMenu(x, y, items) {
+        const old = document.getElementById('custom-context-menu');
+        if (old) old.remove();
+        const menu = document.createElement('div');
+        menu.id = 'custom-context-menu';
+        menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;z-index:99999;background:#fff;border:1px solid #dfe4e1;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.15);padding:4px 0;min-width:160px;font-size:13px;`;
+        items.forEach(item => {
+            if (item.type === 'separator') {
+                const sep = document.createElement('div');
+                sep.style.cssText = 'height:1px;background:#e0e0e0;margin:4px 0;';
+                menu.appendChild(sep);
+            } else {
+                const mi = document.createElement('div');
+                mi.textContent = item.label;
+                mi.style.cssText = 'padding:6px 16px;cursor:pointer;';
+                mi.addEventListener('mouseenter', () => { mi.style.background = '#f0f0f0'; });
+                mi.addEventListener('mouseleave', () => { mi.style.background = 'transparent'; });
+                mi.addEventListener('click', () => { item.action(); menu.remove(); });
+                menu.appendChild(mi);
+            }
+        });
+        document.body.appendChild(menu);
+        const remove = () => { menu.remove(); document.removeEventListener('click', remove); };
+        setTimeout(() => document.addEventListener('click', remove), 0);
+    }
+
+    closeOtherTabs(keepIndex) {
+        const toClose = this.tabs.filter((_, i) => i !== keepIndex).map(t => t.id);
+        toClose.forEach(id => this.closeTab(id));
+    }
+
+    closeRightTabs(fromIndex) {
+        const toClose = this.tabs.slice(fromIndex + 1).map(t => t.id);
+        toClose.forEach(id => this.closeTab(id));
     }
 
     setupIpcListeners() {
@@ -521,18 +687,15 @@ class TabManager {
     }
 
     async goBack() {
+        ipcRenderer.send('go-back');
     }
 
     async goForward() {
+        ipcRenderer.send('go-forward');
     }
 
     async refresh() {
-        if (this.currentTabId) {
-            const currentTab = this.tabs.find(tab => tab.id === this.currentTabId);
-            if (currentTab) {
-                await this.navigateCurrentTab(currentTab.url);
-            }
-        }
+        ipcRenderer.send('reload-tab');
     }
 
     setupContextMenu() {
