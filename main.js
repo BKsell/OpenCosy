@@ -511,6 +511,12 @@ ipcMain.on('ui-heights', (e, heights) => {
 });
 
 ipcMain.handle('navigate-tab', (e, { tabId, url }) => {
+  // 安全校验: 仅允许http/https/cosy/file协议
+  if (!url || typeof url !== 'string') return { success: false, error: '无效URL' };
+  try {
+    const proto = new URL(url).protocol;
+    if (!['http:', 'https:', 'cosy:', 'file:'].includes(proto)) return { success: false, error: '不允许的协议' };
+  } catch { return { success: false, error: '无效URL' }; }
   const t = tabs.find(x => x.id === tabId);
   if (t) {
     t.url = url;
@@ -633,10 +639,28 @@ ipcMain.on('open-incognito', () => {
   incognito.loadURL('https://www.bing.com');
 });
 
-ipcMain.handle('create-tab', (e, url) => { const t = createNewTab(url); return { id: t.id, index: tabs.length - 1 }; });
+ipcMain.handle('create-tab', (e, url) => {
+  // 安全校验: 仅允许http/https/cosy协议
+  if (url && typeof url === 'string') {
+    try {
+      const proto = new URL(url).protocol;
+      if (!['http:', 'https:', 'cosy:'].includes(proto)) url = 'cosy://newtab';
+    } catch { url = 'cosy://newtab'; }
+  }
+  const t = createNewTab(url);
+  return { id: t.id, index: tabs.length - 1 };
+});
 ipcMain.handle('close-tab', (e, i) => { closeTab(i); return { success: true }; });
 ipcMain.handle('switch-tab', (e, i) => { switchToTab(i); return { success: true }; });
-ipcMain.on('navigate-to-url', (e, url) => { if (url) createNewTab(url); });
+ipcMain.on('navigate-to-url', (e, url) => {
+  // 安全校验: 仅允许http/https/cosy协议
+  if (url && typeof url === 'string') {
+    try {
+      const proto = new URL(url).protocol;
+      if (['http:', 'https:', 'cosy:'].includes(proto)) createNewTab(url);
+    } catch {}
+  }
+});
 
 ipcMain.on('get-download-info', (e) => {
   if (currentDownloadInfo) e.reply('download-info', { url: currentDownloadInfo.url, filename: currentDownloadInfo.filename, totalBytes: currentDownloadInfo.totalBytes || 0 });
@@ -742,7 +766,16 @@ ipcMain.handle('get-current-tab', () => {
 });
 ipcMain.handle('get-all-tabs', () => tabs.map(t => ({ id: t.id, url: t.url, title: t.title, favicon: t.favicon, isLoading: t.isLoading })));
 ipcMain.on('close-current-tab', () => { if (tabs.length > 0) closeTab(currentTabIndex); });
-ipcMain.on('create-tab', (e, url) => createNewTab(url));
+ipcMain.on('create-tab', (e, url) => {
+  // 安全校验: 仅允许http/https/cosy协议
+  if (url && typeof url === 'string') {
+    try {
+      const proto = new URL(url).protocol;
+      if (!['http:', 'https:', 'cosy:'].includes(proto)) url = 'cosy://newtab';
+    } catch { url = 'cosy://newtab'; }
+  }
+  createNewTab(url);
+});
 
 ipcMain.on('show-more-options-menu', (e, pos) => {
   const menu = new Menu();
@@ -865,7 +898,25 @@ ipcMain.handle('toggle-extension', async (e, { id, enabled }) => {
   try { const c = await readExtConfig(); const x = c.extensions.find(e => e.id === id); if (!x) return { success: false, error: '未找到' }; x.enabled = enabled; if (!await saveExtConfig(c)) return { success: false, error: '保存失败' }; return { success: true }; } catch (err) { return { success: false, error: err.message }; }
 });
 ipcMain.handle('remove-extension', async (e, id) => {
-  try { const c = await readExtConfig(); const i = c.extensions.findIndex(e => e.id === id); if (i === -1) return { success: false, error: '未找到' }; await unloadExt(id); const p = path.join(extensionsPath, id); if (fsSync.existsSync(p)) await fs.rm(p, { recursive: true, force: true }); c.extensions.splice(i, 1); if (!await saveExtConfig(c)) return { success: false, error: '保存失败' }; return { success: true }; } catch (err) { return { success: false, error: err.message }; }
+  try {
+    // 安全校验: 防止路径遍历删除任意目录
+    if (!id || typeof id !== 'string' || id.includes('..') || id.includes('/') || id.includes('\\') || path.isAbsolute(id)) {
+      return { success: false, error: '非法的插件ID' };
+    }
+    const c = await readExtConfig();
+    const i = c.extensions.findIndex(e => e.id === id);
+    if (i === -1) return { success: false, error: '未找到' };
+    await unloadExt(id);
+    const p = path.join(extensionsPath, id);
+    // 二次校验: 确保路径在extensions目录内
+    if (!path.resolve(p).startsWith(path.resolve(extensionsPath) + path.sep)) {
+      return { success: false, error: '路径越界' };
+    }
+    if (fsSync.existsSync(p)) await fs.rm(p, { recursive: true, force: true });
+    c.extensions.splice(i, 1);
+    if (!await saveExtConfig(c)) return { success: false, error: '保存失败' };
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
 });
 ipcMain.handle('browse-folder', async () => {
   try { const r = await dialog.showOpenDialog(mainWindow, { title: '选择插件文件夹', properties: ['openDirectory'] }); if (!r.canceled && r.filePaths.length) return { success: true, path: r.filePaths[0] }; return { success: false, error: '取消' }; } catch (e) { return { success: false, error: e.message }; }
