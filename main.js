@@ -12,6 +12,13 @@ let fileToOpen = null;
 let downloads = [];
 let currentDownloadInfo = null;
 let isTabBarCollapsed = false;
+let cachedTabLayout = 'horizontal';
+let boundsUpdateScheduled = false;
+let windowStateTimer = null;
+let uiHeights = { titlebar: 35, toolbar: 53, tabbar: 40 };
+let closedTabs = [];
+let history = [];
+let historyLoaded = false;
 
 class Tab {
   constructor(id, url = 'cosy://newtab') {
@@ -55,8 +62,9 @@ function getBrowserErrorText(errorCode) {
 function createWindow() {
   if (mainWindow && !mainWindow.isDestroyed()) return;
 
-  mainWindow = new BrowserWindow({
-    width: 1200, height: 800, minWidth: 800, minHeight: 600,
+  const ws = loadWindowState();
+  const windowOptions = {
+    width: ws.width || 1200, height: ws.height || 800, minWidth: 800, minHeight: 600,
     webPreferences: {
       // v2 安全加固: 禁用 remote 模块（已废弃，可被 XSS 利用访问主进程 API）
       // TODO: 后续应禁用 nodeIntegration + 启用 contextIsolation + preload script
@@ -65,27 +73,22 @@ function createWindow() {
     },
     titleBarStyle: 'hidden', frame: false, show: false,
     icon: path.join(__dirname, 'ico.png')
-  });
+  };
+  if (ws.x !== undefined && ws.y !== undefined) { windowOptions.x = ws.x; windowOptions.y = ws.y; }
 
-  const settingsPath = path.join(app.getPath('userData'), 'cosySettings.json');
-  let tabLayout = 'horizontal';
-  try {
-    if (fsSync.existsSync(settingsPath)) {
-      const settings = JSON.parse(fsSync.readFileSync(settingsPath, 'utf-8'));
-      tabLayout = settings.tabLayout || 'horizontal';
-    }
-  } catch (error) { console.error('读取设置失败:', error); }
+  mainWindow = new BrowserWindow(windowOptions);
+  if (ws.maximized) mainWindow.maximize();
 
-  const htmlFile = tabLayout === 'vertical' ? 'src/index_vertical.html' : 'src/index.html';
+  const htmlFile = cachedTabLayout === 'vertical' ? 'src/index_vertical.html' : 'src/index.html';
   mainWindow.loadFile(htmlFile);
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
     if (fileToOpen) { createNewTab(fileToOpen); fileToOpen = null; }
     else {
-      const sp = path.join(app.getPath('userData'), 'cosySettings.json');
       let defaultTabUrl = 'cosy://newtab';
       try {
+        const sp = path.join(app.getPath('userData'), 'cosySettings.json');
         if (fsSync.existsSync(sp)) {
           const s = JSON.parse(fsSync.readFileSync(sp, 'utf-8'));
           if (s.defaultTab === 'bing') defaultTabUrl = 'https://www.bing.com';
@@ -96,9 +99,11 @@ function createWindow() {
     }
   });
 
-  mainWindow.on('resize', updateBrowserViewBounds);
-  mainWindow.on('move', updateBrowserViewBounds);
-  mainWindow.once('closed', () => { mainWindow = null; });
+  mainWindow.on('resize', () => { updateBrowserViewBounds(); scheduleSaveWindowState(); });
+  mainWindow.on('move', () => { updateBrowserViewBounds(); scheduleSaveWindowState(); });
+  mainWindow.on('maximize', scheduleSaveWindowState);
+  mainWindow.on('unmaximize', scheduleSaveWindowState);
+  mainWindow.once('closed', () => { saveWindowState(); mainWindow = null; });
 }
 
 function getUrlProtocol(url) {
@@ -144,6 +149,9 @@ function loadTabContent(tab) {
       tab.url = navUrl; mainWindow.webContents.send('tab-updated', { id: tab.id, url: navUrl });
     });
     tab.view.webContents.on('did-redirect-navigation', (e, url) => {
+      tab.url = url; mainWindow.webContents.send('tab-updated', { id: tab.id, url });
+    });
+    tab.view.webContents.on('did-navigate', (e, url) => {
       tab.url = url; mainWindow.webContents.send('tab-updated', { id: tab.id, url });
     });
     tab.view.webContents.on('new-window', (e, navUrl, fn, disp) => {
@@ -257,25 +265,60 @@ function loadTabContent(tab) {
 }
 
 function updateBrowserViewBounds() {
-  if (tabs.length > 0 && currentTabIndex >= 0) {
-    const tab = tabs[currentTabIndex];
-    if (tab && tab.view) {
-      const [w, h] = mainWindow.getSize();
-      const sp = path.join(app.getPath('userData'), 'cosySettings.json');
-      let layout = 'horizontal';
-      try {
-        if (fsSync.existsSync(sp)) layout = JSON.parse(fsSync.readFileSync(sp, 'utf-8')).tabLayout || 'horizontal';
-      } catch (e) { console.error(e); }
-      let x, y, bw, bh;
-      if (layout === 'vertical') {
-        const tw = isTabBarCollapsed ? 50 : 200;
-        x = tw; y = 75; bw = w - tw; bh = h - 75;
-      } else {
-        x = 0; y = 116; bw = w; bh = h - 116;
+  if (boundsUpdateScheduled) return;
+  boundsUpdateScheduled = true;
+  setImmediate(() => {
+    boundsUpdateScheduled = false;
+    if (tabs.length > 0 && currentTabIndex >= 0) {
+      const tab = tabs[currentTabIndex];
+      if (tab && tab.view) {
+        const [w, h] = mainWindow.getSize();
+        let x, y, bw, bh;
+        if (cachedTabLayout === 'vertical') {
+          const tw = isTabBarCollapsed ? 50 : 200;
+          x = tw; y = 75; bw = w - tw; bh = h - 75;
+        } else {
+          const topOffset = uiHeights.titlebar + uiHeights.toolbar + uiHeights.tabbar;
+          x = 0; y = topOffset; bw = w; bh = h - topOffset;
+        }
+        tab.view.setBounds({ x, y, width: bw, height: bh });
       }
-      tab.view.setBounds({ x, y, width: bw, height: bh });
     }
-  }
+  });
+}
+
+function loadCachedSettings() {
+  const sp = path.join(app.getPath('userData'), 'cosySettings.json');
+  try {
+    if (fsSync.existsSync(sp)) {
+      const s = JSON.parse(fsSync.readFileSync(sp, 'utf-8'));
+      if (s.tabLayout) cachedTabLayout = s.tabLayout;
+    }
+  } catch (e) { console.error(e); }
+}
+
+function loadWindowState() {
+  const sp = path.join(app.getPath('userData'), 'windowState.json');
+  try {
+    if (fsSync.existsSync(sp)) return JSON.parse(fsSync.readFileSync(sp, 'utf-8'));
+  } catch (e) { console.error(e); }
+  return { width: 1200, height: 800, x: undefined, y: undefined, maximized: false };
+}
+
+function saveWindowState() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) return;
+  const state = mainWindow.isMaximized()
+    ? { maximized: true }
+    : { maximized: false, ...Object.fromEntries(['x', 'y', 'width', 'height'].map(k => [k, mainWindow.getBounds()[k]])) };
+  try {
+    fsSync.writeFileSync(path.join(app.getPath('userData'), 'windowState.json'), JSON.stringify(state, null, 2), 'utf-8');
+  } catch (e) { console.error(e); }
+}
+
+function scheduleSaveWindowState() {
+  if (windowStateTimer) clearTimeout(windowStateTimer);
+  windowStateTimer = setTimeout(saveWindowState, 500);
 }
 
 function switchToTab(i) {
@@ -289,6 +332,8 @@ function switchToTab(i) {
 function closeTab(i) {
   if (i >= 0 && i < tabs.length) {
     const t = tabs[i];
+    closedTabs.push({ url: t.url, title: t.title });
+    if (closedTabs.length > 20) closedTabs.shift();
     if (t.view) t.view.webContents.destroy();
     tabs.splice(i, 1);
     if (tabs.length === 0) {
@@ -423,6 +468,8 @@ app.whenReady().then(async () => {
   // v2 安全加固：移除 http/https 默认协议注册，避免静默接管系统默认浏览器
   if (process.platform === 'win32') app.setAsDefaultProtocolClient('cosy');
 
+  loadCachedSettings();
+
   protocol.registerFileProtocol('cosy', (req, cb) => {
     const u = req.url.replace('cosy://', '');
     const map = { 'setting': 'src/settings.html', 'newtab': 'src/newtab.html', 'extensions': 'src/extensions.html', 'version': 'src/version.html', 'download': 'src/download/index.html', 'downloadlist': 'src/downloadlist.html' };
@@ -453,6 +500,15 @@ ipcMain.on('window-control', (e, action) => {
 
 ipcMain.on('toggle-tabbar-collapse', (e, c) => { isTabBarCollapsed = c; updateBrowserViewBounds(); });
 
+ipcMain.on('ui-heights', (e, heights) => {
+  if (heights) {
+    if (heights.titlebar) uiHeights.titlebar = heights.titlebar;
+    if (heights.toolbar) uiHeights.toolbar = heights.toolbar;
+    if (heights.tabbar) uiHeights.tabbar = heights.tabbar;
+    updateBrowserViewBounds();
+  }
+});
+
 ipcMain.handle('navigate-tab', (e, { tabId, url }) => {
   const t = tabs.find(x => x.id === tabId);
   if (t) {
@@ -462,6 +518,118 @@ ipcMain.handle('navigate-tab', (e, { tabId, url }) => {
     return { success: true };
   }
   return { success: false };
+});
+
+ipcMain.on('go-back', () => {
+  if (tabs.length > 0 && currentTabIndex >= 0) {
+    const t = tabs[currentTabIndex];
+    if (t && t.view && t.view.webContents.canGoBack()) t.view.webContents.goBack();
+  }
+});
+
+ipcMain.on('go-forward', () => {
+  if (tabs.length > 0 && currentTabIndex >= 0) {
+    const t = tabs[currentTabIndex];
+    if (t && t.view && t.view.webContents.canGoForward()) t.view.webContents.goForward();
+  }
+});
+
+ipcMain.on('reload-tab', () => {
+  if (tabs.length > 0 && currentTabIndex >= 0) {
+    const t = tabs[currentTabIndex];
+    if (t && t.view) t.view.webContents.reload();
+  }
+});
+
+ipcMain.on('print-page', () => {
+  if (tabs.length > 0 && currentTabIndex >= 0) {
+    const t = tabs[currentTabIndex];
+    if (t && t.view) t.view.webContents.print();
+  }
+});
+
+ipcMain.on('find-in-page', () => {
+  if (tabs.length > 0 && currentTabIndex >= 0) {
+    const t = tabs[currentTabIndex];
+    if (t && t.view) {
+      const wc = t.view.webContents;
+      if (wc.isDestroyed()) return;
+      const selected = wc.getLastFindInPageMatches ? wc.getLastFindInPageMatches() : 0;
+      if (selected > 0) wc.stopFindInPage('clearSelection');
+      else wc.findInPage('', { findNext: true });
+    }
+  }
+});
+
+ipcMain.on('toggle-fullscreen', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setFullScreen(!mainWindow.isFullScreen());
+});
+
+ipcMain.on('zoom-in', () => {
+  if (tabs.length > 0 && currentTabIndex >= 0) {
+    const t = tabs[currentTabIndex];
+    if (t && t.view) { const v = t.view.webContents.getZoomLevel(); t.view.webContents.setZoomLevel(v + 0.5); }
+  }
+});
+
+ipcMain.on('zoom-out', () => {
+  if (tabs.length > 0 && currentTabIndex >= 0) {
+    const t = tabs[currentTabIndex];
+    if (t && t.view) { const v = t.view.webContents.getZoomLevel(); t.view.webContents.setZoomLevel(v - 0.5); }
+  }
+});
+
+ipcMain.on('zoom-reset', () => {
+  if (tabs.length > 0 && currentTabIndex >= 0) {
+    const t = tabs[currentTabIndex];
+    if (t && t.view) t.view.webContents.setZoomLevel(0);
+  }
+});
+
+ipcMain.on('restore-closed-tab', () => {
+  if (closedTabs.length > 0) {
+    const ct = closedTabs.pop();
+    const nt = createNewTab(ct.url);
+    switchToTab(tabs.indexOf(nt));
+  }
+});
+
+ipcMain.on('toggle-devtools', () => {
+  if (tabs.length > 0 && currentTabIndex >= 0) {
+    const t = tabs[currentTabIndex];
+    if (t && t.view) t.view.webContents.toggleDevTools();
+  }
+});
+
+ipcMain.on('view-source', () => {
+  if (tabs.length > 0 && currentTabIndex >= 0) {
+    const t = tabs[currentTabIndex];
+    if (t && t.view) {
+      const srcUrl = 'view-source:' + t.url;
+      createNewTab(srcUrl);
+    }
+  }
+});
+
+ipcMain.on('save-page', () => {
+  if (tabs.length > 0 && currentTabIndex >= 0) {
+    const t = tabs[currentTabIndex];
+    if (t && t.view) t.view.webContents.savePage(path.join(app.getPath('downloads'), 'page.html'), 'HTMLComplete').catch(e => console.error(e));
+  }
+});
+
+ipcMain.handle('get-current-url', () => {
+  if (tabs.length > 0 && currentTabIndex >= 0) return tabs[currentTabIndex].url;
+  return '';
+});
+
+ipcMain.on('open-incognito', () => {
+  const incognito = new BrowserWindow({
+    width: 1000, height: 700,
+    webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true },
+    title: '无痕浏览', icon: path.join(__dirname, 'ico.png')
+  });
+  incognito.loadURL('https://www.bing.com');
 });
 
 ipcMain.handle('create-tab', (e, url) => { const t = createNewTab(url); return { id: t.id, index: tabs.length - 1 }; });
@@ -702,7 +870,7 @@ ipcMain.handle('browse-folder', async () => {
   try { const r = await dialog.showOpenDialog(mainWindow, { title: '选择插件文件夹', properties: ['openDirectory'] }); if (!r.canceled && r.filePaths.length) return { success: true, path: r.filePaths[0] }; return { success: false, error: '取消' }; } catch (e) { return { success: false, error: e.message }; }
 });
 ipcMain.on('show-context-menu', (e, type, text) => createContextMenu(type, text).popup());
-ipcMain.on('save-settings', (e, s) => { try { fsSync.writeFileSync(path.join(app.getPath('userData'), 'cosySettings.json'), JSON.stringify(s, null, 2), 'utf-8'); e.reply('settings-saved', { success: true }); } catch (err) { console.error(err); e.reply('settings-saved', { success: false, error: err.message }); } });
+ipcMain.on('save-settings', (e, s) => { try { fsSync.writeFileSync(path.join(app.getPath('userData'), 'cosySettings.json'), JSON.stringify(s, null, 2), 'utf-8'); if (s.tabLayout) cachedTabLayout = s.tabLayout; e.reply('settings-saved', { success: true }); } catch (err) { console.error(err); e.reply('settings-saved', { success: false, error: err.message }); } });
 ipcMain.on('update-theme-color', (e, color) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update-theme-color', color); tabs.forEach(t => { if (t.view && t.view.webContents) t.view.webContents.send('update-theme-color', color); }); });
 ipcMain.on('get-settings', (e) => { try { const p = path.join(app.getPath('userData'), 'cosySettings.json'); if (fsSync.existsSync(p)) e.reply('settings-loaded', JSON.parse(fsSync.readFileSync(p, 'utf-8'))); else e.reply('settings-loaded', {}); } catch (err) { console.error(err); e.reply('settings-loaded', {}); } });
 ipcMain.on('export-config', async (e, content) => {
