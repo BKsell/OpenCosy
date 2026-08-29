@@ -5,239 +5,66 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>下载列表 - OpenCosy浏览器</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-            background: #f3f3f3;
-            color: #333;
-            line-height: 1.6;
-            min-height: 100vh;
-        }
-        
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 40px 20px;
-        }
-        
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-        }
-        
-        .header-actions {
-            display: flex;
-            justify-content: center;
-            gap: 15px;
-            margin-bottom: 20px;
-        }
-        
-        .title {
-            font-size: 32px;
-            font-weight: 300;
-            color: var(--theme-color, #0078d4);
-            margin-bottom: 10px;
-        }
-        
-        .subtitle {
-            font-size: 16px;
-            color: #666;
-            opacity: 0.8;
-        }
-        
-        .download-list {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-        }
-        
-        .download-item {
-            background: white;
-            border-radius: 8px;
-            padding: 20px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            display: flex;
-            align-items: center;
-            gap: 20px;
-            transition: all 0.3s ease;
-        }
-        
-        .download-item:hover {
-            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-            transform: translateY(-2px);
-        }
-        
-        .file-icon {
-            width: 64px;
-            height: 64px;
-            background: var(--theme-color, #0078d4);
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 32px;
-            flex-shrink: 0;
-        }
-        
-        .file-info {
-            flex: 1;
-            min-width: 0;
-        }
-        
-        .file-name {
-            font-size: 18px;
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 5px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-        
-        .file-meta {
-            font-size: 14px;
-            color: #666;
-            display: flex;
-            gap: 15px;
-            flex-wrap: wrap;
-        }
-        
-        .file-actions {
-            display: flex;
-            gap: 10px;
-            flex-shrink: 0;
-        }
-        
-        .action-btn {
-            padding: 8px 16px;
-            border: none;
-            border-radius: 4px;
-            font-size: 14px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            font-weight: 600;
-        }
-        
-        .btn-primary {
-            background: var(--theme-color, #0078d4);
-            color: white;
-        }
-        
-        .btn-primary:hover {
-            background: #106ebe;
-        }
-        
-        .btn-secondary {
-            background: #f3f1f2;
-            color: #333;
-            border: 1px solid #dfe4e1;
-        }
-        
-        .btn-secondary:hover {
-            background: #e8e6e7;
-        }
-        
-        .btn-danger {
-            background: #dc3545;
-            color: white;
-        }
-        
-        .btn-danger:hover {
-            background: #c82333;
-        }
-        
-        .empty-state {
-            text-align: center;
-            padding: 80px 20px;
-            color: #666;
-        }
-        
-        .empty-icon {
-            font-size: 64px;
-            margin-bottom: 20px;
-        }
-        
-        .empty-text {
-            font-size: 18px;
-            margin-bottom: 10px;
-        }
-        
-        .empty-subtext {
-            font-size: 14px;
-            opacity: 0.8;
-        }
-        
-        .progress-bar {
-            width: 100%;
-            height: 6px;
-            background: #e0e0e0;
-            border-radius: 3px;
-            margin-top: 10px;
-            overflow: hidden;
-        }
-        
-        .progress-fill {
-            height: 100%;
-            background: var(--theme-color, #0078d4);
-            transition: width 0.3s ease;
-        }
-        
-        .progress-text {
-            font-size: 12px;
-            color: #666;
-            margin-top: 5px;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #f3f3f3; color: #333; line-height: 1.6; min-height: 100vh; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 40px 20px; }
+        .header { text-align: center; margin-bottom: 40px; }
+        .header-actions { display: flex; justify-content: center; gap: 15px; margin-bottom: 20px; }
+        .title { font-size: 32px; font-weight: 300; color: var(--theme-color, #0078d4); margin-bottom: 10px; }
+        .subtitle { font-size: 16px; color: #666; opacity: 0.8; }
+        .download-list { display: flex; flex-direction: column; gap: 15px; }
+        .download-item { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); display: flex; align-items: center; gap: 20px; transition: all 0.3s ease; }
+        .download-item:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.15); transform: translateY(-2px); }
+        .file-icon { width: 64px; height: 64px; background: var(--theme-color, #0078d4); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 32px; flex-shrink: 0; }
+        .file-info { flex: 1; min-width: 0; }
+        .file-name { font-size: 18px; font-weight: 600; color: #333; margin-bottom: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .file-meta { font-size: 14px; color: #666; display: flex; gap: 15px; flex-wrap: wrap; }
+        .file-actions { display: flex; gap: 10px; flex-shrink: 0; }
+        .action-btn { padding: 8px 16px; border: none; border-radius: 4px; font-size: 14px; cursor: pointer; transition: all 0.2s ease; font-weight: 600; }
+        .btn-primary { background: var(--theme-color, #0078d4); color: white; }
+        .btn-primary:hover { background: #106ebe; }
+        .btn-secondary { background: #f3f1f2; color: #333; border: 1px solid #dfe4e1; }
+        .btn-secondary:hover { background: #e8e6e7; }
+        .btn-danger { background: #dc3545; color: white; }
+        .btn-danger:hover { background: #c82333; }
+        .empty-state { text-align: center; padding: 80px 20px; color: #666; }
+        .empty-icon { font-size: 64px; margin-bottom: 20px; }
+        .empty-text { font-size: 18px; margin-bottom: 10px; }
+        .empty-subtext { font-size: 14px; opacity: 0.8; }
+        .progress-bar { width: 100%; height: 6px; background: #e0e0e0; border-radius: 3px; margin-top: 10px; overflow: hidden; }
+        .progress-fill { height: 100%; background: var(--theme-color, #0078d4); transition: width 0.3s ease; }
+        .progress-text { font-size: 12px; color: #666; margin-top: 5px; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1 class="title">下载列表 Bata</h1>
+            <h1 class="title">下载列表</h1>
             <p class="subtitle">管理您的所有下载文件</p>
             <div class="header-actions">
                 <button class="action-btn btn-danger" id="clear-downloads">清空下载</button>
             </div>
         </div>
-        
-        <div class="download-list" id="download-list">
-            <div class="empty-state">
-                <div class="empty-icon">↓</div>
-                <p class="empty-text">暂无下载记录</p>
-                <p class="empty-subtext">下载的文件将显示在这里</p>
-            </div>
-        </div>
+        <div class="download-list" id="download-list"></div>
     </div>
-    
     <script>
-        const ipcRenderer = window.electron ? window.electron.ipcRenderer : null;
-
         let downloads = [];
 
-        // v2 安全加固: HTML 转义函数，防止下载文件名/ID 注入 XSS
         function escapeHtml(str) {
-            if (str === null || str === undefined) return '';
-            return String(str)
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#039;');
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
         }
 
-        // v2 安全加固: 安全地为内联 onclick 生成字符串参数
-        function jsStr(str) {
-            return JSON.stringify(String(str || ''));
+        function isValidPath(path) {
+            if (!path || typeof path !== 'string') return false;
+            if (path.includes('..')) return false;
+            if (path.includes('\0')) return false;
+            return true;
         }
-        
-        // 加载主题颜色
+
         function loadThemeColor() {
             try {
-                // 从localStorage获取设置
                 const settings = JSON.parse(localStorage.getItem('cosySettings') || '{}');
                 if (settings.themeColor) {
                     document.documentElement.style.setProperty('--theme-color', settings.themeColor);
@@ -246,97 +73,49 @@
                 console.error('加载主题颜色失败:', error);
             }
         }
-        
-        // 页面加载时应用主题颜色
-        document.addEventListener('DOMContentLoaded', loadThemeColor);
-        
-        // 获取下载列表
-        ipcRenderer.on('downloads-list', (event, data) => {
-            console.log('Received downloads list:', data);
-            const newDownloads = data || [];
-            
-            // 检查是否需要完全重新渲染
-            const listContainer = document.getElementById('download-list');
-            const currentItems = listContainer.querySelectorAll('.download-item');
-            
-            // 如果数量不一致，完全重新渲染
-            if (currentItems.length !== newDownloads.length) {
-                downloads = newDownloads;
-                renderDownloads();
-            } else {
-                // 否则只更新状态和按钮
-                downloads = newDownloads;
-                downloads.forEach(download => {
-                    const downloadItem = document.querySelector(`.download-item[data-id="${download.id}"]`);
-                    if (downloadItem) {
-                        updateDownloadItemUI(downloadItem, download);
-                    }
-                });
-            }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            loadThemeColor();
+            document.getElementById('clear-downloads').addEventListener('click', clearDownloads);
+            window.electronAPI.send('get-downloads');
         });
-        
-        // 下载进度更新
-        ipcRenderer.on('download-progress', (event, data) => {
-            console.log('Download progress:', data);
+
+        window.electronAPI.on('downloads-list', (data) => {
+            downloads = data || [];
+            renderDownloads();
+        });
+
+        window.electronAPI.on('download-progress', (data) => {
             updateDownloadProgress(data);
         });
-        
-        // 下载状态改变
-        ipcRenderer.on('download-status-changed', (event, data) => {
-            console.log('Download status changed:', data);
+
+        window.electronAPI.on('download-status-changed', (data) => {
             updateDownloadStatus(data.id, data.status);
         });
-        
-        // 下载完成
-        ipcRenderer.on('download-complete', (event, data) => {
-            console.log('Download complete:', data);
+
+        window.electronAPI.on('download-complete', (data) => {
             updateDownloadStatus(data.id, 'complete');
         });
-        
-        // 下载失败
-        ipcRenderer.on('download-error', (event, data) => {
-            console.log('Download error:', data);
+
+        window.electronAPI.on('download-error', (data) => {
             updateDownloadStatus(data.id, 'error');
         });
-        
-        // 下载已删除
-        ipcRenderer.on('download-removed', (event, data) => {
-            console.log('Download removed:', data);
+
+        window.electronAPI.on('download-removed', (data) => {
             const index = downloads.findIndex(d => d.id === data.id);
             if (index !== -1) {
                 downloads.splice(index, 1);
-                
-                // 移除对应的 DOM 元素
-                const downloadItem = document.querySelector(`.download-item[data-id="${data.id}"]`);
-                if (downloadItem) {
-                    downloadItem.remove();
-                }
-                
-                // 如果没有下载了，显示空状态
-                if (downloads.length === 0) {
-                    renderDownloads();
-                }
+                renderDownloads();
             }
         });
-        
-        // 下载列表已清空
-        ipcRenderer.on('downloads-cleared', (event) => {
-            console.log('Downloads cleared');
+
+        window.electronAPI.on('downloads-cleared', () => {
             downloads = [];
             renderDownloads();
         });
-        
 
-        function escapeHtml(str) {
-            const div = document.createElement('div');
-            div.textContent = str;
-            return div.innerHTML;
-        }
-
-        // 渲染下载列表
         function renderDownloads() {
             const listContainer = document.getElementById('download-list');
-            
             if (downloads.length === 0) {
                 listContainer.innerHTML = `
                     <div class="empty-state">
@@ -347,110 +126,139 @@
                 `;
                 return;
             }
-            
-            // v2 安全加固: 所有用户可控字段（filename/id/savePath/speed/progress）均转义
-            const safeProgress = Math.max(0, Math.min(100, Number(download.progress) || 0));
-            listContainer.innerHTML = downloads.map(download => `
-                <div class="download-item" data-id="${escapeHtml(download.id)}">
-                    <div class="file-icon">📄</div>
-                    <div class="file-info">
-                        <div class="file-name">${escapeHtml(download.filename)}</div>
-                        <div class="file-meta">
-                            <span>${formatSize(download.totalBytes)}</span>
-                            <span>${formatDate(download.startTime)}</span>
-                            <span>${getStatusText(download.status)}</span>
-                        </div>
-                        ${download.status === 'downloading' ? `
-                            <div class="progress-bar">
-                                <div class="progress-fill" style="width: ${safeProgress}%"></div>
-                            </div>
-                            <div class="progress-text">${formatSize(download.receivedBytes)} / ${formatSize(download.totalBytes)} (${safeProgress}%) - ${escapeHtml(download.speed)}</div>
-                        ` : ''}
-                    </div>
-                    <div class="file-actions">
-                        ${download.status === 'complete' ? `
-                            <button class="action-btn btn-primary" onclick="openFile(${jsStr(download.savePath)})">打开</button>
-                            <button class="action-btn btn-secondary" onclick="openFolder(${jsStr(download.savePath)})">文件夹</button>
-                            <button class="action-btn btn-danger" onclick="removeDownload(${jsStr(download.id)})">删除</button>
-                        ` : ''}
-                        ${download.status === 'pending' ? `
-                            <button class="action-btn btn-secondary">等待中</button>
-                        ` : ''}
-                        ${download.status === 'downloading' ? `
-                            <button class="action-btn btn-secondary" onclick="pauseDownload(${jsStr(download.id)})">暂停</button>
-                            <button class="action-btn btn-danger" onclick="cancelDownload(${jsStr(download.id)})">取消</button>
-                        ` : ''}
-                        ${download.status === 'paused' ? `
-                            <button class="action-btn btn-primary" onclick="resumeDownload(${jsStr(download.id)})">继续</button>
-                            <button class="action-btn btn-danger" onclick="cancelDownload(${jsStr(download.id)})">取消</button>
-                        ` : ''}
-                        ${download.status === 'error' ? `
-                            <button class="action-btn btn-secondary" onclick="retryDownload(${jsStr(download.id)})">重试</button>
-                            <button class="action-btn btn-danger" onclick="removeDownload(${jsStr(download.id)})">删除</button>
-                        ` : ''}
-                    </div>
-                </div>
-            `).join('');
+
+            listContainer.innerHTML = '';
+            downloads.forEach(download => {
+                const item = document.createElement('div');
+                item.className = 'download-item';
+                item.setAttribute('data-id', download.id);
+
+                const icon = document.createElement('div');
+                icon.className = 'file-icon';
+                icon.textContent = '📄';
+
+                const info = document.createElement('div');
+                info.className = 'file-info';
+
+                const name = document.createElement('div');
+                name.className = 'file-name';
+                name.textContent = download.filename || '未知文件';
+
+                const meta = document.createElement('div');
+                meta.className = 'file-meta';
+                const sizeSpan = document.createElement('span');
+                sizeSpan.textContent = formatSize(download.totalBytes);
+                const dateSpan = document.createElement('span');
+                dateSpan.textContent = formatDate(download.startTime);
+                const statusSpan = document.createElement('span');
+                statusSpan.textContent = getStatusText(download.status);
+                meta.appendChild(sizeSpan);
+                meta.appendChild(dateSpan);
+                meta.appendChild(statusSpan);
+
+                info.appendChild(name);
+                info.appendChild(meta);
+
+                if (download.status === 'downloading') {
+                    const progressBar = document.createElement('div');
+                    progressBar.className = 'progress-bar';
+                    const progressFill = document.createElement('div');
+                    progressFill.className = 'progress-fill';
+                    progressFill.style.width = (download.progress || 0) + '%';
+                    progressBar.appendChild(progressFill);
+
+                    const progressText = document.createElement('div');
+                    progressText.className = 'progress-text';
+                    progressText.textContent = `${formatSize(download.receivedBytes)} / ${formatSize(download.totalBytes)} (${download.progress}%) - ${download.speed}`;
+
+                    info.appendChild(progressBar);
+                    info.appendChild(progressText);
+                }
+
+                const actions = document.createElement('div');
+                actions.className = 'file-actions';
+
+                if (download.status === 'complete') {
+                    const openBtn = createActionButton('打开', 'btn-primary', () => openFile(download.savePath));
+                    const folderBtn = createActionButton('文件夹', 'btn-secondary', () => openFolder(download.savePath));
+                    const deleteBtn = createActionButton('删除', 'btn-danger', () => removeDownload(download.id));
+                    actions.appendChild(openBtn);
+                    actions.appendChild(folderBtn);
+                    actions.appendChild(deleteBtn);
+                } else if (download.status === 'pending') {
+                    const pendingBtn = createActionButton('等待中', 'btn-secondary', null);
+                    pendingBtn.disabled = true;
+                    actions.appendChild(pendingBtn);
+                } else if (download.status === 'downloading') {
+                    const pauseBtn = createActionButton('暂停', 'btn-secondary', () => pauseDownload(download.id));
+                    const cancelBtn = createActionButton('取消', 'btn-danger', () => cancelDownload(download.id));
+                    actions.appendChild(pauseBtn);
+                    actions.appendChild(cancelBtn);
+                } else if (download.status === 'paused') {
+                    const resumeBtn = createActionButton('继续', 'btn-primary', () => resumeDownload(download.id));
+                    const cancelBtn = createActionButton('取消', 'btn-danger', () => cancelDownload(download.id));
+                    actions.appendChild(resumeBtn);
+                    actions.appendChild(cancelBtn);
+                } else if (download.status === 'error') {
+                    const retryBtn = createActionButton('重试', 'btn-secondary', () => retryDownload(download.id));
+                    const deleteBtn = createActionButton('删除', 'btn-danger', () => removeDownload(download.id));
+                    actions.appendChild(retryBtn);
+                    actions.appendChild(deleteBtn);
+                }
+
+                item.appendChild(icon);
+                item.appendChild(info);
+                item.appendChild(actions);
+                listContainer.appendChild(item);
+            });
         }
-        
-        // 更新下载进度
+
+        function createActionButton(text, className, onClick) {
+            const btn = document.createElement('button');
+            btn.className = 'action-btn ' + className;
+            btn.textContent = text;
+            if (onClick) btn.addEventListener('click', onClick);
+            return btn;
+        }
+
         function updateDownloadProgress(data) {
             let download = downloads.find(d => d.id === data.id);
-            
-            // 如果找不到下载项，可能是新下载，重新获取列表
             if (!download) {
-                console.log('Download not found, requesting fresh list:', data.id);
-                ipcRenderer.send('get-downloads');
+                window.electronAPI.send('get-downloads');
                 return;
             }
-            
-            // 更新下载数据
             download.receivedBytes = data.receivedBytes;
             download.progress = data.progress;
             download.speed = data.speed;
             download.totalBytes = data.totalBytes;
-            
-            // 局部更新 DOM，避免重新渲染整个列表
+
             const downloadItem = document.querySelector(`.download-item[data-id="${data.id}"]`);
             if (downloadItem) {
                 updateDownloadItemUI(downloadItem, download);
             } else {
-                // 如果 DOM 元素不存在，可能是新下载，重新渲染
-                console.log('Download item not in DOM, re-rendering:', data.id);
-                ipcRenderer.send('get-downloads');
+                renderDownloads();
             }
         }
-        
-        // 更新下载状态
+
         function updateDownloadStatus(id, status) {
             const download = downloads.find(d => d.id === id);
             if (download) {
                 download.status = status;
-                
-                // 局部更新 DOM
                 const downloadItem = document.querySelector(`.download-item[data-id="${id}"]`);
                 if (downloadItem) {
                     updateDownloadItemUI(downloadItem, download);
                 } else {
-                    // 如果 DOM 元素不存在，重新渲染
                     renderDownloads();
                 }
             } else {
-                // 如果找不到下载项，重新获取列表
-                console.log('Download not found for status update:', id);
-                ipcRenderer.send('get-downloads');
+                window.electronAPI.send('get-downloads');
             }
         }
-        
-        // 更新单个下载项的 UI
+
         function updateDownloadItemUI(downloadItem, download) {
-            // 更新文件名
             const fileName = downloadItem.querySelector('.file-name');
-            if (fileName) {
-                fileName.textContent = download.filename;
-            }
-            
-            // 更新文件信息
+            if (fileName) fileName.textContent = download.filename;
+
             const fileMeta = downloadItem.querySelector('.file-meta');
             if (fileMeta) {
                 const metaSpans = fileMeta.querySelectorAll('span');
@@ -460,233 +268,135 @@
                     metaSpans[2].textContent = getStatusText(download.status);
                 }
             }
-            
-            // 更新进度条和进度文本
-            const progressBar = downloadItem.querySelector('.progress-bar');
-            const progressFill = downloadItem.querySelector('.progress-fill');
-            const progressText = downloadItem.querySelector('.progress-text');
-            
+
+            let progressBar = downloadItem.querySelector('.progress-bar');
+            let progressText = downloadItem.querySelector('.progress-text');
+
             if (download.status === 'downloading') {
-                // 显示进度条
-                if (progressBar && !progressBar.parentNode.contains(progressBar)) {
+                if (!progressBar) {
                     const fileInfo = downloadItem.querySelector('.file-info');
                     if (fileInfo) {
-                        // v2 安全加固: progress 限制 0-100，speed 转义
-                        const sp = Math.max(0, Math.min(100, Number(download.progress) || 0));
-                        const progressHTML = `
-                            <div class="progress-bar">
-                                <div class="progress-fill" style="width: ${sp}%"></div>
-                            </div>
-                            <div class="progress-text">${formatSize(download.receivedBytes)} / ${formatSize(download.totalBytes)} (${sp}%) - ${escapeHtml(download.speed)}</div>
-                        `;
-                        fileInfo.insertAdjacentHTML('beforeend', progressHTML);
+                        progressBar = document.createElement('div');
+                        progressBar.className = 'progress-bar';
+                        const progressFill = document.createElement('div');
+                        progressFill.className = 'progress-fill';
+                        progressBar.appendChild(progressFill);
+                        progressText = document.createElement('div');
+                        progressText.className = 'progress-text';
+                        fileInfo.appendChild(progressBar);
+                        fileInfo.appendChild(progressText);
                     }
-                } else if (progressFill && progressText) {
-                    progressFill.style.width = `${download.progress}%`;
+                }
+                if (progressBar) {
+                    const progressFill = progressBar.querySelector('.progress-fill');
+                    if (progressFill) progressFill.style.width = (download.progress || 0) + '%';
+                }
+                if (progressText) {
                     progressText.textContent = `${formatSize(download.receivedBytes)} / ${formatSize(download.totalBytes)} (${download.progress}%) - ${download.speed}`;
                 }
             } else {
-                // 隐藏进度条
-                if (progressBar) {
-                    progressBar.remove();
-                }
-                if (progressText) {
-                    progressText.remove();
-                }
+                if (progressBar) progressBar.remove();
+                if (progressText) progressText.remove();
             }
-            
-            // 更新按钮（v2 安全加固: 内联 onclick 参数使用 jsStr 安全转义）
+
             const fileActions = downloadItem.querySelector('.file-actions');
             if (fileActions) {
-                let buttonsHtml = '';
-
+                fileActions.innerHTML = '';
                 if (download.status === 'complete') {
-                    buttonsHtml = `
-                        <button class="action-btn btn-primary" onclick="openFile(${jsStr(download.savePath)})">打开</button>
-                        <button class="action-btn btn-secondary" onclick="openFolder(${jsStr(download.savePath)})">文件夹</button>
-                        <button class="action-btn btn-danger" onclick="removeDownload(${jsStr(download.id)})">删除</button>
-                    `;
-                } else if (download.status === 'pending') {
-                    buttonsHtml = `<button class="action-btn btn-secondary">等待中</button>`;
+                    fileActions.appendChild(createActionButton('打开', 'btn-primary', () => openFile(download.savePath)));
+                    fileActions.appendChild(createActionButton('文件夹', 'btn-secondary', () => openFolder(download.savePath)));
+                    fileActions.appendChild(createActionButton('删除', 'btn-danger', () => removeDownload(download.id)));
                 } else if (download.status === 'downloading') {
-                    buttonsHtml = `
-                        <button class="action-btn btn-secondary" onclick="pauseDownload(${jsStr(download.id)})">暂停</button>
-                        <button class="action-btn btn-danger" onclick="cancelDownload(${jsStr(download.id)})">取消</button>
-                    `;
+                    fileActions.appendChild(createActionButton('暂停', 'btn-secondary', () => pauseDownload(download.id)));
+                    fileActions.appendChild(createActionButton('取消', 'btn-danger', () => cancelDownload(download.id)));
                 } else if (download.status === 'paused') {
-                    buttonsHtml = `
-                        <button class="action-btn btn-primary" onclick="resumeDownload(${jsStr(download.id)})">继续</button>
-                        <button class="action-btn btn-danger" onclick="cancelDownload(${jsStr(download.id)})">取消</button>
-                    `;
+                    fileActions.appendChild(createActionButton('继续', 'btn-primary', () => resumeDownload(download.id)));
+                    fileActions.appendChild(createActionButton('取消', 'btn-danger', () => cancelDownload(download.id)));
                 } else if (download.status === 'error') {
-                    buttonsHtml = `
-                        <button class="action-btn btn-secondary" onclick="retryDownload(${jsStr(download.id)})">重试</button>
-                        <button class="action-btn btn-danger" onclick="removeDownload(${jsStr(download.id)})">删除</button>
-                    `;
+                    fileActions.appendChild(createActionButton('重试', 'btn-secondary', () => retryDownload(download.id)));
+                    fileActions.appendChild(createActionButton('删除', 'btn-danger', () => removeDownload(download.id)));
                 }
-
-                fileActions.innerHTML = buttonsHtml;
             }
         }
-        
-        // 格式化文件大小
+
+        function openFile(savePath) {
+            if (!isValidPath(savePath)) {
+                console.error('无效的文件路径');
+                return;
+            }
+            window.electronAPI.send('open-file', savePath);
+        }
+
+        function openFolder(savePath) {
+            if (!isValidPath(savePath)) {
+                console.error('无效的文件夹路径');
+                return;
+            }
+            window.electronAPI.send('open-folder', savePath);
+        }
+
+        function removeDownload(id) {
+            window.electronAPI.send('remove-download', id);
+        }
+
+        function pauseDownload(id) {
+            window.electronAPI.send('pause-download', id);
+        }
+
+        function resumeDownload(id) {
+            window.electronAPI.send('resume-download', id);
+        }
+
+        function cancelDownload(id) {
+            window.electronAPI.send('cancel-download', id);
+        }
+
+        function retryDownload(id) {
+            const download = downloads.find(d => d.id === id);
+            if (download && download.url) {
+                window.electronAPI.send('retry-download', { url: download.url, filename: download.filename });
+            }
+        }
+
+        function clearDownloads() {
+            if (confirm('确定要清空所有下载记录吗？')) {
+                window.electronAPI.send('clear-downloads');
+            }
+        }
+
         function formatSize(bytes) {
-            if (!bytes) return '0 B';
-            
+            if (!bytes || bytes <= 0) return '0 B';
             const units = ['B', 'KB', 'MB', 'GB', 'TB'];
             let size = bytes;
             let unitIndex = 0;
-            
             while (size >= 1024 && unitIndex < units.length - 1) {
                 size /= 1024;
                 unitIndex++;
             }
-            
             return size.toFixed(2) + ' ' + units[unitIndex];
         }
-        
-        // 格式化日期
+
         function formatDate(timestamp) {
-            if (!timestamp) return '-';
-            
-            const date = new Date(timestamp);
-            const now = new Date();
-            const diff = now - date;
-            
-            if (diff < 60000) return '刚刚';
-            if (diff < 3600000) return Math.floor(diff / 60000) + '分钟前';
-            if (diff < 86400000) return Math.floor(diff / 3600000) + '小时前';
-            if (diff < 604800000) return Math.floor(diff / 86400000) + '天前';
-            
-            return date.toLocaleDateString('zh-CN');
+            if (!timestamp) return '未知时间';
+            try {
+                const date = new Date(timestamp);
+                return date.toLocaleString('zh-CN');
+            } catch {
+                return '未知时间';
+            }
         }
-        
-        // 获取状态文本
+
         function getStatusText(status) {
             const statusMap = {
+                'pending': '等待中',
                 'downloading': '下载中',
                 'paused': '已暂停',
                 'complete': '已完成',
-                'error': '下载失败'
+                'error': '失败',
+                'cancelled': '已取消'
             };
             return statusMap[status] || status;
         }
-        
-        // 打开文件
-        function openFile(path) {
-            ipcRenderer.send('open-file', path);
-        }
-        
-        // 打开文件夹
-        function openFolder(path) {
-            ipcRenderer.send('open-folder', path);
-        }
-        
-        // 暂停下载
-        function pauseDownload(id) {
-            ipcRenderer.send('pause-download', id);
-        }
-        
-        // 继续下载
-        function resumeDownload(id) {
-            ipcRenderer.send('resume-download', id);
-        }
-        
-        // 取消下载
-        function cancelDownload(id) {
-            ipcRenderer.send('cancel-download', id);
-        }
-        
-        // 重试下载
-        function retryDownload(id) {
-            const download = downloads.find(d => d.id === id);
-            if (download) {
-                ipcRenderer.send('retry-download', { url: download.url, filename: download.filename });
-            }
-        }
-        
-        // 删除下载记录
-        function removeDownload(id) {
-            if (confirm('确定要删除这条下载记录吗？')) {
-                ipcRenderer.send('remove-download', id);
-            }
-        }
-        
-        // 清空下载列表
-        document.getElementById('clear-downloads').addEventListener('click', () => {
-            if (downloads.length === 0) {
-                alert('下载列表已经是空的');
-                return;
-            }
-            
-            if (confirm('确定要清空所有下载记录吗？此操作不可恢复。')) {
-                ipcRenderer.send('clear-downloads');
-            }
-        });
-        
-        // 监听清空成功事件
-        ipcRenderer.on('clear-downloads-success', (event, message) => {
-            alert(message || '下载列表已成功清空');
-        });
-        
-        // 页面加载时请求下载列表
-        ipcRenderer.send('get-downloads');
-        
-        // 定时同步下载进度
-        let syncInterval = null;
-        
-        function startSync() {
-            if (syncInterval) return;
-            syncInterval = setInterval(() => {
-                // 检查是否有正在下载的任务
-                const hasActiveDownloads = downloads.some(d => d.status === 'downloading' || d.status === 'pending');
-                if (hasActiveDownloads) {
-                    ipcRenderer.send('get-downloads');
-                } else {
-                    // 没有活动下载，停止同步
-                    stopSync();
-                }
-            }, 1000);
-        }
-        
-        function stopSync() {
-            if (syncInterval) {
-                clearInterval(syncInterval);
-                syncInterval = null;
-            }
-        }
-        
-        // 监听下载列表变化，决定是否需要启动同步
-        ipcRenderer.on('downloads-list', (event, data) => {
-            const newDownloads = data || [];
-            
-            // 检查是否有正在下载的任务
-            const hasActiveDownloads = newDownloads.some(d => d.status === 'downloading' || d.status === 'pending');
-            if (hasActiveDownloads) {
-                startSync();
-            } else {
-                stopSync();
-            }
-        });
-        
-        // 页面可见性变化时控制同步
-        document.addEventListener('visibilitychange', () => {
-            if (document.hidden) {
-                // 页面隐藏时停止同步
-                stopSync();
-            } else {
-                // 页面显示时，如果有活动下载则启动同步
-                const hasActiveDownloads = downloads.some(d => d.status === 'downloading' || d.status === 'pending');
-                if (hasActiveDownloads) {
-                    startSync();
-                }
-            }
-        });
-        
-        // 页面卸载时清理
-        window.addEventListener('beforeunload', () => {
-            stopSync();
-        });
     </script>
 </body>
 </html>
