@@ -6,249 +6,48 @@
     <title>插件管理 - OpenCosy浏览器</title>
     <script src="constants.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-            background: #f3f3f3;
-            color: #333;
-            line-height: 1.6;
-        }
-        
-        .extensions-container {
-            max-width: 1000px;
-            margin: 0 auto;
-            padding: 40px 20px;
-        }
-        
-        .extensions-header {
-            text-align: center;
-            margin-bottom: 40px;
-        }
-        
-        .extensions-title {
-            font-size: 32px;
-            font-weight: 300;
-            color: #0078d4;
-            margin-bottom: 10px;
-        }
-        
-        .extensions-subtitle {
-            font-size: 16px;
-            color: #666;
-            opacity: 0.8;
-        }
-        
-        .extensions-section {
-            background: white;
-            border-radius: 8px;
-            padding: 30px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        
-        .section-title {
-            font-size: 20px;
-            font-weight: 600;
-            margin-bottom: 20px;
-            color: #0078d4;
-            border-bottom: 2px solid #f0f0f0;
-            padding-bottom: 10px;
-        }
-        
-        .add-extension {
-            display: flex;
-            gap: 15px;
-            align-items: center;
-            margin-bottom: 30px;
-        }
-        
-        .folder-input {
-            flex: 1;
-            padding: 8px 12px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 14px;
-            background: #f9f9f9;
-        }
-        
-        .browse-button {
-            background: #0078d4;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-        }
-        
-        .browse-button:hover {
-            background: #106ebe;
-        }
-        
-        .extensions-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 20px;
-        }
-        
-        .extension-card {
-            background: #f9f9f9;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
-            padding: 20px;
-            transition: all 0.3s ease;
-        }
-        
-        .extension-card:hover {
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            transform: translateY(-2px);
-        }
-        
-        .extension-header {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            margin-bottom: 15px;
-        }
-        
-        .extension-icon {
-            width: 48px;
-            height: 48px;
-            border-radius: 8px;
-            object-fit: contain;
-            background: #e0e0e0;
-        }
-        
-        .extension-info {
-            flex: 1;
-        }
-        
-        .extension-name {
-            font-size: 16px;
-            font-weight: 600;
-            margin-bottom: 5px;
-        }
-        
-        .extension-version {
-            font-size: 12px;
-            color: #666;
-        }
-        
-        .extension-description {
-            font-size: 14px;
-            color: #666;
-            margin-bottom: 15px;
-            line-height: 1.4;
-        }
-        
-        .extension-controls {
-            display: flex;
-            gap: 10px;
-            justify-content: space-between;
-        }
-        
-        .toggle-button {
-            flex: 1;
-            padding: 6px 12px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 12px;
-            transition: all 0.3s ease;
-        }
-        
-        .toggle-enabled {
-            background: #28a745;
-            color: white;
-        }
-        
-        .toggle-disabled {
-            background: #dc3545;
-            color: white;
-        }
-        
-        .remove-button {
-            background: #6c757d;
-            color: white;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 12px;
-        }
-        
-        .remove-button:hover {
-            background: #5a6268;
-        }
-        
-        .empty-state {
-            text-align: center;
-            padding: 40px;
-            color: #666;
-        }
-        
-        .empty-icon {
-            font-size: 48px;
-            margin-bottom: 20px;
-            opacity: 0.5;
-        }
-        
-        .back-button {
-            background: #6c757d;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            margin-top: 20px;
-        }
-        
-        .back-button:hover {
-            background: #5a6268;
-        }
-        
-        .status-message {
-            padding: 10px;
-            border-radius: 4px;
-            margin-bottom: 15px;
-            font-size: 14px;
-        }
-        
-        .status-success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-        
-        .status-error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #f3f3f3; color: #333; line-height: 1.6; }
+        .extensions-container { max-width: 1000px; margin: 0 auto; padding: 40px 20px; }
+        .extensions-header { text-align: center; margin-bottom: 40px; }
+        .extensions-title { font-size: 32px; font-weight: 300; color: #0078d4; margin-bottom: 10px; }
+        .extensions-subtitle { font-size: 16px; color: #666; opacity: 0.8; }
+        .extensions-section { background: white; border-radius: 8px; padding: 30px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .section-title { font-size: 20px; font-weight: 600; margin-bottom: 20px; color: #0078d4; border-bottom: 2px solid #f0f0f0; padding-bottom: 10px; }
+        .add-extension { display: flex; gap: 15px; align-items: center; margin-bottom: 30px; }
+        .folder-input { flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; background: #f9f9f9; }
+        .browse-button { background: #0078d4; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 14px; }
+        .browse-button:hover { background: #106ebe; }
+        .extensions-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+        .extension-card { background: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; transition: all 0.3s ease; }
+        .extension-card:hover { box-shadow: 0 4px 15px rgba(0,0,0,0.1); transform: translateY(-2px); }
+        .extension-header { display: flex; align-items: center; gap: 15px; margin-bottom: 15px; }
+        .extension-icon { width: 48px; height: 48px; border-radius: 8px; object-fit: contain; background: #e0e0e0; }
+        .extension-info { flex: 1; }
+        .extension-name { font-size: 16px; font-weight: 600; margin-bottom: 5px; }
+        .extension-version { font-size: 12px; color: #666; }
+        .extension-description { font-size: 14px; color: #666; margin-bottom: 15px; line-height: 1.4; }
+        .extension-controls { display: flex; gap: 10px; justify-content: space-between; }
+        .toggle-button { flex: 1; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; transition: all 0.3s ease; }
+        .toggle-enabled { background: #28a745; color: white; }
+        .toggle-disabled { background: #dc3545; color: white; }
+        .remove-button { background: #6c757d; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .remove-button:hover { background: #5a6268; }
+        .empty-state { text-align: center; padding: 40px; color: #666; }
+        .empty-icon { font-size: 48px; margin-bottom: 20px; opacity: 0.5; }
+        .back-button { background: #6c757d; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px; margin-top: 20px; }
+        .back-button:hover { background: #5a6268; }
+        .status-message { padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 14px; }
+        .status-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .status-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .experimental-notice { background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px; padding: 15px; margin-top: 20px; text-align: left; }
+        .notice-icon { font-size: 24px; }
+        .notice-content p { margin: 5px 0; font-size: 14px; }
         @media (max-width: 600px) {
-            .extensions-container {
-                padding: 20px 10px;
-            }
-            
-            .extensions-section {
-                padding: 20px;
-            }
-            
-            .add-extension {
-                flex-direction: column;
-                align-items: stretch;
-            }
-            
-            .extensions-grid {
-                grid-template-columns: 1fr;
-            }
+            .extensions-container { padding: 20px 10px; }
+            .extensions-section { padding: 20px; }
+            .add-extension { flex-direction: column; align-items: stretch; }
+            .extensions-grid { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -257,20 +56,17 @@
         <div class="extensions-header">
             <h1 class="extensions-title">OpenCosy浏览器插件管理</h1>
             <p class="extensions-subtitle">管理您的浏览器插件和扩展功能</p>
-            
-            <!-- 实验性功能说明 -->
-        <div class="experimental-notice">
-            <div style="display: flex; align-items: flex-start; gap: 12px;">
-                <div class="notice-icon">⚠️</div>
-                <div class="notice-content">
-                    <strong>实验性功能说明</strong>
-                    <p>这是实验性功能，可能会有小bug。由于Electron支持的扩展API有限，很多Chrome插件可能无法正常使用。</p>
-                    <p>目前仅支持基础功能的插件，建议优先使用专门为OpenCosy浏览器开发的插件。</p>
+            <div class="experimental-notice">
+                <div style="display: flex; align-items: flex-start; gap: 12px;">
+                    <div class="notice-icon">⚠️</div>
+                    <div class="notice-content">
+                        <strong>实验性功能说明</strong>
+                        <p>这是实验性功能，可能会有小bug。由于Electron支持的扩展API有限，很多Chrome插件可能无法正常使用。</p>
+                        <p>目前仅支持基础功能的插件，建议优先使用专门为OpenCosy浏览器开发的插件。</p>
+                    </div>
                 </div>
             </div>
         </div>
-        </div>
-        
         <div class="extensions-section">
             <h2 class="section-title">添加插件</h2>
             <div class="add-extension">
@@ -280,43 +76,53 @@
             </div>
             <div id="status-message"></div>
         </div>
-        
         <div class="extensions-section">
             <h2 class="section-title">已安装的插件</h2>
-            <div id="extensions-list">
-                <div class="empty-state">
-                    <div class="empty-icon">🔌</div>
-                    <p>暂无安装的插件</p>
-                    <p style="font-size: 14px; margin-top: 10px;">点击上方"浏览文件夹"按钮添加您的第一个插件</p>
-                </div>
-            </div>
+            <div id="extensions-list"></div>
         </div>
-        
-
     </div>
-    
     <script>
+        const DEFAULT_ICON = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjQ4IiBoZWlnaHQ9IjQ4IiBmaWxsPSIjMDA3OGQ0IiByeD0iOCIvPgo8dGV4dCB4PSI1MCUiIHk9IjUwJSIgZG9taW5hbnQtYmFzZWxpbmU9Im1pZGRsZSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0id2hpdGUiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiI+RTwvdGV4dD4KPC9zdmc+';
+
         let extensions = [];
-        
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        function isSafeUrl(url) {
+            if (!url) return false;
+            if (url.startsWith('data:image/')) return true;
+            try {
+                const parsed = new URL(url);
+                return ['http:', 'https:', 'file:'].includes(parsed.protocol);
+            } catch {
+                return false;
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
             loadExtensions();
-            
             document.getElementById('browse-button').addEventListener('click', browseFolder);
             document.getElementById('add-button').addEventListener('click', addExtension);
         });
-        
+
         function showMessage(message, type = 'success') {
             const statusEl = document.getElementById('status-message');
-  statusEl.innerHTML = `<div class="status-message status-${type}"></div>`; statusEl.firstChild.textContent = message;
-            setTimeout(() => {
-                statusEl.innerHTML = '';
-            }, 5000);
+            const div = document.createElement('div');
+            div.className = `status-message status-${type}`;
+            div.textContent = message;
+            statusEl.innerHTML = '';
+            statusEl.appendChild(div);
+            setTimeout(() => { statusEl.innerHTML = ''; }, 5000);
         }
-        
+
         async function browseFolder() {
             try {
-                if (window.electronAPI && window.electronAPI.browseFolder) {
-                    const result = await window.electronAPI.browseFolder();
+                if (window.electronAPI && window.electronAPI.invoke) {
+                    const result = await window.electronAPI.invoke('browse-folder');
                     if (result.success && result.path) {
                         document.getElementById('extension-path').value = result.path;
                     } else if (result.error) {
@@ -330,16 +136,15 @@
                 showMessage('选择文件夹失败: ' + error.message, 'error');
             }
         }
-        
+
         async function addExtension() {
             const path = document.getElementById('extension-path').value;
             if (!path) {
                 showMessage('请先选择插件文件夹', 'error');
                 return;
             }
-            
             try {
-                const result = await window.electronAPI.addExtension(path);
+                const result = await window.electronAPI.invoke('add-extension', path);
                 if (result.success) {
                     showMessage('插件添加成功！重启浏览器后生效');
                     document.getElementById('extension-path').value = '';
@@ -352,54 +157,30 @@
                 showMessage('添加插件失败: ' + error.message, 'error');
             }
         }
-        
+
         async function loadExtensions() {
             try {
-                const result = await window.electronAPI.getExtensions();
+                const result = await window.electronAPI.invoke('get-extensions');
                 extensions = result.extensions || [];
                 renderExtensions();
             } catch (error) {
                 console.error('加载插件列表失败:', error);
             }
         }
-        
-        // v2 安全加固: 校验图标 URL 仅允许安全协议
-        function isSafeExtensionIcon(url) {
-            if (!url || typeof url !== 'string') return false;
-            try {
-                const u = new URL(url);
-                return ['http:', 'https:', 'data:', 'file:'].includes(u.protocol);
-            } catch {
-                return false;
-            }
-        }
-
-        const DEFAULT_EXT_ICON = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjQ4IiBoZWlnaHQ9IjQ4IiBmaWxsPSIjMDA3OGQ0IiByeD0iOCIvPgo8dGV4dCB4PSI1MCUiIHk9IjUwJSIgZG9taW5hbnQtYmFzZWxpbmU9Im1pZGRsZSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0id2hpdGUiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiI+RTwvdGV4dD4KPC9zdmc+';
 
         function renderExtensions() {
-            // v2 安全加固: 使用 DOM API 替代 innerHTML，防止插件 manifest 字段注入 XSS
             const container = document.getElementById('extensions-list');
-            container.innerHTML = '';
-
             if (extensions.length === 0) {
-                const empty = document.createElement('div');
-                empty.className = 'empty-state';
-                const icon = document.createElement('div');
-                icon.className = 'empty-icon';
-                icon.textContent = '🔌';
-                const p1 = document.createElement('p');
-                p1.textContent = '暂无安装的插件';
-                const p2 = document.createElement('p');
-                p2.style.fontSize = '14px';
-                p2.style.marginTop = '10px';
-                p2.textContent = '点击上方"浏览文件夹"按钮添加您的第一个插件';
-                empty.appendChild(icon);
-                empty.appendChild(p1);
-                empty.appendChild(p2);
-                container.appendChild(empty);
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">🔌</div>
+                        <p>暂无安装的插件</p>
+                        <p style="font-size: 14px; margin-top: 10px;">点击上方"浏览文件夹"按钮添加您的第一个插件</p>
+                    </div>
+                `;
                 return;
             }
-
+            container.innerHTML = '';
             extensions.forEach(ext => {
                 const card = document.createElement('div');
                 card.className = 'extension-card';
@@ -407,29 +188,31 @@
                 const header = document.createElement('div');
                 header.className = 'extension-header';
 
-                const iconImg = document.createElement('img');
-                iconImg.className = 'extension-icon';
-                iconImg.src = isSafeExtensionIcon(ext.icon) ? ext.icon : DEFAULT_EXT_ICON;
-                iconImg.alt = String(ext.name || '插件');
-                header.appendChild(iconImg);
+                const icon = document.createElement('img');
+                icon.className = 'extension-icon';
+                icon.src = (ext.icon && isSafeUrl(ext.icon)) ? ext.icon : DEFAULT_ICON;
+                icon.alt = ext.name || '插件图标';
+                icon.onerror = function() { this.src = DEFAULT_ICON; };
 
                 const info = document.createElement('div');
                 info.className = 'extension-info';
-                const nameDiv = document.createElement('div');
-                nameDiv.className = 'extension-name';
-                nameDiv.textContent = String(ext.name || '未知插件');
-                const verDiv = document.createElement('div');
-                verDiv.className = 'extension-version';
-                verDiv.textContent = '版本: ' + String(ext.version || '未知');
-                info.appendChild(nameDiv);
-                info.appendChild(verDiv);
+
+                const name = document.createElement('div');
+                name.className = 'extension-name';
+                name.textContent = ext.name || '未知插件';
+
+                const version = document.createElement('div');
+                version.className = 'extension-version';
+                version.textContent = '版本: ' + (ext.version || '未知');
+
+                info.appendChild(name);
+                info.appendChild(version);
+                header.appendChild(icon);
                 header.appendChild(info);
-                card.appendChild(header);
 
                 const desc = document.createElement('div');
                 desc.className = 'extension-description';
-                desc.textContent = String(ext.description || '暂无描述');
-                card.appendChild(desc);
+                desc.textContent = ext.description || '暂无描述';
 
                 const controls = document.createElement('div');
                 controls.className = 'extension-controls';
@@ -438,22 +221,25 @@
                 toggleBtn.className = 'toggle-button ' + (ext.enabled ? 'toggle-enabled' : 'toggle-disabled');
                 toggleBtn.textContent = ext.enabled ? '已启用' : '已禁用';
                 toggleBtn.addEventListener('click', () => toggleExtension(ext.id, !ext.enabled));
-                controls.appendChild(toggleBtn);
 
                 const removeBtn = document.createElement('button');
                 removeBtn.className = 'remove-button';
                 removeBtn.textContent = '移除';
                 removeBtn.addEventListener('click', () => removeExtension(ext.id));
+
+                controls.appendChild(toggleBtn);
                 controls.appendChild(removeBtn);
 
+                card.appendChild(header);
+                card.appendChild(desc);
                 card.appendChild(controls);
                 container.appendChild(card);
             });
         }
-        
+
         async function toggleExtension(extensionId, enabled) {
             try {
-                const result = await window.electronAPI.toggleExtension(extensionId, enabled);
+                const result = await window.electronAPI.invoke('toggle-extension', { id: extensionId, enabled });
                 if (result.success) {
                     showMessage(`插件${enabled ? '启用' : '禁用'}成功！重启浏览器后生效`);
                     loadExtensions();
@@ -465,11 +251,11 @@
                 showMessage('操作失败: ' + error.message, 'error');
             }
         }
-        
+
         async function removeExtension(extensionId) {
             if (confirm('确定要移除这个插件吗？')) {
                 try {
-                    const result = await window.electronAPI.removeExtension(extensionId);
+                    const result = await window.electronAPI.invoke('remove-extension', extensionId);
                     if (result.success) {
                         showMessage('插件移除成功！');
                         loadExtensions();
@@ -481,45 +267,6 @@
                     showMessage('移除失败: ' + error.message, 'error');
                 }
             }
-        }
-        
-        // 为Electron环境提供API接口
-        if (typeof window.electronAPI !== 'undefined') {
-            // 如果已经预加载了API，直接使用
-            console.log('使用预加载的Electron API');
-        } else if (window.require) {
-            try {
-                const ipcRenderer = window.electron ? window.electron.ipcRenderer : null;
-                
-                window.electronAPI = {
-                    browseFolder: () => ipcRenderer.invoke('browse-folder'),
-                    addExtension: (path) => ipcRenderer.invoke('add-extension', path),
-                    getExtensions: () => ipcRenderer.invoke('get-extensions'),
-                    toggleExtension: (id, enabled) => ipcRenderer.invoke('toggle-extension', { id, enabled }),
-                    removeExtension: (id) => ipcRenderer.invoke('remove-extension', id)
-                };
-                console.log('使用动态加载的Electron API');
-            } catch (error) {
-                console.error('加载Electron API失败:', error);
-                // 非Electron环境下的模拟API
-                window.electronAPI = {
-                    browseFolder: async () => ({ success: false, error: '非Electron环境' }),
-                    addExtension: async () => ({ success: false, error: '非Electron环境' }),
-                    getExtensions: async () => ({ extensions: [] }),
-                    toggleExtension: async () => ({ success: false, error: '非Electron环境' }),
-                    removeExtension: async () => ({ success: false, error: '非Electron环境' })
-                };
-            }
-        } else {
-            // 非Electron环境下的模拟API
-            window.electronAPI = {
-                browseFolder: async () => ({ success: false, error: '非Electron环境' }),
-                addExtension: async () => ({ success: false, error: '非Electron环境' }),
-                getExtensions: async () => ({ extensions: [] }),
-                toggleExtension: async () => ({ success: false, error: '非Electron环境' }),
-                removeExtension: async () => ({ success: false, error: '非Electron环境' })
-            };
-            console.log('使用模拟API（非Electron环境）');
         }
     </script>
 </body>
