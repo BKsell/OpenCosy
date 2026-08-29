@@ -29,6 +29,7 @@
     },
     "files": [
       "main.js",
+      "preload.js",
       "package.json",
       "src/**/*",
       "ico.png",
@@ -40,7 +41,7 @@
     "protocols": [
       {
         "name": "OpenCosy Browser",
-        "schemes": ["cosy"]
+        "schemes": ["cosy", "http", "https"]
       }
     ],
     "win": {
