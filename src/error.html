@@ -344,7 +344,7 @@
             }
 
             if (window.require) {
-                const { ipcRenderer } = require('electron');
+                const ipcRenderer = window.electron ? window.electron.ipcRenderer : null;
                 ipcRenderer.on('update-theme-color', (event, color) => {
                     applyThemeColor(color);
                 });
