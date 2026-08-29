@@ -845,8 +845,12 @@ async function validateExt(fp) {
 }
 async function copyExt(src, id) {
   try {
+    // 安全校验: 防止路径遍历
+    if (id.includes('..') || id.includes('/') || id.includes('\\')) return false;
     const dst = path.join(extensionsPath, id); await fs.mkdir(dst, { recursive: true });
     for (const f of await fs.readdir(src)) {
+      // 安全校验: 防止文件名包含路径遍历
+      if (f.includes('..')) continue;
       const sf = path.join(src, f), df = path.join(dst, f);
       if ((await fs.stat(sf)).isDirectory()) await copyExt(sf, path.join(id, f));
       else await fs.copyFile(sf, df);
@@ -881,6 +885,8 @@ async function unloadExt(id) {
 
 ipcMain.handle('add-extension', async (e, fp) => {
   try {
+    // 安全校验: 防止路径遍历
+    if (!fp || typeof fp !== 'string' || fp.includes('..')) return { success: false, error: '非法路径' };
     const v = await validateExt(fp); if (!v.valid) return { success: false, error: v.error };
     const id = `${v.manifest.name.replace(/[^a-zA-Z0-9]/g, '_')}_${v.manifest.version}`;
     const c = await readExtConfig();
