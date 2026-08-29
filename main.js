@@ -3,12 +3,10 @@ const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const os = require('os');
-
 let mainWindow;
 let tabs = [];
 let currentTabIndex = 0;
 let fileToOpen = null;
-
 let downloads = [];
 let currentDownloadInfo = null;
 let isTabBarCollapsed = false;
@@ -19,7 +17,6 @@ let uiHeights = { titlebar: 35, toolbar: 53, tabbar: 40 };
 let closedTabs = [];
 let history = [];
 let historyLoaded = false;
-
 class Tab {
   constructor(id, url = 'cosy://newtab') {
     this.id = id;
@@ -31,7 +28,6 @@ class Tab {
     this.retry403 = false;
   }
 }
-
 function getHttpStatusCode(errorCode) {
   const errorMap = {
     '-105': '404', '-106': '400', '-102': '404', '-109': '404',
@@ -39,7 +35,6 @@ function getHttpStatusCode(errorCode) {
   };
   return errorMap[errorCode.toString()] || '500';
 }
-
 function getErrorMessage(errorCode) {
   const messageMap = {
     '-105': '无法找到服务器', '-106': '网络连接已断开', '-102': '连接被拒绝',
@@ -48,7 +43,6 @@ function getErrorMessage(errorCode) {
   };
   return messageMap[errorCode.toString()] || '发生未知错误';
 }
-
 function getBrowserErrorText(errorCode) {
   const errorTextMap = {
     '-105': 'ERR_NAME_NOT_RESOLVED', '-106': 'ERR_INTERNET_DISCONNECTED',
@@ -58,16 +52,12 @@ function getBrowserErrorText(errorCode) {
   };
   return errorTextMap[errorCode.toString()] || 'UNKNOWN_ERROR';
 }
-
 function createWindow() {
   if (mainWindow && !mainWindow.isDestroyed()) return;
-
   const ws = loadWindowState();
   const windowOptions = {
     width: ws.width || 1200, height: ws.height || 800, minWidth: 800, minHeight: 600,
     webPreferences: {
-      // v3 安全加固: 禁用 nodeIntegration + 启用 contextIsolation + preload script
-      // 渲染进程不再能直接访问 Node.js API，只能通过 preload.js 暴露的安全接口通信
       nodeIntegration: false, contextIsolation: true, sandbox: true,
       preload: path.join(__dirname, 'preload.js'),
       webSecurity: true, allowRunningInsecureContent: false, enableRemoteModule: false
@@ -76,13 +66,10 @@ function createWindow() {
     icon: path.join(__dirname, 'ico.png')
   };
   if (ws.x !== undefined && ws.y !== undefined) { windowOptions.x = ws.x; windowOptions.y = ws.y; }
-
   mainWindow = new BrowserWindow(windowOptions);
   if (ws.maximized) mainWindow.maximize();
-
   const htmlFile = cachedTabLayout === 'vertical' ? 'src/index_vertical.html' : 'src/index.html';
   mainWindow.loadFile(htmlFile);
-
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
     if (fileToOpen) { createNewTab(fileToOpen); fileToOpen = null; }
@@ -99,18 +86,15 @@ function createWindow() {
       createNewTab(defaultTabUrl);
     }
   });
-
   mainWindow.on('resize', () => { updateBrowserViewBounds(); scheduleSaveWindowState(); });
   mainWindow.on('move', () => { updateBrowserViewBounds(); scheduleSaveWindowState(); });
   mainWindow.on('maximize', scheduleSaveWindowState);
   mainWindow.on('unmaximize', scheduleSaveWindowState);
   mainWindow.once('closed', () => { saveWindowState(); mainWindow = null; });
 }
-
 function getUrlProtocol(url) {
   try { return new URL(url).protocol; } catch { return null; }
 }
-
 function createNewTab(url = 'cosy://newtab') {
   const tabId = Date.now().toString();
   const tab = new Tab(tabId, url);
@@ -125,14 +109,11 @@ function createNewTab(url = 'cosy://newtab') {
   setTimeout(updateBrowserViewBounds, 0);
   return tab;
 }
-
 function loadTabContent(tab) {
   if (!tab.view) {
     const isCosy = getUrlProtocol(tab.url) === 'cosy:';
     tab.view = new WebContentsView({
       webPreferences: {
-        // v3 安全加固: 所有页面统一禁用nodeIntegration，启用contextIsolation和sandbox
-        // cosy://页面通过preload.js暴露的安全接口与主进程通信
         nodeIntegration: false, contextIsolation: true, sandbox: true,
         preload: path.join(__dirname, 'preload.js'),
         webSecurity: true, allowRunningInsecureContent: false, enableRemoteModule: false,
@@ -141,14 +122,12 @@ function loadTabContent(tab) {
     });
     mainWindow.contentView.addChildView(tab.view);
     updateBrowserViewBounds();
-
     tab.view.webContents.setWindowOpenHandler(({ url, disposition }) => {
       if (disposition === 'new-window' || disposition === 'foreground-tab') {
         const nt = createNewTab(url); switchToTab(tabs.indexOf(nt));
       } else { tab.url = url; tab.view.webContents.loadURL(url); }
       return { action: 'deny' };
     });
-
     tab.view.webContents.on('will-navigate', (e, navUrl) => {
       tab.url = navUrl; mainWindow.webContents.send('tab-updated', { id: tab.id, url: navUrl });
     });
@@ -229,7 +208,6 @@ function loadTabContent(tab) {
       mainWindow.webContents.send('html-fullscreen-changed', { isFullscreen: false });
     });
   }
-
   const proto = getUrlProtocol(tab.url);
   if (proto === 'cosy:') {
     try {
@@ -267,7 +245,6 @@ function loadTabContent(tab) {
     }
   } else tab.view.webContents.loadURL(tab.url);
 }
-
 function updateBrowserViewBounds() {
   if (boundsUpdateScheduled) return;
   boundsUpdateScheduled = true;
@@ -291,7 +268,6 @@ function updateBrowserViewBounds() {
     }
   });
 }
-
 function loadCachedSettings() {
   const sp = path.join(app.getPath('userData'), 'cosySettings.json');
   try {
@@ -301,7 +277,6 @@ function loadCachedSettings() {
     }
   } catch (e) { console.error(e); }
 }
-
 function loadWindowState() {
   const sp = path.join(app.getPath('userData'), 'windowState.json');
   try {
@@ -309,7 +284,6 @@ function loadWindowState() {
   } catch (e) { console.error(e); }
   return { width: 1200, height: 800, x: undefined, y: undefined, maximized: false };
 }
-
 function saveWindowState() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (mainWindow.isMinimized()) return;
@@ -320,12 +294,10 @@ function saveWindowState() {
     fsSync.writeFileSync(path.join(app.getPath('userData'), 'windowState.json'), JSON.stringify(state, null, 2), 'utf-8');
   } catch (e) { console.error(e); }
 }
-
 function scheduleSaveWindowState() {
   if (windowStateTimer) clearTimeout(windowStateTimer);
   windowStateTimer = setTimeout(saveWindowState, 500);
 }
-
 function switchToTab(i) {
   if (i >= 0 && i < tabs.length) {
     currentTabIndex = i; const t = tabs[i];
@@ -333,7 +305,6 @@ function switchToTab(i) {
     mainWindow.webContents.send('tab-switched', { id: t.id, index: i });
   }
 }
-
 function closeTab(i) {
   if (i >= 0 && i < tabs.length) {
     const t = tabs[i];
@@ -358,7 +329,6 @@ function closeTab(i) {
     mainWindow.webContents.send('tab-closed', i);
   }
 }
-
 function setupDownloadManager() {
   session.defaultSession.on('will-download', (event, item) => {
     const url = item.getURL(), filename = item.getFilename(), total = item.getTotalBytes();
@@ -426,13 +396,11 @@ function setupDownloadManager() {
     if (isNew) createNewTab('cosy://download');
   });
 }
-
 function formatSpeed(bps) {
   const units = ['B/s', 'KB/s', 'MB/s', 'GB/s']; let s = bps, i = 0;
   while (s >= 1024 && i < 3) { s /= 1024; i++; }
   return s.toFixed(2) + ' ' + units[i];
 }
-
 function generateUserAgent() {
   const p = os.platform(), a = os.arch(), r = os.release();
   let oi;
@@ -453,13 +421,11 @@ function generateUserAgent() {
   }
   return `Mozilla/5.0 (${oi}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.7559.60 OpenCosyBrowser/1.0.0`;
 }
-
 if (process.argv.length > 1) {
   const arg = process.argv[1];
   if (arg && (arg.endsWith('.html') || arg.endsWith('.htm'))) fileToOpen = `file://${arg}`;
   if (arg && (arg.startsWith('http://') || arg.startsWith('https://') || arg.startsWith('cosy://'))) fileToOpen = arg;
 }
-
 app.on('open-file', (e, fp) => {
   e.preventDefault();
   if (fp && (fp.endsWith('.html') || fp.endsWith('.htm'))) {
@@ -468,43 +434,45 @@ app.on('open-file', (e, fp) => {
     else fileToOpen = fu;
   }
 });
-
 app.whenReady().then(async () => {
-  // v2 安全加固：移除 http/https 默认协议注册，避免静默接管系统默认浏览器
   if (process.platform === 'win32') app.setAsDefaultProtocolClient('cosy');
-
   loadCachedSettings();
-
   protocol.registerFileProtocol('cosy', (req, cb) => {
     const u = req.url.replace('cosy://', '');
     const map = { 'setting': 'src/settings.html', 'newtab': 'src/newtab.html', 'extensions': 'src/extensions.html', 'version': 'src/version.html', 'download': 'src/download/index.html', 'downloadlist': 'src/downloadlist.html' };
     cb({ path: path.join(__dirname, map[u] || 'src/newtab.html') });
   });
-
-
   setupDownloadManager();
   session.defaultSession.setUserAgent(generateUserAgent());
+
+  // v3 安全加固: 权限请求处理器，默认拒绝敏感权限
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    const url = webContents.getURL();
+    const deniedPermissions = ['media', 'geolocation', 'midi', 'midiSysex'];
+    if (deniedPermissions.includes(permission)) {
+      console.log(`[安全] 拒绝权限请求: ${permission} from ${url}`);
+      callback(false);
+      return;
+    }
+    callback(true);
+  });
+
   createWindow();
   await loadEnabledExtensions();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
-
 app.on('open-url', (e, url) => {
   e.preventDefault();
   if (!mainWindow || mainWindow.isDestroyed()) createWindow();
   setTimeout(() => { if (url.startsWith('cosy://') || url.startsWith('http://') || url.startsWith('https://')) createNewTab(url); }, 100);
 });
-
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
-
 ipcMain.on('window-control', (e, action) => {
   if (action === 'minimize') mainWindow.minimize();
   else if (action === 'maximize') mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize();
   else if (action === 'close') mainWindow.close();
 });
-
 ipcMain.on('toggle-tabbar-collapse', (e, c) => { isTabBarCollapsed = c; updateBrowserViewBounds(); });
-
 ipcMain.on('ui-heights', (e, heights) => {
   if (heights) {
     if (heights.titlebar) uiHeights.titlebar = heights.titlebar;
@@ -513,9 +481,7 @@ ipcMain.on('ui-heights', (e, heights) => {
     updateBrowserViewBounds();
   }
 });
-
 ipcMain.handle('navigate-tab', (e, { tabId, url }) => {
-  // 安全校验: 仅允许http/https/cosy/file协议
   if (!url || typeof url !== 'string') return { success: false, error: '无效URL' };
   try {
     const proto = new URL(url).protocol;
@@ -530,35 +496,30 @@ ipcMain.handle('navigate-tab', (e, { tabId, url }) => {
   }
   return { success: false };
 });
-
 ipcMain.on('go-back', () => {
   if (tabs.length > 0 && currentTabIndex >= 0) {
     const t = tabs[currentTabIndex];
     if (t && t.view && t.view.webContents.canGoBack()) t.view.webContents.goBack();
   }
 });
-
 ipcMain.on('go-forward', () => {
   if (tabs.length > 0 && currentTabIndex >= 0) {
     const t = tabs[currentTabIndex];
     if (t && t.view && t.view.webContents.canGoForward()) t.view.webContents.goForward();
   }
 });
-
 ipcMain.on('reload-tab', () => {
   if (tabs.length > 0 && currentTabIndex >= 0) {
     const t = tabs[currentTabIndex];
     if (t && t.view) t.view.webContents.reload();
   }
 });
-
 ipcMain.on('print-page', () => {
   if (tabs.length > 0 && currentTabIndex >= 0) {
     const t = tabs[currentTabIndex];
     if (t && t.view) t.view.webContents.print();
   }
 });
-
 ipcMain.on('find-in-page', () => {
   if (tabs.length > 0 && currentTabIndex >= 0) {
     const t = tabs[currentTabIndex];
@@ -571,32 +532,27 @@ ipcMain.on('find-in-page', () => {
     }
   }
 });
-
 ipcMain.on('toggle-fullscreen', () => {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setFullScreen(!mainWindow.isFullScreen());
 });
-
 ipcMain.on('zoom-in', () => {
   if (tabs.length > 0 && currentTabIndex >= 0) {
     const t = tabs[currentTabIndex];
     if (t && t.view) { const v = t.view.webContents.getZoomLevel(); t.view.webContents.setZoomLevel(v + 0.5); }
   }
 });
-
 ipcMain.on('zoom-out', () => {
   if (tabs.length > 0 && currentTabIndex >= 0) {
     const t = tabs[currentTabIndex];
     if (t && t.view) { const v = t.view.webContents.getZoomLevel(); t.view.webContents.setZoomLevel(v - 0.5); }
   }
 });
-
 ipcMain.on('zoom-reset', () => {
   if (tabs.length > 0 && currentTabIndex >= 0) {
     const t = tabs[currentTabIndex];
     if (t && t.view) t.view.webContents.setZoomLevel(0);
   }
 });
-
 ipcMain.on('restore-closed-tab', () => {
   if (closedTabs.length > 0) {
     const ct = closedTabs.pop();
@@ -604,14 +560,12 @@ ipcMain.on('restore-closed-tab', () => {
     switchToTab(tabs.indexOf(nt));
   }
 });
-
 ipcMain.on('toggle-devtools', () => {
   if (tabs.length > 0 && currentTabIndex >= 0) {
     const t = tabs[currentTabIndex];
     if (t && t.view) t.view.webContents.toggleDevTools();
   }
 });
-
 ipcMain.on('view-source', () => {
   if (tabs.length > 0 && currentTabIndex >= 0) {
     const t = tabs[currentTabIndex];
@@ -621,19 +575,16 @@ ipcMain.on('view-source', () => {
     }
   }
 });
-
 ipcMain.on('save-page', () => {
   if (tabs.length > 0 && currentTabIndex >= 0) {
     const t = tabs[currentTabIndex];
     if (t && t.view) t.view.webContents.savePage(path.join(app.getPath('downloads'), 'page.html'), 'HTMLComplete').catch(e => console.error(e));
   }
 });
-
 ipcMain.handle('get-current-url', () => {
   if (tabs.length > 0 && currentTabIndex >= 0) return tabs[currentTabIndex].url;
   return '';
 });
-
 ipcMain.on('open-incognito', () => {
   const incognito = new BrowserWindow({
     width: 1000, height: 700,
@@ -642,9 +593,7 @@ ipcMain.on('open-incognito', () => {
   });
   incognito.loadURL('https://www.bing.com');
 });
-
 ipcMain.handle('create-tab', (e, url) => {
-  // 安全校验: 仅允许http/https/cosy协议
   if (url && typeof url === 'string') {
     try {
       const proto = new URL(url).protocol;
@@ -657,7 +606,6 @@ ipcMain.handle('create-tab', (e, url) => {
 ipcMain.handle('close-tab', (e, i) => { closeTab(i); return { success: true }; });
 ipcMain.handle('switch-tab', (e, i) => { switchToTab(i); return { success: true }; });
 ipcMain.on('navigate-to-url', (e, url) => {
-  // 安全校验: 仅允许http/https/cosy协议
   if (url && typeof url === 'string') {
     try {
       const proto = new URL(url).protocol;
@@ -665,17 +613,14 @@ ipcMain.on('navigate-to-url', (e, url) => {
     } catch {}
   }
 });
-
 ipcMain.on('get-download-info', (e) => {
   if (currentDownloadInfo) e.reply('download-info', { url: currentDownloadInfo.url, filename: currentDownloadInfo.filename, totalBytes: currentDownloadInfo.totalBytes || 0 });
 });
-
 ipcMain.on('start-download', (e, data) => {
   if (currentDownloadInfo) {
     try {
       let sp;
       if (data.savePath) {
-        // v2 安全加固：下载路径必须在下载目录内
         const dd = path.resolve(app.getPath('downloads'));
         const rs = path.resolve(data.savePath);
         if (!rs.startsWith(dd + path.sep) && rs !== dd) { console.log('下载路径拒绝:', data.savePath); return; }
@@ -701,7 +646,6 @@ ipcMain.on('start-download', (e, data) => {
     }
   }
 });
-
 ipcMain.on('show-save-dialog', (e, data) => {
   dialog.showSaveDialog(mainWindow, { defaultPath: path.join(app.getPath('downloads'), data.defaultName || 'download'), filters: [{ name: 'All Files', extensions: ['*'] }] }).then(r => {
     if (!r.canceled && r.filePath) {
@@ -724,11 +668,9 @@ ipcMain.on('show-save-dialog', (e, data) => {
     }
   });
 });
-
 ipcMain.on('get-downloads', (e) => {
   e.reply('downloads-list', downloads.map(d => ({ id: d.id, url: d.url, filename: d.filename, totalBytes: d.totalBytes, receivedBytes: d.receivedBytes, progress: d.progress, speed: d.speed, status: d.status, startTime: d.startTime, savePath: d.savePath })));
 });
-
 function dlAction(id, action) {
   const d = downloads.find(x => x.id === id);
   if (d && d.item && d.isItemValid) {
@@ -745,17 +687,13 @@ function dlAction(id, action) {
 ipcMain.on('pause-download', (e, id) => dlAction(id, 'pause'));
 ipcMain.on('resume-download', (e, id) => dlAction(id, 'resume'));
 ipcMain.on('cancel-download', (e, id) => dlAction(id, 'cancel'));
-
 ipcMain.on('retry-download', (e, data) => { if (data.url) session.defaultSession.downloadURL(data.url); });
 ipcMain.on('remove-download', (e, id) => { const i = downloads.findIndex(d => d.id === id); if (i !== -1) { downloads.splice(i, 1); if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('download-removed', { id }); } });
-
-// v2 安全加固：open-file/open-folder 限制为下载目录内
 function inDownloads(fp) {
   try { const dd = path.resolve(app.getPath('downloads')); const r = path.resolve(fp); return r.startsWith(dd + path.sep) || r === dd; } catch { return false; }
 }
 ipcMain.on('open-file', (e, fp) => { if (fsSync.existsSync(fp) && inDownloads(fp)) shell.openPath(fp); else console.log('open-file拒绝:', fp); });
 ipcMain.on('open-folder', (e, fp) => { if (fsSync.existsSync(fp) && inDownloads(fp)) shell.showItemInFolder(fp); else console.log('open-folder拒绝:', fp); });
-
 ipcMain.on('clear-downloads', (e) => {
   downloads = []; currentDownloadInfo = null;
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -763,7 +701,6 @@ ipcMain.on('clear-downloads', (e) => {
     setTimeout(() => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('clear-downloads-success', '下载列表已清空'); }, 100);
   }
 });
-
 ipcMain.handle('get-current-tab', () => {
   if (tabs.length > 0 && currentTabIndex >= 0) { const t = tabs[currentTabIndex]; return { id: t.id, url: t.url, title: t.title, favicon: t.favicon, isLoading: t.isLoading }; }
   return null;
@@ -771,7 +708,6 @@ ipcMain.handle('get-current-tab', () => {
 ipcMain.handle('get-all-tabs', () => tabs.map(t => ({ id: t.id, url: t.url, title: t.title, favicon: t.favicon, isLoading: t.isLoading })));
 ipcMain.on('close-current-tab', () => { if (tabs.length > 0) closeTab(currentTabIndex); });
 ipcMain.on('create-tab', (e, url) => {
-  // 安全校验: 仅允许http/https/cosy协议
   if (url && typeof url === 'string') {
     try {
       const proto = new URL(url).protocol;
@@ -780,7 +716,6 @@ ipcMain.on('create-tab', (e, url) => {
   }
   createNewTab(url);
 });
-
 ipcMain.on('show-more-options-menu', (e, pos) => {
   const menu = new Menu();
   let zl = 1.0;
@@ -792,7 +727,6 @@ ipcMain.on('show-more-options-menu', (e, pos) => {
   menu.append(new MenuItem({ type: 'separator' }));
   menu.popup({ window: mainWindow, x: pos.x, y: pos.y });
 });
-
 function createContextMenu(type, text = '') {
   const menu = new Menu();
   if (type === 'selection') {
@@ -808,18 +742,15 @@ function createContextMenu(type, text = '') {
   }
   return menu;
 }
-
 const userDataPath = path.join(app.getPath('userData'), 'browser', 'userdata');
 const extensionsPath = path.join(userDataPath, 'extensions');
 const configPath = path.join(extensionsPath, 'config.json');
-
 async function ensureDirs() {
   try {
     await fs.mkdir(userDataPath, { recursive: true });
     await fs.mkdir(extensionsPath, { recursive: true });
   } catch (e) { console.error(e); }
 }
-
 async function readExtConfig() {
   try {
     await ensureDirs();
@@ -828,7 +759,6 @@ async function readExtConfig() {
   } catch (e) { console.error(e); }
   return { extensions: [] };
 }
-
 async function saveExtConfig(c) {
   try {
     await ensureDirs();
@@ -849,11 +779,9 @@ async function validateExt(fp) {
 }
 async function copyExt(src, id) {
   try {
-    // 安全校验: 防止路径遍历
     if (id.includes('..') || id.includes('/') || id.includes('\\')) return false;
     const dst = path.join(extensionsPath, id); await fs.mkdir(dst, { recursive: true });
     for (const f of await fs.readdir(src)) {
-      // 安全校验: 防止文件名包含路径遍历
       if (f.includes('..')) continue;
       const sf = path.join(src, f), df = path.join(dst, f);
       if ((await fs.stat(sf)).isDirectory()) await copyExt(sf, path.join(id, f));
@@ -869,7 +797,6 @@ async function loadEnabledExtensions() {
       if (e.enabled) await loadExt(e);
   } catch (e) { console.error(e); }
 }
-
 async function loadExt(e) {
   try {
     const p = path.join(extensionsPath, e.id);
@@ -879,17 +806,14 @@ async function loadExt(e) {
     }
   } catch (err) { console.error(err); }
 }
-
 async function unloadExt(id) {
   try {
     for (const e of session.defaultSession.getAllExtensions())
       if (e.id === id) { await session.defaultSession.removeExtension(id); break; }
   } catch (e) { console.error(e); }
 }
-
 ipcMain.handle('add-extension', async (e, fp) => {
   try {
-    // 安全校验: 防止路径遍历
     if (!fp || typeof fp !== 'string' || fp.includes('..')) return { success: false, error: '非法路径' };
     const v = await validateExt(fp); if (!v.valid) return { success: false, error: v.error };
     const id = `${v.manifest.name.replace(/[^a-zA-Z0-9]/g, '_')}_${v.manifest.version}`;
@@ -909,7 +833,6 @@ ipcMain.handle('toggle-extension', async (e, { id, enabled }) => {
 });
 ipcMain.handle('remove-extension', async (e, id) => {
   try {
-    // 安全校验: 防止路径遍历删除任意目录
     if (!id || typeof id !== 'string' || id.includes('..') || id.includes('/') || id.includes('\\') || path.isAbsolute(id)) {
       return { success: false, error: '非法的插件ID' };
     }
@@ -918,7 +841,6 @@ ipcMain.handle('remove-extension', async (e, id) => {
     if (i === -1) return { success: false, error: '未找到' };
     await unloadExt(id);
     const p = path.join(extensionsPath, id);
-    // 二次校验: 确保路径在extensions目录内
     if (!path.resolve(p).startsWith(path.resolve(extensionsPath) + path.sep)) {
       return { success: false, error: '路径越界' };
     }
