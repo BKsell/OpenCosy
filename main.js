@@ -131,8 +131,11 @@ function loadTabContent(tab) {
     const isCosy = getUrlProtocol(tab.url) === 'cosy:';
     tab.view = new WebContentsView({
       webPreferences: {
-        nodeIntegration: isCosy, contextIsolation: !isCosy, webSecurity: true,
-        allowRunningInsecureContent: false, sandbox: !isCosy, enableRemoteModule: false,
+        // v3 安全加固: 所有页面统一禁用nodeIntegration，启用contextIsolation和sandbox
+        // cosy://页面通过preload.js暴露的安全接口与主进程通信
+        nodeIntegration: false, contextIsolation: true, sandbox: true,
+        preload: path.join(__dirname, 'preload.js'),
+        webSecurity: true, allowRunningInsecureContent: false, enableRemoteModule: false,
         worldSafeExecuteJavaScript: true
       }
     });
