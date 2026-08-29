@@ -489,7 +489,7 @@
             console.log('使用预加载的Electron API');
         } else if (window.require) {
             try {
-                const { ipcRenderer } = window.require('electron');
+                const ipcRenderer = window.electron ? window.electron.ipcRenderer : null;
                 
                 window.electronAPI = {
                     browseFolder: () => ipcRenderer.invoke('browse-folder'),
