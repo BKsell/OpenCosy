@@ -11,7 +11,6 @@
             padding: 0;
             box-sizing: border-box;
         }
-
         body {
             font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
             background: #ffffff;
@@ -23,7 +22,6 @@
             color: #333;
             line-height: 1.6;
         }
-
         .error-container {
             display: flex;
             justify-content: space-between;
@@ -32,39 +30,32 @@
             padding: 40px;
             gap: 60px;
         }
-
         .error-content {
             flex: 1;
         }
-
         .error-header {
             display: flex;
             align-items: center;
             margin-bottom: 30px;
             gap: 20px;
         }
-
         .error-icon {
             font-size: 64px;
             color: #ff6b6b;
         }
-
         .error-info {
             text-align: left;
         }
-
         .error-code {
             font-size: 48px;
             font-weight: 300;
             margin-bottom: 5px;
             color: #333;
         }
-
         .error-message {
             font-size: 18px;
             color: #666;
         }
-
         .error-details {
             background: #f8f9fa;
             border-radius: 8px;
@@ -73,26 +64,21 @@
             text-align: left;
             display: none;
         }
-
         .error-details.show {
             display: block;
         }
-
         .detail-item {
             margin-bottom: 15px;
         }
-
         .detail-label {
             font-weight: 600;
             color: #333;
             margin-bottom: 5px;
         }
-
         .detail-value {
             color: #666;
             font-family: 'Consolas', 'Monaco', monospace;
         }
-
         .action-buttons {
             display: flex;
             gap: 15px;
@@ -100,7 +86,6 @@
             margin-bottom: 30px;
             flex-wrap: wrap;
         }
-
         .btn {
             padding: 12px 24px;
             border: none;
@@ -111,34 +96,28 @@
             text-decoration: none;
             display: inline-block;
         }
-
         .btn-primary {
             background: var(--theme-color, #0078d4);
             color: white;
         }
-
         .btn-primary:hover {
             background: var(--theme-color, #0078d4);
             opacity: 0.9;
         }
-
         .btn-secondary {
             background: #f3f1f2;
             color: #333;
             border: 1px solid #dfe4e1;
         }
-
         .btn-secondary:hover {
             background: #e8e6e7;
         }
-
         .qr-section {
             flex-shrink: 0;
             margin-top: 0;
             padding-top: 0;
             border-top: none;
         }
-
         .qr-code {
             width: 140px;
             height: 140px;
@@ -150,37 +129,30 @@
             justify-content: center;
             overflow: hidden;
         }
-
         .qr-code img {
             max-width: 100%;
             max-height: 100%;
         }
-
         @media (max-width: 600px) {
             .error-container {
                 flex-direction: column;
                 padding: 20px;
                 align-items: center;
             }
-
             .error-code {
                 font-size: 36px;
             }
-
             .error-message {
                 font-size: 16px;
             }
-
             .action-buttons {
                 flex-direction: column;
                 align-items: center;
             }
-
             .btn {
                 width: 100%;
                 max-width: 200px;
             }
-
             .qr-section {
                 order: 2;
                 margin-top: 30px;
@@ -198,17 +170,14 @@
                     <div class="error-message" id="error-message">无法访问此网站</div>
                 </div>
             </div>
-
             <div class="bsod-message" id="bsod-message" style="font-size: 16px; margin-bottom: 20px; color: #666;">
                 抱歉，您访问的页面出现了一些问题。
             </div>
-
             <div class="action-buttons">
                 <button class="btn btn-primary" onclick="window.history.back()">返回上一页</button>
                 <button class="btn btn-secondary" onclick="reloadPage()">重新加载</button>
                 <button class="btn btn-secondary" id="details-btn" onclick="toggleDetails()">详细信息</button>
             </div>
-
             <div class="error-details" id="error-details">
                 <div class="detail-item">
                     <div class="detail-label">错误代码：</div>
@@ -233,7 +202,6 @@
             </div>
         </div>
     </div>
-
     <script>
         function getUrlParams() {
             const params = new URLSearchParams(window.location.search);
@@ -246,27 +214,31 @@
                 browserMessage: params.get('browserMessage') || 'ERR_NAME_NOT_RESOLVED'
             };
         }
-
+        // 安全加固: 校验 URL 协议，防止 javascript: XSS
+        function isSafeUrl(url) {
+            if (!url || url === '未知') return false;
+            try {
+                const proto = new URL(url).protocol;
+                return ['http:', 'https:', 'cosy:', 'file:'].includes(proto);
+            } catch {
+                return false;
+            }
+        }
         function updateErrorDisplay() {
             const params = getUrlParams();
-
             document.getElementById('error-code').textContent = params.code;
             document.getElementById('error-message').textContent = params.message;
             document.getElementById('detail-code').textContent = `${params.code} ${getStatusCodeText(params.code)}`;
             document.getElementById('detail-reason').textContent = params.reason;
             document.getElementById('detail-url').textContent = params.url;
             document.getElementById('detail-browser-code').textContent = `${params.browserCode} (${params.browserMessage})`;
-
             const now = new Date();
             document.getElementById('detail-time').textContent = now.toLocaleString('zh-CN');
-
             setErrorIcon(params.code);
         }
-
         function setErrorIcon(code) {
             const iconElement = document.getElementById('error-icon');
             let icon = '⚠️';
-
             switch(code) {
                 case '404':
                     icon = '🔍';
@@ -287,10 +259,8 @@
                 default:
                     icon = '⚠️';
             }
-
             iconElement.textContent = icon;
         }
-
         function getStatusCodeText(code) {
             const statusTexts = {
                 '400': 'Bad Request',
@@ -304,20 +274,18 @@
             };
             return statusTexts[code] || 'Unknown Error';
         }
-
         function reloadPage() {
             const params = getUrlParams();
-            if (params.url && params.url !== '未知') {
+            // 安全加固: 仅允许安全协议的 URL 跳转
+            if (params.url && isSafeUrl(params.url)) {
                 window.location.href = params.url;
             } else {
                 window.location.reload();
             }
         }
-
         function toggleDetails() {
             const detailsElement = document.getElementById('error-details');
             const detailsBtn = document.getElementById('details-btn');
-
             if (detailsElement.classList.contains('show')) {
                 detailsElement.classList.remove('show');
                 detailsBtn.textContent = '详细信息';
@@ -326,14 +294,11 @@
                 detailsBtn.textContent = '隐藏信息';
             }
         }
-
         function applyThemeColor(color = '#0078d4') {
             document.documentElement.style.setProperty('--theme-color', color);
         }
-
         document.addEventListener('DOMContentLoaded', function() {
             updateErrorDisplay();
-
             try {
                 const settings = JSON.parse(localStorage.getItem('cosySettings') || '{}');
                 if (settings.themeColor) {
@@ -342,15 +307,13 @@
             } catch (error) {
                 console.error('获取主题颜色失败:', error);
             }
-
-            if (window.require) {
-                const ipcRenderer = window.electron ? window.electron.ipcRenderer : null;
-                ipcRenderer.on('update-theme-color', (event, color) => {
+            // 安全加固: 使用 preload.js 暴露的安全接口
+            if (window.electron && window.electron.ipcRenderer) {
+                window.electron.ipcRenderer.on('update-theme-color', (event, color) => {
                     applyThemeColor(color);
                 });
             }
         });
-
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') {
                 const detailsElement = document.getElementById('error-details');
