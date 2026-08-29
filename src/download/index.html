@@ -5,162 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>下载 - OpenCosy浏览器</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-            background: #f3f3f3;
-            color: #333;
-            line-height: 1.6;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-        
-        /* 毛玻璃效果 - 仅应用于背景区域 */
-        .download-container {
-            position: relative;
-            background: rgba(255, 255, 255, 0.2);
-            backdrop-filter: blur(4px) saturate(200%);
-            border: 1px solid rgba(255, 255, 255, 0.9);
-            box-shadow: 
-                0 12px 40px rgba(31, 38, 135, 0.3),
-                inset 0 6px 30px rgba(255, 255, 255, 0.4);
-            border-radius: 12px;
-            padding: 40px;
-            max-width: 600px;
-            width: 100%;
-        }
-        
-        .download-header {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        
-        .download-icon {
-            font-size: 64px;
-            margin-bottom: 20px;
-        }
-        
-        .download-title {
-            font-size: 24px;
-            font-weight: 600;
-            color: var(--theme-color, #0078d4);
-            margin-bottom: 10px;
-        }
-        
-        .download-info {
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 30px;
-        }
-        
-        .info-row {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 12px;
-            padding-bottom: 12px;
-            border-bottom: 1px solid #e0e0e0;
-        }
-        
-        .info-row:last-child {
-            margin-bottom: 0;
-            padding-bottom: 0;
-            border-bottom: none;
-        }
-        
-        .info-label {
-            font-weight: 600;
-            color: #666;
-            min-width: 80px;
-        }
-        
-        .info-value {
-            color: #333;
-            text-align: right;
-            word-break: break-all;
-            flex: 1;
-        }
-        
-        .download-actions {
-            display: flex;
-            gap: 15px;
-            justify-content: center;
-        }
-        
-        .btn {
-            padding: 12px 30px;
-            border: none;
-            border-radius: 6px;
-            font-size: 16px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            font-weight: 600;
-        }
-        
-        .btn-primary {
-            background: var(--theme-color, #0078d4);
-            color: white;
-        }
-        
-        .btn-primary:hover {
-            background: #106ebe;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,120,212,0.3);
-        }
-        
-        .btn-secondary {
-            background: #f3f1f2;
-            color: #333;
-            border: 1px solid #dfe4e1;
-        }
-        
-        .btn-secondary:hover {
-            background: #e8e6e7;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        }
-        
-        .loading {
-            display: none;
-            text-align: center;
-            padding: 20px;
-        }
-        
-        .loading.active {
-            display: block;
-        }
-        
-        .spinner {
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid var(--theme-color, #0078d4);
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 20px;
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        
-        .download-content {
-            display: none;
-        }
-        
-        .download-content.active {
-            display: block;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #f3f3f3; color: #333; line-height: 1.6; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
+        .download-container { position: relative; background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(4px) saturate(200%); border: 1px solid rgba(255, 255, 255, 0.9); box-shadow: 0 12px 40px rgba(31, 38, 135, 0.3), inset 0 6px 30px rgba(255, 255, 255, 0.4); border-radius: 12px; padding: 40px; max-width: 600px; width: 100%; }
+        .download-header { text-align: center; margin-bottom: 30px; }
+        .download-icon { font-size: 64px; margin-bottom: 20px; }
+        .download-title { font-size: 24px; font-weight: 600; color: var(--theme-color, #0078d4); margin-bottom: 10px; }
+        .download-info { background: #f8f9fa; border-radius: 8px; padding: 20px; margin-bottom: 30px; }
+        .info-row { display: flex; justify-content: space-between; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #e0e0e0; }
+        .info-row:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+        .info-label { font-weight: 600; color: #666; min-width: 80px; }
+        .info-value { color: #333; text-align: right; word-break: break-all; flex: 1; }
+        .download-actions { display: flex; gap: 15px; justify-content: center; }
+        .btn { padding: 12px 30px; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; transition: all 0.3s ease; font-weight: 600; }
+        .btn-primary { background: var(--theme-color, #0078d4); color: white; }
+        .btn-primary:hover { background: #106ebe; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,120,212,0.3); }
+        .btn-secondary { background: #f3f1f2; color: #333; border: 1px solid #dfe4e1; }
+        .btn-secondary:hover { background: #e8e6e7; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .loading { display: none; text-align: center; padding: 20px; }
+        .loading.active { display: block; }
+        .spinner { border: 3px solid #f3f3f3; border-top: 3px solid var(--theme-color, #0078d4); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 20px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .download-content { display: none; }
+        .download-content.active { display: block; }
     </style>
 </head>
 <body>
@@ -169,13 +36,11 @@
             <div class="spinner"></div>
             <p>正在准备下载...</p>
         </div>
-        
         <div class="download-content" id="download-content">
             <div class="download-header">
                 <div class="download-icon">↓</div>
                 <h1 class="download-title">准备下载</h1>
             </div>
-            
             <div class="download-info">
                 <div class="info-row">
                     <span class="info-label">文件名：</span>
@@ -190,7 +55,6 @@
                     <span class="info-value" id="download-url">-</span>
                 </div>
             </div>
-            
             <div class="download-actions">
                 <button class="btn btn-secondary" id="cancel-btn">取消</button>
                 <button class="btn btn-secondary" id="save-as-btn">另存为</button>
@@ -198,16 +62,11 @@
             </div>
         </div>
     </div>
-    
     <script>
-        const ipcRenderer = window.electron ? window.electron.ipcRenderer : null;
-        
         let downloadInfo = null;
-        
-        // 加载主题颜色
+
         function loadThemeColor() {
             try {
-                // 从localStorage获取设置
                 const settings = JSON.parse(localStorage.getItem('cosySettings') || '{}');
                 if (settings.themeColor) {
                     document.documentElement.style.setProperty('--theme-color', settings.themeColor);
@@ -216,73 +75,54 @@
                 console.error('加载主题颜色失败:', error);
             }
         }
-        
-        // 页面加载时应用主题颜色
-        document.addEventListener('DOMContentLoaded', loadThemeColor);
-        
-        // 获取下载信息
-        ipcRenderer.on('download-info', (event, info) => {
+
+        document.addEventListener('DOMContentLoaded', function() {
+            loadThemeColor();
+            document.getElementById('cancel-btn').addEventListener('click', () => {
+                window.electronAPI.send('close-current-tab');
+            });
+            document.getElementById('save-as-btn').addEventListener('click', () => {
+                if (downloadInfo) {
+                    window.electronAPI.send('show-save-dialog', {
+                        url: downloadInfo.url,
+                        defaultName: downloadInfo.filename || 'download'
+                    });
+                }
+            });
+            document.getElementById('view-downloads-btn').addEventListener('click', () => {
+                window.electronAPI.send('navigate-to-url', 'cosy://downloadlist');
+            });
+            window.electronAPI.send('get-download-info');
+        });
+
+        window.electronAPI.on('download-info', (info) => {
             downloadInfo = info;
-            
             document.getElementById('file-name').textContent = info.filename || '未知文件';
             document.getElementById('file-size').textContent = formatSize(info.totalBytes) || '未知大小';
             document.getElementById('download-url').textContent = info.url || '-';
-            
             document.getElementById('loading').classList.remove('active');
             document.getElementById('download-content').classList.add('active');
         });
-        
-        // 监听下载开始事件
-        ipcRenderer.on('download-started', (event, data) => {
-            // 下载已开始，跳转到下载列表页面
+
+        window.electronAPI.on('download-started', () => {
             window.location.href = 'cosy://downloadlist';
         });
-        
-        // 监听下载进度更新
-        ipcRenderer.on('download-progress', (event, data) => {
-            // 如果还在当前页面，跳转到下载列表页面
+
+        window.electronAPI.on('download-progress', () => {
             window.location.href = 'cosy://downloadlist';
         });
-        
-        // 格式化文件大小
+
         function formatSize(bytes) {
             if (!bytes) return '-';
-            
             const units = ['B', 'KB', 'MB', 'GB', 'TB'];
             let size = bytes;
             let unitIndex = 0;
-            
             while (size >= 1024 && unitIndex < units.length - 1) {
                 size /= 1024;
                 unitIndex++;
             }
-            
             return size.toFixed(2) + ' ' + units[unitIndex];
         }
-        
-        // 取消下载
-        document.getElementById('cancel-btn').addEventListener('click', () => {
-            // 关闭当前标签页
-            ipcRenderer.send('close-current-tab');
-        });
-        
-        // 另存为
-        document.getElementById('save-as-btn').addEventListener('click', () => {
-            if (downloadInfo) {
-                ipcRenderer.send('show-save-dialog', {
-                    url: downloadInfo.url,
-                    defaultName: downloadInfo.filename || 'download'
-                });
-            }
-        });
-        
-        // 查看下载列表
-        document.getElementById('view-downloads-btn').addEventListener('click', () => {
-            ipcRenderer.send('navigate-to-url', 'cosy://downloadlist');
-        });
-        
-        // 页面加载时请求下载信息
-        ipcRenderer.send('get-download-info');
     </script>
 </body>
 </html>
