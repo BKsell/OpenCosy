@@ -66,10 +66,11 @@ function createWindow() {
   const windowOptions = {
     width: ws.width || 1200, height: ws.height || 800, minWidth: 800, minHeight: 600,
     webPreferences: {
-      // v2 安全加固: 禁用 remote 模块（已废弃，可被 XSS 利用访问主进程 API）
-      // TODO: 后续应禁用 nodeIntegration + 启用 contextIsolation + preload script
-      nodeIntegration: true, contextIsolation: false, webSecurity: true,
-      allowRunningInsecureContent: false, enableRemoteModule: false
+      // v3 安全加固: 禁用 nodeIntegration + 启用 contextIsolation + preload script
+      // 渲染进程不再能直接访问 Node.js API，只能通过 preload.js 暴露的安全接口通信
+      nodeIntegration: false, contextIsolation: true, sandbox: true,
+      preload: path.join(__dirname, 'preload.js'),
+      webSecurity: true, allowRunningInsecureContent: false, enableRemoteModule: false
     },
     titleBarStyle: 'hidden', frame: false, show: false,
     icon: path.join(__dirname, 'ico.png')
