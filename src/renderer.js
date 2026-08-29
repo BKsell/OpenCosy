@@ -1,4 +1,5 @@
-const { ipcRenderer } = require('electron');
+const ipcRenderer = window.electron ? window.electron.ipcRenderer : null;
+if (!ipcRenderer) { console.error('electron API not available'); }
 
 // Define window.electron before instantiating TabManager
 window.electron = {
@@ -97,7 +98,8 @@ class TabManager {
                 this.applyThemeColor(settings.themeColor);
             } else {
                 // 如果localStorage中没有主题颜色，尝试从文件系统中加载
-                const { ipcRenderer } = require('electron');
+                const ipcRenderer = window.electron ? window.electron.ipcRenderer : null;
+if (!ipcRenderer) { console.error('electron API not available'); }
                 ipcRenderer.send('get-settings');
                 // 默认应用蓝色
                 this.applyThemeColor();
