@@ -1,28 +1,86 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-// 安全地暴露 ipcRenderer 给渲染进程
-// 只暴露必要的方法，避免直接暴露 ipcRenderer 对象
-contextBridge.exposeInMainWorld('electron', {
-  ipcRenderer: {
-    invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
-    send: (channel, ...args) => ipcRenderer.send(channel, ...args),
-    on: (channel, listener) => {
-      // 只允许监听白名单中的频道，防止恶意页面监听敏感事件
-      const allowedChannels = [
-        'tab-switched', 'tab-created', 'tab-closed', 'downloadProgress',
-        'downloadListUpdated', 'download-completed', 'serverLog', 'serverStatus',
-        'serverReady', 'msLoginProgress', 'msLoginSuccess', 'msLoginError',
-        'settings-updated', 'extension-loaded', 'url-changed', 'title-changed',
-        'favicon-updated', 'context-menu', 'new-tab-request', 'will-navigate'
-      ];
-      if (allowedChannels.includes(channel)) {
-        ipcRenderer.on(channel, listener);
-      }
-    },
-    removeListener: (channel, listener) => ipcRenderer.removeListener(channel, listener),
-    removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),
+const allowedChannels = new Set([
+  'window-control',
+  'toggle-tabbar-collapse',
+  'navigate-to-url',
+  'save-settings',
+  'update-theme-color',
+  'get-settings',
+  'export-config',
+  'show-context-menu',
+  'show-more-options-menu',
+  'get-download-info',
+  'start-download',
+  'show-save-dialog',
+  'get-downloads',
+  'pause-download',
+  'resume-download',
+  'cancel-download',
+  'retry-download',
+  'remove-download',
+  'open-file',
+  'open-folder',
+  'clear-downloads',
+  'close-current-tab',
+  'create-tab',
+]);
+
+contextBridge.exposeInMainWorld('electronAPI', {
+  minimize: () => ipcRenderer.send('window-control', 'minimize'),
+  maximize: () => ipcRenderer.send('window-control', 'maximize'),
+  close: () => ipcRenderer.send('window-control', 'close'),
+  send: (channel, data) => {
+    if (allowedChannels.has(channel)) {
+      ipcRenderer.send(channel, data);
+    }
   },
-  // 暴露平台信息
-  platform: process.platform,
-  versions: process.versions,
+  invoke: (channel, data) => {
+    const allowedInvokeChannels = new Set([
+      'create-tab',
+      'switch-tab',
+      'close-tab',
+      'navigate-tab',
+      'get-current-tab',
+      'get-all-tabs',
+      'add-extension',
+      'get-extensions',
+      'toggle-extension',
+      'remove-extension',
+      'browse-folder',
+    ]);
+    if (allowedInvokeChannels.has(channel)) {
+      return ipcRenderer.invoke(channel, data);
+    }
+    return Promise.reject(new Error('Channel not allowed'));
+  },
+  on: (channel, callback) => {
+    const allowedOnChannels = new Set([
+      'tab-created',
+      'tab-updated',
+      'tab-loading',
+      'tab-switched',
+      'tab-closed',
+      'html-fullscreen-changed',
+      'update-theme-color',
+      'settings-loaded',
+      'download-status-changed',
+      'download-progress',
+      'download-complete',
+      'download-error',
+      'download-started',
+      'downloads-list',
+      'download-removed',
+      'downloads-cleared',
+      'clear-downloads-success',
+      'export-config-success',
+      'export-config-canceled',
+      'export-config-error',
+      'settings-saved',
+      'download-info',
+    ]);
+    if (allowedOnChannels.has(channel)) {
+      ipcRenderer.on(channel, (event, ...args) => callback(...args));
+    }
+  },
 });
