@@ -1009,12 +1009,17 @@ async function validateExtensionFolder(folderPath) {
   } catch (error) { return { valid: false, error: '读取manifest.json失败: ' + error.message }; }
 }
 
+function isSafeEntryName(name) {
+  return name && name !== '.' && name !== '..' && !name.includes('/') && !name.includes('\\') && !path.isAbsolute(name);
+}
+
 async function copyExtensionToStorage(sourcePath, extensionId) {
   try {
     const targetPath = path.join(extensionsPath, extensionId);
     await fs.mkdir(targetPath, { recursive: true });
     const files = await fs.readdir(sourcePath);
     for (const file of files) {
+      if (!isSafeEntryName(file)) continue;
       const sourceFile = path.join(sourcePath, file);
       const targetFile = path.join(targetPath, file);
       const stat = await fs.stat(sourceFile);
@@ -1054,6 +1059,7 @@ async function unloadExtension(extensionId) {
 }
 
 ipcMain.handle('add-extension', async (event, folderPath) => {
+  if (!isMainSender(event)) return { success: false, error: 'Unauthorized' };
   try {
     const validation = await validateExtensionFolder(folderPath);
     if (!validation.valid) return { success: false, error: validation.error };
@@ -1068,7 +1074,10 @@ ipcMain.handle('add-extension', async (event, folderPath) => {
     let iconPath = '';
     if (manifest.icons) {
       const iconSizes = Object.keys(manifest.icons).sort((a, b) => parseInt(b) - parseInt(a));
-      if (iconSizes.length > 0) iconPath = path.join(extensionsPath, extensionId, manifest.icons[iconSizes[0]]);
+      if (iconSizes.length > 0) {
+        const iconName = manifest.icons[iconSizes[0]];
+        if (isSafeEntryName(iconName)) iconPath = path.join(extensionsPath, extensionId, iconName);
+      }
     }
     const newExtension = {
       id: extensionId, name: manifest.name, version: manifest.version,
@@ -1082,7 +1091,8 @@ ipcMain.handle('add-extension', async (event, folderPath) => {
   } catch (error) { return { success: false, error: error.message }; }
 });
 
-ipcMain.handle('get-extensions', async () => {
+ipcMain.handle('get-extensions', async (event) => {
+  if (!isMainSender(event)) return { success: false, error: 'Unauthorized', extensions: [] };
   try {
     const config = await readExtensionsConfig();
     return { success: true, extensions: config.extensions };
@@ -1118,7 +1128,8 @@ ipcMain.handle('remove-extension', async (event, id) => {
   } catch (error) { return { success: false, error: error.message }; }
 });
 
-ipcMain.handle('browse-folder', async () => {
+ipcMain.handle('browse-folder', async (event) => {
+  if (!isMainSender(event)) return { success: false, error: 'Unauthorized' };
   try {
     const result = await dialog.showOpenDialog(mainWindow, { title: '选择插件文件夹', properties: ['openDirectory'] });
     if (!result.canceled && result.filePaths.length > 0) return { success: true, path: result.filePaths[0] };
