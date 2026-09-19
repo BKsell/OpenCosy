@@ -327,8 +327,21 @@ class TabManager {
     }
   }
 
-  async goBack() {}
-  async goForward() {}
+  async goBack() {
+    try {
+      await window.electronAPI.invoke('navigate-back');
+    } catch (error) {
+      console.error('后退失败:', error);
+    }
+  }
+
+  async goForward() {
+    try {
+      await window.electronAPI.invoke('navigate-forward');
+    } catch (error) {
+      console.error('前进失败:', error);
+    }
+  }
 
   async refresh() {
     if (this.currentTabId) {
