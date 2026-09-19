@@ -1,4 +1,4 @@
-const { app, BrowserWindow, WebContentsView, ipcMain, session, protocol, Menu, MenuItem, dialog, shell } = require('electron');
+﻿const { app, BrowserWindow, WebContentsView, ipcMain, session, protocol, Menu, MenuItem, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
@@ -815,13 +815,13 @@ ipcMain.on('remove-download', (event, id) => {
 });
 
 ipcMain.on('open-file', (event, filePath) => {
-  if (fsSync.existsSync(filePath)) shell.openPath(filePath);
-});
-
+  // 安全加固：验证文件路径，防止路径遍历
+  const safePath = sanitizePath(filePath, app.getPath('downloads'));
+  if (safePath && fsSync.existsSync(safePath)) shell.openPath(safePath);
 ipcMain.on('open-folder', (event, filePath) => {
-  if (fsSync.existsSync(filePath)) shell.showItemInFolder(filePath);
-});
-
+  // 安全加固：验证文件路径，防止路径遍历
+  const safePath = sanitizePath(filePath, app.getPath('downloads'));
+  if (safePath && fsSync.existsSync(safePath)) shell.showItemInFolder(safePath);
 ipcMain.on('clear-downloads', (event) => {
   downloads = [];
   currentDownloadInfo = null;
