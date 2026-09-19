@@ -7,27 +7,136 @@
     <script src="constants.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #fff; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #333; line-height: 1.6; }
-        .error-container { display: flex; justify-content: space-between; align-items: flex-start; max-width: 800px; padding: 40px; gap: 60px; }
+
+        :root {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f8f9fa;
+            --bg-tertiary: #f3f1f2;
+            --text-primary: #333333;
+            --text-secondary: #666666;
+            --border-color: #dfe4e1;
+            --theme-color: #0078d4;
+        }
+
+        [data-theme="dark"] {
+            --bg-primary: #1a1a1a;
+            --bg-secondary: #2d2d2d;
+            --bg-tertiary: #3d3d3d;
+            --text-primary: #e0e0e0;
+            --text-secondary: #999999;
+            --border-color: #444444;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg-primary);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-primary);
+            line-height: 1.6;
+            transition: background 0.3s, color 0.3s;
+        }
+
+        .error-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            max-width: 800px;
+            padding: 40px;
+            gap: 60px;
+        }
+
         .error-content { flex: 1; }
-        .error-header { display: flex; align-items: center; margin-bottom: 30px; gap: 20px; }
+
+        .error-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 30px;
+            gap: 20px;
+        }
+
         .error-icon { font-size: 64px; color: #ff6b6b; }
+
         .error-info { text-align: left; }
-        .error-code { font-size: 48px; font-weight: 300; margin-bottom: 5px; color: #333; }
-        .error-message { font-size: 18px; color: #666; }
-        .error-details { background: #f8f9fa; border-radius: 8px; padding: 20px; margin-bottom: 30px; text-align: left; display: none; }
+
+        .error-code {
+            font-size: 48px;
+            font-weight: 300;
+            margin-bottom: 5px;
+            color: var(--text-primary);
+        }
+
+        .error-message { font-size: 18px; color: var(--text-secondary); }
+
+        .error-details {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 30px;
+            text-align: left;
+            display: none;
+        }
+
         .error-details.show { display: block; }
+
         .detail-item { margin-bottom: 15px; }
-        .detail-label { font-weight: 600; color: #333; margin-bottom: 5px; }
-        .detail-value { color: #666; font-family: 'Consolas', 'Monaco', monospace; }
-        .action-buttons { display: flex; gap: 15px; justify-content: center; margin-bottom: 30px; flex-wrap: wrap; }
-        .btn { padding: 12px 24px; border: none; border-radius: 6px; font-size: 14px; cursor: pointer; transition: all 0.3s ease; text-decoration: none; display: inline-block; }
-        .btn-primary { background: var(--theme-color, #0078d4); color: #fff; }
-        .btn-primary:hover { opacity: 0.9; }
-        .btn-secondary { background: #f3f1f2; color: #333; border: 1px solid #dfe4e1; }
-        .btn-secondary:hover { background: #e8e6e7; }
+
+        .detail-label {
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 5px;
+        }
+
+        .detail-value {
+            color: var(--text-secondary);
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn-primary {
+            background: var(--theme-color);
+            color: #fff;
+        }
+
+        .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
+
+        .btn-secondary {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background: var(--border-color);
+        }
+
         @media (max-width: 600px) {
-            .error-container { flex-direction: column; padding: 20px; align-items: center; }
+            .error-container {
+                flex-direction: column;
+                padding: 20px;
+                align-items: center;
+            }
             .error-code { font-size: 36px; }
             .error-message { font-size: 16px; }
             .action-buttons { flex-direction: column; align-items: center; }
@@ -45,7 +154,7 @@
                     <div class="error-message" id="error-message">无法访问此网站</div>
                 </div>
             </div>
-            <div style="font-size: 16px; margin-bottom: 20px; color: #666;">
+            <div style="font-size: 16px; margin-bottom: 20px; color: var(--text-secondary);">
                 抱歉，您访问的页面出现了一些问题。
             </div>
             <div class="action-buttons">
@@ -73,6 +182,14 @@
 
         function isValidColor(str) {
             return typeof str === 'string' && COLOR_RE.test(str);
+        }
+
+        function applyDarkMode(isDark) {
+            if (isDark) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            } else {
+                document.documentElement.removeAttribute('data-theme');
+            }
         }
 
         function getUrlParams() {
@@ -105,7 +222,11 @@
         }
 
         function getStatusCodeText(code) {
-            return { '400': 'Bad Request', '401': 'Unauthorized', '403': 'Forbidden', '404': 'Not Found', '500': 'Internal Server Error', '502': 'Bad Gateway', '503': 'Service Unavailable', '504': 'Gateway Timeout' }[code] || 'Unknown Error';
+            return {
+                '400': 'Bad Request', '401': 'Unauthorized', '403': 'Forbidden',
+                '404': 'Not Found', '500': 'Internal Server Error',
+                '502': 'Bad Gateway', '503': 'Service Unavailable', '504': 'Gateway Timeout'
+            }[code] || 'Unknown Error';
         }
 
         function reloadPage() {
@@ -134,6 +255,7 @@
             try {
                 const s = JSON.parse(localStorage.getItem('cosySettings') || '{}');
                 if (isValidColor(s.themeColor)) applyThemeColor(s.themeColor);
+                if (s.darkMode === true || s.darkMode === 'true') applyDarkMode(true);
             } catch {}
         });
 
