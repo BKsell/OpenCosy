@@ -25,6 +25,8 @@ class TabManager {
   constructor() {
     this.tabs = [];
     this.currentTabId = null;
+    this.bookmarks = [];
+    this.history = [];
     this.initialize();
   }
 
@@ -32,6 +34,8 @@ class TabManager {
     this.setupEventListeners();
     this.setupIpcListeners();
     this.loadAndApplyThemeColor();
+    this.loadBookmarks();
+    this.loadHistory();
   }
 
   loadAndApplyThemeColor() {
@@ -49,8 +53,48 @@ class TabManager {
     }
   }
 
+  async loadBookmarks() {
+    try {
+      const result = await window.electronAPI.invoke('get-bookmarks');
+      if (result.success) {
+        this.bookmarks = result.bookmarks;
+      }
+    } catch (error) {
+      console.error('加载书签失败:', error);
+    }
+  }
+
+  async loadHistory() {
+    try {
+      const result = await window.electronAPI.invoke('get-history');
+      if (result.success) {
+        this.history = result.history;
+      }
+    } catch (error) {
+      console.error('加载历史记录失败:', error);
+    }
+  }
+
   applyThemeColor(color = '#0078d4') {
     document.documentElement.style.setProperty('--theme-color', color);
+  }
+
+  showToast(message) {
+    let toast = document.getElementById('toast-notification');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'toast-notification';
+      toast.style.cssText = `
+        position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+        background: rgba(0,0,0,0.8); color: white; padding: 12px 24px;
+        border-radius: 8px; z-index: 1000; opacity: 0;
+        transition: opacity 0.3s ease; pointer-events: none;
+      `;
+      document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.style.opacity = '1';
+    setTimeout(() => { toast.style.opacity = '0'; }, 2000);
   }
 
   setupEventListeners() {
@@ -58,6 +102,8 @@ class TabManager {
     document.getElementById('new-tab').addEventListener('click', () => this.createNewTab());
     document.getElementById('settings').addEventListener('click', () => this.createNewTab('cosy://setting'));
     document.getElementById('downloads').addEventListener('click', () => this.createNewTab('cosy://downloadlist'));
+    document.getElementById('bookmarks').addEventListener('click', () => this.showBookmarksBar());
+    document.getElementById('history').addEventListener('click', () => this.showHistoryPanel());
     document.getElementById('url-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') this.navigateFromAddressBar(); });
     document.getElementById('go').addEventListener('click', () => this.navigateFromAddressBar());
     document.getElementById('back').addEventListener('click', () => this.goBack());
@@ -83,6 +129,19 @@ class TabManager {
     window.electronAPI.on('html-fullscreen-changed', (data) => this.toggleFullscreenUI(data.isFullscreen));
     window.electronAPI.on('update-theme-color', (color) => this.applyThemeColor(color));
     window.electronAPI.on('settings-loaded', (settings) => { if (settings.themeColor) this.applyThemeColor(settings.themeColor); });
+    window.electronAPI.on('bookmarks-updated', (bookmarks) => {
+      this.bookmarks = bookmarks;
+      this.showBookmarksBar();
+    });
+    window.electronAPI.on('show-toast', (message) => this.showToast(message));
+    window.electronAPI.on('focus-address-bar', () => {
+      const urlInput = document.getElementById('url-input');
+      if (urlInput) {
+        urlInput.focus();
+        urlInput.select();
+      }
+    });
+    window.electronAPI.on('show-history', () => this.showHistoryPanel());
   }
 
   toggleFullscreenUI(isFullscreen) {
@@ -90,6 +149,113 @@ class TabManager {
     elements.forEach(selector => {
       const el = document.querySelector(selector);
       if (el) el.style.display = isFullscreen ? 'none' : 'flex';
+    });
+  }
+
+  showBookmarksBar() {
+    let bar = document.getElementById('bookmarks-bar');
+    if (bar) {
+      bar.remove();
+      return;
+    }
+
+    bar = document.createElement('div');
+    bar.id = 'bookmarks-bar';
+    bar.style.cssText = `
+      position: fixed; top: 100px; left: 60px; right: 60px;
+      background: white; border: 1px solid #e0e0e0; border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 100;
+      max-height: 300px; overflow-y: auto; padding: 12px;
+    `;
+
+    if (this.bookmarks.length === 0) {
+      bar.innerHTML = '<div style="text-align: center; color: #999; padding: 20px;">暂无书签，按 Ctrl+D 添加书签</div>';
+    } else {
+      this.bookmarks.forEach(bookmark => {
+        const item = document.createElement('div');
+        item.style.cssText = 'padding: 8px; cursor: pointer; border-radius: 4px;';
+        item.innerHTML = `<strong>${escapeHtml(bookmark.title)}</strong><br><small style="color: #666;">${escapeHtml(bookmark.url)}</small>`;
+        item.onmouseover = () => item.style.background = '#f0f0f0';
+        item.onmouseout = () => item.style.background = 'transparent';
+        item.onclick = () => {
+          this.createNewTab(bookmark.url);
+          bar.remove();
+        };
+        bar.appendChild(item);
+      });
+    }
+
+    document.body.appendChild(bar);
+    setTimeout(() => {
+      const closeHandler = (e) => {
+        if (!bar.contains(e.target)) {
+          bar.remove();
+          document.removeEventListener('click', closeHandler);
+        }
+      };
+      setTimeout(() => document.addEventListener('click', closeHandler), 100);
+    });
+  }
+
+  showHistoryPanel() {
+    let panel = document.getElementById('history-panel');
+    if (panel) {
+      panel.remove();
+      return;
+    }
+
+    this.loadHistory();
+
+    panel = document.createElement('div');
+    panel.id = 'history-panel';
+    panel.style.cssText = `
+      position: fixed; top: 100px; right: 60px; width: 400px;
+      background: white; border: 1px solid #e0e0e0; border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 100;
+      max-height: 400px; overflow-y: auto; padding: 12px;
+    `;
+
+    const header = document.createElement('div');
+    header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;';
+    header.innerHTML = '<strong>历史记录</strong>';
+    const clearBtn = document.createElement('button');
+    clearBtn.textContent = '清除历史';
+    clearBtn.style.cssText = 'padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;';
+    clearBtn.onclick = async () => {
+      await window.electronAPI.invoke('clear-history');
+      this.history = [];
+      panel.remove();
+      this.showToast('历史记录已清除');
+    };
+    header.appendChild(clearBtn);
+    panel.appendChild(header);
+
+    if (this.history.length === 0) {
+      panel.innerHTML += '<div style="text-align: center; color: #999; padding: 20px;">暂无历史记录</div>';
+    } else {
+      this.history.forEach(item => {
+        const entry = document.createElement('div');
+        entry.style.cssText = 'padding: 8px; cursor: pointer; border-radius: 4px;';
+        entry.innerHTML = `<strong>${escapeHtml(item.title)}</strong><br><small style="color: #666;">${escapeHtml(item.url)}</small>`;
+        entry.onmouseover = () => entry.style.background = '#f0f0f0';
+        entry.onmouseout = () => entry.style.background = 'transparent';
+        entry.onclick = () => {
+          this.createNewTab(item.url);
+          panel.remove();
+        };
+        panel.appendChild(entry);
+      });
+    }
+
+    document.body.appendChild(panel);
+    setTimeout(() => {
+      const closeHandler = (e) => {
+        if (!panel.contains(e.target)) {
+          panel.remove();
+          document.removeEventListener('click', closeHandler);
+        }
+      };
+      setTimeout(() => document.addEventListener('click', closeHandler), 100);
     });
   }
 
@@ -116,20 +282,42 @@ class TabManager {
     }
   }
 
+  createFaviconElement(tabData) {
+    const faviconContainer = document.createElement('div');
+    faviconContainer.className = 'favicon-container';
+
+    let faviconText = 'N';
+    if (tabData.title && tabData.title.trim()) faviconText = tabData.title.trim().charAt(0);
+
+    const textFavicon = document.createElement('div');
+    textFavicon.className = 'text-favicon';
+    textFavicon.style.display = tabData.favicon && isSafeUrl(tabData.favicon) ? 'none' : 'flex';
+    textFavicon.textContent = faviconText;
+
+    faviconContainer.appendChild(textFavicon);
+
+    if (tabData.favicon && isSafeUrl(tabData.favicon)) {
+      const imgFavicon = document.createElement('img');
+      imgFavicon.className = 'tab-favicon';
+      imgFavicon.src = tabData.favicon;
+      imgFavicon.alt = '';
+      imgFavicon.onerror = function() {
+        this.style.display = 'none';
+        textFavicon.style.display = 'flex';
+      };
+      faviconContainer.appendChild(imgFavicon);
+    }
+
+    return faviconContainer;
+  }
+
   addTabToUI(tabData) {
     const tabsContainer = document.getElementById('tabs-container');
     const tabElement = document.createElement('div');
     tabElement.className = 'tab';
     tabElement.setAttribute('data-tab-id', tabData.id);
 
-    let faviconHtml = '';
-    if (tabData.favicon && isSafeUrl(tabData.favicon)) {
-      faviconHtml = `<img src="${escapeHtml(tabData.favicon)}" class="tab-favicon" alt="" onerror="this.style.display='none'; this.parentNode.querySelector('.text-favicon').style.display='flex';">`;
-    }
-
-    let faviconText = 'N';
-    if (tabData.title && tabData.title.trim()) faviconText = tabData.title.trim().charAt(0);
-    faviconHtml += `<div class="text-favicon" style="display: ${tabData.favicon ? 'none' : 'flex'}">${escapeHtml(faviconText)}</div>`;
+    tabElement.appendChild(this.createFaviconElement(tabData));
 
     const titleSpan = document.createElement('span');
     titleSpan.className = 'tab-title';
@@ -143,7 +331,6 @@ class TabManager {
       this.closeTab(tabData.id);
     });
 
-    tabElement.innerHTML = faviconHtml;
     tabElement.appendChild(titleSpan);
     tabElement.appendChild(closeBtn);
 
@@ -179,68 +366,31 @@ class TabManager {
     if (currentTab) currentTab.classList.add('active');
   }
 
+  updateFavicon(tabElement, tabData) {
+    const existingContainer = tabElement.querySelector('.favicon-container');
+    if (existingContainer) existingContainer.remove();
+
+    const newContainer = this.createFaviconElement(tabData);
+    tabElement.insertBefore(newContainer, tabElement.firstChild);
+  }
+
   updateTabUI(tabData) {
     const tabElement = document.querySelector(`[data-tab-id="${tabData.id}"]`);
     if (tabElement) {
       if (tabData.title) {
         const titleElement = tabElement.querySelector('.tab-title');
         if (titleElement) titleElement.textContent = tabData.title;
-      }
 
-      if (tabData.favicon && isSafeUrl(tabData.favicon)) {
-        let faviconElement = tabElement.querySelector('.tab-favicon');
-        let textFaviconElement = tabElement.querySelector('.text-favicon');
-
-        if (!textFaviconElement) {
-          textFaviconElement = document.createElement('div');
-          textFaviconElement.className = 'text-favicon';
-          textFaviconElement.style.display = 'none';
+        const textFavicon = tabElement.querySelector('.text-favicon');
+        if (textFavicon) {
           let faviconText = 'N';
           if (tabData.title && tabData.title.trim()) faviconText = tabData.title.trim().charAt(0);
-          textFaviconElement.textContent = faviconText;
-          tabElement.insertBefore(textFaviconElement, tabElement.firstChild);
-        }
-
-        if (faviconElement) {
-          if (faviconElement.tagName === 'IMG') {
-            faviconElement.src = tabData.favicon;
-            faviconElement.style.display = 'block';
-            if (textFaviconElement) textFaviconElement.style.display = 'none';
-          } else {
-            const newFavicon = document.createElement('img');
-            newFavicon.className = 'tab-favicon';
-            newFavicon.src = tabData.favicon;
-            newFavicon.alt = '';
-            newFavicon.style.display = 'block';
-            newFavicon.onerror = function() {
-              this.style.display = 'none';
-              if (textFaviconElement) textFaviconElement.style.display = 'flex';
-            };
-            faviconElement.replaceWith(newFavicon);
-            if (textFaviconElement) textFaviconElement.style.display = 'none';
-          }
-        } else {
-          const newFavicon = document.createElement('img');
-          newFavicon.className = 'tab-favicon';
-          newFavicon.src = tabData.favicon;
-          newFavicon.alt = '';
-          newFavicon.style.display = 'block';
-          newFavicon.onerror = function() {
-            this.style.display = 'none';
-            if (textFaviconElement) textFaviconElement.style.display = 'flex';
-          };
-          tabElement.insertBefore(newFavicon, textFaviconElement);
-          if (textFaviconElement) textFaviconElement.style.display = 'none';
+          textFavicon.textContent = faviconText;
         }
       }
 
-      if (tabData.title) {
-        const textFaviconElement = tabElement.querySelector('.text-favicon');
-        if (textFaviconElement) {
-          let faviconText = 'N';
-          if (tabData.title && tabData.title.trim()) faviconText = tabData.title.trim().charAt(0);
-          textFaviconElement.textContent = faviconText;
-        }
+      if (tabData.favicon !== undefined) {
+        this.updateFavicon(tabElement, tabData);
       }
     }
 
