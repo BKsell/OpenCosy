@@ -65,10 +65,14 @@
     <script>
         let downloadInfo = null;
 
+        function isValidColor(c) {
+            return typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c);
+        }
+
         function loadThemeColor() {
             try {
                 const settings = JSON.parse(localStorage.getItem('cosySettings') || '{}');
-                if (settings.themeColor) {
+                if (settings.themeColor && isValidColor(settings.themeColor)) {
                     document.documentElement.style.setProperty('--theme-color', settings.themeColor);
                 }
             } catch (error) {
