@@ -41,6 +41,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'switch-tab',
       'close-tab',
       'navigate-tab',
+      'navigate-back',
+      'navigate-forward',
       'get-current-tab',
       'get-all-tabs',
       'add-extension',
