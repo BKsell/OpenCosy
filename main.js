@@ -659,6 +659,7 @@ ipcMain.on('toggle-tabbar-collapse', (event, collapsed) => {
 });
 
 ipcMain.handle('navigate-tab', (event, { tabId, url }) => {
+  if (event.sender !== mainWindow?.webContents) return { success: false, error: 'Unauthorized' };
   if (!isSafeUrl(url)) return { success: false, error: 'Unsafe URL' };
   const tab = tabs.find(t => t.id === tabId);
   if (tab) {
@@ -671,17 +672,20 @@ ipcMain.handle('navigate-tab', (event, { tabId, url }) => {
 });
 
 ipcMain.handle('create-tab', (event, url) => {
+  if (event.sender !== mainWindow?.webContents) return { success: false };
   if (!isSafeUrl(url)) url = 'cosy://newtab';
   const tab = createNewTab(url);
   return { id: tab.id, index: tabs.length - 1 };
 });
 
 ipcMain.handle('close-tab', (event, tabIndex) => {
+  if (event.sender !== mainWindow?.webContents) return { success: false };
   closeTab(tabIndex);
   return { success: true };
 });
 
 ipcMain.handle('switch-tab', (event, tabIndex) => {
+  if (event.sender !== mainWindow?.webContents) return { success: false };
   switchToTab(tabIndex);
   return { success: true };
 });
@@ -702,6 +706,7 @@ ipcMain.on('get-download-info', (event) => {
 });
 
 ipcMain.on('start-download', (event, data) => {
+  if (event.sender !== mainWindow?.webContents) return;
   if (currentDownloadInfo) {
     try {
       let savePath;
@@ -1059,6 +1064,7 @@ ipcMain.handle('get-extensions', async () => {
 });
 
 ipcMain.handle('toggle-extension', async (event, { id, enabled }) => {
+  if (event.sender !== mainWindow?.webContents) return { success: false, error: 'Unauthorized' };
   try {
     const config = await readExtensionsConfig();
     const extension = config.extensions.find(ext => ext.id === id);
@@ -1071,6 +1077,7 @@ ipcMain.handle('toggle-extension', async (event, { id, enabled }) => {
 });
 
 ipcMain.handle('remove-extension', async (event, id) => {
+  if (event.sender !== mainWindow?.webContents) return { success: false, error: 'Unauthorized' };
   try {
     const config = await readExtensionsConfig();
     const extensionIndex = config.extensions.findIndex(ext => ext.id === id);
