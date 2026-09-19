@@ -15,6 +15,15 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+function getSettings() {
+  try {
+    return JSON.parse(localStorage.getItem('cosySettings') || '{}');
+  } catch (error) {
+    console.error('解析设置失败:', error);
+    return {};
+  }
+}
+
 window.electron = {
   minimize: () => window.electronAPI.minimize(),
   maximize: () => window.electronAPI.maximize(),
@@ -40,7 +49,7 @@ class TabManager {
 
   loadAndApplyThemeColor() {
     try {
-      const settings = JSON.parse(localStorage.getItem('cosySettings') || '{}');
+      const settings = getSettings();
       if (settings.themeColor) {
         this.applyThemeColor(settings.themeColor);
       } else {
@@ -260,7 +269,7 @@ class TabManager {
   }
 
   async createNewTab(url) {
-    const settings = JSON.parse(localStorage.getItem('cosySettings') || '{}');
+    const settings = getSettings();
     const defaultTab = settings.defaultTab || 'newtab';
     const customUrl = settings.customUrl || '';
 
@@ -458,7 +467,7 @@ class TabManager {
 
     if (input.includes('.') && !input.includes(' ')) return 'https://' + input;
 
-    const settings = JSON.parse(localStorage.getItem('cosySettings') || '{}');
+    const settings = getSettings();
     const searchEngine = settings.searchEngine || 'bing';
     let searchUrl;
     switch (searchEngine) {
