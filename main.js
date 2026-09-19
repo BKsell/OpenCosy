@@ -1,4 +1,4 @@
-const { app, BrowserWindow, WebContentsView, ipcMain, session, protocol, Menu, MenuItem, dialog, shell } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, session, protocol, Menu, MenuItem, dialog, shell, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
@@ -12,6 +12,8 @@ let fileToOpen = null;
 let downloads = [];
 let currentDownloadInfo = null;
 let isTabBarCollapsed = false;
+let bookmarks = [];
+let history = [];
 
 const ALLOWED_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'cosy:']);
 const isDev = !app.isPackaged;
@@ -29,6 +31,7 @@ class Tab {
     this.view = null;
     this.isLoading = false;
     this.retry403 = false;
+    this.bookmarked = false;
   }
 }
 
@@ -83,6 +86,55 @@ function isPathInDir(filePath, dir) {
 
 function isValidColor(str) {
   return typeof str === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(str);
+}
+
+function addToHistory(url, title) {
+  if (!isSafeUrl(url) || url.startsWith('cosy://')) return;
+  const existingIndex = history.findIndex(h => h.url === url);
+  if (existingIndex !== -1) history.splice(existingIndex, 1);
+  history.unshift({ url, title, timestamp: Date.now() });
+  if (history.length > 1000) history = history.slice(0, 1000);
+  saveHistory();
+}
+
+function saveHistory() {
+  const historyPath = path.join(app.getPath('userData'), 'history.json');
+  try {
+    fsSync.writeFileSync(historyPath, JSON.stringify(history, null, 2), 'utf-8');
+  } catch (error) {
+    console.error('保存历史记录失败:', error);
+  }
+}
+
+function loadHistory() {
+  const historyPath = path.join(app.getPath('userData'), 'history.json');
+  try {
+    if (fsSync.existsSync(historyPath)) {
+      history = JSON.parse(fsSync.readFileSync(historyPath, 'utf-8'));
+    }
+  } catch (error) {
+    console.error('读取历史记录失败:', error);
+  }
+}
+
+function saveBookmarks() {
+  const bookmarksPath = path.join(app.getPath('userData'), 'bookmarks.json');
+  try {
+    fsSync.writeFileSync(bookmarksPath, JSON.stringify(bookmarks, null, 2), 'utf-8');
+  } catch (error) {
+    console.error('保存书签失败:', error);
+  }
+}
+
+function loadBookmarks() {
+  const bookmarksPath = path.join(app.getPath('userData'), 'bookmarks.json');
+  try {
+    if (fsSync.existsSync(bookmarksPath)) {
+      bookmarks = JSON.parse(fsSync.readFileSync(bookmarksPath, 'utf-8'));
+    }
+  } catch (error) {
+    console.error('读取书签失败:', error);
+  }
 }
 
 function createWindow() {
@@ -147,6 +199,91 @@ function createWindow() {
     }
     return { action: 'deny' };
   });
+
+  registerShortcuts();
+}
+
+function registerShortcuts() {
+  if (!mainWindow) return;
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    const ctrl = input.control || input.meta;
+    const shift = input.shift;
+
+    if (ctrl && input.key.toLowerCase() === 't' && !shift) {
+      createNewTab();
+      event.preventDefault();
+    } else if (ctrl && input.key.toLowerCase() === 'w') {
+      closeTab(currentTabIndex);
+      event.preventDefault();
+    } else if (ctrl && input.key.toLowerCase() === 'tab') {
+      const nextIndex = shift ? (currentTabIndex - 1 + tabs.length) % tabs.length : (currentTabIndex + 1) % tabs.length;
+      switchToTab(nextIndex);
+      event.preventDefault();
+    } else if (ctrl && input.key.toLowerCase() === 'l') {
+      mainWindow.webContents.send('focus-address-bar');
+      event.preventDefault();
+    } else if (ctrl && input.key.toLowerCase() === 'r' && !shift) {
+      if (tabs[currentTabIndex]?.view?.webContents) {
+        tabs[currentTabIndex].view.webContents.reload();
+      }
+      event.preventDefault();
+    } else if (ctrl && input.key.toLowerCase() === 'r' && shift) {
+      if (tabs[currentTabIndex]?.view?.webContents) {
+        tabs[currentTabIndex].view.webContents.reloadIgnoringCache();
+      }
+      event.preventDefault();
+    } else if (ctrl && input.key === '=') {
+      if (tabs[currentTabIndex]?.view?.webContents) {
+        const webContents = tabs[currentTabIndex].view.webContents;
+        webContents.setZoomLevel(webContents.getZoomLevel() + 0.5);
+      }
+      event.preventDefault();
+    } else if (ctrl && input.key === '-') {
+      if (tabs[currentTabIndex]?.view?.webContents) {
+        const webContents = tabs[currentTabIndex].view.webContents;
+        webContents.setZoomLevel(webContents.getZoomLevel() - 0.5);
+      }
+      event.preventDefault();
+    } else if (ctrl && input.key === '0') {
+      if (tabs[currentTabIndex]?.view?.webContents) {
+        tabs[currentTabIndex].view.webContents.setZoomLevel(0);
+      }
+      event.preventDefault();
+    } else if (input.alt && input.key === 'ArrowLeft') {
+      if (tabs[currentTabIndex]?.view?.webContents?.canGoBack()) {
+        tabs[currentTabIndex].view.webContents.goBack();
+      }
+      event.preventDefault();
+    } else if (input.alt && input.key === 'ArrowRight') {
+      if (tabs[currentTabIndex]?.view?.webContents?.canGoForward()) {
+        tabs[currentTabIndex].view.webContents.goForward();
+      }
+      event.preventDefault();
+    } else if (ctrl && input.key.toLowerCase() === 'd') {
+      const tab = tabs[currentTabIndex];
+      if (tab && isSafeUrl(tab.url) && !tab.url.startsWith('cosy://')) {
+        const existing = bookmarks.findIndex(b => b.url === tab.url);
+        if (existing === -1) {
+          bookmarks.push({ url: tab.url, title: tab.title, addedDate: new Date().toISOString() });
+          saveBookmarks();
+          tab.bookmarked = true;
+          mainWindow.webContents.send('bookmarks-updated', bookmarks);
+          mainWindow.webContents.send('show-toast', '已添加书签');
+        } else {
+          bookmarks.splice(existing, 1);
+          saveBookmarks();
+          tab.bookmarked = false;
+          mainWindow.webContents.send('bookmarks-updated', bookmarks);
+          mainWindow.webContents.send('show-toast', '已移除书签');
+        }
+      }
+      event.preventDefault();
+    } else if (ctrl && input.key.toLowerCase() === 'h') {
+      mainWindow.webContents.send('show-history');
+      event.preventDefault();
+    }
+  });
 }
 
 function getUrlProtocol(url) {
@@ -209,6 +346,7 @@ function loadTabContent(tab) {
         return;
       }
       tab.url = navigationUrl;
+      addToHistory(navigationUrl, tab.title);
       mainWindow.webContents.send('tab-updated', { id: tab.id, url: navigationUrl });
     });
 
@@ -220,6 +358,7 @@ function loadTabContent(tab) {
 
     tab.view.webContents.on('page-title-updated', (event, title) => {
       tab.title = title;
+      addToHistory(tab.url, title);
       mainWindow.webContents.send('tab-updated', { id: tab.id, title });
     });
 
@@ -563,6 +702,9 @@ app.on('open-file', (event, filePath) => {
 });
 
 app.whenReady().then(async () => {
+  loadHistory();
+  loadBookmarks();
+
   if (process.platform === 'win32') {
     app.setAsDefaultProtocolClient('cosy');
   }
@@ -1193,4 +1335,21 @@ ipcMain.on('export-config', async (event, content) => {
     console.error('导出配置失败:', error);
     event.reply('export-config-error', '导出配置失败: ' + error.message);
   }
+});
+
+ipcMain.handle('get-bookmarks', (event) => {
+  if (!isMainSender(event)) return { success: false, bookmarks: [] };
+  return { success: true, bookmarks };
+});
+
+ipcMain.handle('get-history', (event) => {
+  if (!isMainSender(event)) return { success: false, history: [] };
+  return { success: true, history: history.slice(0, 100) };
+});
+
+ipcMain.handle('clear-history', (event) => {
+  if (!isMainSender(event)) return { success: false };
+  history = [];
+  saveHistory();
+  return { success: true };
 });
