@@ -13,7 +13,7 @@
         .title { font-size: 32px; font-weight: 300; color: var(--theme-color, #0078d4); margin-bottom: 10px; }
         .subtitle { font-size: 16px; color: #666; opacity: 0.8; }
         .download-list { display: flex; flex-direction: column; gap: 15px; }
-        .download-item { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); display: flex; align-items: center; gap: 20px; transition: all 0.3s ease; }
+        .download-item { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); display: flex; align-items: center; gap: 20px; transition: all 0.3s ease; }
         .download-item:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.15); transform: translateY(-2px); }
         .file-icon { width: 64px; height: 64px; background: var(--theme-color, #0078d4); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 32px; flex-shrink: 0; }
         .file-info { flex: 1; min-width: 0; }
@@ -21,12 +21,10 @@
         .file-meta { font-size: 14px; color: #666; display: flex; gap: 15px; flex-wrap: wrap; }
         .file-actions { display: flex; gap: 10px; flex-shrink: 0; }
         .action-btn { padding: 8px 16px; border: none; border-radius: 4px; font-size: 14px; cursor: pointer; transition: all 0.2s ease; font-weight: 600; }
-        .btn-primary { background: var(--theme-color, #0078d4); color: white; }
-        .btn-primary:hover { background: #106ebe; }
+        .btn-primary { background: var(--theme-color, #0078d4); color: #fff; }
+        .btn-primary:hover { filter: brightness(0.9); }
         .btn-secondary { background: #f3f1f2; color: #333; border: 1px solid #dfe4e1; }
-        .btn-secondary:hover { background: #e8e6e7; }
-        .btn-danger { background: #dc3545; color: white; }
-        .btn-danger:hover { background: #c82333; }
+        .btn-danger { background: #dc3545; color: #fff; }
         .empty-state { text-align: center; padding: 80px 20px; color: #666; }
         .empty-icon { font-size: 64px; margin-bottom: 20px; }
         .empty-text { font-size: 18px; margin-bottom: 10px; }
@@ -48,30 +46,24 @@
         <div class="download-list" id="download-list"></div>
     </div>
     <script>
+        const COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
         let downloads = [];
 
-        function escapeHtml(str) {
-            const div = document.createElement('div');
-            div.textContent = str;
-            return div.innerHTML;
-        }
+        function isValidColor(str) { return typeof str === 'string' && COLOR_RE.test(str); }
 
-        function isValidPath(path) {
-            if (!path || typeof path !== 'string') return false;
-            if (path.includes('..')) return false;
-            if (path.includes('\0')) return false;
+        function isValidPath(p) {
+            if (!p || typeof p !== 'string') return false;
+            if (p.includes('..') || p.includes('\0')) return false;
             return true;
         }
 
         function loadThemeColor() {
             try {
-                const settings = JSON.parse(localStorage.getItem('cosySettings') || '{}');
-                if (settings.themeColor) {
-                    document.documentElement.style.setProperty('--theme-color', settings.themeColor);
+                const s = JSON.parse(localStorage.getItem('cosySettings') || '{}');
+                if (isValidColor(s.themeColor)) {
+                    document.documentElement.style.setProperty('--theme-color', s.themeColor);
                 }
-            } catch (error) {
-                console.error('加载主题颜色失败:', error);
-            }
+            } catch {}
         }
 
         document.addEventListener('DOMContentLoaded', function() {
@@ -80,58 +72,28 @@
             window.electronAPI.send('get-downloads');
         });
 
-        window.electronAPI.on('downloads-list', (data) => {
-            downloads = data || [];
-            renderDownloads();
-        });
-
-        window.electronAPI.on('download-progress', (data) => {
-            updateDownloadProgress(data);
-        });
-
-        window.electronAPI.on('download-status-changed', (data) => {
-            updateDownloadStatus(data.id, data.status);
-        });
-
-        window.electronAPI.on('download-complete', (data) => {
-            updateDownloadStatus(data.id, 'complete');
-        });
-
-        window.electronAPI.on('download-error', (data) => {
-            updateDownloadStatus(data.id, 'error');
-        });
-
+        window.electronAPI.on('downloads-list', (data) => { downloads = data || []; renderDownloads(); });
+        window.electronAPI.on('download-progress', (data) => updateDownloadProgress(data));
+        window.electronAPI.on('download-status-changed', (data) => updateDownloadStatus(data.id, data.status));
+        window.electronAPI.on('download-complete', (data) => updateDownloadStatus(data.id, 'complete'));
+        window.electronAPI.on('download-error', (data) => updateDownloadStatus(data.id, 'error'));
         window.electronAPI.on('download-removed', (data) => {
-            const index = downloads.findIndex(d => d.id === data.id);
-            if (index !== -1) {
-                downloads.splice(index, 1);
-                renderDownloads();
-            }
+            const i = downloads.findIndex(d => d.id === data.id);
+            if (i !== -1) { downloads.splice(i, 1); renderDownloads(); }
         });
-
-        window.electronAPI.on('downloads-cleared', () => {
-            downloads = [];
-            renderDownloads();
-        });
+        window.electronAPI.on('downloads-cleared', () => { downloads = []; renderDownloads(); });
 
         function renderDownloads() {
-            const listContainer = document.getElementById('download-list');
-            if (downloads.length === 0) {
-                listContainer.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-icon">↓</div>
-                        <p class="empty-text">暂无下载记录</p>
-                        <p class="empty-subtext">下载的文件将显示在这里</p>
-                    </div>
-                `;
+            const c = document.getElementById('download-list');
+            if (!downloads.length) {
+                c.innerHTML = '<div class="empty-state"><div class="empty-icon">↓</div><p class="empty-text">暂无下载记录</p><p class="empty-subtext">下载的文件将显示在这里</p></div>';
                 return;
             }
-
-            listContainer.innerHTML = '';
-            downloads.forEach(download => {
+            c.innerHTML = '';
+            downloads.forEach(dl => {
                 const item = document.createElement('div');
                 item.className = 'download-item';
-                item.setAttribute('data-id', download.id);
+                item.setAttribute('data-id', dl.id);
 
                 const icon = document.createElement('div');
                 icon.className = 'file-icon';
@@ -142,260 +104,158 @@
 
                 const name = document.createElement('div');
                 name.className = 'file-name';
-                name.textContent = download.filename || '未知文件';
+                name.textContent = dl.filename || '未知文件';
 
                 const meta = document.createElement('div');
                 meta.className = 'file-meta';
-                const sizeSpan = document.createElement('span');
-                sizeSpan.textContent = formatSize(download.totalBytes);
-                const dateSpan = document.createElement('span');
-                dateSpan.textContent = formatDate(download.startTime);
-                const statusSpan = document.createElement('span');
-                statusSpan.textContent = getStatusText(download.status);
-                meta.appendChild(sizeSpan);
-                meta.appendChild(dateSpan);
-                meta.appendChild(statusSpan);
+                [formatSize(dl.totalBytes), formatDate(dl.startTime), getStatusText(dl.status)].forEach(t => {
+                    const s = document.createElement('span');
+                    s.textContent = t;
+                    meta.appendChild(s);
+                });
 
                 info.appendChild(name);
                 info.appendChild(meta);
 
-                if (download.status === 'downloading') {
-                    const progressBar = document.createElement('div');
-                    progressBar.className = 'progress-bar';
-                    const progressFill = document.createElement('div');
-                    progressFill.className = 'progress-fill';
-                    progressFill.style.width = (download.progress || 0) + '%';
-                    progressBar.appendChild(progressFill);
-
-                    const progressText = document.createElement('div');
-                    progressText.className = 'progress-text';
-                    progressText.textContent = `${formatSize(download.receivedBytes)} / ${formatSize(download.totalBytes)} (${download.progress}%) - ${download.speed}`;
-
-                    info.appendChild(progressBar);
-                    info.appendChild(progressText);
+                if (dl.status === 'downloading') {
+                    const bar = document.createElement('div');
+                    bar.className = 'progress-bar';
+                    const fill = document.createElement('div');
+                    fill.className = 'progress-fill';
+                    fill.style.width = (dl.progress || 0) + '%';
+                    bar.appendChild(fill);
+                    const txt = document.createElement('div');
+                    txt.className = 'progress-text';
+                    txt.textContent = `${formatSize(dl.receivedBytes)} / ${formatSize(dl.totalBytes)} (${dl.progress}%) - ${dl.speed}`;
+                    info.appendChild(bar);
+                    info.appendChild(txt);
                 }
 
                 const actions = document.createElement('div');
                 actions.className = 'file-actions';
-
-                if (download.status === 'complete') {
-                    const openBtn = createActionButton('打开', 'btn-primary', () => openFile(download.savePath));
-                    const folderBtn = createActionButton('文件夹', 'btn-secondary', () => openFolder(download.savePath));
-                    const deleteBtn = createActionButton('删除', 'btn-danger', () => removeDownload(download.id));
-                    actions.appendChild(openBtn);
-                    actions.appendChild(folderBtn);
-                    actions.appendChild(deleteBtn);
-                } else if (download.status === 'pending') {
-                    const pendingBtn = createActionButton('等待中', 'btn-secondary', null);
-                    pendingBtn.disabled = true;
-                    actions.appendChild(pendingBtn);
-                } else if (download.status === 'downloading') {
-                    const pauseBtn = createActionButton('暂停', 'btn-secondary', () => pauseDownload(download.id));
-                    const cancelBtn = createActionButton('取消', 'btn-danger', () => cancelDownload(download.id));
-                    actions.appendChild(pauseBtn);
-                    actions.appendChild(cancelBtn);
-                } else if (download.status === 'paused') {
-                    const resumeBtn = createActionButton('继续', 'btn-primary', () => resumeDownload(download.id));
-                    const cancelBtn = createActionButton('取消', 'btn-danger', () => cancelDownload(download.id));
-                    actions.appendChild(resumeBtn);
-                    actions.appendChild(cancelBtn);
-                } else if (download.status === 'error') {
-                    const retryBtn = createActionButton('重试', 'btn-secondary', () => retryDownload(download.id));
-                    const deleteBtn = createActionButton('删除', 'btn-danger', () => removeDownload(download.id));
-                    actions.appendChild(retryBtn);
-                    actions.appendChild(deleteBtn);
-                }
+                addActions(actions, dl);
 
                 item.appendChild(icon);
                 item.appendChild(info);
                 item.appendChild(actions);
-                listContainer.appendChild(item);
+                c.appendChild(item);
             });
         }
 
-        function createActionButton(text, className, onClick) {
-            const btn = document.createElement('button');
-            btn.className = 'action-btn ' + className;
-            btn.textContent = text;
-            if (onClick) btn.addEventListener('click', onClick);
-            return btn;
+        function addActions(actions, dl) {
+            const btn = (txt, cls, handler) => {
+                const b = document.createElement('button');
+                b.className = 'action-btn ' + cls;
+                b.textContent = txt;
+                if (handler) b.addEventListener('click', handler);
+                return b;
+            };
+            if (dl.status === 'complete') {
+                actions.appendChild(btn('打开', 'btn-primary', () => openFile(dl.savePath)));
+                actions.appendChild(btn('文件夹', 'btn-secondary', () => openFolder(dl.savePath)));
+                actions.appendChild(btn('删除', 'btn-danger', () => removeDownload(dl.id)));
+            } else if (dl.status === 'pending') {
+                const b = btn('等待中', 'btn-secondary', null);
+                b.disabled = true;
+                actions.appendChild(b);
+            } else if (dl.status === 'downloading') {
+                actions.appendChild(btn('暂停', 'btn-secondary', () => pauseDownload(dl.id)));
+                actions.appendChild(btn('取消', 'btn-danger', () => cancelDownload(dl.id)));
+            } else if (dl.status === 'paused') {
+                actions.appendChild(btn('继续', 'btn-primary', () => resumeDownload(dl.id)));
+                actions.appendChild(btn('取消', 'btn-danger', () => cancelDownload(dl.id)));
+            } else if (dl.status === 'error') {
+                actions.appendChild(btn('重试', 'btn-secondary', () => retryDownload(dl.id)));
+                actions.appendChild(btn('删除', 'btn-danger', () => removeDownload(dl.id)));
+            }
         }
 
         function updateDownloadProgress(data) {
-            let download = downloads.find(d => d.id === data.id);
-            if (!download) {
-                window.electronAPI.send('get-downloads');
-                return;
-            }
-            download.receivedBytes = data.receivedBytes;
-            download.progress = data.progress;
-            download.speed = data.speed;
-            download.totalBytes = data.totalBytes;
-
-            const downloadItem = document.querySelector(`.download-item[data-id="${data.id}"]`);
-            if (downloadItem) {
-                updateDownloadItemUI(downloadItem, download);
-            } else {
-                renderDownloads();
-            }
+            const dl = downloads.find(d => d.id === data.id);
+            if (!dl) { window.electronAPI.send('get-downloads'); return; }
+            Object.assign(dl, { receivedBytes: data.receivedBytes, progress: data.progress, speed: data.speed, totalBytes: data.totalBytes });
+            const el = document.querySelector(`.download-item[data-id="${data.id}"]`);
+            if (el) updateItemUI(el, dl); else renderDownloads();
         }
 
         function updateDownloadStatus(id, status) {
-            const download = downloads.find(d => d.id === id);
-            if (download) {
-                download.status = status;
-                const downloadItem = document.querySelector(`.download-item[data-id="${id}"]`);
-                if (downloadItem) {
-                    updateDownloadItemUI(downloadItem, download);
-                } else {
-                    renderDownloads();
-                }
+            const dl = downloads.find(d => d.id === id);
+            if (dl) {
+                dl.status = status;
+                const el = document.querySelector(`.download-item[data-id="${id}"]`);
+                if (el) updateItemUI(el, dl); else renderDownloads();
             } else {
                 window.electronAPI.send('get-downloads');
             }
         }
 
-        function updateDownloadItemUI(downloadItem, download) {
-            const fileName = downloadItem.querySelector('.file-name');
-            if (fileName) fileName.textContent = download.filename;
-
-            const fileMeta = downloadItem.querySelector('.file-meta');
-            if (fileMeta) {
-                const metaSpans = fileMeta.querySelectorAll('span');
-                if (metaSpans.length >= 3) {
-                    metaSpans[0].textContent = formatSize(download.totalBytes);
-                    metaSpans[1].textContent = formatDate(download.startTime);
-                    metaSpans[2].textContent = getStatusText(download.status);
+        function updateItemUI(el, dl) {
+            const name = el.querySelector('.file-name');
+            if (name) name.textContent = dl.filename;
+            const meta = el.querySelector('.file-meta');
+            if (meta) {
+                const spans = meta.querySelectorAll('span');
+                if (spans.length >= 3) {
+                    spans[0].textContent = formatSize(dl.totalBytes);
+                    spans[1].textContent = formatDate(dl.startTime);
+                    spans[2].textContent = getStatusText(dl.status);
                 }
             }
-
-            let progressBar = downloadItem.querySelector('.progress-bar');
-            let progressText = downloadItem.querySelector('.progress-text');
-
-            if (download.status === 'downloading') {
-                if (!progressBar) {
-                    const fileInfo = downloadItem.querySelector('.file-info');
-                    if (fileInfo) {
-                        progressBar = document.createElement('div');
-                        progressBar.className = 'progress-bar';
-                        const progressFill = document.createElement('div');
-                        progressFill.className = 'progress-fill';
-                        progressBar.appendChild(progressFill);
-                        progressText = document.createElement('div');
-                        progressText.className = 'progress-text';
-                        fileInfo.appendChild(progressBar);
-                        fileInfo.appendChild(progressText);
+            let bar = el.querySelector('.progress-bar');
+            let txt = el.querySelector('.progress-text');
+            if (dl.status === 'downloading') {
+                if (!bar) {
+                    const info = el.querySelector('.file-info');
+                    if (info) {
+                        bar = document.createElement('div');
+                        bar.className = 'progress-bar';
+                        bar.appendChild(Object.assign(document.createElement('div'), { className: 'progress-fill' }));
+                        txt = document.createElement('div');
+                        txt.className = 'progress-text';
+                        info.appendChild(bar);
+                        info.appendChild(txt);
                     }
                 }
-                if (progressBar) {
-                    const progressFill = progressBar.querySelector('.progress-fill');
-                    if (progressFill) progressFill.style.width = (download.progress || 0) + '%';
-                }
-                if (progressText) {
-                    progressText.textContent = `${formatSize(download.receivedBytes)} / ${formatSize(download.totalBytes)} (${download.progress}%) - ${download.speed}`;
-                }
+                const fill = bar && bar.querySelector('.progress-fill');
+                if (fill) fill.style.width = (dl.progress || 0) + '%';
+                if (txt) txt.textContent = `${formatSize(dl.receivedBytes)} / ${formatSize(dl.totalBytes)} (${dl.progress}%) - ${dl.speed}`;
             } else {
-                if (progressBar) progressBar.remove();
-                if (progressText) progressText.remove();
+                if (bar) bar.remove();
+                if (txt) txt.remove();
             }
-
-            const fileActions = downloadItem.querySelector('.file-actions');
-            if (fileActions) {
-                fileActions.innerHTML = '';
-                if (download.status === 'complete') {
-                    fileActions.appendChild(createActionButton('打开', 'btn-primary', () => openFile(download.savePath)));
-                    fileActions.appendChild(createActionButton('文件夹', 'btn-secondary', () => openFolder(download.savePath)));
-                    fileActions.appendChild(createActionButton('删除', 'btn-danger', () => removeDownload(download.id)));
-                } else if (download.status === 'downloading') {
-                    fileActions.appendChild(createActionButton('暂停', 'btn-secondary', () => pauseDownload(download.id)));
-                    fileActions.appendChild(createActionButton('取消', 'btn-danger', () => cancelDownload(download.id)));
-                } else if (download.status === 'paused') {
-                    fileActions.appendChild(createActionButton('继续', 'btn-primary', () => resumeDownload(download.id)));
-                    fileActions.appendChild(createActionButton('取消', 'btn-danger', () => cancelDownload(download.id)));
-                } else if (download.status === 'error') {
-                    fileActions.appendChild(createActionButton('重试', 'btn-secondary', () => retryDownload(download.id)));
-                    fileActions.appendChild(createActionButton('删除', 'btn-danger', () => removeDownload(download.id)));
-                }
-            }
+            const acts = el.querySelector('.file-actions');
+            if (acts) { acts.innerHTML = ''; addActions(acts, dl); }
         }
 
-        function openFile(savePath) {
-            if (!isValidPath(savePath)) {
-                console.error('无效的文件路径');
-                return;
-            }
-            window.electronAPI.send('open-file', savePath);
-        }
-
-        function openFolder(savePath) {
-            if (!isValidPath(savePath)) {
-                console.error('无效的文件夹路径');
-                return;
-            }
-            window.electronAPI.send('open-folder', savePath);
-        }
-
-        function removeDownload(id) {
-            window.electronAPI.send('remove-download', id);
-        }
-
-        function pauseDownload(id) {
-            window.electronAPI.send('pause-download', id);
-        }
-
-        function resumeDownload(id) {
-            window.electronAPI.send('resume-download', id);
-        }
-
-        function cancelDownload(id) {
-            window.electronAPI.send('cancel-download', id);
-        }
-
+        function openFile(p) { if (isValidPath(p)) window.electronAPI.send('open-file', p); }
+        function openFolder(p) { if (isValidPath(p)) window.electronAPI.send('open-folder', p); }
+        function removeDownload(id) { window.electronAPI.send('remove-download', id); }
+        function pauseDownload(id) { window.electronAPI.send('pause-download', id); }
+        function resumeDownload(id) { window.electronAPI.send('resume-download', id); }
+        function cancelDownload(id) { window.electronAPI.send('cancel-download', id); }
         function retryDownload(id) {
-            const download = downloads.find(d => d.id === id);
-            if (download && download.url) {
-                window.electronAPI.send('retry-download', { url: download.url, filename: download.filename });
-            }
+            const dl = downloads.find(d => d.id === id);
+            if (dl && dl.url) window.electronAPI.send('retry-download', { url: dl.url, filename: dl.filename });
         }
-
         function clearDownloads() {
-            if (confirm('确定要清空所有下载记录吗？')) {
-                window.electronAPI.send('clear-downloads');
-            }
+            if (confirm('确定要清空所有下载记录吗？')) window.electronAPI.send('clear-downloads');
         }
 
-        function formatSize(bytes) {
-            if (!bytes || bytes <= 0) return '0 B';
-            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-            let size = bytes;
-            let unitIndex = 0;
-            while (size >= 1024 && unitIndex < units.length - 1) {
-                size /= 1024;
-                unitIndex++;
-            }
-            return size.toFixed(2) + ' ' + units[unitIndex];
+        function formatSize(b) {
+            if (!b || b <= 0) return '0 B';
+            const u = ['B', 'KB', 'MB', 'GB', 'TB'];
+            let s = b, i = 0;
+            while (s >= 1024 && i < u.length - 1) { s /= 1024; i++; }
+            return s.toFixed(2) + ' ' + u[i];
         }
 
-        function formatDate(timestamp) {
-            if (!timestamp) return '未知时间';
-            try {
-                const date = new Date(timestamp);
-                return date.toLocaleString('zh-CN');
-            } catch {
-                return '未知时间';
-            }
+        function formatDate(ts) {
+            if (!ts) return '未知时间';
+            try { return new Date(ts).toLocaleString('zh-CN'); } catch { return '未知时间'; }
         }
 
-        function getStatusText(status) {
-            const statusMap = {
-                'pending': '等待中',
-                'downloading': '下载中',
-                'paused': '已暂停',
-                'complete': '已完成',
-                'error': '失败',
-                'cancelled': '已取消'
-            };
-            return statusMap[status] || status;
+        function getStatusText(s) {
+            return { pending: '等待中', downloading: '下载中', paused: '已暂停', complete: '已完成', error: '失败', cancelled: '已取消' }[s] || s;
         }
     </script>
 </body>
