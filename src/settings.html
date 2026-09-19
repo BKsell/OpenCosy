@@ -7,32 +7,45 @@
     <script src="constants.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #f3f3f3; color: #333; line-height: 1.6; }
-        .settings-container { position: relative; background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(4px) saturate(200%); border: 1px solid rgba(255, 255, 255, 0.9); box-shadow: 0 12px 40px rgba(31, 38, 135, 0.3), inset 0 6px 30px rgba(255, 255, 255, 0.4); border-radius: 12px; max-width: 800px; margin: 40px auto; padding: 40px 20px; }
+        body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #f3f3f3; color: #333; line-height: 1.6; transition: background 0.3s, color 0.3s; }
+        body.dark-mode { background: #1a1a1a; color: #e0e0e0; }
+        .settings-container { position: relative; background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(4px) saturate(200%); border: 1px solid rgba(255, 255, 255, 0.9); box-shadow: 0 12px 40px rgba(31, 38, 135, 0.3), inset 0 6px 30px rgba(255, 255, 255, 0.4); border-radius: 12px; max-width: 800px; margin: 40px auto; padding: 40px 20px; transition: background 0.3s, border 0.3s; }
+        body.dark-mode .settings-container { background: rgba(40, 40, 40, 0.8); border: 1px solid rgba(60, 60, 60, 0.9); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5), inset 0 6px 30px rgba(60, 60, 60, 0.4); }
         .settings-header { text-align: center; margin-bottom: 40px; }
-        .settings-title { font-size: 32px; font-weight: 300; color: #0078d4; margin-bottom: 10px; }
-        .settings-subtitle { font-size: 16px; color: #666; opacity: 0.8; }
-        .settings-section { background: white; border-radius: 8px; padding: 30px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .section-title { font-size: 20px; font-weight: 600; margin-bottom: 20px; color: #0078d4; border-bottom: 2px solid #f0f0f0; padding-bottom: 10px; }
+        .settings-title { font-size: 32px; font-weight: 300; color: #0078d4; margin-bottom: 10px; transition: color 0.3s; }
+        body.dark-mode .settings-title { color: #4da3ff; }
+        .settings-subtitle { font-size: 16px; color: #666; opacity: 0.8; transition: color 0.3s; }
+        body.dark-mode .settings-subtitle { color: #999; }
+        .settings-section { background: white; border-radius: 8px; padding: 30px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); transition: background 0.3s; }
+        body.dark-mode .settings-section { background: #2d2d2d; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+        .section-title { font-size: 20px; font-weight: 600; margin-bottom: 20px; color: #0078d4; border-bottom: 2px solid #f0f0f0; padding-bottom: 10px; transition: color 0.3s, border-color 0.3s; }
+        body.dark-mode .section-title { color: #4da3ff; border-bottom-color: #444; }
         .setting-item { margin-bottom: 25px; display: flex; align-items: flex-start; gap: 15px; }
-        .setting-icon { width: 24px; height: 24px; background: #ffffff; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #333333; font-size: 12px; flex-shrink: 0; border: 1px solid #e0e0e0; }
+        .setting-icon { width: 24px; height: 24px; background: #ffffff; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #333333; font-size: 12px; flex-shrink: 0; border: 1px solid #e0e0e0; transition: background 0.3s, border-color 0.3s; }
+        body.dark-mode .setting-icon { background: #3d3d3d; border-color: #555; color: #e0e0e0; }
         .setting-icon img { filter: brightness(0) saturate(100%) invert(0%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(0%) contrast(100%); }
+        body.dark-mode .setting-icon img { filter: brightness(0) saturate(100%) invert(100%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(100%) contrast(100%); }
         .setting-content { flex: 1; }
         .setting-label { font-weight: 600; margin-bottom: 5px; display: block; }
-        .setting-description { font-size: 14px; color: #666; margin-bottom: 10px; }
+        .setting-description { font-size: 14px; color: #666; margin-bottom: 10px; transition: color 0.3s; }
+        body.dark-mode .setting-description { color: #999; }
         .radio-group { display: flex; gap: 20px; flex-wrap: wrap; }
         .radio-option { display: flex; align-items: center; gap: 8px; cursor: pointer; }
         .radio-option input[type="radio"] { margin: 0; }
-        .text-input { width: 100%; max-width: 300px; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+        .text-input { width: 100%; max-width: 300px; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; background: white; color: #333; transition: background 0.3s, color 0.3s, border-color 0.3s; }
+        body.dark-mode .text-input { background: #3d3d3d; border-color: #555; color: #e0e0e0; }
         .text-input:focus { outline: none; border-color: #0078d4; box-shadow: 0 0 0 2px rgba(0,120,212,0.2); }
         .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-top: 10px; }
-        .info-item { background: #f8f9fa; padding: 15px; border-radius: 6px; border-left: 4px solid var(--theme-color, #0078d4); }
-        .info-label { font-size: 12px; color: #666; margin-bottom: 5px; }
+        .info-item { background: #f8f9fa; padding: 15px; border-radius: 6px; border-left: 4px solid var(--theme-color, #0078d4); transition: background 0.3s; }
+        body.dark-mode .info-item { background: #3d3d3d; }
+        .info-label { font-size: 12px; color: #666; margin-bottom: 5px; transition: color 0.3s; }
+        body.dark-mode .info-label { color: #999; }
         .info-value { font-weight: 600; font-size: 14px; }
         .link { color: #0078d4; text-decoration: none; }
         .link:hover { text-decoration: underline; }
-        .copyright { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #e0e0e0; color: #666; font-size: 14px; }
-        .save-button { background: #0078d4; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px; margin-top: 10px; }
+        .copyright { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #e0e0e0; color: #666; font-size: 14px; transition: border-color 0.3s, color 0.3s; }
+        body.dark-mode .copyright { border-top-color: #444; color: #999; }
+        .save-button { background: #0078d4; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px; margin-top: 10px; transition: background 0.3s; }
         .save-button:hover { background: #106ebe; }
         .toggle-switch { position: relative; display: inline-block; width: 50px; height: 26px; }
         .toggle-switch input { opacity: 0; width: 0; height: 0; position: absolute; z-index: 1; }
@@ -65,6 +78,21 @@
                     <label class="setting-label">主题颜色</label>
                     <p class="setting-description">选择浏览器的主题颜色，将应用于整个浏览器界面</p>
                     <input type="color" id="themeColor" value="#0078d4" style="width: 100px; height: 40px; border: none; border-radius: 4px; cursor: pointer;">
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M20 8.69V4H16.69L12 .69L7.31 4H4V8.69L.69 13L4 17.31V21H7.31L12 23.31L16.69 21H20V17.31L23.31 13L20 8.69ZM12 19.31V4.69L17.31 12L12 19.31Z" fill="currentColor" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">深色模式</label>
+                    <p class="setting-description">开启深色模式以减少眼睛疲劳，适合夜间浏览</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="darkMode">
+                        <span class="toggle-slider"></span>
+                    </label>
                 </div>
             </div>
             <div class="setting-item">
@@ -205,7 +233,7 @@
         <button class="save-button" onclick="saveSettings()">保存设置</button>
     </div>
     <script>
-        const ALLOWED_SETTING_KEYS = new Set(['defaultTab', 'tabLayout', 'searchEngine', 'backgroundType', 'customUrl', 'customBackgroundUrl', 'themeColor']);
+        const ALLOWED_SETTING_KEYS = new Set(['defaultTab', 'tabLayout', 'searchEngine', 'backgroundType', 'customUrl', 'customBackgroundUrl', 'themeColor', 'darkMode']);
         const ALLOWED_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'cosy:']);
         const COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
 
@@ -226,6 +254,14 @@
             return typeof str === 'string' && COLOR_RE.test(str);
         }
 
+        function applyDarkMode(isDark) {
+            if (isDark) {
+                document.body.classList.add('dark-mode');
+            } else {
+                document.body.classList.remove('dark-mode');
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
             detectEngineVersion();
             loadSettings();
@@ -242,6 +278,9 @@
                 radio.addEventListener('change', function() {
                     document.getElementById('customBackgroundUrl').style.display = this.value === 'custom' ? 'block' : 'none';
                 });
+            });
+            document.getElementById('darkMode').addEventListener('change', function() {
+                applyDarkMode(this.checked);
             });
         });
 
@@ -287,6 +326,10 @@
             if (settings.themeColor && isValidSettingKey('themeColor') && isValidColor(settings.themeColor)) {
                 document.getElementById('themeColor').value = settings.themeColor;
             }
+            if (settings.darkMode && isValidSettingKey('darkMode')) {
+                document.getElementById('darkMode').checked = settings.darkMode === true || settings.darkMode === 'true';
+                applyDarkMode(settings.darkMode === true || settings.darkMode === 'true');
+            }
             applyThemeColor(settings.themeColor || '#0078d4');
         }
 
@@ -303,6 +346,7 @@
             const customUrl = document.getElementById('customUrl').value;
             const customBackgroundUrl = document.getElementById('customBackgroundUrl').value;
             const themeColor = document.getElementById('themeColor').value;
+            const darkMode = document.getElementById('darkMode').checked;
 
             if (customUrl && !isSafeUrl(customUrl)) {
                 alert('自定义网址必须是 http/https/file/cosy 协议');
@@ -321,7 +365,8 @@
                 backgroundType,
                 customUrl: (defaultTab === 'custom' && isSafeUrl(customUrl)) ? customUrl : '',
                 customBackgroundUrl: (backgroundType === 'custom' && isSafeUrl(customBackgroundUrl)) ? customBackgroundUrl : '',
-                themeColor
+                themeColor,
+                darkMode
             };
 
             localStorage.setItem('cosySettings', JSON.stringify(settings));
