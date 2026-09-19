@@ -16,6 +16,10 @@ let isTabBarCollapsed = false;
 const ALLOWED_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'cosy:']);
 const isDev = !app.isPackaged;
 
+function isMainSender(event) {
+  return event.sender === mainWindow?.webContents;
+}
+
 class Tab {
   constructor(id, url = 'cosy://newtab') {
     this.id = id;
@@ -308,7 +312,7 @@ function loadTabContent(tab) {
     });
 
     session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-      const allowedPermissions = new Set(['media', 'geolocation', 'notifications', 'midi', 'midiSysex', 'pointerLock', 'fullscreen', 'openExternal']);
+      const allowedPermissions = new Set(['media', 'geolocation', 'notifications', 'midi', 'midiSysex', 'pointerLock', 'fullscreen']);
       if (allowedPermissions.has(permission)) {
         callback(true);
       } else {
@@ -633,7 +637,7 @@ app.on('window-all-closed', () => {
 });
 
 ipcMain.on('window-control', (event, action) => {
-  if (!event.senderFrame || event.sender !== mainWindow?.webContents) return;
+  if (!isMainSender(event)) return;
   switch (action) {
     case 'minimize': mainWindow.minimize(); break;
     case 'maximize': mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize(); break;
@@ -642,13 +646,13 @@ ipcMain.on('window-control', (event, action) => {
 });
 
 ipcMain.on('toggle-tabbar-collapse', (event, collapsed) => {
-  if (event.sender !== mainWindow?.webContents) return;
+  if (!isMainSender(event)) return;
   isTabBarCollapsed = collapsed;
   updateBrowserViewBounds();
 });
 
 ipcMain.handle('navigate-tab', (event, { tabId, url }) => {
-  if (event.sender !== mainWindow?.webContents) return { success: false, error: 'Unauthorized' };
+  if (!isMainSender(event)) return { success: false, error: 'Unauthorized' };
   if (!isSafeUrl(url)) return { success: false, error: 'Unsafe URL' };
   const tab = tabs.find(t => t.id === tabId);
   if (tab) {
@@ -661,7 +665,7 @@ ipcMain.handle('navigate-tab', (event, { tabId, url }) => {
 });
 
 ipcMain.handle('navigate-back', (event) => {
-  if (event.sender !== mainWindow?.webContents) return { success: false };
+  if (!isMainSender(event)) return { success: false };
   if (tabs.length > 0 && currentTabIndex >= 0) {
     const tab = tabs[currentTabIndex];
     if (tab.view && tab.view.webContents && tab.view.webContents.canGoBack()) {
@@ -673,7 +677,7 @@ ipcMain.handle('navigate-back', (event) => {
 });
 
 ipcMain.handle('navigate-forward', (event) => {
-  if (event.sender !== mainWindow?.webContents) return { success: false };
+  if (!isMainSender(event)) return { success: false };
   if (tabs.length > 0 && currentTabIndex >= 0) {
     const tab = tabs[currentTabIndex];
     if (tab.view && tab.view.webContents && tab.view.webContents.canGoForward()) {
@@ -685,26 +689,26 @@ ipcMain.handle('navigate-forward', (event) => {
 });
 
 ipcMain.handle('create-tab', (event, url) => {
-  if (event.sender !== mainWindow?.webContents) return { success: false };
+  if (!isMainSender(event)) return { success: false };
   if (!isSafeUrl(url)) url = 'cosy://newtab';
   const tab = createNewTab(url);
   return { id: tab.id, index: tabs.length - 1 };
 });
 
 ipcMain.handle('close-tab', (event, tabIndex) => {
-  if (event.sender !== mainWindow?.webContents) return { success: false };
+  if (!isMainSender(event)) return { success: false };
   closeTab(tabIndex);
   return { success: true };
 });
 
 ipcMain.handle('switch-tab', (event, tabIndex) => {
-  if (event.sender !== mainWindow?.webContents) return { success: false };
+  if (!isMainSender(event)) return { success: false };
   switchToTab(tabIndex);
   return { success: true };
 });
 
 ipcMain.on('navigate-to-url', (event, url) => {
-  if (event.sender !== mainWindow?.webContents) return;
+  if (!isMainSender(event)) return;
   if (url && isSafeUrl(url)) createNewTab(url);
 });
 
@@ -719,7 +723,7 @@ ipcMain.on('get-download-info', (event) => {
 });
 
 ipcMain.on('start-download', (event, data) => {
-  if (event.sender !== mainWindow?.webContents) return;
+  if (!isMainSender(event)) return;
   if (currentDownloadInfo) {
     try {
       let savePath;
@@ -755,6 +759,7 @@ ipcMain.on('start-download', (event, data) => {
 });
 
 ipcMain.on('show-save-dialog', (event, data) => {
+  if (!isMainSender(event)) return;
   dialog.showSaveDialog(mainWindow, {
     defaultPath: path.join(app.getPath('downloads'), data.defaultName || 'download'),
     filters: [{ name: 'All Files', extensions: ['*'] }]
@@ -790,6 +795,7 @@ ipcMain.on('get-downloads', (event) => {
 });
 
 ipcMain.on('pause-download', (event, id) => {
+  if (!isMainSender(event)) return;
   const download = downloads.find(d => d.id === id);
   if (download && download.item && download.isItemValid) {
     try {
@@ -806,6 +812,7 @@ ipcMain.on('pause-download', (event, id) => {
 });
 
 ipcMain.on('resume-download', (event, id) => {
+  if (!isMainSender(event)) return;
   const download = downloads.find(d => d.id === id);
   if (download && download.item && download.isItemValid) {
     try {
@@ -823,6 +830,7 @@ ipcMain.on('resume-download', (event, id) => {
 });
 
 ipcMain.on('cancel-download', (event, id) => {
+  if (!isMainSender(event)) return;
   const download = downloads.find(d => d.id === id);
   if (download && download.item && download.isItemValid) {
     try {
@@ -838,11 +846,13 @@ ipcMain.on('cancel-download', (event, id) => {
 });
 
 ipcMain.on('retry-download', (event, data) => {
+  if (!isMainSender(event)) return;
   const { url } = data;
   if (url && isSafeUrl(url)) session.defaultSession.downloadURL(url);
 });
 
 ipcMain.on('remove-download', (event, id) => {
+  if (!isMainSender(event)) return;
   const index = downloads.findIndex(d => d.id === id);
   if (index !== -1) {
     downloads.splice(index, 1);
@@ -851,16 +861,19 @@ ipcMain.on('remove-download', (event, id) => {
 });
 
 ipcMain.on('open-file', (event, filePath) => {
+  if (!isMainSender(event)) return;
   const safePath = sanitizePath(filePath, app.getPath('downloads'));
   if (safePath && fsSync.existsSync(safePath)) shell.openPath(safePath);
 });
 
 ipcMain.on('open-folder', (event, filePath) => {
+  if (!isMainSender(event)) return;
   const safePath = sanitizePath(filePath, app.getPath('downloads'));
   if (safePath && fsSync.existsSync(safePath)) shell.showItemInFolder(safePath);
 });
 
 ipcMain.on('clear-downloads', (event) => {
+  if (!isMainSender(event)) return;
   downloads = [];
   currentDownloadInfo = null;
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -884,17 +897,17 @@ ipcMain.handle('get-all-tabs', () => {
 });
 
 ipcMain.on('close-current-tab', (event) => {
-  if (event.sender !== mainWindow?.webContents) return;
+  if (!isMainSender(event)) return;
   if (tabs.length > 0) closeTab(currentTabIndex);
 });
 
 ipcMain.on('create-tab', (event, url) => {
-  if (event.sender !== mainWindow?.webContents) return;
+  if (!isMainSender(event)) return;
   if (isSafeUrl(url)) createNewTab(url);
 });
 
 ipcMain.on('show-more-options-menu', (event, position) => {
-  if (event.sender !== mainWindow?.webContents) return;
+  if (!isMainSender(event)) return;
   const menu = new Menu();
   let currentZoomLevel = 1.0;
   if (tabs.length > 0 && currentTabIndex >= 0) {
@@ -1077,7 +1090,7 @@ ipcMain.handle('get-extensions', async () => {
 });
 
 ipcMain.handle('toggle-extension', async (event, { id, enabled }) => {
-  if (event.sender !== mainWindow?.webContents) return { success: false, error: 'Unauthorized' };
+  if (!isMainSender(event)) return { success: false, error: 'Unauthorized' };
   try {
     const config = await readExtensionsConfig();
     const extension = config.extensions.find(ext => ext.id === id);
@@ -1090,7 +1103,7 @@ ipcMain.handle('toggle-extension', async (event, { id, enabled }) => {
 });
 
 ipcMain.handle('remove-extension', async (event, id) => {
-  if (event.sender !== mainWindow?.webContents) return { success: false, error: 'Unauthorized' };
+  if (!isMainSender(event)) return { success: false, error: 'Unauthorized' };
   try {
     const config = await readExtensionsConfig();
     const extensionIndex = config.extensions.findIndex(ext => ext.id === id);
@@ -1114,13 +1127,13 @@ ipcMain.handle('browse-folder', async () => {
 });
 
 ipcMain.on('show-context-menu', (event, menuType, selectedText) => {
-  if (event.sender !== mainWindow?.webContents) return;
+  if (!isMainSender(event)) return;
   const menu = createContextMenu(menuType, selectedText);
   menu.popup();
 });
 
 ipcMain.on('save-settings', (event, settings) => {
-  if (event.sender !== mainWindow?.webContents) return;
+  if (!isMainSender(event)) return;
   try {
     const settingsPath = path.join(app.getPath('userData'), 'cosySettings.json');
     fsSync.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
@@ -1132,7 +1145,7 @@ ipcMain.on('save-settings', (event, settings) => {
 });
 
 ipcMain.on('update-theme-color', (event, color) => {
-  if (event.sender !== mainWindow?.webContents) return;
+  if (!isMainSender(event)) return;
   if (!isValidColor(color)) return;
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update-theme-color', color);
   tabs.forEach(tab => {
@@ -1141,7 +1154,7 @@ ipcMain.on('update-theme-color', (event, color) => {
 });
 
 ipcMain.on('get-settings', (event) => {
-  if (event.sender !== mainWindow?.webContents) return;
+  if (!isMainSender(event)) return;
   try {
     const settingsPath = path.join(app.getPath('userData'), 'cosySettings.json');
     if (fsSync.existsSync(settingsPath)) event.reply('settings-loaded', JSON.parse(fsSync.readFileSync(settingsPath, 'utf-8')));
@@ -1153,7 +1166,7 @@ ipcMain.on('get-settings', (event) => {
 });
 
 ipcMain.on('export-config', async (event, content) => {
-  if (event.sender !== mainWindow?.webContents) return;
+  if (!isMainSender(event)) return;
   try {
     const result = await dialog.showSaveDialog(mainWindow, {
       title: '导出配置', defaultPath: 'cosy_config.inf',
