@@ -55,12 +55,6 @@ function getBrowserErrorText(errorCode) {
   return errorTextMap[errorCode.toString()] || 'UNKNOWN_ERROR';
 }
 
-/**
- * isSafeUrl 验证 URL 是否安全
- * 只允许 http/https/file/cosy 协议，防止 javascript: 等危险协议注入
- * @param {string} url - 待验证的 URL
- * @returns {boolean} 是否安全
- */
 function isSafeUrl(url) {
   try {
     const parsed = new URL(url);
@@ -70,13 +64,6 @@ function isSafeUrl(url) {
   }
 }
 
-/**
- * sanitizePath 清理文件路径，防止路径遍历攻击
- * 确保解析后的路径在基础目录内，防止 ../ 类攻击
- * @param {string} inputPath - 待清理的路径
- * @param {string} baseDir - 允许的基础目录
- * @returns {string|null} 清理后的安全路径，或 null 表示不安全
- */
 function sanitizePath(inputPath, baseDir) {
   const resolved = path.resolve(baseDir, inputPath);
   const normalized = path.normalize(resolved);
@@ -84,6 +71,14 @@ function sanitizePath(inputPath, baseDir) {
     return null;
   }
   return normalized;
+}
+
+function isPathInDir(filePath, dir) {
+  return filePath === dir || filePath.startsWith(dir + path.sep);
+}
+
+function isValidColor(str) {
+  return typeof str === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(str);
 }
 
 function createWindow() {
@@ -150,11 +145,6 @@ function createWindow() {
   });
 }
 
-/**
- * getUrlProtocol 获取 URL 的协议部分
- * @param {string} url - 待解析的 URL
- * @returns {string} 协议（如 http:, https:）
- */
 function getUrlProtocol(url) {
   try { return new URL(url).protocol; } catch { return null; }
 }
@@ -505,7 +495,6 @@ function setupDownloadManager() {
         }
       }
     });
-    if (isNewDownload) createNewTab('cosy://download');
   });
 }
 
@@ -606,7 +595,7 @@ app.whenReady().then(async () => {
         app.getPath('music'),
         __dirname,
       ];
-      const isAllowed = allowedDirs.some(dir => resolvedPath.startsWith(dir));
+      const isAllowed = allowedDirs.some(dir => isPathInDir(resolvedPath, dir));
       if (isAllowed) {
         callback({ path: resolvedPath });
       } else {
@@ -671,6 +660,30 @@ ipcMain.handle('navigate-tab', (event, { tabId, url }) => {
   return { success: false };
 });
 
+ipcMain.handle('navigate-back', (event) => {
+  if (event.sender !== mainWindow?.webContents) return { success: false };
+  if (tabs.length > 0 && currentTabIndex >= 0) {
+    const tab = tabs[currentTabIndex];
+    if (tab.view && tab.view.webContents && tab.view.webContents.canGoBack()) {
+      tab.view.webContents.goBack();
+      return { success: true };
+    }
+  }
+  return { success: false };
+});
+
+ipcMain.handle('navigate-forward', (event) => {
+  if (event.sender !== mainWindow?.webContents) return { success: false };
+  if (tabs.length > 0 && currentTabIndex >= 0) {
+    const tab = tabs[currentTabIndex];
+    if (tab.view && tab.view.webContents && tab.view.webContents.canGoForward()) {
+      tab.view.webContents.goForward();
+      return { success: true };
+    }
+  }
+  return { success: false };
+});
+
 ipcMain.handle('create-tab', (event, url) => {
   if (event.sender !== mainWindow?.webContents) return { success: false };
   if (!isSafeUrl(url)) url = 'cosy://newtab';
@@ -713,7 +726,7 @@ ipcMain.on('start-download', (event, data) => {
       if (data.savePath) {
         savePath = path.resolve(data.savePath);
         const allowedDirs = [app.getPath('downloads'), app.getPath('documents'), app.getPath('desktop')];
-        if (!allowedDirs.some(dir => savePath.startsWith(dir))) {
+        if (!allowedDirs.some(dir => isPathInDir(savePath, dir))) {
           savePath = path.join(app.getPath('downloads'), currentDownloadInfo.filename);
         }
       } else {
@@ -838,13 +851,11 @@ ipcMain.on('remove-download', (event, id) => {
 });
 
 ipcMain.on('open-file', (event, filePath) => {
-  // 安全加固：验证文件路径，防止路径遍历
   const safePath = sanitizePath(filePath, app.getPath('downloads'));
   if (safePath && fsSync.existsSync(safePath)) shell.openPath(safePath);
 });
 
 ipcMain.on('open-folder', (event, filePath) => {
-  // 安全加固：验证文件路径，防止路径遍历
   const safePath = sanitizePath(filePath, app.getPath('downloads'));
   if (safePath && fsSync.existsSync(safePath)) shell.showItemInFolder(safePath);
 });
@@ -1034,7 +1045,9 @@ ipcMain.handle('add-extension', async (event, folderPath) => {
     const validation = await validateExtensionFolder(folderPath);
     if (!validation.valid) return { success: false, error: validation.error };
     const { manifest } = validation;
-    const extensionId = `${manifest.name.replace(/[^a-zA-Z0-9]/g, '_')}_${manifest.version}`;
+    const sanitizedName = manifest.name.replace(/[^a-zA-Z0-9]/g, '_');
+    const sanitizedVersion = String(manifest.version).replace(/[^a-zA-Z0-9._-]/g, '_');
+    const extensionId = `${sanitizedName}_${sanitizedVersion}`;
     const config = await readExtensionsConfig();
     if (config.extensions.find(ext => ext.id === extensionId)) return { success: false, error: '该插件已存在' };
     const copySuccess = await copyExtensionToStorage(folderPath, extensionId);
@@ -1120,6 +1133,7 @@ ipcMain.on('save-settings', (event, settings) => {
 
 ipcMain.on('update-theme-color', (event, color) => {
   if (event.sender !== mainWindow?.webContents) return;
+  if (!isValidColor(color)) return;
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update-theme-color', color);
   tabs.forEach(tab => {
     if (tab.view && tab.view.webContents) tab.view.webContents.send('update-theme-color', color);
