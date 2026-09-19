@@ -476,7 +476,8 @@ function loadTabContent(tab) {
       } else {
         showCosyError(tab, '404', '页面未找到', '未注册的cosy协议地址');
       }
-    } catch {
+    } catch (error) {
+      console.error('解析cosy协议URL失败:', error);
       showCosyError(tab, '400', '无效的URL', '无法解析cosy协议地址');
     }
   } else if (isSafeUrl(tab.url)) {
@@ -506,7 +507,9 @@ function updateBrowserViewBounds() {
         if (fsSync.existsSync(settingsPath)) {
           tabLayout = JSON.parse(fsSync.readFileSync(settingsPath, 'utf-8')).tabLayout || 'horizontal';
         }
-      } catch {}
+      } catch (error) {
+        console.error('读取设置失败:', error);
+      }
 
       let x, y, w, h;
       if (tabLayout === 'vertical') {
@@ -547,7 +550,9 @@ function closeTab(tabIndex) {
           else if (settings.defaultTab === 'custom' && settings.customUrl && isSafeUrl(settings.customUrl))
             defaultTabUrl = settings.customUrl;
         }
-      } catch {}
+      } catch (error) {
+        console.error('读取设置失败:', error);
+      }
       createNewTab(defaultTabUrl);
       currentTabIndex = 0;
     } else if (currentTabIndex >= tabs.length) {
@@ -723,7 +728,8 @@ app.whenReady().then(async () => {
       };
       const filePath = pageMap[hostname] || path.join(__dirname, 'src', 'newtab.html');
       callback({ path: filePath });
-    } catch {
+    } catch (error) {
+      console.error('注册cosy协议失败:', error);
       callback({ path: path.join(__dirname, 'src', 'newtab.html') });
     }
   });
@@ -747,7 +753,8 @@ app.whenReady().then(async () => {
       } else {
         callback({ error: -3 });
       }
-    } catch {
+    } catch (error) {
+      console.error('注册file协议失败:', error);
       callback({ error: -3 });
     }
   });
@@ -893,7 +900,7 @@ ipcMain.on('start-download', (event, data) => {
         mainWindow.webContents.send('download-started', { id: currentDownloadInfo.id });
       }
     } catch (error) {
-      console.log('Start download error:', error.message);
+      console.error('启动下载失败:', error);
       currentDownloadInfo.isItemValid = false;
       currentDownloadInfo.status = 'error';
     }
@@ -913,7 +920,7 @@ ipcMain.on('show-save-dialog', (event, data) => {
           if (state === 'progressing' || state === 'interrupted') currentDownloadInfo.item.cancel();
           currentDownloadInfo.isItemValid = false;
           currentDownloadInfo.status = 'error';
-        } catch (error) { console.log('Cancel download for save-as error:', error.message); }
+        } catch (error) { console.error('取消下载以另存为失败:', error); }
       }
       if (currentDownloadInfo) {
         currentDownloadInfo.savePath = result.filePath;
@@ -947,6 +954,7 @@ ipcMain.on('pause-download', (event, id) => {
         if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('download-status-changed', { id: download.id, status: 'paused' });
       }
     } catch (error) {
+      console.error('暂停下载失败:', error);
       download.isItemValid = false; download.status = 'error';
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('download-status-changed', { id: download.id, status: 'error' });
     }
@@ -965,6 +973,7 @@ ipcMain.on('resume-download', (event, id) => {
         if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('download-status-changed', { id: download.id, status: 'downloading' });
       }
     } catch (error) {
+      console.error('恢复下载失败:', error);
       download.isItemValid = false; download.status = 'error';
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('download-status-changed', { id: download.id, status: 'error' });
     }
@@ -981,6 +990,7 @@ ipcMain.on('cancel-download', (event, id) => {
       download.isItemValid = false; download.status = 'error';
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('download-status-changed', { id: download.id, status: 'error' });
     } catch (error) {
+      console.error('取消下载失败:', error);
       download.isItemValid = false; download.status = 'error';
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('download-status-changed', { id: download.id, status: 'error' });
     }
