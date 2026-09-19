@@ -1,4 +1,4 @@
-﻿const { app, BrowserWindow, WebContentsView, ipcMain, session, protocol, Menu, MenuItem, dialog, shell } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, session, protocol, Menu, MenuItem, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
@@ -55,6 +55,12 @@ function getBrowserErrorText(errorCode) {
   return errorTextMap[errorCode.toString()] || 'UNKNOWN_ERROR';
 }
 
+/**
+ * isSafeUrl 验证 URL 是否安全
+ * 只允许 http/https/file/cosy 协议，防止 javascript: 等危险协议注入
+ * @param {string} url - 待验证的 URL
+ * @returns {boolean} 是否安全
+ */
 function isSafeUrl(url) {
   try {
     const parsed = new URL(url);
@@ -64,6 +70,13 @@ function isSafeUrl(url) {
   }
 }
 
+/**
+ * sanitizePath 清理文件路径，防止路径遍历攻击
+ * 确保解析后的路径在基础目录内，防止 ../ 类攻击
+ * @param {string} inputPath - 待清理的路径
+ * @param {string} baseDir - 允许的基础目录
+ * @returns {string|null} 清理后的安全路径，或 null 表示不安全
+ */
 function sanitizePath(inputPath, baseDir) {
   const resolved = path.resolve(baseDir, inputPath);
   const normalized = path.normalize(resolved);
@@ -137,6 +150,11 @@ function createWindow() {
   });
 }
 
+/**
+ * getUrlProtocol 获取 URL 的协议部分
+ * @param {string} url - 待解析的 URL
+ * @returns {string} 协议（如 http:, https:）
+ */
 function getUrlProtocol(url) {
   try { return new URL(url).protocol; } catch { return null; }
 }
