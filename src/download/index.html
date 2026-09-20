@@ -6,25 +6,71 @@
     <title>下载 - OpenCosy浏览器</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #f3f3f3; color: #333; line-height: 1.6; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
-        .download-container { position: relative; background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(4px) saturate(200%); border: 1px solid rgba(255, 255, 255, 0.9); box-shadow: 0 12px 40px rgba(31, 38, 135, 0.3), inset 0 6px 30px rgba(255, 255, 255, 0.4); border-radius: 12px; padding: 40px; max-width: 600px; width: 100%; }
+
+        :root {
+            --bg-primary: #f3f3f3;
+            --bg-surface: #f8f9fa;
+            --bg-hover: #e8e6e7;
+            --text-primary: #333;
+            --text-secondary: #666;
+            --border-color: #e0e0e0;
+            --shadow-color: rgba(31, 38, 135, 0.3);
+            --glass-inset: rgba(255, 255, 255, 0.4);
+        }
+
+        [data-mode="dark"] {
+            --bg-primary: #1a1a2e;
+            --bg-surface: #16213e;
+            --bg-hover: rgba(255, 255, 255, 0.1);
+            --text-primary: #e0e0e0;
+            --text-secondary: #a0a0a0;
+            --border-color: rgba(255, 255, 255, 0.15);
+            --shadow-color: rgba(0, 0, 0, 0.4);
+            --glass-inset: rgba(255, 255, 255, 0.05);
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .download-container {
+            position: relative;
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(4px) saturate(200%);
+            border: 1px solid rgba(255, 255, 255, 0.9);
+            box-shadow: 0 12px 40px var(--shadow-color), inset 0 6px 30px var(--glass-inset);
+            border-radius: 12px;
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+
         .download-header { text-align: center; margin-bottom: 30px; }
         .download-icon { font-size: 64px; margin-bottom: 20px; }
         .download-title { font-size: 24px; font-weight: 600; color: var(--theme-color, #0078d4); margin-bottom: 10px; }
-        .download-info { background: #f8f9fa; border-radius: 8px; padding: 20px; margin-bottom: 30px; }
-        .info-row { display: flex; justify-content: space-between; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #e0e0e0; }
+        .download-info { background: var(--bg-surface); border-radius: 8px; padding: 20px; margin-bottom: 30px; }
+        .info-row { display: flex; justify-content: space-between; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border-color); }
         .info-row:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
-        .info-label { font-weight: 600; color: #666; min-width: 80px; }
-        .info-value { color: #333; text-align: right; word-break: break-all; flex: 1; }
-        .download-actions { display: flex; gap: 15px; justify-content: center; }
+        .info-label { font-weight: 600; color: var(--text-secondary); min-width: 80px; }
+        .info-value { color: var(--text-primary); text-align: right; word-break: break-all; flex: 1; }
+        .download-actions { display: flex; gap: 15px; justify-content: center; flex-wrap: wrap; }
         .btn { padding: 12px 30px; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; transition: all 0.3s ease; font-weight: 600; }
         .btn-primary { background: var(--theme-color, #0078d4); color: white; }
-        .btn-primary:hover { background: #106ebe; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,120,212,0.3); }
-        .btn-secondary { background: #f3f1f2; color: #333; border: 1px solid #dfe4e1; }
-        .btn-secondary:hover { background: #e8e6e7; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .btn-primary:hover { filter: brightness(1.1); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,120,212,0.3); }
+        .btn-secondary { background: var(--bg-surface); color: var(--text-primary); border: 1px solid var(--border-color); }
+        .btn-secondary:hover { background: var(--bg-hover); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
         .loading { display: none; text-align: center; padding: 20px; }
         .loading.active { display: block; }
-        .spinner { border: 3px solid #f3f3f3; border-top: 3px solid var(--theme-color, #0078d4); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 20px; }
+        .spinner { border: 3px solid var(--bg-primary); border-top: 3px solid var(--theme-color, #0078d4); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 20px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .download-content { display: none; }
         .download-content.active { display: block; }
@@ -74,6 +120,10 @@
                 const settings = JSON.parse(localStorage.getItem('cosySettings') || '{}');
                 if (settings.themeColor && isValidColor(settings.themeColor)) {
                     document.documentElement.style.setProperty('--theme-color', settings.themeColor);
+                }
+                // 检查深色模式设置
+                if (settings.darkMode) {
+                    document.documentElement.setAttribute('data-mode', 'dark');
                 }
             } catch (error) {
                 console.error('加载主题颜色失败:', error);
