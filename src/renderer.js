@@ -93,19 +93,12 @@ class TabManager {
     if (!toast) {
       toast = document.createElement('div');
       toast.id = 'toast-notification';
-      toast.style.cssText = `
-        position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-        background: var(--glass-bg-heavy, rgba(0,0,0,0.8)); color: var(--text, white);
-        padding: 12px 24px; border-radius: 8px; z-index: 1000; opacity: 0;
-        transition: opacity 0.3s ease; pointer-events: none;
-        border: 1px solid var(--glass-border, rgba(255,255,255,0.1));
-        backdrop-filter: blur(12px);
-      `;
+      toast.className = 'cosy-toast';
       document.body.appendChild(toast);
     }
     toast.textContent = message;
-    toast.style.opacity = '1';
-    setTimeout(() => { toast.style.opacity = '0'; }, 2000);
+    toast.classList.add('show');
+    setTimeout(() => { toast.classList.remove('show'); }, 2000);
   }
 
   setupEventListeners() {
@@ -172,25 +165,15 @@ class TabManager {
 
     bar = document.createElement('div');
     bar.id = 'bookmarks-bar';
-    bar.style.cssText = `
-      position: fixed; top: 100px; left: 60px; right: 60px;
-      background: var(--glass-bg-heavy, white);
-      border: 1px solid var(--glass-border, #e0e0e0);
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      z-index: 100; max-height: 300px; overflow-y: auto;
-      padding: 12px; backdrop-filter: blur(20px);
-    `;
+    bar.className = 'cosy-panel';
 
     if (this.bookmarks.length === 0) {
-      bar.innerHTML = '<div style="text-align: center; color: var(--text-light, #999); padding: 20px;">暂无书签，按 Ctrl+D 添加书签</div>';
+      bar.innerHTML = '<div class="cosy-panel-empty">暂无书签，按 Ctrl+D 添加书签</div>';
     } else {
       this.bookmarks.forEach(bookmark => {
         const item = document.createElement('div');
-        item.style.cssText = 'padding: 8px; cursor: pointer; border-radius: 4px;';
-        item.innerHTML = `<strong style="color: var(--text, #333);">${escapeHtml(bookmark.title)}</strong><br><small style="color: var(--text-light, #666);">${escapeHtml(bookmark.url)}</small>`;
-        item.onmouseover = () => item.style.background = 'var(--glass-bg, rgba(0,0,0,0.05))';
-        item.onmouseout = () => item.style.background = 'transparent';
+        item.className = 'cosy-panel-item';
+        item.innerHTML = `<strong class="cosy-panel-title">${escapeHtml(bookmark.title)}</strong><br><small class="cosy-panel-url">${escapeHtml(bookmark.url)}</small>`;
         item.onclick = () => {
           this.createNewTab(bookmark.url);
           bar.remove();
@@ -222,22 +205,15 @@ class TabManager {
 
     panel = document.createElement('div');
     panel.id = 'history-panel';
-    panel.style.cssText = `
-      position: fixed; top: 100px; right: 60px; width: 400px;
-      background: var(--glass-bg-heavy, white);
-      border: 1px solid var(--glass-border, #e0e0e0);
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      z-index: 100; max-height: 400px; overflow-y: auto;
-      padding: 12px; backdrop-filter: blur(20px);
-    `;
+    panel.className = 'cosy-panel';
+    panel.style.right = '60px';
 
     const header = document.createElement('div');
-    header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;';
-    header.innerHTML = '<strong style="color: var(--text, #333);">历史记录</strong>';
+    header.className = 'cosy-panel-header';
+    header.innerHTML = '<strong class="cosy-panel-title">历史记录</strong>';
     const clearBtn = document.createElement('button');
     clearBtn.textContent = '清除历史';
-    clearBtn.style.cssText = 'padding: 4px 8px; border: 1px solid var(--border, #ddd); border-radius: 4px; cursor: pointer; background: var(--glass-bg, transparent); color: var(--text, #333);';
+    clearBtn.className = 'cosy-panel-clear-btn';
     clearBtn.onclick = async () => {
       await window.electronAPI.invoke('clear-history');
       this.history = [];
@@ -248,14 +224,12 @@ class TabManager {
     panel.appendChild(header);
 
     if (this.history.length === 0) {
-      panel.innerHTML += '<div style="text-align: center; color: var(--text-light, #999); padding: 20px;">暂无历史记录</div>';
+      panel.innerHTML += '<div class="cosy-panel-empty">暂无历史记录</div>';
     } else {
       this.history.forEach(item => {
         const entry = document.createElement('div');
-        entry.style.cssText = 'padding: 8px; cursor: pointer; border-radius: 4px;';
-        entry.innerHTML = `<strong style="color: var(--text, #333);">${escapeHtml(item.title)}</strong><br><small style="color: var(--text-light, #666);">${escapeHtml(item.url)}</small>`;
-        entry.onmouseover = () => entry.style.background = 'var(--glass-bg, rgba(0,0,0,0.05))';
-        entry.onmouseout = () => entry.style.background = 'transparent';
+        entry.className = 'cosy-panel-item';
+        entry.innerHTML = `<strong class="cosy-panel-title">${escapeHtml(item.title)}</strong><br><small class="cosy-panel-url">${escapeHtml(item.url)}</small>`;
         entry.onclick = () => {
           this.createNewTab(item.url);
           panel.remove();
