@@ -137,6 +137,13 @@ function loadBookmarks() {
   }
 }
 
+function setupPermissionHandler() {
+  const allowedPermissions = new Set(['media', 'geolocation', 'notifications', 'midi', 'midiSysex', 'pointerLock', 'fullscreen']);
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    callback(allowedPermissions.has(permission));
+  });
+}
+
 function createWindow() {
   if (mainWindow && !mainWindow.isDestroyed()) return;
 
@@ -449,15 +456,6 @@ function loadTabContent(tab) {
       }
       mainWindow.webContents.send('html-fullscreen-changed', { isFullscreen: false });
     });
-
-    session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-      const allowedPermissions = new Set(['media', 'geolocation', 'notifications', 'midi', 'midiSysex', 'pointerLock', 'fullscreen']);
-      if (allowedPermissions.has(permission)) {
-        callback(true);
-      } else {
-        callback(false);
-      }
-    });
   }
 
   const protocol = getUrlProtocol(tab.url);
@@ -759,6 +757,7 @@ app.whenReady().then(async () => {
     }
   });
 
+  setupPermissionHandler();
   setupDownloadManager();
   const userAgent = generateUserAgent();
   session.defaultSession.setUserAgent(userAgent);
