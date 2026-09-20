@@ -90,8 +90,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return Promise.reject(new Error('Channel not allowed'));
   },
   on: (channel, callback) => {
-    if (allowedOnChannels.has(channel)) {
-      ipcRenderer.on(channel, (event, ...args) => callback(...args));
+    if (!allowedOnChannels.has(channel)) {
+      return () => {};
     }
+    const listener = (event, ...args) => callback(...args);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.removeListener(channel, listener);
   },
 });
