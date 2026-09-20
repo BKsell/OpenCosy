@@ -95,9 +95,11 @@ class TabManager {
       toast.id = 'toast-notification';
       toast.style.cssText = `
         position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-        background: rgba(0,0,0,0.8); color: white; padding: 12px 24px;
-        border-radius: 8px; z-index: 1000; opacity: 0;
+        background: var(--glass-bg-heavy, rgba(0,0,0,0.8)); color: var(--text, white);
+        padding: 12px 24px; border-radius: 8px; z-index: 1000; opacity: 0;
         transition: opacity 0.3s ease; pointer-events: none;
+        border: 1px solid var(--glass-border, rgba(255,255,255,0.1));
+        backdrop-filter: blur(12px);
       `;
       document.body.appendChild(toast);
     }
@@ -172,19 +174,22 @@ class TabManager {
     bar.id = 'bookmarks-bar';
     bar.style.cssText = `
       position: fixed; top: 100px; left: 60px; right: 60px;
-      background: white; border: 1px solid #e0e0e0; border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 100;
-      max-height: 300px; overflow-y: auto; padding: 12px;
+      background: var(--glass-bg-heavy, white);
+      border: 1px solid var(--glass-border, #e0e0e0);
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      z-index: 100; max-height: 300px; overflow-y: auto;
+      padding: 12px; backdrop-filter: blur(20px);
     `;
 
     if (this.bookmarks.length === 0) {
-      bar.innerHTML = '<div style="text-align: center; color: #999; padding: 20px;">暂无书签，按 Ctrl+D 添加书签</div>';
+      bar.innerHTML = '<div style="text-align: center; color: var(--text-light, #999); padding: 20px;">暂无书签，按 Ctrl+D 添加书签</div>';
     } else {
       this.bookmarks.forEach(bookmark => {
         const item = document.createElement('div');
         item.style.cssText = 'padding: 8px; cursor: pointer; border-radius: 4px;';
-        item.innerHTML = `<strong>${escapeHtml(bookmark.title)}</strong><br><small style="color: #666;">${escapeHtml(bookmark.url)}</small>`;
-        item.onmouseover = () => item.style.background = '#f0f0f0';
+        item.innerHTML = `<strong style="color: var(--text, #333);">${escapeHtml(bookmark.title)}</strong><br><small style="color: var(--text-light, #666);">${escapeHtml(bookmark.url)}</small>`;
+        item.onmouseover = () => item.style.background = 'var(--glass-bg, rgba(0,0,0,0.05))';
         item.onmouseout = () => item.style.background = 'transparent';
         item.onclick = () => {
           this.createNewTab(bookmark.url);
@@ -219,17 +224,20 @@ class TabManager {
     panel.id = 'history-panel';
     panel.style.cssText = `
       position: fixed; top: 100px; right: 60px; width: 400px;
-      background: white; border: 1px solid #e0e0e0; border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 100;
-      max-height: 400px; overflow-y: auto; padding: 12px;
+      background: var(--glass-bg-heavy, white);
+      border: 1px solid var(--glass-border, #e0e0e0);
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      z-index: 100; max-height: 400px; overflow-y: auto;
+      padding: 12px; backdrop-filter: blur(20px);
     `;
 
     const header = document.createElement('div');
     header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;';
-    header.innerHTML = '<strong>历史记录</strong>';
+    header.innerHTML = '<strong style="color: var(--text, #333);">历史记录</strong>';
     const clearBtn = document.createElement('button');
     clearBtn.textContent = '清除历史';
-    clearBtn.style.cssText = 'padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;';
+    clearBtn.style.cssText = 'padding: 4px 8px; border: 1px solid var(--border, #ddd); border-radius: 4px; cursor: pointer; background: var(--glass-bg, transparent); color: var(--text, #333);';
     clearBtn.onclick = async () => {
       await window.electronAPI.invoke('clear-history');
       this.history = [];
@@ -240,13 +248,13 @@ class TabManager {
     panel.appendChild(header);
 
     if (this.history.length === 0) {
-      panel.innerHTML += '<div style="text-align: center; color: #999; padding: 20px;">暂无历史记录</div>';
+      panel.innerHTML += '<div style="text-align: center; color: var(--text-light, #999); padding: 20px;">暂无历史记录</div>';
     } else {
       this.history.forEach(item => {
         const entry = document.createElement('div');
         entry.style.cssText = 'padding: 8px; cursor: pointer; border-radius: 4px;';
-        entry.innerHTML = `<strong>${escapeHtml(item.title)}</strong><br><small style="color: #666;">${escapeHtml(item.url)}</small>`;
-        entry.onmouseover = () => entry.style.background = '#f0f0f0';
+        entry.innerHTML = `<strong style="color: var(--text, #333);">${escapeHtml(item.title)}</strong><br><small style="color: var(--text-light, #666);">${escapeHtml(item.url)}</small>`;
+        entry.onmouseover = () => entry.style.background = 'var(--glass-bg, rgba(0,0,0,0.05))';
         entry.onmouseout = () => entry.style.background = 'transparent';
         entry.onclick = () => {
           this.createNewTab(item.url);
@@ -353,7 +361,7 @@ class TabManager {
   }
 
   async switchToTab(tabId) {
-    const tabIndex = this.tabs.findIndex(tab => tab.id === tabId);
+    const tabIndex = this.tabs.findIndex(t => t.id === tabId);
     if (tabIndex !== -1) {
       await window.electronAPI.invoke('switch-tab', tabIndex);
       this.currentTabId = tabId;
@@ -403,7 +411,7 @@ class TabManager {
       }
     }
 
-    const tabIndex = this.tabs.findIndex(tab => tab.id === tabData.id);
+    const tabIndex = this.tabs.findIndex(t => t.id === tabData.id);
     if (tabIndex !== -1) {
       if (tabData.title) this.tabs[tabIndex].title = tabData.title;
       if (tabData.favicon) this.tabs[tabIndex].favicon = tabData.favicon;
@@ -422,7 +430,7 @@ class TabManager {
   }
 
   async closeTab(tabId) {
-    const tabIndex = this.tabs.findIndex(tab => tab.id === tabId);
+    const tabIndex = this.tabs.findIndex(t => t.id === tabId);
     if (tabIndex !== -1) await window.electronAPI.invoke('close-tab', tabIndex);
   }
 
@@ -440,7 +448,7 @@ class TabManager {
     if (this.currentTabId) {
       if (!isSafeUrl(url)) url = 'cosy://newtab';
       const formattedUrl = this.formatUrl(url);
-      const tabIndex = this.tabs.findIndex(tab => tab.id === this.currentTabId);
+      const tabIndex = this.tabs.findIndex(t => t.id === this.currentTabId);
       if (tabIndex !== -1) {
         this.tabs[tabIndex].url = formattedUrl;
         this.updateAddressBar();
