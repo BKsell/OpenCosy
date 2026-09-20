@@ -55,14 +55,13 @@
       "createStartMenuShortcut": true
     },
     "linux": {
-      "target": [ "tar.gz"],
+      "target": ["tar.gz"],
       "category": "Network",
       "desktop": {
         "Name": "OpenCosy浏览器",
         "Comment": "基于Electron的多标签页浏览器",
         "Categories": "Network;WebBrowser;"
-      }
-      ,
+      },
       "maintainer": "OpenCosy",
       "icon": "ico.png"
     },
