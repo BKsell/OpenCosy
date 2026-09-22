@@ -137,6 +137,45 @@ function loadBookmarks() {
   }
 }
 
+// 会话恢复：保存和恢复标签页
+function saveSession() {
+  try {
+    const sessionPath = path.join(app.getPath('userData'), 'session.json');
+    const sessionTabs = tabs
+      .filter(tab => !tab.url.startsWith('cosy://') && isSafeUrl(tab.url))
+      .map(tab => ({ url: tab.url, title: tab.title }));
+    fsSync.writeFileSync(sessionPath, JSON.stringify(sessionTabs, null, 2), 'utf-8');
+  } catch (error) {
+    console.error('保存会话失败:', error);
+  }
+}
+
+function loadSession() {
+  try {
+    const sessionPath = path.join(app.getPath('userData'), 'session.json');
+    if (fsSync.existsSync(sessionPath)) {
+      const sessionTabs = JSON.parse(fsSync.readFileSync(sessionPath, 'utf-8'));
+      if (Array.isArray(sessionTabs) && sessionTabs.length > 0) {
+        return sessionTabs.filter(tab => isSafeUrl(tab.url));
+      }
+    }
+  } catch (error) {
+    console.error('读取会话失败:', error);
+  }
+  return null;
+}
+
+function clearSession() {
+  try {
+    const sessionPath = path.join(app.getPath('userData'), 'session.json');
+    if (fsSync.existsSync(sessionPath)) {
+      fsSync.unlinkSync(sessionPath);
+    }
+  } catch (error) {
+    console.error('清除会话失败:', error);
+  }
+}
+
 function setupPermissionHandler() {
   const allowedPermissions = new Set([
     'media', 'geolocation', 'notifications', 'midi', 'midiSysex',
@@ -186,22 +225,35 @@ function createWindow() {
       createNewTab(fileToOpen);
       fileToOpen = null;
     } else {
-      let defaultTabUrl = 'cosy://newtab';
-      try {
-        if (fsSync.existsSync(settingsPath)) {
-          const settings = JSON.parse(fsSync.readFileSync(settingsPath, 'utf-8'));
-          if (settings.defaultTab === 'bing') defaultTabUrl = 'https://www.bing.com';
-          else if (settings.defaultTab === 'custom' && settings.customUrl && isSafeUrl(settings.customUrl))
-            defaultTabUrl = settings.customUrl;
-        }
-      } catch (error) { console.error('读取设置失败:', error); }
-      createNewTab(defaultTabUrl);
+      // 尝试恢复上次会话
+      const savedSession = loadSession();
+      if (savedSession && savedSession.length > 0) {
+        savedSession.forEach((tab) => {
+          createNewTab(tab.url);
+        });
+        clearSession();
+      } else {
+        let defaultTabUrl = 'cosy://newtab';
+        try {
+          if (fsSync.existsSync(settingsPath)) {
+            const settings = JSON.parse(fsSync.readFileSync(settingsPath, 'utf-8'));
+            if (settings.defaultTab === 'bing') defaultTabUrl = 'https://www.bing.com';
+            else if (settings.defaultTab === 'custom' && settings.customUrl && isSafeUrl(settings.customUrl))
+              defaultTabUrl = settings.customUrl;
+          }
+        } catch (error) { console.error('读取设置失败:', error); }
+        createNewTab(defaultTabUrl);
+      }
     }
   });
 
   mainWindow.on('resize', updateBrowserViewBounds);
   mainWindow.on('move', updateBrowserViewBounds);
-  mainWindow.once('closed', () => { mainWindow = null; });
+  mainWindow.once('closed', () => {
+    // 关闭窗口时保存会话
+    saveSession();
+    mainWindow = null;
+  });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (isSafeUrl(url)) {
@@ -225,6 +277,13 @@ function registerShortcuts() {
       event.preventDefault();
     } else if (ctrl && input.key.toLowerCase() === 'w') {
       closeTab(currentTabIndex);
+      event.preventDefault();
+    } else if (ctrl && input.key.toLowerCase() === 't' && shift) {
+      // Ctrl+Shift+T 恢复最近关闭的标签页
+      const lastClosedTab = getLastClosedTab();
+      if (lastClosedTab) {
+        createNewTab(lastClosedTab.url);
+      }
       event.preventDefault();
     } else if (ctrl && input.key.toLowerCase() === 'tab') {
       const nextIndex = shift ? (currentTabIndex - 1 + tabs.length) % tabs.length : (currentTabIndex + 1) % tabs.length;
@@ -539,6 +598,8 @@ function switchToTab(tabIndex) {
 function closeTab(tabIndex) {
   if (tabIndex >= 0 && tabIndex < tabs.length) {
     const tab = tabs[tabIndex];
+    // 保存到最近关闭的标签页
+    addToRecentlyClosed(tab);
     if (tab.view) tab.view.webContents.destroy();
     tabs.splice(tabIndex, 1);
     if (tabs.length === 0) {
@@ -1095,8 +1156,33 @@ ipcMain.on('show-more-options-menu', (event, position) => {
     }
   }));
   menu.append(new MenuItem({ type: 'separator' }));
+  menu.append(new MenuItem({
+    label: '重新打开已关闭的标签页 (Ctrl+Shift+T)',
+    click: () => {
+      const lastClosedTab = getLastClosedTab();
+      if (lastClosedTab) {
+        createNewTab(lastClosedTab.url);
+      }
+    }
+  }));
   menu.popup({ window: mainWindow, x: position.x, y: position.y });
 });
+
+// 最近关闭的标签页栈
+let recentlyClosedTabs = [];
+const MAX_RECENTLY_CLOSED = 10;
+
+function addToRecentlyClosed(tab) {
+  if (!tab || !tab.url || tab.url.startsWith('cosy://')) return;
+  recentlyClosedTabs.push({ url: tab.url, title: tab.title, closedAt: Date.now() });
+  if (recentlyClosedTabs.length > MAX_RECENTLY_CLOSED) {
+    recentlyClosedTabs.shift();
+  }
+}
+
+function getLastClosedTab() {
+  return recentlyClosedTabs.pop();
+}
 
 function createContextMenu(menuType, selectedText = '') {
   const menu = new Menu();
