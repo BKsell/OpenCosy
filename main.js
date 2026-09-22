@@ -138,7 +138,10 @@ function loadBookmarks() {
 }
 
 function setupPermissionHandler() {
-  const allowedPermissions = new Set(['media', 'geolocation', 'notifications', 'midi', 'midiSysex', 'pointerLock', 'fullscreen']);
+  const allowedPermissions = new Set([
+    'media', 'geolocation', 'notifications', 'midi', 'midiSysex',
+    'pointerLock', 'fullscreen', 'clipboard-read', 'clipboard-sanitized-write'
+  ]);
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
     callback(allowedPermissions.has(permission));
   });
@@ -656,6 +659,7 @@ function generateUserAgent() {
   const platform = os.platform();
   const arch = os.arch();
   const release = os.release();
+  const chromeVersion = process.versions.chrome;
   let osInfo;
   switch (platform) {
     case 'win32':
@@ -678,7 +682,7 @@ function generateUserAgent() {
       break;
     default: osInfo = 'X11; Unknown';
   }
-  return `Mozilla/5.0 (${osInfo}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.7559.60 OpenCosyBrowser/1.0.0`;
+  return `Mozilla/5.0 (${osInfo}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} OpenCosyBrowser/1.0.0`;
 }
 
 if (process.argv.length > 1) {
@@ -1035,7 +1039,8 @@ ipcMain.on('clear-downloads', (event) => {
   }
 });
 
-ipcMain.handle('get-current-tab', () => {
+ipcMain.handle('get-current-tab', (event) => {
+  if (!isMainSender(event)) return null;
   if (tabs.length > 0 && currentTabIndex >= 0) {
     const tab = tabs[currentTabIndex];
     return { id: tab.id, url: tab.url, title: tab.title, favicon: tab.favicon, isLoading: tab.isLoading };
@@ -1043,18 +1048,14 @@ ipcMain.handle('get-current-tab', () => {
   return null;
 });
 
-ipcMain.handle('get-all-tabs', () => {
+ipcMain.handle('get-all-tabs', (event) => {
+  if (!isMainSender(event)) return [];
   return tabs.map(tab => ({ id: tab.id, url: tab.url, title: tab.title, favicon: tab.favicon, isLoading: tab.isLoading }));
 });
 
 ipcMain.on('close-current-tab', (event) => {
   if (!isMainSender(event)) return;
   if (tabs.length > 0) closeTab(currentTabIndex);
-});
-
-ipcMain.on('create-tab', (event, url) => {
-  if (!isMainSender(event)) return;
-  if (isSafeUrl(url)) createNewTab(url);
 });
 
 ipcMain.on('show-more-options-menu', (event, position) => {
