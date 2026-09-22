@@ -36,12 +36,14 @@ class TabManager {
     this.currentTabId = null;
     this.bookmarks = [];
     this.history = [];
+    this.zoomLevel = 1.0;
     this.initialize();
   }
 
   initialize() {
     this.setupEventListeners();
     this.setupIpcListeners();
+    this.setupKeyboardShortcuts();
     this.loadAndApplyThemeColor();
     this.loadBookmarks();
     this.loadHistory();
@@ -124,6 +126,28 @@ class TabManager {
     this.setupContextMenu();
   }
 
+  setupKeyboardShortcuts() {
+    document.addEventListener('keydown', (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        switch (e.key.toLowerCase()) {
+          case 't': e.preventDefault(); this.createNewTab(); break;
+          case 'w': e.preventDefault(); this.closeCurrentTab(); break;
+          case 'l': case 'e': e.preventDefault(); this.focusAddressBar(); break;
+          case 'r': e.preventDefault(); this.refresh(); break;
+          case 'd': e.preventDefault(); this.addBookmark(); break;
+          case 'f': e.preventDefault(); this.showFindBar(); break;
+          case '+': case '=': e.preventDefault(); this.zoomIn(); break;
+          case '-': e.preventDefault(); this.zoomOut(); break;
+          case '0': e.preventDefault(); this.zoomReset(); break;
+        }
+      } else if (e.key === 'F5') {
+        e.preventDefault(); this.refresh();
+      } else if (e.key === 'Escape') {
+        this.closePanels();
+      }
+    });
+  }
+
   setupIpcListeners() {
     window.electronAPI.on('tab-created', (tabData) => this.addTabToUI(tabData));
     window.electronAPI.on('tab-updated', (tabData) => this.updateTabUI(tabData));
@@ -138,13 +162,7 @@ class TabManager {
       this.showBookmarksBar();
     });
     window.electronAPI.on('show-toast', (message) => this.showToast(message));
-    window.electronAPI.on('focus-address-bar', () => {
-      const urlInput = document.getElementById('url-input');
-      if (urlInput) {
-        urlInput.focus();
-        urlInput.select();
-      }
-    });
+    window.electronAPI.on('focus-address-bar', () => this.focusAddressBar());
     window.electronAPI.on('show-history', () => this.showHistoryPanel());
   }
 
@@ -408,6 +426,14 @@ class TabManager {
     if (tabIndex !== -1) await window.electronAPI.invoke('close-tab', tabIndex);
   }
 
+  async closeCurrentTab() {
+    if (this.currentTabId && this.tabs.length > 1) {
+      await this.closeTab(this.currentTabId);
+    } else {
+      this.showToast('至少保留一个标签页');
+    }
+  }
+
   removeTabFromUI(tabIndex) {
     const tabElement = document.querySelectorAll('.tab')[tabIndex];
     if (tabElement) tabElement.remove();
@@ -464,7 +490,40 @@ class TabManager {
   async updateAddressBar() {
     if (this.currentTabId) {
       const currentTab = this.tabs.find(tab => tab.id === this.currentTabId);
-      if (currentTab) document.getElementById('url-input').value = currentTab.url;
+      if (currentTab) {
+        const urlInput = document.getElementById('url-input');
+        if (urlInput) {
+          urlInput.value = currentTab.url || '';
+          this.updateSecurityBadge(currentTab.url);
+        }
+      }
+    }
+  }
+
+  updateSecurityBadge(url) {
+    let badge = document.getElementById('security-badge');
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.id = 'security-badge';
+      badge.className = 'security-badge';
+      const urlInput = document.getElementById('url-input');
+      if (urlInput && urlInput.parentNode) urlInput.parentNode.insertBefore(badge, urlInput);
+    }
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === 'https:') {
+        badge.textContent = '🔒';
+        badge.className = 'security-badge secure';
+      } else if (parsed.protocol === 'http:') {
+        badge.textContent = '⚠';
+        badge.className = 'security-badge insecure';
+      } else {
+        badge.textContent = '';
+        badge.className = 'security-badge';
+      }
+    } catch {
+      badge.textContent = '';
+      badge.className = 'security-badge';
     }
   }
 
@@ -489,6 +548,78 @@ class TabManager {
       const currentTab = this.tabs.find(tab => tab.id === this.currentTabId);
       if (currentTab) await this.navigateCurrentTab(currentTab.url);
     }
+  }
+
+  focusAddressBar() {
+    const urlInput = document.getElementById('url-input');
+    if (urlInput) {
+      urlInput.focus();
+      urlInput.select();
+    }
+  }
+
+  async addBookmark() {
+    if (!this.currentTabId) return;
+    const currentTab = this.tabs.find(t => t.id === this.currentTabId);
+    if (!currentTab || !currentTab.url) return;
+    try {
+      const result = await window.electronAPI.invoke('add-bookmark', {
+        title: currentTab.title || currentTab.url,
+        url: currentTab.url,
+      });
+      if (result && result.success) {
+        this.showToast('已添加书签');
+      } else {
+        this.showToast('书签已存在或添加失败');
+      }
+    } catch (error) {
+      console.error('添加书签失败:', error);
+      this.showToast('添加书签失败');
+    }
+  }
+
+  showFindBar() {
+    let bar = document.getElementById('find-bar');
+    if (bar) {
+      bar.remove();
+      return;
+    }
+    bar = document.createElement('div');
+    bar.id = 'find-bar';
+    bar.className = 'cosy-find-bar';
+    bar.innerHTML = `<input type="text" placeholder="在页面中查找..." style="flex:1;padding:6px 10px;border:1px solid #ccc;border-radius:4px;background:var(--bg-secondary, #fff);color:var(--text-primary, #33);">`;
+    document.body.appendChild(bar);
+    const input = bar.querySelector('input');
+    input.focus();
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') bar.remove();
+      if (e.key === 'Enter' && input.value) {
+        window.electronAPI.send('find-in-page', { text: input.value, forward: !e.shiftKey });
+      }
+    });
+  }
+
+  zoomIn() {
+    this.zoomLevel = Math.min(3.0, this.zoomLevel + 0.1);
+    window.electronAPI.send('zoom-page', { direction: 'in' });
+    this.showToast(`缩放: ${Math.round(this.zoomLevel * 100)}%`);
+  }
+
+  zoomOut() {
+    this.zoomLevel = Math.max(0.3, this.zoomLevel - 0.1);
+    window.electronAPI.send('zoom-page', { direction: 'out' });
+    this.showToast(`缩放: ${Math.round(this.zoomLevel * 100)}%`);
+  }
+
+  zoomReset() {
+    this.zoomLevel = 1.0;
+    window.electronAPI.send('zoom-page', { direction: 'reset' });
+    this.showToast('缩放: 100%');
+  }
+
+  closePanels() {
+    const panels = document.querySelectorAll('.cosy-panel, .cosy-find-bar, #find-bar');
+    panels.forEach(p => p.remove());
   }
 
   setupContextMenu() {
