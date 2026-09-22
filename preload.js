@@ -71,6 +71,7 @@ const allowedOnChannels = new Set([
   'show-toast',
   'focus-address-bar',
   'show-history',
+  'show-find-bar',
 ]);
 
 contextBridge.exposeInMainWorld('electronAPI', {
