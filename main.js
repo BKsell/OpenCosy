@@ -74,7 +74,7 @@ function isSafeUrl(url) {
 function sanitizePath(inputPath, baseDir) {
   const resolved = path.resolve(baseDir, inputPath);
   const normalized = path.normalize(resolved);
-  if (!normalized.startsWith(baseDir)) {
+  if (!isPathInDir(normalized, baseDir)) {
     return null;
   }
   return normalized;
