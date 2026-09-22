@@ -3,7 +3,6 @@ const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const os = require('os');
-const crypto = require('crypto');
 
 let mainWindow;
 let tabs = [];
@@ -198,6 +197,20 @@ function getLastClosedTab() {
   return recentlyClosedTabs.pop();
 }
 
+function setupSecurityHeaders() {
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    const headers = details.responseHeaders || {};
+    headers['X-Content-Type-Options'] = ['nosniff'];
+    headers['X-Frame-Options'] = ['SAMEORIGIN'];
+    headers['X-XSS-Protection'] = ['1; mode=block'];
+    headers['Referrer-Policy'] = ['strict-origin-when-cross-origin'];
+    if (!headers['Content-Security-Policy'] && !headers['content-security-policy']) {
+      headers['Content-Security-Policy'] = ["default-src 'self'"];
+    }
+    callback({ responseHeaders: headers });
+  });
+}
+
 function setupPermissionHandler() {
   const allowedPermissions = new Set([
     'media', 'geolocation', 'notifications', 'midi', 'midiSysex',
@@ -299,17 +312,21 @@ function registerShortcuts() {
     if (input.type !== 'keyDown') return;
     const ctrl = input.control || input.meta;
     const shift = input.shift;
+    const alt = input.alt;
     const key = input.key.toLowerCase();
 
     if (ctrl && key === 't' && !shift) {
       createNewTab();
       event.preventDefault();
-    } else if (ctrl && key === 'w') {
-      closeTab(currentTabIndex);
-      event.preventDefault();
     } else if (ctrl && key === 't' && shift) {
       const lastClosedTab = getLastClosedTab();
       if (lastClosedTab) createNewTab(lastClosedTab.url);
+      event.preventDefault();
+    } else if (ctrl && key === 'w') {
+      closeTab(currentTabIndex);
+      event.preventDefault();
+    } else if (ctrl && key === 'n') {
+      createWindow();
       event.preventDefault();
     } else if (ctrl && key === 'k' && shift) {
       const tab = tabs[currentTabIndex];
@@ -338,6 +355,14 @@ function registerShortcuts() {
         tab.view.webContents.viewSource();
       }
       event.preventDefault();
+    } else if (alt && input.key === 'Home') {
+      const tab = tabs[currentTabIndex];
+      if (tab) {
+        tab.url = 'cosy://newtab';
+        loadTabContent(tab);
+        mainWindow.webContents.send('tab-updated', { id: tab.id, url: tab.url, title: '新标签页' });
+      }
+      event.preventDefault();
     } else if (ctrl && key === 'r' && !shift) {
       if (tabs[currentTabIndex]?.view?.webContents) {
         tabs[currentTabIndex].view.webContents.reload();
@@ -361,11 +386,11 @@ function registerShortcuts() {
         tabs[currentTabIndex].view.webContents.setZoomLevel(0);
       }
       event.preventDefault();
-    } else if (input.alt && input.key === 'ArrowLeft') {
+    } else if (alt && input.key === 'ArrowLeft') {
       const wc = tabs[currentTabIndex]?.view?.webContents;
       if (wc?.canGoBack()) wc.goBack();
       event.preventDefault();
-    } else if (input.alt && input.key === 'ArrowRight') {
+    } else if (alt && input.key === 'ArrowRight') {
       const wc = tabs[currentTabIndex]?.view?.webContents;
       if (wc?.canGoForward()) wc.goForward();
       event.preventDefault();
@@ -841,6 +866,7 @@ app.whenReady().then(async () => {
   });
 
   setupPermissionHandler();
+  setupSecurityHeaders();
   setupDownloadManager();
   const userAgent = generateUserAgent();
   session.defaultSession.setUserAgent(userAgent);
