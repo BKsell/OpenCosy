@@ -36,6 +36,7 @@ class TabManager {
     this.currentTabId = null;
     this.bookmarks = [];
     this.history = [];
+    this.findBarVisible = false;
     this.initialize();
   }
 
@@ -45,6 +46,7 @@ class TabManager {
     this.loadAndApplyThemeColor();
     this.loadBookmarks();
     this.loadHistory();
+    this.setupFindBar();
   }
 
   loadAndApplyThemeColor() {
@@ -65,9 +67,7 @@ class TabManager {
   async loadBookmarks() {
     try {
       const result = await window.electronAPI.invoke('get-bookmarks');
-      if (result.success) {
-        this.bookmarks = result.bookmarks;
-      }
+      if (result.success) this.bookmarks = result.bookmarks;
     } catch (error) {
       console.error('加载书签失败:', error);
     }
@@ -76,9 +76,7 @@ class TabManager {
   async loadHistory() {
     try {
       const result = await window.electronAPI.invoke('get-history');
-      if (result.success) {
-        this.history = result.history;
-      }
+      if (result.success) this.history = result.history;
     } catch (error) {
       console.error('加载历史记录失败:', error);
     }
@@ -140,6 +138,7 @@ class TabManager {
     window.electronAPI.on('show-toast', (message) => this.showToast(message));
     window.electronAPI.on('focus-address-bar', () => this.focusAddressBar());
     window.electronAPI.on('show-history', () => this.showHistoryPanel());
+    window.electronAPI.on('show-find-bar', () => this.toggleFindBar());
   }
 
   toggleFullscreenUI(isFullscreen) {
@@ -148,6 +147,70 @@ class TabManager {
       const el = document.querySelector(selector);
       if (el) el.style.display = isFullscreen ? 'none' : 'flex';
     });
+  }
+
+  setupFindBar() {
+    let findBar = document.getElementById('find-bar');
+    if (!findBar) {
+      findBar = document.createElement('div');
+      findBar.id = 'find-bar';
+      findBar.className = 'find-bar';
+      findBar.innerHTML = `
+        <input type="text" id="find-input" placeholder="在页面中查找..." />
+        <span id="find-match-count" class="find-match-count"></span>
+        <button id="find-prev" class="find-btn" title="上一个">▲</button>
+        <button id="find-next" class="find-btn" title="下一个">▼</button>
+        <button id="find-close" class="find-btn find-close" title="关闭 (Esc)">×</button>
+      `;
+      document.body.appendChild(findBar);
+
+      const findInput = document.getElementById('find-input');
+      findInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const forward = !e.shiftKey;
+          this.performFind(findInput.value, forward);
+        } else if (e.key === 'Escape') {
+          this.hideFindBar();
+        }
+      });
+
+      document.getElementById('find-next').addEventListener('click', () => {
+        this.performFind(findInput.value, true);
+      });
+      document.getElementById('find-prev').addEventListener('click', () => {
+        this.performFind(findInput.value, false);
+      });
+      document.getElementById('find-close').addEventListener('click', () => {
+        this.hideFindBar();
+      });
+    }
+  }
+
+  toggleFindBar() {
+    const findBar = document.getElementById('find-bar');
+    if (!findBar) return;
+    if (this.findBarVisible) {
+      this.hideFindBar();
+    } else {
+      findBar.classList.add('visible');
+      const findInput = document.getElementById('find-input');
+      findInput.focus();
+      findInput.select();
+      this.findBarVisible = true;
+    }
+  }
+
+  hideFindBar() {
+    const findBar = document.getElementById('find-bar');
+    if (findBar) findBar.classList.remove('visible');
+    this.findBarVisible = false;
+    window.electronAPI.send('stop-find');
+  }
+
+  performFind(text, forward) {
+    if (!text) return;
+    window.electronAPI.send('find-in-page', { text, forward });
   }
 
   showBookmarksBar() {
