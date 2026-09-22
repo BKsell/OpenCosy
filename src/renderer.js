@@ -18,8 +18,8 @@ function escapeHtml(str) {
 function getSettings() {
   try {
     return JSON.parse(localStorage.getItem('cosySettings') || '{}');
-  } catch (error) {
-    console.error('解析设置失败:', error);
+  } catch (e) {
+    console.error('解析设置失败:', e);
     return {};
   }
 }
@@ -58,8 +58,8 @@ class TabManager {
         window.electronAPI.send('get-settings');
         this.applyThemeColor();
       }
-    } catch (error) {
-      console.error('加载主题颜色失败:', error);
+    } catch (e) {
+      console.error('加载主题颜色失败:', e);
       this.applyThemeColor();
     }
   }
@@ -68,8 +68,8 @@ class TabManager {
     try {
       const result = await window.electronAPI.invoke('get-bookmarks');
       if (result.success) this.bookmarks = result.bookmarks;
-    } catch (error) {
-      console.error('加载书签失败:', error);
+    } catch (e) {
+      console.error('加载书签失败:', e);
     }
   }
 
@@ -77,8 +77,8 @@ class TabManager {
     try {
       const result = await window.electronAPI.invoke('get-history');
       if (result.success) this.history = result.history;
-    } catch (error) {
-      console.error('加载历史记录失败:', error);
+    } catch (e) {
+      console.error('加载历史记录失败:', e);
     }
   }
 
@@ -175,15 +175,9 @@ class TabManager {
         }
       });
 
-      document.getElementById('find-next').addEventListener('click', () => {
-        this.performFind(findInput.value, true);
-      });
-      document.getElementById('find-prev').addEventListener('click', () => {
-        this.performFind(findInput.value, false);
-      });
-      document.getElementById('find-close').addEventListener('click', () => {
-        this.hideFindBar();
-      });
+      document.getElementById('find-next').addEventListener('click', () => { this.performFind(findInput.value, true); });
+      document.getElementById('find-prev').addEventListener('click', () => { this.performFind(findInput.value, false); });
+      document.getElementById('find-close').addEventListener('click', () => { this.hideFindBar(); });
     }
   }
 
@@ -213,14 +207,30 @@ class TabManager {
     window.electronAPI.send('find-in-page', { text, forward });
   }
 
-  showBookmarksBar() {
-    let bar = document.getElementById('bookmarks-bar');
-    if (bar) {
-      bar.remove();
-      return;
-    }
+  attachOutsideClickClose(panel) {
+    setTimeout(() => {
+      const closeHandler = (e) => {
+        if (!panel.contains(e.target)) {
+          panel.remove();
+          document.removeEventListener('click', closeHandler);
+        }
+      };
+      setTimeout(() => document.addEventListener('click', closeHandler), 100);
+    });
+  }
 
-    bar = document.createElement('div');
+  buildPanelItem(title, url) {
+    const item = document.createElement('div');
+    item.className = 'cosy-panel-item';
+    item.innerHTML = `<strong class="cosy-panel-title">${escapeHtml(title)}</strong><br><small class="cosy-panel-url">${escapeHtml(url)}</small>`;
+    return item;
+  }
+
+  showBookmarksBar() {
+    const existing = document.getElementById('bookmarks-bar');
+    if (existing) { existing.remove(); return; }
+
+    const bar = document.createElement('div');
     bar.id = 'bookmarks-bar';
     bar.className = 'cosy-panel';
 
@@ -228,9 +238,7 @@ class TabManager {
       bar.innerHTML = '<div class="cosy-panel-empty">暂无书签，按 Ctrl+D 添加书签</div>';
     } else {
       this.bookmarks.forEach(bookmark => {
-        const item = document.createElement('div');
-        item.className = 'cosy-panel-item';
-        item.innerHTML = `<strong class="cosy-panel-title">${escapeHtml(bookmark.title)}</strong><br><small class="cosy-panel-url">${escapeHtml(bookmark.url)}</small>`;
+        const item = this.buildPanelItem(bookmark.title, bookmark.url);
         item.onclick = () => {
           this.createNewTab(bookmark.url);
           bar.remove();
@@ -240,27 +248,16 @@ class TabManager {
     }
 
     document.body.appendChild(bar);
-    setTimeout(() => {
-      const closeHandler = (e) => {
-        if (!bar.contains(e.target)) {
-          bar.remove();
-          document.removeEventListener('click', closeHandler);
-        }
-      };
-      setTimeout(() => document.addEventListener('click', closeHandler), 100);
-    });
+    this.attachOutsideClickClose(bar);
   }
 
   showHistoryPanel() {
-    let panel = document.getElementById('history-panel');
-    if (panel) {
-      panel.remove();
-      return;
-    }
+    const existing = document.getElementById('history-panel');
+    if (existing) { existing.remove(); return; }
 
     this.loadHistory();
 
-    panel = document.createElement('div');
+    const panel = document.createElement('div');
     panel.id = 'history-panel';
     panel.className = 'cosy-panel';
     panel.style.right = '60px';
@@ -284,9 +281,7 @@ class TabManager {
       panel.innerHTML += '<div class="cosy-panel-empty">暂无历史记录</div>';
     } else {
       this.history.forEach(item => {
-        const entry = document.createElement('div');
-        entry.className = 'cosy-panel-item';
-        entry.innerHTML = `<strong class="cosy-panel-title">${escapeHtml(item.title)}</strong><br><small class="cosy-panel-url">${escapeHtml(item.url)}</small>`;
+        const entry = this.buildPanelItem(item.title, item.url);
         entry.onclick = () => {
           this.createNewTab(item.url);
           panel.remove();
@@ -296,15 +291,7 @@ class TabManager {
     }
 
     document.body.appendChild(panel);
-    setTimeout(() => {
-      const closeHandler = (e) => {
-        if (!panel.contains(e.target)) {
-          panel.remove();
-          document.removeEventListener('click', closeHandler);
-        }
-      };
-      setTimeout(() => document.addEventListener('click', closeHandler), 100);
-    });
+    this.attachOutsideClickClose(panel);
   }
 
   async createNewTab(url) {
@@ -325,8 +312,8 @@ class TabManager {
 
     try {
       return await window.electronAPI.invoke('create-tab', url);
-    } catch (error) {
-      console.error('创建标签页失败:', error);
+    } catch (e) {
+      console.error('创建标签页失败:', e);
     }
   }
 
@@ -417,7 +404,6 @@ class TabManager {
   updateFavicon(tabElement, tabData) {
     const existingContainer = tabElement.querySelector('.favicon-container');
     if (existingContainer) existingContainer.remove();
-
     const newContainer = this.createFaviconElement(tabData);
     tabElement.insertBefore(newContainer, tabElement.firstChild);
   }
@@ -436,10 +422,7 @@ class TabManager {
           textFavicon.textContent = faviconText;
         }
       }
-
-      if (tabData.favicon !== undefined) {
-        this.updateFavicon(tabElement, tabData);
-      }
+      if (tabData.favicon !== undefined) this.updateFavicon(tabElement, tabData);
     }
 
     const tabIndex = this.tabs.findIndex(t => t.id === tabData.id);
@@ -476,19 +459,18 @@ class TabManager {
   }
 
   async navigateCurrentTab(url) {
-    if (this.currentTabId) {
-      if (!isSafeUrl(url)) url = 'cosy://newtab';
-      const formattedUrl = this.formatUrl(url);
-      const tabIndex = this.tabs.findIndex(t => t.id === this.currentTabId);
-      if (tabIndex !== -1) {
-        this.tabs[tabIndex].url = formattedUrl;
-        this.updateAddressBar();
-      }
-      try {
-        await window.electronAPI.invoke('navigate-tab', { tabId: this.currentTabId, url: formattedUrl });
-      } catch (error) {
-        console.error('导航失败:', error);
-      }
+    if (!this.currentTabId) return;
+    if (!isSafeUrl(url)) url = 'cosy://newtab';
+    const formattedUrl = this.formatUrl(url);
+    const tabIndex = this.tabs.findIndex(t => t.id === this.currentTabId);
+    if (tabIndex !== -1) {
+      this.tabs[tabIndex].url = formattedUrl;
+      this.updateAddressBar();
+    }
+    try {
+      await window.electronAPI.invoke('navigate-tab', { tabId: this.currentTabId, url: formattedUrl });
+    } catch (e) {
+      console.error('导航失败:', e);
     }
   }
 
@@ -519,14 +501,13 @@ class TabManager {
   }
 
   async updateAddressBar() {
-    if (this.currentTabId) {
-      const currentTab = this.tabs.find(tab => tab.id === this.currentTabId);
-      if (currentTab) {
-        const urlInput = document.getElementById('url-input');
-        if (urlInput) {
-          urlInput.value = currentTab.url || '';
-          this.updateSecurityBadge(currentTab.url);
-        }
+    if (!this.currentTabId) return;
+    const currentTab = this.tabs.find(tab => tab.id === this.currentTabId);
+    if (currentTab) {
+      const urlInput = document.getElementById('url-input');
+      if (urlInput) {
+        urlInput.value = currentTab.url || '';
+        this.updateSecurityBadge(currentTab.url);
       }
     }
   }
@@ -561,16 +542,16 @@ class TabManager {
   async goBack() {
     try {
       await window.electronAPI.invoke('navigate-back');
-    } catch (error) {
-      console.error('后退失败:', error);
+    } catch (e) {
+      console.error('后退失败:', e);
     }
   }
 
   async goForward() {
     try {
       await window.electronAPI.invoke('navigate-forward');
-    } catch (error) {
-      console.error('前进失败:', error);
+    } catch (e) {
+      console.error('前进失败:', e);
     }
   }
 
@@ -611,13 +592,12 @@ class TabManager {
       tabBar.classList.remove('collapsed');
       document.getElementById('collapse-tabbar').title = '收缩标签页';
       window.electronAPI.send('toggle-tabbar-collapse', false);
-      this.updateTitlebarTitle();
     } else {
       tabBar.classList.add('collapsed');
       document.getElementById('collapse-tabbar').title = '展开标签页';
       window.electronAPI.send('toggle-tabbar-collapse', true);
-      this.updateTitlebarTitle();
     }
+    this.updateTitlebarTitle();
   }
 
   updateTitlebarTitle() {
