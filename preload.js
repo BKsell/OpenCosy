@@ -23,7 +23,6 @@ const allowedSendChannels = new Set([
   'open-folder',
   'clear-downloads',
   'close-current-tab',
-  'create-tab',
 ]);
 
 const allowedInvokeChannels = new Set([
