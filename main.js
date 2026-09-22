@@ -14,8 +14,19 @@ let currentDownloadInfo = null;
 let isTabBarCollapsed = false;
 let bookmarks = [];
 let history = [];
+let recentlyClosedTabs = [];
+const MAX_RECENTLY_CLOSED = 10;
 
 const ALLOWED_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'cosy:']);
+const MAX_HISTORY_ENTRIES = 1000;
+const DEFAULT_WINDOW_WIDTH = 1200;
+const DEFAULT_WINDOW_HEIGHT = 800;
+const MIN_WINDOW_WIDTH = 800;
+const MIN_WINDOW_HEIGHT = 600;
+const DEFAULT_TAB_BAR_HEIGHT_HORIZONTAL = 116;
+const DEFAULT_TAB_BAR_WIDTH_VERTICAL = 200;
+const COLLAPSED_TAB_BAR_WIDTH = 50;
+
 const isDev = !app.isPackaged;
 
 function isMainSender(event) {
@@ -93,7 +104,7 @@ function addToHistory(url, title) {
   const existingIndex = history.findIndex(h => h.url === url);
   if (existingIndex !== -1) history.splice(existingIndex, 1);
   history.unshift({ url, title, timestamp: Date.now() });
-  if (history.length > 1000) history = history.slice(0, 1000);
+  if (history.length > MAX_HISTORY_ENTRIES) history = history.slice(0, MAX_HISTORY_ENTRIES);
   saveHistory();
 }
 
@@ -137,7 +148,6 @@ function loadBookmarks() {
   }
 }
 
-// 会话恢复：保存和恢复标签页
 function saveSession() {
   try {
     const sessionPath = path.join(app.getPath('userData'), 'session.json');
@@ -176,6 +186,18 @@ function clearSession() {
   }
 }
 
+function addToRecentlyClosed(tab) {
+  if (!tab || !tab.url || tab.url.startsWith('cosy://')) return;
+  recentlyClosedTabs.push({ url: tab.url, title: tab.title, closedAt: Date.now() });
+  if (recentlyClosedTabs.length > MAX_RECENTLY_CLOSED) {
+    recentlyClosedTabs.shift();
+  }
+}
+
+function getLastClosedTab() {
+  return recentlyClosedTabs.pop();
+}
+
 function setupPermissionHandler() {
   const allowedPermissions = new Set([
     'media', 'geolocation', 'notifications', 'midi', 'midiSysex',
@@ -186,11 +208,40 @@ function setupPermissionHandler() {
   });
 }
 
+function getTabLayout() {
+  const settingsPath = path.join(app.getPath('userData'), 'cosySettings.json');
+  try {
+    if (fsSync.existsSync(settingsPath)) {
+      const settings = JSON.parse(fsSync.readFileSync(settingsPath, 'utf-8'));
+      return settings.tabLayout || 'horizontal';
+    }
+  } catch (error) {
+    console.error('读取设置失败:', error);
+  }
+  return 'horizontal';
+}
+
+function getDefaultTabUrl() {
+  const settingsPath = path.join(app.getPath('userData'), 'cosySettings.json');
+  try {
+    if (fsSync.existsSync(settingsPath)) {
+      const settings = JSON.parse(fsSync.readFileSync(settingsPath, 'utf-8'));
+      if (settings.defaultTab === 'bing') return 'https://www.bing.com';
+      if (settings.defaultTab === 'custom' && settings.customUrl && isSafeUrl(settings.customUrl))
+        return settings.customUrl;
+    }
+  } catch (error) {
+    console.error('读取设置失败:', error);
+  }
+  return 'cosy://newtab';
+}
+
 function createWindow() {
   if (mainWindow && !mainWindow.isDestroyed()) return;
 
   mainWindow = new BrowserWindow({
-    width: 1200, height: 800, minWidth: 800, minHeight: 600,
+    width: DEFAULT_WINDOW_WIDTH, height: DEFAULT_WINDOW_HEIGHT,
+    minWidth: MIN_WINDOW_WIDTH, minHeight: MIN_WINDOW_HEIGHT,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -205,17 +256,7 @@ function createWindow() {
     icon: path.join(__dirname, 'ico.png')
   });
 
-  const settingsPath = path.join(app.getPath('userData'), 'cosySettings.json');
-  let tabLayout = 'horizontal';
-  try {
-    if (fsSync.existsSync(settingsPath)) {
-      const settings = JSON.parse(fsSync.readFileSync(settingsPath, 'utf-8'));
-      tabLayout = settings.tabLayout || 'horizontal';
-    }
-  } catch (error) {
-    console.error('读取设置失败:', error);
-  }
-
+  const tabLayout = getTabLayout();
   const htmlFile = tabLayout === 'vertical' ? 'src/index_vertical.html' : 'src/index.html';
   mainWindow.loadFile(htmlFile);
 
@@ -225,24 +266,12 @@ function createWindow() {
       createNewTab(fileToOpen);
       fileToOpen = null;
     } else {
-      // 尝试恢复上次会话
       const savedSession = loadSession();
       if (savedSession && savedSession.length > 0) {
-        savedSession.forEach((tab) => {
-          createNewTab(tab.url);
-        });
+        savedSession.forEach((tab) => createNewTab(tab.url));
         clearSession();
       } else {
-        let defaultTabUrl = 'cosy://newtab';
-        try {
-          if (fsSync.existsSync(settingsPath)) {
-            const settings = JSON.parse(fsSync.readFileSync(settingsPath, 'utf-8'));
-            if (settings.defaultTab === 'bing') defaultTabUrl = 'https://www.bing.com';
-            else if (settings.defaultTab === 'custom' && settings.customUrl && isSafeUrl(settings.customUrl))
-              defaultTabUrl = settings.customUrl;
-          }
-        } catch (error) { console.error('读取设置失败:', error); }
-        createNewTab(defaultTabUrl);
+        createNewTab(getDefaultTabUrl());
       }
     }
   });
@@ -250,7 +279,6 @@ function createWindow() {
   mainWindow.on('resize', updateBrowserViewBounds);
   mainWindow.on('move', updateBrowserViewBounds);
   mainWindow.once('closed', () => {
-    // 关闭窗口时保存会话
     saveSession();
     mainWindow = null;
   });
@@ -271,48 +299,62 @@ function registerShortcuts() {
     if (input.type !== 'keyDown') return;
     const ctrl = input.control || input.meta;
     const shift = input.shift;
+    const key = input.key.toLowerCase();
 
-    if (ctrl && input.key.toLowerCase() === 't' && !shift) {
+    if (ctrl && key === 't' && !shift) {
       createNewTab();
       event.preventDefault();
-    } else if (ctrl && input.key.toLowerCase() === 'w') {
+    } else if (ctrl && key === 'w') {
       closeTab(currentTabIndex);
       event.preventDefault();
-    } else if (ctrl && input.key.toLowerCase() === 't' && shift) {
-      // Ctrl+Shift+T 恢复最近关闭的标签页
+    } else if (ctrl && key === 't' && shift) {
       const lastClosedTab = getLastClosedTab();
-      if (lastClosedTab) {
-        createNewTab(lastClosedTab.url);
-      }
+      if (lastClosedTab) createNewTab(lastClosedTab.url);
       event.preventDefault();
-    } else if (ctrl && input.key.toLowerCase() === 'tab') {
-      const nextIndex = shift ? (currentTabIndex - 1 + tabs.length) % tabs.length : (currentTabIndex + 1) % tabs.length;
+    } else if (ctrl && key === 'k' && shift) {
+      const tab = tabs[currentTabIndex];
+      if (tab && isSafeUrl(tab.url)) createNewTab(tab.url);
+      event.preventDefault();
+    } else if (ctrl && key === 'tab') {
+      const nextIndex = shift
+        ? (currentTabIndex - 1 + tabs.length) % tabs.length
+        : (currentTabIndex + 1) % tabs.length;
       switchToTab(nextIndex);
       event.preventDefault();
-    } else if (ctrl && input.key.toLowerCase() === 'l') {
+    } else if (ctrl && key === 'l') {
       mainWindow.webContents.send('focus-address-bar');
       event.preventDefault();
-    } else if (ctrl && input.key.toLowerCase() === 'r' && !shift) {
+    } else if (ctrl && key === 'f') {
+      mainWindow.webContents.send('show-find-bar');
+      event.preventDefault();
+    } else if (ctrl && key === 'p') {
+      if (tabs[currentTabIndex]?.view?.webContents) {
+        tabs[currentTabIndex].view.webContents.print({ silent: false, printBackground: true });
+      }
+      event.preventDefault();
+    } else if (ctrl && key === 'u') {
+      const tab = tabs[currentTabIndex];
+      if (tab && tab.view?.webContents && isSafeUrl(tab.url)) {
+        tab.view.webContents.viewSource();
+      }
+      event.preventDefault();
+    } else if (ctrl && key === 'r' && !shift) {
       if (tabs[currentTabIndex]?.view?.webContents) {
         tabs[currentTabIndex].view.webContents.reload();
       }
       event.preventDefault();
-    } else if (ctrl && input.key.toLowerCase() === 'r' && shift) {
+    } else if (ctrl && key === 'r' && shift) {
       if (tabs[currentTabIndex]?.view?.webContents) {
         tabs[currentTabIndex].view.webContents.reloadIgnoringCache();
       }
       event.preventDefault();
     } else if (ctrl && input.key === '=') {
-      if (tabs[currentTabIndex]?.view?.webContents) {
-        const webContents = tabs[currentTabIndex].view.webContents;
-        webContents.setZoomLevel(webContents.getZoomLevel() + 0.5);
-      }
+      const webContents = tabs[currentTabIndex]?.view?.webContents;
+      if (webContents) webContents.setZoomLevel(webContents.getZoomLevel() + 0.5);
       event.preventDefault();
     } else if (ctrl && input.key === '-') {
-      if (tabs[currentTabIndex]?.view?.webContents) {
-        const webContents = tabs[currentTabIndex].view.webContents;
-        webContents.setZoomLevel(webContents.getZoomLevel() - 0.5);
-      }
+      const webContents = tabs[currentTabIndex]?.view?.webContents;
+      if (webContents) webContents.setZoomLevel(webContents.getZoomLevel() - 0.5);
       event.preventDefault();
     } else if (ctrl && input.key === '0') {
       if (tabs[currentTabIndex]?.view?.webContents) {
@@ -320,16 +362,14 @@ function registerShortcuts() {
       }
       event.preventDefault();
     } else if (input.alt && input.key === 'ArrowLeft') {
-      if (tabs[currentTabIndex]?.view?.webContents?.canGoBack()) {
-        tabs[currentTabIndex].view.webContents.goBack();
-      }
+      const wc = tabs[currentTabIndex]?.view?.webContents;
+      if (wc?.canGoBack()) wc.goBack();
       event.preventDefault();
     } else if (input.alt && input.key === 'ArrowRight') {
-      if (tabs[currentTabIndex]?.view?.webContents?.canGoForward()) {
-        tabs[currentTabIndex].view.webContents.goForward();
-      }
+      const wc = tabs[currentTabIndex]?.view?.webContents;
+      if (wc?.canGoForward()) wc.goForward();
       event.preventDefault();
-    } else if (ctrl && input.key.toLowerCase() === 'd') {
+    } else if (ctrl && key === 'd') {
       const tab = tabs[currentTabIndex];
       if (tab && isSafeUrl(tab.url) && !tab.url.startsWith('cosy://')) {
         const existing = bookmarks.findIndex(b => b.url === tab.url);
@@ -348,7 +388,7 @@ function registerShortcuts() {
         }
       }
       event.preventDefault();
-    } else if (ctrl && input.key.toLowerCase() === 'h') {
+    } else if (ctrl && key === 'h') {
       mainWindow.webContents.send('show-history');
       event.preventDefault();
     }
@@ -377,6 +417,22 @@ function createNewTab(url = 'cosy://newtab') {
   mainWindow.webContents.send('tab-switched', { id: tab.id, index: currentTabIndex });
   setTimeout(updateBrowserViewBounds, 0);
   return tab;
+}
+
+function showErrorPage(tab, errorCode, errorDescription, validatedURL) {
+  const errorParams = new URLSearchParams({
+    code: getHttpStatusCode(errorCode),
+    message: getErrorMessage(errorCode),
+    reason: errorDescription,
+    url: validatedURL,
+    browserCode: errorCode,
+    browserMessage: getBrowserErrorText(errorCode)
+  });
+  const errorUrl = `file://${__dirname}/src/error.html?${errorParams.toString()}`;
+  tab.view.webContents.loadURL(errorUrl);
+  tab.url = validatedURL;
+  tab.title = `错误 - ${getHttpStatusCode(errorCode)}`;
+  mainWindow.webContents.send('tab-updated', { id: tab.id, url: validatedURL, title: tab.title });
 }
 
 function loadTabContent(tab) {
@@ -446,7 +502,6 @@ function loadTabContent(tab) {
         const httpStatus = getHttpStatusCode(errorCode);
         if (httpStatus === '403' && !tab.retry403) {
           tab.retry403 = true;
-          console.log('检测到403错误，尝试重新加载:', validatedURL);
           tab.view.webContents.loadURL(validatedURL).catch(() => {
             showErrorPage(tab, errorCode, errorDescription, validatedURL);
           });
@@ -455,22 +510,6 @@ function loadTabContent(tab) {
         showErrorPage(tab, errorCode, errorDescription, validatedURL);
       }
     });
-
-    function showErrorPage(tab, errorCode, errorDescription, validatedURL) {
-      const errorParams = new URLSearchParams({
-        code: getHttpStatusCode(errorCode),
-        message: getErrorMessage(errorCode),
-        reason: errorDescription,
-        url: validatedURL,
-        browserCode: errorCode,
-        browserMessage: getBrowserErrorText(errorCode)
-      });
-      const errorUrl = `file://${__dirname}/src/error.html?${errorParams.toString()}`;
-      tab.view.webContents.loadURL(errorUrl);
-      tab.url = validatedURL;
-      tab.title = `错误 - ${getHttpStatusCode(errorCode)}`;
-      mainWindow.webContents.send('tab-updated', { id: tab.id, url: validatedURL, title: tab.title });
-    }
 
     tab.view.webContents.on('page-favicon-updated', (event, favicons) => {
       if (favicons.length > 0) {
@@ -561,22 +600,14 @@ function updateBrowserViewBounds() {
     const tab = tabs[currentTabIndex];
     if (tab && tab.view) {
       const [width, height] = mainWindow.getSize();
-      const settingsPath = path.join(app.getPath('userData'), 'cosySettings.json');
-      let tabLayout = 'horizontal';
-      try {
-        if (fsSync.existsSync(settingsPath)) {
-          tabLayout = JSON.parse(fsSync.readFileSync(settingsPath, 'utf-8')).tabLayout || 'horizontal';
-        }
-      } catch (error) {
-        console.error('读取设置失败:', error);
-      }
+      const tabLayout = getTabLayout();
 
       let x, y, w, h;
       if (tabLayout === 'vertical') {
-        const tabBarWidth = isTabBarCollapsed ? 50 : 200;
+        const tabBarWidth = isTabBarCollapsed ? COLLAPSED_TAB_BAR_WIDTH : DEFAULT_TAB_BAR_WIDTH_VERTICAL;
         x = tabBarWidth; y = 75; w = width - tabBarWidth; h = height - 75;
       } else {
-        x = 0; y = 116; w = width; h = height - 116;
+        x = 0; y = DEFAULT_TAB_BAR_HEIGHT_HORIZONTAL; w = width; h = height - DEFAULT_TAB_BAR_HEIGHT_HORIZONTAL;
       }
       tab.view.setBounds({ x, y, width: w, height: h });
     }
@@ -598,24 +629,11 @@ function switchToTab(tabIndex) {
 function closeTab(tabIndex) {
   if (tabIndex >= 0 && tabIndex < tabs.length) {
     const tab = tabs[tabIndex];
-    // 保存到最近关闭的标签页
     addToRecentlyClosed(tab);
     if (tab.view) tab.view.webContents.destroy();
     tabs.splice(tabIndex, 1);
     if (tabs.length === 0) {
-      let defaultTabUrl = 'cosy://newtab';
-      try {
-        const settingsPath = path.join(app.getPath('userData'), 'cosySettings.json');
-        if (fsSync.existsSync(settingsPath)) {
-          const settings = JSON.parse(fsSync.readFileSync(settingsPath, 'utf-8'));
-          if (settings.defaultTab === 'bing') defaultTabUrl = 'https://www.bing.com';
-          else if (settings.defaultTab === 'custom' && settings.customUrl && isSafeUrl(settings.customUrl))
-            defaultTabUrl = settings.customUrl;
-        }
-      } catch (error) {
-        console.error('读取设置失败:', error);
-      }
-      createNewTab(defaultTabUrl);
+      createNewTab(getDefaultTabUrl());
       currentTabIndex = 0;
     } else if (currentTabIndex >= tabs.length) {
       currentTabIndex = tabs.length - 1;
@@ -881,7 +899,7 @@ ipcMain.handle('navigate-back', (event) => {
   if (!isMainSender(event)) return { success: false };
   if (tabs.length > 0 && currentTabIndex >= 0) {
     const tab = tabs[currentTabIndex];
-    if (tab.view && tab.view.webContents && tab.view.webContents.canGoBack()) {
+    if (tab.view?.webContents?.canGoBack()) {
       tab.view.webContents.goBack();
       return { success: true };
     }
@@ -893,7 +911,7 @@ ipcMain.handle('navigate-forward', (event) => {
   if (!isMainSender(event)) return { success: false };
   if (tabs.length > 0 && currentTabIndex >= 0) {
     const tab = tabs[currentTabIndex];
-    if (tab.view && tab.view.webContents && tab.view.webContents.canGoForward()) {
+    if (tab.view?.webContents?.canGoForward()) {
       tab.view.webContents.goForward();
       return { success: true };
     }
@@ -1125,7 +1143,7 @@ ipcMain.on('show-more-options-menu', (event, position) => {
   let currentZoomLevel = 1.0;
   if (tabs.length > 0 && currentTabIndex >= 0) {
     const tab = tabs[currentTabIndex];
-    if (tab.view && tab.view.webContents) currentZoomLevel = tab.view.webContents.getZoomLevel();
+    if (tab.view?.webContents) currentZoomLevel = tab.view.webContents.getZoomLevel();
   }
   const currentZoomPercent = Math.round((Math.pow(1.2, currentZoomLevel)) * 100);
   menu.append(new MenuItem({
@@ -1133,7 +1151,7 @@ ipcMain.on('show-more-options-menu', (event, position) => {
     click: () => {
       if (tabs.length > 0 && currentTabIndex >= 0) {
         const tab = tabs[currentTabIndex];
-        if (tab.view && tab.view.webContents) tab.view.webContents.setZoomLevel(0);
+        if (tab.view?.webContents) tab.view.webContents.setZoomLevel(0);
       }
     }
   }));
@@ -1142,7 +1160,7 @@ ipcMain.on('show-more-options-menu', (event, position) => {
     click: () => {
       if (tabs.length > 0 && currentTabIndex >= 0) {
         const tab = tabs[currentTabIndex];
-        if (tab.view && tab.view.webContents) tab.view.webContents.setZoomLevel(tab.view.webContents.getZoomLevel() + 0.5);
+        if (tab.view?.webContents) tab.view.webContents.setZoomLevel(tab.view.webContents.getZoomLevel() + 0.5);
       }
     }
   }));
@@ -1151,7 +1169,7 @@ ipcMain.on('show-more-options-menu', (event, position) => {
     click: () => {
       if (tabs.length > 0 && currentTabIndex >= 0) {
         const tab = tabs[currentTabIndex];
-        if (tab.view && tab.view.webContents) tab.view.webContents.setZoomLevel(tab.view.webContents.getZoomLevel() - 0.5);
+        if (tab.view?.webContents) tab.view.webContents.setZoomLevel(tab.view.webContents.getZoomLevel() - 0.5);
       }
     }
   }));
@@ -1160,43 +1178,25 @@ ipcMain.on('show-more-options-menu', (event, position) => {
     label: '重新打开已关闭的标签页 (Ctrl+Shift+T)',
     click: () => {
       const lastClosedTab = getLastClosedTab();
-      if (lastClosedTab) {
-        createNewTab(lastClosedTab.url);
-      }
+      if (lastClosedTab) createNewTab(lastClosedTab.url);
     }
   }));
   menu.popup({ window: mainWindow, x: position.x, y: position.y });
 });
 
-// 最近关闭的标签页栈
-let recentlyClosedTabs = [];
-const MAX_RECENTLY_CLOSED = 10;
-
-function addToRecentlyClosed(tab) {
-  if (!tab || !tab.url || tab.url.startsWith('cosy://')) return;
-  recentlyClosedTabs.push({ url: tab.url, title: tab.title, closedAt: Date.now() });
-  if (recentlyClosedTabs.length > MAX_RECENTLY_CLOSED) {
-    recentlyClosedTabs.shift();
-  }
-}
-
-function getLastClosedTab() {
-  return recentlyClosedTabs.pop();
-}
-
 function createContextMenu(menuType, selectedText = '') {
   const menu = new Menu();
   if (menuType === 'selection') {
     if (selectedText) {
-      menu.append(new MenuItem({ label: '复制', click: () => { if (mainWindow && mainWindow.webContents) mainWindow.webContents.copy(); } }));
+      menu.append(new MenuItem({ label: '复制', click: () => { if (mainWindow?.webContents) mainWindow.webContents.copy(); } }));
       menu.append(new MenuItem({ type: 'separator' }));
     }
     menu.append(new MenuItem({ label: '主页', click: () => { if (tabs.length > 0 && currentTabIndex >= 0) { const tab = tabs[currentTabIndex]; tab.url = 'cosy://newtab'; loadTabContent(tab); } } }));
     menu.append(new MenuItem({ label: '设置', click: () => createNewTab('cosy://setting') }));
     menu.append(new MenuItem({ type: 'separator' }));
-    if (isDev) menu.append(new MenuItem({ label: '开发者工具', click: () => { if (tabs.length > 0 && currentTabIndex >= 0) { const tab = tabs[currentTabIndex]; if (tab.view && tab.view.webContents) tab.view.webContents.toggleDevTools(); } } }));
+    if (isDev) menu.append(new MenuItem({ label: '开发者工具', click: () => { if (tabs.length > 0 && currentTabIndex >= 0) { const tab = tabs[currentTabIndex]; if (tab.view?.webContents) tab.view.webContents.toggleDevTools(); } } }));
   } else {
-    if (isDev) menu.append(new MenuItem({ label: '开发者工具', click: () => { if (tabs.length > 0 && currentTabIndex >= 0) { const tab = tabs[currentTabIndex]; if (tab.view && tab.view.webContents) tab.view.webContents.toggleDevTools(); } } }));
+    if (isDev) menu.append(new MenuItem({ label: '开发者工具', click: () => { if (tabs.length > 0 && currentTabIndex >= 0) { const tab = tabs[currentTabIndex]; if (tab.view?.webContents) tab.view.webContents.toggleDevTools(); } } }));
     menu.append(new MenuItem({ label: '返回主页', click: () => { if (tabs.length > 0 && currentTabIndex >= 0) { const tab = tabs[currentTabIndex]; tab.url = 'cosy://newtab'; loadTabContent(tab); } } }));
     menu.append(new MenuItem({ label: '设置', click: () => createNewTab('cosy://setting') }));
   }
@@ -1398,7 +1398,7 @@ ipcMain.on('update-theme-color', (event, color) => {
   if (!isValidColor(color)) return;
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update-theme-color', color);
   tabs.forEach(tab => {
-    if (tab.view && tab.view.webContents) tab.view.webContents.send('update-theme-color', color);
+    if (tab.view?.webContents) tab.view.webContents.send('update-theme-color', color);
   });
 });
 
