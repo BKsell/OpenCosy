@@ -25,6 +25,7 @@ const MIN_WINDOW_HEIGHT = 600;
 const DEFAULT_TAB_BAR_HEIGHT_HORIZONTAL = 116;
 const DEFAULT_TAB_BAR_WIDTH_VERTICAL = 200;
 const COLLAPSED_TAB_BAR_WIDTH = 50;
+const ZOOM_STEP = 0.5;
 
 const isDev = !app.isPackaged;
 
@@ -84,9 +85,7 @@ function isSafeUrl(url) {
 function sanitizePath(inputPath, baseDir) {
   const resolved = path.resolve(baseDir, inputPath);
   const normalized = path.normalize(resolved);
-  if (!isPathInDir(normalized, baseDir)) {
-    return null;
-  }
+  if (!isPathInDir(normalized, baseDir)) return null;
   return normalized;
 }
 
@@ -96,6 +95,40 @@ function isPathInDir(filePath, dir) {
 
 function isValidColor(str) {
   return typeof str === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(str);
+}
+
+function getCurrentTabWebContents() {
+  const tab = tabs[currentTabIndex];
+  return tab?.view?.webContents || null;
+}
+
+function zoomIn() {
+  const wc = getCurrentTabWebContents();
+  if (wc) wc.setZoomLevel(wc.getZoomLevel() + ZOOM_STEP);
+}
+
+function zoomOut() {
+  const wc = getCurrentTabWebContents();
+  if (wc) wc.setZoomLevel(wc.getZoomLevel() - ZOOM_STEP);
+}
+
+function resetZoom() {
+  const wc = getCurrentTabWebContents();
+  if (wc) wc.setZoomLevel(0);
+}
+
+function toggleDevTools() {
+  const wc = getCurrentTabWebContents();
+  if (wc) wc.toggleDevTools();
+}
+
+function goHome() {
+  const tab = tabs[currentTabIndex];
+  if (tab) {
+    tab.url = 'cosy://newtab';
+    loadTabContent(tab);
+    mainWindow.webContents.send('tab-updated', { id: tab.id, url: tab.url, title: '新标签页' });
+  }
 }
 
 function addToHistory(url, title) {
@@ -177,9 +210,7 @@ function loadSession() {
 function clearSession() {
   try {
     const sessionPath = path.join(app.getPath('userData'), 'session.json');
-    if (fsSync.existsSync(sessionPath)) {
-      fsSync.unlinkSync(sessionPath);
-    }
+    if (fsSync.existsSync(sessionPath)) fsSync.unlinkSync(sessionPath);
   } catch (error) {
     console.error('清除会话失败:', error);
   }
@@ -188,9 +219,7 @@ function clearSession() {
 function addToRecentlyClosed(tab) {
   if (!tab || !tab.url || tab.url.startsWith('cosy://')) return;
   recentlyClosedTabs.push({ url: tab.url, title: tab.title, closedAt: Date.now() });
-  if (recentlyClosedTabs.length > MAX_RECENTLY_CLOSED) {
-    recentlyClosedTabs.shift();
-  }
+  if (recentlyClosedTabs.length > MAX_RECENTLY_CLOSED) recentlyClosedTabs.shift();
 }
 
 function getLastClosedTab() {
@@ -297,9 +326,7 @@ function createWindow() {
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (isSafeUrl(url)) {
-      createNewTab(url);
-    }
+    if (isSafeUrl(url)) createNewTab(url);
     return { action: 'deny' };
   });
 
@@ -345,9 +372,8 @@ function registerShortcuts() {
       mainWindow.webContents.send('show-find-bar');
       event.preventDefault();
     } else if (ctrl && key === 'p') {
-      if (tabs[currentTabIndex]?.view?.webContents) {
-        tabs[currentTabIndex].view.webContents.print({ silent: false, printBackground: true });
-      }
+      const wc = getCurrentTabWebContents();
+      if (wc) wc.print({ silent: false, printBackground: true });
       event.preventDefault();
     } else if (ctrl && key === 'u') {
       const tab = tabs[currentTabIndex];
@@ -356,42 +382,31 @@ function registerShortcuts() {
       }
       event.preventDefault();
     } else if (alt && input.key === 'Home') {
-      const tab = tabs[currentTabIndex];
-      if (tab) {
-        tab.url = 'cosy://newtab';
-        loadTabContent(tab);
-        mainWindow.webContents.send('tab-updated', { id: tab.id, url: tab.url, title: '新标签页' });
-      }
+      goHome();
       event.preventDefault();
     } else if (ctrl && key === 'r' && !shift) {
-      if (tabs[currentTabIndex]?.view?.webContents) {
-        tabs[currentTabIndex].view.webContents.reload();
-      }
+      const wc = getCurrentTabWebContents();
+      if (wc) wc.reload();
       event.preventDefault();
     } else if (ctrl && key === 'r' && shift) {
-      if (tabs[currentTabIndex]?.view?.webContents) {
-        tabs[currentTabIndex].view.webContents.reloadIgnoringCache();
-      }
+      const wc = getCurrentTabWebContents();
+      if (wc) wc.reloadIgnoringCache();
       event.preventDefault();
     } else if (ctrl && input.key === '=') {
-      const webContents = tabs[currentTabIndex]?.view?.webContents;
-      if (webContents) webContents.setZoomLevel(webContents.getZoomLevel() + 0.5);
+      zoomIn();
       event.preventDefault();
     } else if (ctrl && input.key === '-') {
-      const webContents = tabs[currentTabIndex]?.view?.webContents;
-      if (webContents) webContents.setZoomLevel(webContents.getZoomLevel() - 0.5);
+      zoomOut();
       event.preventDefault();
     } else if (ctrl && input.key === '0') {
-      if (tabs[currentTabIndex]?.view?.webContents) {
-        tabs[currentTabIndex].view.webContents.setZoomLevel(0);
-      }
+      resetZoom();
       event.preventDefault();
     } else if (alt && input.key === 'ArrowLeft') {
-      const wc = tabs[currentTabIndex]?.view?.webContents;
+      const wc = getCurrentTabWebContents();
       if (wc?.canGoBack()) wc.goBack();
       event.preventDefault();
     } else if (alt && input.key === 'ArrowRight') {
-      const wc = tabs[currentTabIndex]?.view?.webContents;
+      const wc = getCurrentTabWebContents();
       if (wc?.canGoForward()) wc.goForward();
       event.preventDefault();
     } else if (ctrl && key === 'd') {
@@ -491,10 +506,7 @@ function loadTabContent(tab) {
     });
 
     tab.view.webContents.on('will-navigate', (event, navigationUrl) => {
-      if (!isSafeUrl(navigationUrl)) {
-        event.preventDefault();
-        return;
-      }
+      if (!isSafeUrl(navigationUrl)) { event.preventDefault(); return; }
       tab.url = navigationUrl;
       addToHistory(navigationUrl, tab.title);
       mainWindow.webContents.send('tab-updated', { id: tab.id, url: navigationUrl });
@@ -562,9 +574,7 @@ function loadTabContent(tab) {
       if (params.selectionText && params.isEditable) menu.append(new MenuItem({ label: '剪切', role: 'cut' }));
       if (params.isEditable) menu.append(new MenuItem({ label: '粘贴', role: 'paste' }));
       if (menu.items.length > 0) menu.append(new MenuItem({ type: 'separator' }));
-      if (isDev) {
-        menu.append(new MenuItem({ label: '开发者工具', click: () => tab.view.webContents.toggleDevTools() }));
-      }
+      if (isDev) menu.append(new MenuItem({ label: '开发者工具', click: toggleDevTools }));
       menu.popup({ window: mainWindow });
     });
 
@@ -595,11 +605,8 @@ function loadTabContent(tab) {
         'download': 'src/download/index.html', 'downloadlist': 'src/downloadlist.html'
       };
       const filePath = pageMap[hostname];
-      if (filePath) {
-        tab.view.webContents.loadFile(filePath);
-      } else {
-        showCosyError(tab, '404', '页面未找到', '未注册的cosy协议地址');
-      }
+      if (filePath) tab.view.webContents.loadFile(filePath);
+      else showCosyError(tab, '404', '页面未找到', '未注册的cosy协议地址');
     } catch (error) {
       console.error('解析cosy协议URL失败:', error);
       showCosyError(tab, '400', '无效的URL', '无法解析cosy协议地址');
@@ -671,10 +678,7 @@ function closeTab(tabIndex) {
 function setupDownloadManager() {
   session.defaultSession.on('will-download', (event, item, webContents) => {
     const url = item.getURL();
-    if (!isSafeUrl(url)) {
-      event.preventDefault();
-      return;
-    }
+    if (!isSafeUrl(url)) { event.preventDefault(); return; }
     const filename = item.getFilename();
     const totalBytes = item.getTotalBytes();
     let downloadInfo = downloads.find(d => d.url === url && d.item === null && d.isItemValid === false);
@@ -698,10 +702,7 @@ function setupDownloadManager() {
       isNewDownload = true;
     }
     currentDownloadInfo = downloadInfo;
-    if (isNewDownload) {
-      createNewTab('cosy://download');
-      return;
-    }
+    if (isNewDownload) { createNewTab('cosy://download'); return; }
     if (downloadInfo.savePath) {
       item.setSavePath(downloadInfo.savePath);
     } else {
@@ -791,12 +792,8 @@ function generateUserAgent() {
 
 if (process.argv.length > 1) {
   const arg = process.argv[1];
-  if (arg && (arg.endsWith('.html') || arg.endsWith('.htm'))) {
-    fileToOpen = `file://${arg}`;
-  }
-  if (arg && (arg.startsWith('http://') || arg.startsWith('https://') || arg.startsWith('cosy://'))) {
-    fileToOpen = arg;
-  }
+  if (arg && (arg.endsWith('.html') || arg.endsWith('.htm'))) fileToOpen = `file://${arg}`;
+  if (arg && (arg.startsWith('http://') || arg.startsWith('https://') || arg.startsWith('cosy://'))) fileToOpen = arg;
 }
 
 app.on('open-file', (event, filePath) => {
@@ -816,9 +813,7 @@ app.whenReady().then(async () => {
   loadHistory();
   loadBookmarks();
 
-  if (process.platform === 'win32') {
-    app.setAsDefaultProtocolClient('cosy');
-  }
+  if (process.platform === 'win32') app.setAsDefaultProtocolClient('cosy');
 
   protocol.registerFileProtocol('cosy', (request, callback) => {
     try {
@@ -845,16 +840,11 @@ app.whenReady().then(async () => {
       const requestedPath = decodeURIComponent(request.url.substr(7));
       const resolvedPath = path.resolve(requestedPath);
       const allowedDirs = [
-        app.getPath('downloads'),
-        app.getPath('documents'),
-        app.getPath('desktop'),
-        app.getPath('pictures'),
-        app.getPath('videos'),
-        app.getPath('music'),
-        __dirname,
+        app.getPath('downloads'), app.getPath('documents'),
+        app.getPath('desktop'), app.getPath('pictures'),
+        app.getPath('videos'), app.getPath('music'), __dirname,
       ];
-      const isAllowed = allowedDirs.some(dir => isPathInDir(resolvedPath, dir));
-      if (isAllowed) {
+      if (allowedDirs.some(dir => isPathInDir(resolvedPath, dir))) {
         callback({ path: resolvedPath });
       } else {
         callback({ error: -3 });
@@ -868,8 +858,7 @@ app.whenReady().then(async () => {
   setupPermissionHandler();
   setupSecurityHeaders();
   setupDownloadManager();
-  const userAgent = generateUserAgent();
-  session.defaultSession.setUserAgent(userAgent);
+  session.defaultSession.setUserAgent(generateUserAgent());
   createWindow();
   await loadEnabledExtensions();
 
@@ -923,25 +912,15 @@ ipcMain.handle('navigate-tab', (event, { tabId, url }) => {
 
 ipcMain.handle('navigate-back', (event) => {
   if (!isMainSender(event)) return { success: false };
-  if (tabs.length > 0 && currentTabIndex >= 0) {
-    const tab = tabs[currentTabIndex];
-    if (tab.view?.webContents?.canGoBack()) {
-      tab.view.webContents.goBack();
-      return { success: true };
-    }
-  }
+  const wc = getCurrentTabWebContents();
+  if (wc?.canGoBack()) { wc.goBack(); return { success: true }; }
   return { success: false };
 });
 
 ipcMain.handle('navigate-forward', (event) => {
   if (!isMainSender(event)) return { success: false };
-  if (tabs.length > 0 && currentTabIndex >= 0) {
-    const tab = tabs[currentTabIndex];
-    if (tab.view?.webContents?.canGoForward()) {
-      tab.view.webContents.goForward();
-      return { success: true };
-    }
-  }
+  const wc = getCurrentTabWebContents();
+  if (wc?.canGoForward()) { wc.goForward(); return { success: true }; }
   return { success: false };
 });
 
@@ -1165,56 +1144,25 @@ ipcMain.on('close-current-tab', (event) => {
 
 ipcMain.on('find-in-page', (event, { text, forward }) => {
   if (!isMainSender(event)) return;
-  const tab = tabs[currentTabIndex];
-  if (tab?.view?.webContents && text) {
-    tab.view.webContents.findInPage(text, { forward, matchCase: false });
-  }
+  const wc = getCurrentTabWebContents();
+  if (wc && text) wc.findInPage(text, { forward, matchCase: false });
 });
 
 ipcMain.on('stop-find', (event) => {
   if (!isMainSender(event)) return;
-  const tab = tabs[currentTabIndex];
-  if (tab?.view?.webContents) {
-    tab.view.webContents.stopFindInPage('clearSelection');
-  }
+  const wc = getCurrentTabWebContents();
+  if (wc) wc.stopFindInPage('clearSelection');
 });
 
 ipcMain.on('show-more-options-menu', (event, position) => {
   if (!isMainSender(event)) return;
   const menu = new Menu();
-  let currentZoomLevel = 1.0;
-  if (tabs.length > 0 && currentTabIndex >= 0) {
-    const tab = tabs[currentTabIndex];
-    if (tab.view?.webContents) currentZoomLevel = tab.view.webContents.getZoomLevel();
-  }
-  const currentZoomPercent = Math.round((Math.pow(1.2, currentZoomLevel)) * 100);
-  menu.append(new MenuItem({
-    label: `重置缩放 (当前: ${currentZoomPercent}%)`,
-    click: () => {
-      if (tabs.length > 0 && currentTabIndex >= 0) {
-        const tab = tabs[currentTabIndex];
-        if (tab.view?.webContents) tab.view.webContents.setZoomLevel(0);
-      }
-    }
-  }));
-  menu.append(new MenuItem({
-    label: '放大',
-    click: () => {
-      if (tabs.length > 0 && currentTabIndex >= 0) {
-        const tab = tabs[currentTabIndex];
-        if (tab.view?.webContents) tab.view.webContents.setZoomLevel(tab.view.webContents.getZoomLevel() + 0.5);
-      }
-    }
-  }));
-  menu.append(new MenuItem({
-    label: '缩小',
-    click: () => {
-      if (tabs.length > 0 && currentTabIndex >= 0) {
-        const tab = tabs[currentTabIndex];
-        if (tab.view?.webContents) tab.view.webContents.setZoomLevel(tab.view.webContents.getZoomLevel() - 0.5);
-      }
-    }
-  }));
+  const wc = getCurrentTabWebContents();
+  const currentZoomLevel = wc ? wc.getZoomLevel() : 0;
+  const currentZoomPercent = Math.round(Math.pow(1.2, currentZoomLevel) * 100);
+  menu.append(new MenuItem({ label: `重置缩放 (当前: ${currentZoomPercent}%)`, click: resetZoom }));
+  menu.append(new MenuItem({ label: '放大', click: zoomIn }));
+  menu.append(new MenuItem({ label: '缩小', click: zoomOut }));
   menu.append(new MenuItem({ type: 'separator' }));
   menu.append(new MenuItem({
     label: '重新打开已关闭的标签页 (Ctrl+Shift+T)',
@@ -1233,13 +1181,13 @@ function createContextMenu(menuType, selectedText = '') {
       menu.append(new MenuItem({ label: '复制', click: () => { if (mainWindow?.webContents) mainWindow.webContents.copy(); } }));
       menu.append(new MenuItem({ type: 'separator' }));
     }
-    menu.append(new MenuItem({ label: '主页', click: () => { if (tabs.length > 0 && currentTabIndex >= 0) { const tab = tabs[currentTabIndex]; tab.url = 'cosy://newtab'; loadTabContent(tab); } } }));
+    menu.append(new MenuItem({ label: '主页', click: goHome }));
     menu.append(new MenuItem({ label: '设置', click: () => createNewTab('cosy://setting') }));
     menu.append(new MenuItem({ type: 'separator' }));
-    if (isDev) menu.append(new MenuItem({ label: '开发者工具', click: () => { if (tabs.length > 0 && currentTabIndex >= 0) { const tab = tabs[currentTabIndex]; if (tab.view?.webContents) tab.view.webContents.toggleDevTools(); } } }));
+    if (isDev) menu.append(new MenuItem({ label: '开发者工具', click: toggleDevTools }));
   } else {
-    if (isDev) menu.append(new MenuItem({ label: '开发者工具', click: () => { if (tabs.length > 0 && currentTabIndex >= 0) { const tab = tabs[currentTabIndex]; if (tab.view?.webContents) tab.view.webContents.toggleDevTools(); } } }));
-    menu.append(new MenuItem({ label: '返回主页', click: () => { if (tabs.length > 0 && currentTabIndex >= 0) { const tab = tabs[currentTabIndex]; tab.url = 'cosy://newtab'; loadTabContent(tab); } } }));
+    if (isDev) menu.append(new MenuItem({ label: '开发者工具', click: toggleDevTools }));
+    menu.append(new MenuItem({ label: '返回主页', click: goHome }));
     menu.append(new MenuItem({ label: '设置', click: () => createNewTab('cosy://setting') }));
   }
   return menu;
@@ -1282,8 +1230,9 @@ async function validateExtensionFolder(folderPath) {
     if (!manifest.manifest_version) return { valid: false, error: 'manifest.json中缺少manifest_version字段' };
     if (manifest.permissions && Array.isArray(manifest.permissions)) {
       const dangerousPermissions = ['<all_urls>', 'tabs', 'history', 'bookmarks', 'cookies', 'webRequest', 'webRequestBlocking', 'proxy', 'management', 'debugger', 'nativeMessaging'];
-      const hasDangerous = manifest.permissions.some(p => dangerousPermissions.includes(p));
-      if (hasDangerous) return { valid: false, error: '插件请求了危险权限，已被拒绝加载' };
+      if (manifest.permissions.some(p => dangerousPermissions.includes(p))) {
+        return { valid: false, error: '插件请求了危险权限，已被拒绝加载' };
+      }
     }
     return { valid: true, manifest };
   } catch (error) { return { valid: false, error: '读取manifest.json失败: ' + error.message }; }
