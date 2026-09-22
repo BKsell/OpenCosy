@@ -1137,6 +1137,22 @@ ipcMain.on('close-current-tab', (event) => {
   if (tabs.length > 0) closeTab(currentTabIndex);
 });
 
+ipcMain.on('find-in-page', (event, { text, forward }) => {
+  if (!isMainSender(event)) return;
+  const tab = tabs[currentTabIndex];
+  if (tab?.view?.webContents && text) {
+    tab.view.webContents.findInPage(text, { forward, matchCase: false });
+  }
+});
+
+ipcMain.on('stop-find', (event) => {
+  if (!isMainSender(event)) return;
+  const tab = tabs[currentTabIndex];
+  if (tab?.view?.webContents) {
+    tab.view.webContents.stopFindInPage('clearSelection');
+  }
+});
+
 ipcMain.on('show-more-options-menu', (event, position) => {
   if (!isMainSender(event)) return;
   const menu = new Menu();
