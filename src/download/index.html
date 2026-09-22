@@ -2,6 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:;">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>下载 - OpenCosy浏览器</title>
     <style>
@@ -121,7 +122,6 @@
                 if (settings.themeColor && isValidColor(settings.themeColor)) {
                     document.documentElement.style.setProperty('--theme-color', settings.themeColor);
                 }
-                // 检查深色模式设置
                 if (settings.darkMode) {
                     document.documentElement.setAttribute('data-mode', 'dark');
                 }
