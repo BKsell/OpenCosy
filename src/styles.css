@@ -619,3 +619,78 @@ body {
     background: var(--glass-bg);
     border-color: var(--text-light);
 }
+
+/* ===== 查找栏 (Ctrl+F) ===== */
+.find-bar {
+    position: fixed;
+    top: 0;
+    right: 20px;
+    width: 360px;
+    background: var(--glass-bg-heavy);
+    border: 1px solid var(--glass-border);
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    z-index: 999;
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    gap: 8px;
+    backdrop-filter: blur(20px);
+    transform: translateY(-100%);
+    transition: transform var(--transition-normal);
+}
+
+.find-bar.visible {
+    transform: translateY(0);
+}
+
+#find-input {
+    flex: 1;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 6px 10px;
+    font-size: 13px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    outline: none;
+    transition: border-color var(--transition-fast);
+}
+
+#find-input:focus {
+    border-color: var(--theme-color);
+}
+
+.find-match-count {
+    font-size: 12px;
+    color: var(--text-secondary);
+    min-width: 40px;
+    text-align: center;
+}
+
+.find-btn {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    color: var(--text-primary);
+    transition: background var(--transition-fast);
+}
+
+.find-btn:hover {
+    background: var(--glass-bg);
+}
+
+.find-close {
+    font-size: 18px;
+    color: var(--text-secondary);
+}
+
+.find-close:hover {
+    color: var(--text-primary);
+}
