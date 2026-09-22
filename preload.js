@@ -23,6 +23,8 @@ const allowedSendChannels = new Set([
   'open-folder',
   'clear-downloads',
   'close-current-tab',
+  'find-in-page',
+  'stop-find',
 ]);
 
 const allowedInvokeChannels = new Set([
