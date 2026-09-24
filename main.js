@@ -377,6 +377,9 @@ function registerShortcuts() {
     } else if (ctrl && key === 'f') {
       mainWindow.webContents.send('show-find-bar');
       event.preventDefault();
+    } else if (ctrl && key === 'j') {
+      createNewTab('cosy://downloadlist');
+      event.preventDefault();
     } else if (ctrl && key === 'p') {
       const wc = getCurrentTabWebContents();
       if (wc) wc.print({ silent: false, printBackground: true });
@@ -436,6 +439,9 @@ function registerShortcuts() {
       event.preventDefault();
     } else if (ctrl && key === 'h') {
       mainWindow.webContents.send('show-history');
+      event.preventDefault();
+    } else if (ctrl && key === 'delete' && shift) {
+      sendToRenderer('show-clear-data-dialog');
       event.preventDefault();
     }
   });
