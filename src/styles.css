@@ -26,7 +26,6 @@
     --glass-border: rgba(255, 255, 255, 0.8);
     --glass-shadow: rgba(31, 38, 135, 0.1);
     --glass-shadow-heavy: rgba(31, 38, 135, 0.2);
-    --glass-shadow-ultra: rgba(31, 38, 135, 0.3);
 
     /* 阴影 */
     --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.05);
@@ -693,4 +692,55 @@ body {
 
 .find-close:hover {
     color: var(--text-primary);
+}
+
+/* ===== 清除浏览数据对话框 ===== */
+.cosy-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 1100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.cosy-dialog {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    padding: 24px;
+    min-width: 320px;
+    max-width: 420px;
+}
+
+.cosy-btn {
+    padding: 8px 16px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 13px;
+    transition: background var(--transition-fast);
+}
+
+.cosy-btn:hover {
+    background: var(--bg-secondary);
+}
+
+.cosy-btn-primary {
+    padding: 8px 16px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: var(--theme-color);
+    color: #fff;
+    cursor: pointer;
+    font-size: 13px;
+    transition: filter var(--transition-fast);
+}
+
+.cosy-btn-primary:hover {
+    filter: brightness(1.1);
 }
