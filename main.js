@@ -1403,9 +1403,9 @@ ipcMain.handle('browse-folder', async (event) => {
   } catch (e) { return { success: false, error: e.message }; }
 });
 
-ipcMain.on('show-context-menu', (event, menuType, selectedText) => {
+ipcMain.on('show-context-menu', (event, data) => {
   if (!isMainSender(event)) return;
-  const menu = createContextMenu(menuType, selectedText);
+  const menu = createContextMenu(data.menuType, data.selectedText);
   menu.popup();
 });
 
