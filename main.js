@@ -261,12 +261,15 @@ function getLastClosedTab() {
 function setupSecurityHeaders() {
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const headers = details.responseHeaders || {};
-    headers['X-Content-Type-Options'] = ['nosniff'];
-    headers['X-Frame-Options'] = ['SAMEORIGIN'];
-    headers['X-XSS-Protection'] = ['1; mode=block'];
-    headers['Referrer-Policy'] = ['strict-origin-when-cross-origin'];
-    if (!headers['Content-Security-Policy'] && !headers['content-security-policy']) {
-      headers['Content-Security-Policy'] = ["default-src 'self'"];
+    const setIfMissing = (name, value) => {
+      if (!headers[name] && !headers[name.toLowerCase()]) headers[name] = value;
+    };
+    setIfMissing('X-Content-Type-Options', ['nosniff']);
+    setIfMissing('X-Frame-Options', ['SAMEORIGIN']);
+    setIfMissing('Referrer-Policy', ['strict-origin-when-cross-origin']);
+    const isLocal = details.url.startsWith('cosy://') || details.url.startsWith('file://');
+    if (isLocal && !headers['Content-Security-Policy'] && !headers['content-security-policy']) {
+      headers['Content-Security-Policy'] = ["default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:;"];
     }
     callback({ responseHeaders: headers });
   });
