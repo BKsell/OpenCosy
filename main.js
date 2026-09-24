@@ -39,6 +39,18 @@ function sendToRenderer(channel, ...args) {
   }
 }
 
+function getSafeDirs() {
+  return [
+    app.getPath('downloads'), app.getPath('documents'),
+    app.getPath('desktop'), app.getPath('pictures'),
+    app.getPath('videos'), app.getPath('music'), __dirname,
+  ];
+}
+
+function isInSafeDirs(filePath) {
+  return getSafeDirs().some(dir => isPathInDir(filePath, dir));
+}
+
 class Tab {
   constructor(id, url = 'cosy://newtab') {
     this.id = id;
@@ -854,12 +866,7 @@ app.whenReady().then(async () => {
     try {
       const requestedPath = decodeURIComponent(request.url.substr(7));
       const resolvedPath = path.resolve(requestedPath);
-      const allowedDirs = [
-        app.getPath('downloads'), app.getPath('documents'),
-        app.getPath('desktop'), app.getPath('pictures'),
-        app.getPath('videos'), app.getPath('music'), __dirname,
-      ];
-      if (allowedDirs.some(dir => isPathInDir(resolvedPath, dir))) {
+      if (getSafeDirs().some(dir => isPathInDir(resolvedPath, dir))) {
         callback({ path: resolvedPath });
       } else {
         callback({ error: -3 });
@@ -980,8 +987,7 @@ ipcMain.on('start-download', (event, data) => {
       let savePath;
       if (data.savePath) {
         savePath = path.resolve(data.savePath);
-        const allowedDirs = [app.getPath('downloads'), app.getPath('documents'), app.getPath('desktop')];
-        if (!allowedDirs.some(dir => isPathInDir(savePath, dir))) {
+        if (!isInSafeDirs(savePath)) {
           savePath = path.join(app.getPath('downloads'), currentDownloadInfo.filename);
         }
       } else {
@@ -1114,14 +1120,14 @@ ipcMain.on('remove-download', (event, id) => {
 
 ipcMain.on('open-file', (event, filePath) => {
   if (!isMainSender(event)) return;
-  const safePath = sanitizePath(filePath, app.getPath('downloads'));
-  if (safePath && fsSync.existsSync(safePath)) shell.openPath(safePath);
+  const resolved = path.resolve(filePath);
+  if (isInSafeDirs(resolved) && fsSync.existsSync(resolved)) shell.openPath(resolved);
 });
 
 ipcMain.on('open-folder', (event, filePath) => {
   if (!isMainSender(event)) return;
-  const safePath = sanitizePath(filePath, app.getPath('downloads'));
-  if (safePath && fsSync.existsSync(safePath)) shell.showItemInFolder(safePath);
+  const resolved = path.resolve(filePath);
+  if (isInSafeDirs(resolved) && fsSync.existsSync(resolved)) shell.showItemInFolder(resolved);
 });
 
 ipcMain.on('clear-downloads', (event) => {
