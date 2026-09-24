@@ -149,6 +149,20 @@ function goHome() {
   }
 }
 
+async function showOpenFileDialog() {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: '打开文件',
+    properties: ['openFile'],
+    filters: [
+      { name: '网页文件', extensions: ['html', 'htm'] },
+      { name: '所有文件', extensions: ['*'] }
+    ]
+  });
+  if (!result.canceled && result.filePaths.length > 0) {
+    createNewTab(`file://${result.filePaths[0]}`);
+  }
+}
+
 function addToHistory(url, title) {
   if (!isSafeUrl(url) || url.startsWith('cosy://')) return;
   const existingIndex = history.findIndex(h => h.url === url);
@@ -401,6 +415,9 @@ function registerShortcuts() {
       if (tab && tab.view?.webContents && isSafeUrl(tab.url)) {
         tab.view.webContents.viewSource();
       }
+      event.preventDefault();
+    } else if (ctrl && key === 'o') {
+      showOpenFileDialog();
       event.preventDefault();
     } else if (alt && input.key === 'Home') {
       goHome();
@@ -1081,7 +1098,7 @@ ipcMain.on('resume-download', (event, id) => {
     } catch (e) {
       console.error('恢复下载失败:', e);
       download.isItemValid = false; download.status = 'error';
-      sendToRenderer('download-status-changed', { id: download.id, status: 'error' });
+      sendToRenderer('download-status-changed', { id: download.id, status: 'downloading' });
     }
   }
 });
