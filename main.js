@@ -1409,11 +1409,29 @@ ipcMain.on('show-context-menu', (event, data) => {
   menu.popup();
 });
 
+const ALLOWED_SETTING_KEYS = {
+  darkMode: v => typeof v === 'boolean',
+  themeColor: v => isValidColor(v),
+  defaultTab: v => ['bing', 'custom', 'newtab'].includes(v),
+  customUrl: v => typeof v === 'string' && isSafeUrl(v),
+  tabLayout: v => ['horizontal', 'vertical'].includes(v),
+};
+
+function sanitizeSettings(raw) {
+  if (!raw || typeof raw !== 'object') return {};
+  const clean = {};
+  for (const [key, validate] of Object.entries(ALLOWED_SETTING_KEYS)) {
+    if (key in raw && validate(raw[key])) clean[key] = raw[key];
+  }
+  return clean;
+}
+
 ipcMain.on('save-settings', (event, settings) => {
   if (!isMainSender(event)) return;
   try {
+    const clean = sanitizeSettings(settings);
     const settingsPath = path.join(app.getPath('userData'), 'cosySettings.json');
-    fsSync.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
+    fsSync.writeFileSync(settingsPath, JSON.stringify(clean, null, 2), 'utf-8');
     event.reply('settings-saved', { success: true });
   } catch (e) {
     console.error('保存设置失败:', e);
