@@ -44,6 +44,7 @@ const allowedInvokeChannels = new Set([
   'get-bookmarks',
   'get-history',
   'clear-history',
+  'clear-browsing-data',
 ]);
 
 const allowedOnChannels = new Set([
@@ -74,6 +75,7 @@ const allowedOnChannels = new Set([
   'focus-address-bar',
   'show-history',
   'show-find-bar',
+  'show-clear-data-dialog',
 ]);
 
 contextBridge.exposeInMainWorld('electronAPI', {
