@@ -139,6 +139,7 @@ class TabManager {
     window.electronAPI.on('focus-address-bar', () => this.focusAddressBar());
     window.electronAPI.on('show-history', () => this.showHistoryPanel());
     window.electronAPI.on('show-find-bar', () => this.toggleFindBar());
+    window.electronAPI.on('show-clear-data-dialog', () => this.showClearDataDialog());
   }
 
   toggleFullscreenUI(isFullscreen) {
@@ -292,6 +293,56 @@ class TabManager {
 
     document.body.appendChild(panel);
     this.attachOutsideClickClose(panel);
+  }
+
+  showClearDataDialog() {
+    const existing = document.getElementById('clear-data-overlay');
+    if (existing) { existing.remove(); return; }
+
+    const overlay = document.createElement('div');
+    overlay.id = 'clear-data-overlay';
+    overlay.className = 'cosy-overlay';
+    overlay.innerHTML = `
+      <div class="cosy-dialog" style="max-width:400px;">
+        <h3 style="margin:0 0 16px;font-size:18px;">清除浏览数据</h3>
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;cursor:pointer;">
+          <input type="checkbox" id="clear-cache" checked /> 缓存图片和文件
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;cursor:pointer;">
+          <input type="checkbox" id="clear-cookies" checked /> Cookie 和网站数据（含 localStorage/IndexedDB）
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;cursor:pointer;">
+          <input type="checkbox" id="clear-history-cb" checked /> 浏览历史记录
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:20px;cursor:pointer;">
+          <input type="checkbox" id="clear-downloads-cb" /> 下载列表
+        </label>
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button id="clear-data-cancel" class="cosy-btn">取消</button>
+          <button id="clear-data-confirm" class="cosy-btn-primary">清除数据</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+    overlay.querySelector('#clear-data-cancel').onclick = () => overlay.remove();
+    overlay.querySelector('#clear-data-confirm').onclick = async () => {
+      const options = {
+        cache: overlay.querySelector('#clear-cache').checked,
+        cookies: overlay.querySelector('#clear-cookies').checked,
+        history: overlay.querySelector('#clear-history-cb').checked,
+        downloads: overlay.querySelector('#clear-downloads-cb').checked,
+      };
+      overlay.querySelector('#clear-data-confirm').textContent = '清除中...';
+      try {
+        await window.electronAPI.invoke('clear-browsing-data', options);
+        this.showToast('浏览数据已清除');
+      } catch (e) {
+        this.showToast('清除失败: ' + e.message);
+      }
+      overlay.remove();
+    };
   }
 
   async createNewTab(url) {
