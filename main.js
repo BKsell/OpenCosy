@@ -1434,3 +1434,25 @@ ipcMain.handle('clear-history', (event) => {
   saveHistory();
   return { success: true };
 });
+
+ipcMain.handle('clear-browsing-data', async (event, options) => {
+  if (!isMainSender(event)) return { success: false, error: 'Unauthorized' };
+  try {
+    if (!options || typeof options !== 'object') return { success: false, error: 'Invalid options' };
+    const promises = [];
+    if (options.cache) promises.push(session.defaultSession.clearCache());
+    if (options.cookies) promises.push(session.defaultSession.clearStorageData({ storages: ['cookies'] }));
+    if (options.history) {
+      history = [];
+      saveHistory();
+    }
+    if (options.downloads) {
+      downloads = [];
+      currentDownloadInfo = null;
+    }
+    await Promise.all(promises);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
