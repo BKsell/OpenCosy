@@ -401,6 +401,17 @@ function registerShortcuts() {
       const wc = getCurrentTabWebContents();
       if (wc) wc.reloadIgnoringCache();
       event.preventDefault();
+    } else if (input.key === 'F5' && !shift) {
+      const wc = getCurrentTabWebContents();
+      if (wc) wc.reload();
+      event.preventDefault();
+    } else if (input.key === 'F5' && shift) {
+      const wc = getCurrentTabWebContents();
+      if (wc) wc.reloadIgnoringCache();
+      event.preventDefault();
+    } else if (input.key === 'F12') {
+      toggleDevTools();
+      event.preventDefault();
     } else if (ctrl && input.key === '=') {
       zoomIn();
       event.preventDefault();
@@ -1447,7 +1458,7 @@ ipcMain.handle('clear-browsing-data', async (event, options) => {
     if (!options || typeof options !== 'object') return { success: false, error: 'Invalid options' };
     const promises = [];
     if (options.cache) promises.push(session.defaultSession.clearCache());
-    if (options.cookies) promises.push(session.defaultSession.clearStorageData({ storages: ['cookies'] }));
+    if (options.cookies) promises.push(session.defaultSession.clearStorageData({ storages: ['cookies', 'localstorage', 'indexdb'] }));
     if (options.history) {
       history = [];
       saveHistory();
