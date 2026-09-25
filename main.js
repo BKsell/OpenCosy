@@ -1,4 +1,4 @@
-const { app, BrowserWindow, WebContentsView, ipcMain, session, protocol, Menu, MenuItem, dialog, shell, globalShortcut } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, session, protocol, Menu, MenuItem, dialog, shell, globalShortcut, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
@@ -26,6 +26,7 @@ const DEFAULT_TAB_BAR_HEIGHT_HORIZONTAL = 116;
 const DEFAULT_TAB_BAR_WIDTH_VERTICAL = 200;
 const COLLAPSED_TAB_BAR_WIDTH = 50;
 const ZOOM_STEP = 0.5;
+const SPELLCHECK_LANGUAGES = ['en-US', 'zh-CN'];
 
 const isDev = !app.isPackaged;
 
@@ -265,6 +266,27 @@ function isLocalhost(url) {
   } catch { return false; }
 }
 
+// isPrivateNetworkHost 判断 URL 是否指向本机或 RFC1918 私网/链路本地地址。
+// 这类地址（路由器后台、NAS、开发板、局域网调试服务）通常只跑 HTTP，
+// 强制 HTTPS 升级会导致 192.168.x.x / 10.x / 172.16-31.x 直接打不开。
+function isPrivateNetworkHost(url) {
+  try {
+    const host = new URL(url).hostname.replace(/^\[|\]$/g, '');
+    if (host === 'localhost' || host === '::1' || host.endsWith('.localhost')) return true;
+    if (host === '::ffff:127.0.0.1') return true;
+    const m = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (m) {
+      const a = +m[1], b = +m[2];
+      if (a === 127 || a === 10) return true;
+      if (a === 172 && b >= 16 && b <= 31) return true;
+      if (a === 192 && b === 168) return true;
+      if (a === 169 && b === 254) return true; // link-local
+      return false;
+    }
+    return false;
+  } catch { return false; }
+}
+
 function setupSecurityHeaders() {
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const headers = details.responseHeaders || {};
@@ -290,9 +312,9 @@ function setupSecurityHeaders() {
     callback({ requestHeaders: headers });
   });
 
-  // HTTP → HTTPS 自动升级（localhost 除外）
+  // HTTP → HTTPS 自动升级（本机与局域网私网除外，避免路由器/开发板打不开）
   session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
-    if (details.url.startsWith('http://') && !isLocalhost(details.url)) {
+    if (details.url.startsWith('http://') && !isPrivateNetworkHost(details.url)) {
       callback({ redirectURL: 'https://' + details.url.slice(7) });
     } else {
       callback({});
@@ -300,13 +322,20 @@ function setupSecurityHeaders() {
   });
 }
 
-function setupPermissionHandler() {
-  const allowedPermissions = new Set([
-    'media', 'geolocation', 'notifications', 'midi', 'midiSysex',
-    'pointerLock', 'fullscreen', 'clipboard-read', 'clipboard-sanitized-write'
-  ]);
+const ALLOWED_PERMISSIONS = new Set([
+  'media', 'geolocation', 'notifications', 'midi', 'midiSysex',
+  'pointerLock', 'fullscreen', 'clipboard-read', 'clipboard-sanitized-write',
+  'pop-up', 'openExternal'
+]);
+
+function setupPermissionHandlers() {
+  // 询问型权限：默认拒绝，仅放行白名单
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-    callback(allowedPermissions.has(permission));
+    callback(ALLOWED_PERMISSIONS.has(permission));
+  });
+  // 自动型权限检查：与请求 handler 保持一致，避免某些权限绕过弹窗直接放行
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+    return ALLOWED_PERMISSIONS.has(permission);
   });
 }
 
@@ -353,6 +382,7 @@ function createWindow() {
       enableRemoteModule: false,
       preload: path.join(__dirname, 'preload.js'),
       worldSafeExecuteJavaScript: true,
+      spellcheck: true,
     },
     titleBarStyle: 'hidden', frame: false, show: false,
     icon: path.join(__dirname, 'ico.png')
@@ -567,6 +597,7 @@ function loadTabContent(tab) {
         enableRemoteModule: false,
         preload: path.join(__dirname, 'preload.js'),
         worldSafeExecuteJavaScript: true,
+        spellcheck: true,
       }
     });
 
@@ -648,9 +679,16 @@ function loadTabContent(tab) {
       const menu = new Menu();
       if (params.linkURL && isSafeUrl(params.linkURL)) {
         menu.append(new MenuItem({ label: '在新标签页中打开', click: () => createNewTab(params.linkURL) }));
+        menu.append(new MenuItem({ label: '复制链接地址', click: () => clipboard.writeText(params.linkURL) }));
         menu.append(new MenuItem({ type: 'separator' }));
       }
-      if (params.selectionText) menu.append(new MenuItem({ label: '复制', role: 'copy' }));
+      if (params.selectionText) {
+        menu.append(new MenuItem({ label: '复制', role: 'copy' }));
+        menu.append(new MenuItem({
+          label: '搜索所选内容',
+          click: () => createNewTab('https://www.bing.com/search?q=' + encodeURIComponent(params.selectionText))
+        }));
+      }
       if (params.selectionText && params.isEditable) menu.append(new MenuItem({ label: '剪切', role: 'cut' }));
       if (params.isEditable) menu.append(new MenuItem({ label: '粘贴', role: 'paste' }));
       if (menu.items.length > 0) menu.append(new MenuItem({ type: 'separator' }));
@@ -682,7 +720,7 @@ function loadTabContent(tab) {
       const pageMap = {
         'setting': 'src/settings.html', 'newtab': 'src/newtab.html',
         'extensions': 'src/extensions.html', 'version': 'src/version.html',
-        'download': 'src/download/index.html', 'downloadlist': 'src/downloadlist.html'
+        'download': 'src/download', 'downloadlist': 'src/downloadlist.html'
       };
       const filePath = pageMap[hostname];
       if (filePath) tab.view.webContents.loadFile(filePath);
@@ -922,9 +960,11 @@ app.whenReady().then(async () => {
     }
   });
 
-  setupPermissionHandler();
+  setupPermissionHandlers();
   setupSecurityHeaders();
   setupDownloadManager();
+  try { session.defaultSession.setSpellCheckerLanguages(SPELLCHECK_LANGUAGES); }
+  catch (e) { console.error('设置拼写检查语言失败:', e); }
   session.defaultSession.setUserAgent(generateUserAgent());
   createWindow();
   await loadEnabledExtensions();
