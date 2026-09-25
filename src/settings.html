@@ -443,7 +443,12 @@
                             if (key === 'customUrl' && value && !isSafeUrl(value)) continue;
                             if (key === 'customBackgroundUrl' && value && !isSafeUrl(value)) continue;
                             if (key === 'themeColor' && value && !isValidColor(value)) continue;
-                            settings[key] = value;
+                            // .inf 里所有值都是字符串，darkMode 需要还原成布尔值才能通过主进程白名单
+                            if (key === 'darkMode') {
+                                settings[key] = (value === 'true' || value === '1');
+                            } else {
+                                settings[key] = value;
+                            }
                         }
                     }
                 }
