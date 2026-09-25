@@ -106,7 +106,7 @@ class TabManager {
     document.getElementById('downloads').addEventListener('click', () => this.createNewTab('cosy://downloadlist'));
     document.getElementById('bookmarks').addEventListener('click', () => this.showBookmarksBar());
     document.getElementById('history').addEventListener('click', () => this.showHistoryPanel());
-    document.getElementById('url-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') this.navigateFromAddressBar(); });
+    document.getElementById('url-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') this.navigateFromAddressBar(); });
     document.getElementById('go').addEventListener('click', () => this.navigateFromAddressBar());
     document.getElementById('back').addEventListener('click', () => this.goBack());
     document.getElementById('forward').addEventListener('click', () => this.goForward());
