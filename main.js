@@ -1415,6 +1415,9 @@ const ALLOWED_SETTING_KEYS = {
   defaultTab: v => ['bing', 'custom', 'newtab'].includes(v),
   customUrl: v => typeof v === 'string' && isSafeUrl(v),
   tabLayout: v => ['horizontal', 'vertical'].includes(v),
+  searchEngine: v => ['bing', 'google', 'baidu'].includes(v),
+  backgroundType: v => ['default', 'custom'].includes(v),
+  customBackgroundUrl: v => typeof v === 'string' && isSafeUrl(v),
 };
 
 function sanitizeSettings(raw) {
