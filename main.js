@@ -266,9 +266,6 @@ function isLocalhost(url) {
   } catch { return false; }
 }
 
-// isPrivateNetworkHost 判断 URL 是否指向本机或 RFC1918 私网/链路本地地址。
-// 这类地址（路由器后台、NAS、开发板、局域网调试服务）通常只跑 HTTP，
-// 强制 HTTPS 升级会导致 192.168.x.x / 10.x / 172.16-31.x 直接打不开。
 function isPrivateNetworkHost(url) {
   try {
     const host = new URL(url).hostname.replace(/^\[|\]$/g, '');
@@ -280,7 +277,7 @@ function isPrivateNetworkHost(url) {
       if (a === 127 || a === 10) return true;
       if (a === 172 && b >= 16 && b <= 31) return true;
       if (a === 192 && b === 168) return true;
-      if (a === 169 && b === 254) return true; // link-local
+      if (a === 169 && b === 254) return true;
       return false;
     }
     return false;
@@ -296,6 +293,12 @@ function setupSecurityHeaders() {
     setIfMissing('X-Content-Type-Options', ['nosniff']);
     setIfMissing('X-Frame-Options', ['SAMEORIGIN']);
     setIfMissing('Referrer-Policy', ['strict-origin-when-cross-origin']);
+    // 关闭 FLoC / 广告兴趣组 / 隐私令牌等现代浏览器默认放开但我们不需要的特性
+    setIfMissing('Permissions-Policy', [
+      'interest-cohort=()', 'run-ad-auction=()',
+      'private-state-token-issuance=()', 'private-state-token-redemption=()',
+      'join-ad-interest-group=()'
+    ]);
     const isLocal = details.url.startsWith('cosy://') || details.url.startsWith('file://');
     if (isLocal && !headers['Content-Security-Policy'] && !headers['content-security-policy']) {
       headers['Content-Security-Policy'] = ["default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:;"];
@@ -303,7 +306,6 @@ function setupSecurityHeaders() {
     callback({ responseHeaders: headers });
   });
 
-  // DNT + GPC: 向网站表明用户不希望被追踪
   session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
     const headers = details.requestHeaders;
     headers['DNT'] = '1';
@@ -312,7 +314,6 @@ function setupSecurityHeaders() {
     callback({ requestHeaders: headers });
   });
 
-  // HTTP → HTTPS 自动升级（本机与局域网私网除外，避免路由器/开发板打不开）
   session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
     if (details.url.startsWith('http://') && !isPrivateNetworkHost(details.url)) {
       callback({ redirectURL: 'https://' + details.url.slice(7) });
@@ -329,11 +330,9 @@ const ALLOWED_PERMISSIONS = new Set([
 ]);
 
 function setupPermissionHandlers() {
-  // 询问型权限：默认拒绝，仅放行白名单
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
     callback(ALLOWED_PERMISSIONS.has(permission));
   });
-  // 自动型权限检查：与请求 handler 保持一致，避免某些权限绕过弹窗直接放行
   session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
     return ALLOWED_PERMISSIONS.has(permission);
   });
@@ -499,6 +498,13 @@ function registerShortcuts() {
     } else if (input.key === 'F12') {
       toggleDevTools();
       event.preventDefault();
+    } else if (input.key === 'Escape') {
+      // 现代浏览器惯例：Esc 退出 HTML 全屏
+      const wc = getCurrentTabWebContents();
+      if (wc && wc.isFullScreen()) {
+        wc.exitFullScreen();
+        event.preventDefault();
+      }
     } else if (ctrl && input.key === '=') {
       zoomIn();
       event.preventDefault();
@@ -793,24 +799,52 @@ function closeTab(tabIndex) {
   }
 }
 
+// sanitizeDownloadFilename 防 Content-Disposition 路径穿越：
+// 服务端可能在 filename 里塞 "../../evil.exe"，直接拼到下载目录会写出目录。
+// 这里只取 basename，并剥掉 Windows/Unix 保留字符。
+function sanitizeDownloadFilename(name) {
+  if (!name || typeof name !== 'string') return 'download';
+  let base = path.basename(name.replace(/\\/g, '/'));
+  base = base.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_');
+  base = base.replace(/^\.+$/, '');
+  return base || 'download';
+}
+
+// resolveUniqueDownloadPath 如果目标已存在，自动追加 (1)/(2)/... 避免覆盖
+function resolveUniqueDownloadPath(dir, filename) {
+  const ext = path.extname(filename);
+  const stem = path.basename(filename, ext);
+  let candidate = path.join(dir, filename);
+  let counter = 1;
+  while (fsSync.existsSync(candidate)) {
+    candidate = path.join(dir, `${stem} (${counter})${ext}`);
+    counter++;
+  }
+  return candidate;
+}
+
 function setupDownloadManager() {
   session.defaultSession.on('will-download', (event, item, webContents) => {
     const url = item.getURL();
     if (!isSafeUrl(url)) { event.preventDefault(); return; }
-    const filename = item.getFilename();
+
+    // 关键修复：不信任服务端给的 filename，先净化
+    const safeFilename = sanitizeDownloadFilename(item.getFilename());
+    item.setSavePath(path.join(app.getPath('downloads'), safeFilename));
+
     const totalBytes = item.getTotalBytes();
     let downloadInfo = downloads.find(d => d.url === url && d.item === null && d.isItemValid === false);
     let isNewDownload = false;
     if (downloadInfo) {
       downloadInfo.item = item;
-      downloadInfo.filename = filename;
+      downloadInfo.filename = safeFilename;
       downloadInfo.totalBytes = totalBytes;
       downloadInfo.isItemValid = true;
       downloadInfo.status = 'downloading';
     } else {
       event.preventDefault();
       downloadInfo = {
-        id: Date.now().toString(), url, filename, totalBytes,
+        id: Date.now().toString(), url, filename: safeFilename, totalBytes,
         receivedBytes: 0, progress: 0, speed: '0 B/s', status: 'pending',
         startTime: Date.now(), savePath: null, item: null,
         lastUpdate: Date.now(), lastReceivedBytes: 0, isItemValid: false,
@@ -824,7 +858,7 @@ function setupDownloadManager() {
     if (downloadInfo.savePath) {
       item.setSavePath(downloadInfo.savePath);
     } else {
-      const defaultSavePath = path.join(app.getPath('downloads'), filename);
+      const defaultSavePath = resolveUniqueDownloadPath(app.getPath('downloads'), safeFilename);
       item.setSavePath(defaultSavePath);
       downloadInfo.savePath = defaultSavePath;
     }
