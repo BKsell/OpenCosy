@@ -12,19 +12,25 @@
         body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; position: relative; overflow: hidden; }
         .background-container { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: url('Backdrop.jpg') center/cover no-repeat; z-index: 1; }
         .background-container::before { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.3); z-index: 1; }
-        .newtab-container { text-align: center; max-width: 600px; padding: 40px; position: relative; z-index: 2; }
+        .newtab-container { text-align: center; max-width: 640px; width: 100%; padding: 40px; position: relative; z-index: 2; }
         .logo { font-size: 64px; font-weight: 300; margin-bottom: 10px; text-shadow: 0 2px 15px rgba(0,0,0,0.5); letter-spacing: 2px; }
         .subtitle { font-size: 18px; margin-bottom: 40px; opacity: 0.9; text-shadow: 0 1px 5px rgba(0,0,0,0.5); }
         .search-box { width: 100%; max-width: 600px; margin: 0 auto; position: relative; }
         .search-input { width: 100%; padding: 18px 30px; font-size: 16px; border: none; border-radius: 50px; outline: none; background: rgba(255, 255, 255, 0.15); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.2); box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2); transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); color: #ffffff; text-align: center; }
         .search-input:hover, .search-input:focus { background: rgba(255, 255, 255, 0.25); box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.3); transform: scale(1.02); }
         .search-input::placeholder { color: rgba(255, 255, 255, 0.7); }
+        .quick-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 18px; margin-top: 36px; }
+        .quick-link { display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; opacity: 0.9; transition: transform 0.15s, opacity 0.15s; }
+        .quick-link:hover { transform: translateY(-3px); opacity: 1; }
+        .quick-link-icon { width: 56px; height: 56px; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 700; color: white; box-shadow: 0 4px 16px rgba(0,0,0,0.25); backdrop-filter: blur(8px); }
+        .quick-link-name { font-size: 12px; text-shadow: 0 1px 3px rgba(0,0,0,0.6); }
         .footer { position: absolute; bottom: 20px; font-size: 12px; opacity: 0.7; z-index: 2; text-shadow: 0 1px 3px rgba(0,0,0,0.5); }
         @media (max-width: 768px) {
             .logo { font-size: 48px; }
             .subtitle { font-size: 16px; }
             .search-input { padding: 15px 20px; font-size: 14px; }
             .newtab-container { padding: 20px; }
+            .quick-link-icon { width: 48px; height: 48px; border-radius: 12px; font-size: 20px; }
         }
     </style>
 </head>
@@ -36,10 +42,20 @@
         <div class="search-box">
             <input type="text" class="search-input" placeholder="搜索网页或输入网址" id="search-input">
         </div>
+        <div class="quick-links" id="quick-links"></div>
     </div>
     <div class="footer" id="footer">OpenCosy浏览器</div>
     <script>
         const ALLOWED_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'cosy:']);
+
+        const QUICK_LINKS = [
+            { name: 'Bing',     url: 'https://www.bing.com',          color: '#00897B', letter: 'B' },
+            { name: '百度',     url: 'https://www.baidu.com',         color: '#C62828', letter: '百' },
+            { name: 'GitHub',   url: 'https://github.com',            color: '#24292e', letter: 'G' },
+            { name: '哔哩哔哩', url: 'https://www.bilibili.com',      color: '#FB7299', letter: '哔' },
+            { name: '维基百科', url: 'https://zh.wikipedia.org',       color: '#444444', letter: 'W' },
+            { name: 'YouTube',  url: 'https://www.youtube.com',       color: '#FF0000', letter: 'Y' },
+        ];
 
         function isSafeUrl(url) {
             try {
@@ -55,6 +71,21 @@
 
         function navigateTo(url) {
             if (isSafeUrl(url)) window.location.href = url;
+        }
+
+        function renderQuickLinks() {
+            const container = document.getElementById('quick-links');
+            if (!container) return;
+            QUICK_LINKS.forEach(link => {
+                const el = document.createElement('div');
+                el.className = 'quick-link';
+                el.innerHTML = `
+                    <div class="quick-link-icon" style="background:${link.color}">${link.letter}</div>
+                    <div class="quick-link-name">${link.name}</div>
+                `;
+                el.addEventListener('click', () => navigateTo(link.url));
+                container.appendChild(el);
+            });
         }
 
         document.getElementById('search-input').addEventListener('keypress', function(e) {
@@ -104,6 +135,7 @@
                 const footer = document.getElementById('footer');
                 if (footer) footer.textContent = COSY_CONSTANTS.APP_INFO.name;
             }
+            renderQuickLinks();
             setDefaultBackground();
         });
     </script>
