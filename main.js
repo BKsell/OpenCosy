@@ -258,6 +258,13 @@ function getLastClosedTab() {
   return recentlyClosedTabs.pop();
 }
 
+function isLocalhost(url) {
+  try {
+    const host = new URL(url).hostname;
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  } catch { return false; }
+}
+
 function setupSecurityHeaders() {
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const headers = details.responseHeaders || {};
@@ -272,6 +279,24 @@ function setupSecurityHeaders() {
       headers['Content-Security-Policy'] = ["default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:;"];
     }
     callback({ responseHeaders: headers });
+  });
+
+  // DNT + GPC: 向网站表明用户不希望被追踪
+  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    const headers = details.requestHeaders;
+    headers['DNT'] = '1';
+    headers['Sec-GPC'] = '1';
+    headers['Upgrade-Insecure-Requests'] = '1';
+    callback({ requestHeaders: headers });
+  });
+
+  // HTTP → HTTPS 自动升级（localhost 除外）
+  session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+    if (details.url.startsWith('http://') && !isLocalhost(details.url)) {
+      callback({ redirectURL: 'https://' + details.url.slice(7) });
+    } else {
+      callback({});
+    }
   });
 }
 
