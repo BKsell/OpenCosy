@@ -12,7 +12,7 @@
         body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; position: relative; overflow: hidden; }
         .background-container { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: url('Backdrop.jpg') center/cover no-repeat; z-index: 1; }
         .background-container::before { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.3); z-index: 1; }
-        .newtab-container { text-align: center; max-width: 680px; width: 100%; padding: 40px; position: relative; z-index: 2; }
+        .newtab-container { text-align: center; max-width: 760px; width: 100%; padding: 40px; position: relative; z-index: 2; }
         .logo { font-size: 64px; font-weight: 300; margin-bottom: 10px; text-shadow: 0 2px 15px rgba(0,0,0,0.5); letter-spacing: 2px; }
         .subtitle { font-size: 18px; margin-bottom: 40px; opacity: 0.9; text-shadow: 0 1px 5px rgba(0,0,0,0.5); }
         .search-box { width: 100%; max-width: 600px; margin: 0 auto; position: relative; }
@@ -20,17 +20,20 @@
         .search-input:hover, .search-input:focus { background: rgba(255, 255, 255, 0.25); box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.3); transform: scale(1.02); }
         .search-input::placeholder { color: rgba(255, 255, 255, 0.7); }
         .quick-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 18px; margin-top: 36px; }
-        .quick-link { display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; opacity: 0.9; transition: transform 0.15s, opacity 0.15s; }
+        .quick-link { display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; opacity: 0.9; transition: transform 0.15s, opacity 0.15s; position: relative; }
         .quick-link:hover { transform: translateY(-3px); opacity: 1; }
-        .quick-link-icon { width: 56px; height: 56px; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 700; color: white; box-shadow: 0 4px 16px rgba(0,0,0,0.25); backdrop-filter: blur(8px); }
-        .quick-link-name { font-size: 12px; text-shadow: 0 1px 3px rgba(0,0,0,0.6); }
+        .quick-link-icon { width: 56px; height: 56px; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700; color: white; box-shadow: 0 4px 16px rgba(0,0,0,0.25); backdrop-filter: blur(8px); }
+        .quick-link-icon.add { background: rgba(255,255,255,0.12); border: 2px dashed rgba(255,255,255,0.4); font-size: 28px; }
+        .quick-link-name { font-size: 12px; text-shadow: 0 1px 3px rgba(0,0,0,0.6); max-width: 72px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .quick-link .del { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; font-size: 12px; line-height: 18px; display: none; }
+        .quick-link.custom:hover .del { display: block; }
         .footer { position: absolute; bottom: 20px; font-size: 12px; opacity: 0.7; z-index: 2; text-shadow: 0 1px 3px rgba(0,0,0,0.5); }
         @media (max-width: 768px) {
             .logo { font-size: 48px; }
             .subtitle { font-size: 16px; }
             .search-input { padding: 15px 20px; font-size: 14px; }
             .newtab-container { padding: 20px; }
-            .quick-link-icon { width: 48px; height: 48px; border-radius: 12px; font-size: 20px; }
+            .quick-link-icon { width: 48px; height: 48px; border-radius: 12px; font-size: 18px; }
         }
     </style>
 </head>
@@ -47,23 +50,24 @@
     <div class="footer" id="footer">OpenCosy浏览器</div>
     <script>
         const ALLOWED_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'cosy:']);
+        const CUSTOM_KEY = 'cosyQuickLinks';
 
-        const QUICK_LINKS = [
+        const DEFAULT_LINKS = [
             { name: '热土工作室', url: 'https://rtstu.com',                  color: '#E65100', letter: '热' },
             { name: 'bool-hybrid-array', url: 'https://pypi.org/project/bool-hybrid-array/', color: '#3776AB', letter: 'Py' },
             { name: 'BKsell',   url: 'https://github.com/BKsell',       color: '#6e5494', letter: 'BK' },
             { name: 'Gitee',    url: 'https://gitee.com/BKsell',         color: '#C71D23', letter: 'G' },
-            { name: 'GitHub',   url: 'https://github.com',            color: '#24292e', letter: 'G' },
-            { name: 'Bing',     url: 'https://www.bing.com',          color: '#00897B', letter: 'B' },
-            { name: '百度',     url: 'https://www.baidu.com',         color: '#C62828', letter: '百' },
-            { name: '哔哩哔哩', url: 'https://www.bilibili.com',      color: '#FB7299', letter: '哔' },
+            { name: 'GitHub',   url: 'https://github.com',              color: '#24292e', letter: 'G' },
+            { name: 'Bing',     url: 'https://www.bing.com',            color: '#00897B', letter: 'B' },
+            { name: '百度',     url: 'https://www.baidu.com',           color: '#C62828', letter: '百' },
+            { name: '哔哩哔哩', url: 'https://www.bilibili.com',        color: '#FB7299', letter: '哔' },
             { name: 'GitCode',  url: 'https://gitcode.com/BKsell',      color: '#0B5FFF', letter: 'GC' },
-            { name: '维基百科', url: 'https://zh.wikipedia.org',       color: '#444444', letter: 'W' },
-            { name: 'YouTube',  url: 'https://www.youtube.com',       color: '#FF0000', letter: 'Y' },
-            { name: '知乎',     url: 'https://www.zhihu.com',         color: '#0066FF', letter: '知' },
-            { name: '淘宝',     url: 'https://www.taobao.com',        color: '#FF6A00', letter: '淘' },
-            { name: 'Gmail',    url: 'https://mail.google.com',       color: '#1a73e8', letter: '@' },
-            { name: 'Outlook',  url: 'https://outlook.live.com',      color: '#0078d4', letter: 'O' },
+            { name: '维基百科', url: 'https://zh.wikipedia.org',         color: '#444444', letter: 'W' },
+            { name: 'YouTube',  url: 'https://www.youtube.com',         color: '#FF0000', letter: 'Y' },
+            { name: '知乎',     url: 'https://www.zhihu.com',           color: '#0066FF', letter: '知' },
+            { name: '淘宝',     url: 'https://www.taobao.com',          color: '#FF6A00', letter: '淘' },
+            { name: 'Gmail',    url: 'https://mail.google.com',         color: '#1a73e8', letter: '@' },
+            { name: 'Outlook',  url: 'https://outlook.live.com',        color: '#0078d4', letter: 'O' },
         ];
 
         function isSafeUrl(url) {
@@ -78,24 +82,93 @@
             return url.replace(/['"\\()]/g, '\\$&');
         }
 
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+
         function navigateTo(url) {
             if (isSafeUrl(url)) window.location.href = url;
+        }
+
+        function loadCustomLinks() {
+            try {
+                const raw = JSON.parse(localStorage.getItem(CUSTOM_KEY) || '[]');
+                return Array.isArray(raw) ? raw.filter(l => l && l.url && isSafeUrl(l.url)) : [];
+            } catch {
+                return [];
+            }
+        }
+
+        function saveCustomLinks(links) {
+            localStorage.setItem(CUSTOM_KEY, JSON.stringify(links));
+        }
+
+        function guessColor(url) {
+            let h = 0;
+            for (let i = 0; i < url.length; i++) h = (h * 31 + url.charCodeAt(i)) >>> 0;
+            return `hsl(${h % 360}, 60%, 45%)`;
+        }
+
+        function renderLink(link, custom) {
+            const el = document.createElement('div');
+            el.className = 'quick-link' + (custom ? ' custom' : '');
+            el.title = link.url;
+            el.innerHTML = `
+                <div class="quick-link-icon" style="background:${link.color}">${escapeHtml(link.letter)}</div>
+                <div class="quick-link-name">${escapeHtml(link.name)}</div>
+                ${custom ? '<span class="del" title="删除">×</span>' : ''}
+            `;
+            el.addEventListener('click', e => {
+                if (e.target.classList.contains('del')) return;
+                navigateTo(link.url);
+            });
+            if (custom) {
+                el.querySelector('.del').addEventListener('click', e => {
+                    e.stopPropagation();
+                    const rest = loadCustomLinks().filter(l => l.url !== link.url);
+                    saveCustomLinks(rest);
+                    renderQuickLinks();
+                });
+            }
+            return el;
+        }
+
+        function renderAddTile() {
+            const el = document.createElement('div');
+            el.className = 'quick-link';
+            el.title = '添加快捷方式';
+            el.innerHTML = `
+                <div class="quick-link-icon add">+</div>
+                <div class="quick-link-name">添加</div>
+            `;
+            el.addEventListener('click', addCustomLink);
+            return el;
+        }
+
+        function addCustomLink() {
+            let url = prompt('输入网址 (https://...)：');
+            if (!url) return;
+            url = url.trim();
+            if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+            if (!isSafeUrl(url)) { alert('不支持的协议'); return; }
+            let name = prompt('显示名称：');
+            if (!name) name = url.replace(/^https?:\/\//, '').split('/')[0];
+            const links = loadCustomLinks();
+            if (links.some(l => l.url === url)) return;
+            links.push({ name, url, color: guessColor(url), letter: name.charAt(0).toUpperCase() });
+            saveCustomLinks(links);
+            renderQuickLinks();
         }
 
         function renderQuickLinks() {
             const container = document.getElementById('quick-links');
             if (!container) return;
-            QUICK_LINKS.forEach(link => {
-                const el = document.createElement('div');
-                el.className = 'quick-link';
-                el.title = link.url;
-                el.innerHTML = `
-                    <div class="quick-link-icon" style="background:${link.color}">${link.letter}</div>
-                    <div class="quick-link-name">${link.name}</div>
-                `;
-                el.addEventListener('click', () => navigateTo(link.url));
-                container.appendChild(el);
-            });
+            container.innerHTML = '';
+            DEFAULT_LINKS.forEach(link => container.appendChild(renderLink(link, false)));
+            loadCustomLinks().forEach(link => container.appendChild(renderLink(link, true)));
+            container.appendChild(renderAddTile());
         }
 
         document.getElementById('search-input').addEventListener('keydown', function(e) {
