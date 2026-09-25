@@ -12,7 +12,7 @@
         body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; position: relative; overflow: hidden; }
         .background-container { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: url('Backdrop.jpg') center/cover no-repeat; z-index: 1; }
         .background-container::before { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.3); z-index: 1; }
-        .newtab-container { text-align: center; max-width: 640px; width: 100%; padding: 40px; position: relative; z-index: 2; }
+        .newtab-container { text-align: center; max-width: 680px; width: 100%; padding: 40px; position: relative; z-index: 2; }
         .logo { font-size: 64px; font-weight: 300; margin-bottom: 10px; text-shadow: 0 2px 15px rgba(0,0,0,0.5); letter-spacing: 2px; }
         .subtitle { font-size: 18px; margin-bottom: 40px; opacity: 0.9; text-shadow: 0 1px 5px rgba(0,0,0,0.5); }
         .search-box { width: 100%; max-width: 600px; margin: 0 auto; position: relative; }
@@ -55,6 +55,10 @@
             { name: '哔哩哔哩', url: 'https://www.bilibili.com',      color: '#FB7299', letter: '哔' },
             { name: '维基百科', url: 'https://zh.wikipedia.org',       color: '#444444', letter: 'W' },
             { name: 'YouTube',  url: 'https://www.youtube.com',       color: '#FF0000', letter: 'Y' },
+            { name: '知乎',     url: 'https://www.zhihu.com',         color: '#0066FF', letter: '知' },
+            { name: '淘宝',     url: 'https://www.taobao.com',        color: '#FF6A00', letter: '淘' },
+            { name: 'Gmail',    url: 'https://mail.google.com',       color: '#1a73e8', letter: '@' },
+            { name: 'Outlook',  url: 'https://outlook.live.com',      color: '#0078d4', letter: 'O' },
         ];
 
         function isSafeUrl(url) {
@@ -79,6 +83,7 @@
             QUICK_LINKS.forEach(link => {
                 const el = document.createElement('div');
                 el.className = 'quick-link';
+                el.title = link.url;
                 el.innerHTML = `
                     <div class="quick-link-icon" style="background:${link.color}">${link.letter}</div>
                     <div class="quick-link-name">${link.name}</div>
@@ -88,7 +93,7 @@
             });
         }
 
-        document.getElementById('search-input').addEventListener('keypress', function(e) {
+        document.getElementById('search-input').addEventListener('keydown', function(e) {
             if (e.key === 'Enter') {
                 const query = this.value.trim();
                 if (query) {
