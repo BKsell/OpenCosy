@@ -666,3 +666,78 @@ class TabManager {
 }
 
 const tabManager = new TabManager();
+
+// ===== 快捷键帮助浮层（F1 / Ctrl+/）=====
+const SHORTCUT_GROUPS = [
+  { title: '标签页', items: [
+    ['Ctrl + T', '新建标签页'], ['Ctrl + W', '关闭当前标签页'],
+    ['Ctrl + Shift + T', '恢复最近关闭的标签页'], ['Ctrl + Tab', '下一个标签页'],
+    ['Ctrl + Shift + Tab', '上一个标签页'], ['Ctrl + 1~8', '切换到第 N 个标签页'],
+    ['Ctrl + 9', '切换到最后一个标签页'], ['Ctrl + Shift + 向右', '复制当前标签页'],
+  ]},
+  { title: '导航与编辑', items: [
+    ['Alt + ←', '后退'], ['Alt + →', '前进'], ['F5 / Ctrl + R', '刷新'],
+    ['Ctrl + Shift + R', '强制刷新（忽略缓存）'], ['Esc', '停止加载'],
+    ['Ctrl + L', '聚焦地址栏'], ['Ctrl + K', '地址栏搜索'],
+  ]},
+  { title: '查找与缩放', items: [
+    ['Ctrl + F', '在页面中查找'], ['Ctrl + G', '下一个匹配'],
+    ['Ctrl + Shift + G', '上一个匹配'], ['Ctrl + +', '放大'],
+    ['Ctrl + -', '缩小'], ['Ctrl + 0', '重置缩放'],
+  ]},
+  { title: '收藏与数据', items: [
+    ['Ctrl + D', '收藏当前页'], ['Ctrl + Shift + D', '全部标签页收藏'],
+    ['Ctrl + H', '历史记录'], ['Ctrl + J', '下载内容'],
+    ['Ctrl + Shift + Del', '清除浏览数据'],
+  ]},
+  { title: '其他', items: [
+    ['Ctrl + P', '打印'], ['F11', '全屏切换'], ['F1 / Ctrl + /', '显示本帮助'],
+    ['Ctrl + Shift + B', '书签栏开关'],
+  ]},
+];
+
+function buildShortcutsOverlay() {
+  let overlay = document.getElementById('cosy-shortcuts-overlay');
+  if (overlay) { overlay.remove(); return; }
+  overlay = document.createElement('div');
+  overlay.id = 'cosy-shortcuts-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  const panel = document.createElement('div');
+  panel.style.cssText = 'background:var(--bg,#fff);color:var(--fg,#222);border-radius:12px;padding:20px 24px;max-width:680px;max-height:80vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,.3);font:13px/1.6 system-ui,sans-serif;';
+  panel.innerHTML = '<h2 style="margin:0 0 12px;font-size:18px;">键盘快捷键</h2>';
+  SHORTCUT_GROUPS.forEach(g => {
+    const h = document.createElement('div');
+    h.style.cssText = 'font-weight:600;margin:12px 0 6px;color:#4a90e2;';
+    h.textContent = g.title;
+    panel.appendChild(h);
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:auto 1fr;gap:4px 16px;';
+    g.items.forEach(([k, desc]) => {
+      const kEl = document.createElement('kbd');
+      kEl.style.cssText = 'background:#f0f0f0;border:1px solid #ccc;border-radius:4px;padding:1px 6px;font-family:monospace;font-size:12px;white-space:nowrap;';
+      kEl.textContent = k;
+      const dEl = document.createElement('span');
+      dEl.textContent = desc;
+      grid.appendChild(kEl);
+      grid.appendChild(dEl);
+    });
+    panel.appendChild(grid);
+  });
+  const closeBtn = document.createElement('div');
+  closeBtn.style.cssText = 'margin-top:16px;text-align:center;color:#888;font-size:12px;';
+  closeBtn.textContent = '按 Esc 或点击任意处关闭';
+  panel.appendChild(closeBtn);
+  overlay.appendChild(panel);
+  overlay.addEventListener('click', () => overlay.remove());
+  document.body.appendChild(overlay);
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'F1' || (e.ctrlKey && e.key === '/')) {
+    e.preventDefault();
+    buildShortcutsOverlay();
+  } else if (e.key === 'Escape') {
+    const ov = document.getElementById('cosy-shortcuts-overlay');
+    if (ov) ov.remove();
+  }
+});
