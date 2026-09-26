@@ -338,6 +338,56 @@ function setupPermissionHandlers() {
   });
 }
 
+// setupGlobalWebContentsHooks 给所有 webContents 兜底：
+// - 任何没被我们显式设置过 windowOpenHandler 的 webContents（扩展后台页、插件 popup、
+//   未来新增的窗口等）默认 deny 弹窗，只放行我们白名单里的协议；
+// - 拦 will-navigate，不允许跳到 javascript:/data:/vbscript: 这些危险 scheme；
+// - beforeunload 弹确认，避免用户关标签时把没保存的表单/SQL 编辑器内容直接丢了。
+function setupGlobalWebContentsHooks() {
+  app.on('web-contents-created', (_event, contents) => {
+    // 主窗口 UI 自己管 navigation，跳过；只给页面 tab 兜底
+    if (contents === mainWindow?.webContents) return;
+
+    contents.setWindowOpenHandler(({ url }) => {
+      if (!isSafeUrl(url)) return { action: 'deny' };
+      // 从 tab 里点 _blank 的，统一丢回我们的 createNewTab
+      setImmediate(() => createNewTab(url));
+      return { action: 'deny' };
+    });
+
+    contents.on('will-navigate', (navEvent, url) => {
+      if (!isSafeUrl(url)) {
+        navEvent.preventDefault();
+      }
+    });
+
+    contents.on('will-redirect', (redirectEvent, url) => {
+      if (!isSafeUrl(url)) {
+        redirectEvent.preventDefault();
+      }
+    });
+
+    // 页面调 window.close() 之前触发的 beforeunload，弹原生确认
+    contents.on('will-prevent-unload', (event) => {
+      event.preventDefault();
+      const choice = dialog.showMessageBoxSync(mainWindow, {
+        type: 'question',
+        buttons: ['离开此页', '留在此页'],
+        defaultId: 1,
+        cancelId: 1,
+        title: '确认离开',
+        message: '您有尚未保存的更改。确定要离开此页面吗？'
+      });
+      if (choice === 0) {
+        contents.destroy();
+      }
+    });
+
+    // 任何 webContents 都不许开 DevTools 协议、远程调试
+    contents.setWindowOpenHandler?.({ action: 'deny' });
+  });
+}
+
 function getTabLayout() {
   const settingsPath = path.join(app.getPath('userData'), 'cosySettings.json');
   try {
@@ -447,6 +497,10 @@ function registerShortcuts() {
     } else if (ctrl && key === 'k' && shift) {
       const tab = tabs[currentTabIndex];
       if (tab && isSafeUrl(tab.url)) createNewTab(tab.url);
+      event.preventDefault();
+    } else if (ctrl && key === 'b' && shift) {
+      // Ctrl+Shift+B：切换书签栏（Chrome/Edge 惯例）
+      sendToRenderer('toggle-bookmarks-bar');
       event.preventDefault();
     } else if (ctrl && key === 'tab') {
       const nextIndex = shift
@@ -997,6 +1051,7 @@ app.whenReady().then(async () => {
   setupPermissionHandlers();
   setupSecurityHeaders();
   setupDownloadManager();
+  setupGlobalWebContentsHooks();
   try { session.defaultSession.setSpellCheckerLanguages(SPELLCHECK_LANGUAGES); }
   catch (e) { console.error('设置拼写检查语言失败:', e); }
   session.defaultSession.setUserAgent(generateUserAgent());
