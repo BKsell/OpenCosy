@@ -741,3 +741,30 @@ document.addEventListener('keydown', (e) => {
     if (ov) ov.remove();
   }
 });
+
+// ===== 网络状态提示（online / offline pill）=====
+function ensureNetworkPill() {
+  let pill = document.getElementById('cosy-net-pill');
+  if (pill) return pill;
+  pill = document.createElement('div');
+  pill.id = 'cosy-net-pill';
+  pill.style.cssText = 'position:fixed;bottom:12px;left:50%;transform:translateX(-50%);padding:6px 14px;border-radius:16px;font:12px/1 system-ui,sans-serif;z-index:9998;box-shadow:0 2px 8px rgba(0,0,0,.2);transition:opacity .3s;opacity:0;';
+  document.body.appendChild(pill);
+  return pill;
+}
+
+function showNetworkPill(text, bg) {
+  const pill = ensureNetworkPill();
+  pill.textContent = text;
+  pill.style.background = bg;
+  pill.style.color = '#fff';
+  pill.style.opacity = '1';
+  clearTimeout(pill._timer);
+  pill._timer = setTimeout(() => { pill.style.opacity = '0'; }, 3000);
+}
+
+window.addEventListener('online', () => showNetworkPill('已恢复网络连接', '#2e7d32'));
+window.addEventListener('offline', () => showNetworkPill('网络已断开，浏览器将以离线模式运行', '#c62828'));
+if (!navigator.onLine) {
+  document.addEventListener('DOMContentLoaded', () => showNetworkPill('当前处于离线状态', '#c62828'));
+}
