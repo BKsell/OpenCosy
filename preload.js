@@ -52,6 +52,7 @@ const allowedInvokeChannels = new Set([
   'clear-browsing-data',
   'get-https-only',
   'get-network-status',
+  'open-external-url',
 ]);
 
 // 接收方向白名单：main -> renderer
