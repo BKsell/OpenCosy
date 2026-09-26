@@ -18,6 +18,9 @@
             --text-secondary: #666666;
             --border-color: #dfe4e1;
             --theme-color: #0078d4;
+            --danger: #d13438;
+            --warn: #c46a00;
+            --ok: #107c10;
         }
 
         [data-theme="dark"] {
@@ -32,7 +35,7 @@
         body {
             font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
             background: var(--bg-primary);
-            height: 100vh;
+            min-height: 100vh;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -40,7 +43,16 @@
             color: var(--text-primary);
             line-height: 1.6;
             transition: background 0.3s, color 0.3s;
+            padding: 24px;
         }
+
+        .offline-banner {
+            position: fixed; top: 0; left: 0; right: 0;
+            background: var(--danger); color: #fff;
+            text-align: center; padding: 8px 16px; font-size: 13px;
+            display: none; z-index: 10;
+        }
+        .offline-banner.show { display: block; }
 
         .error-container {
             display: flex;
@@ -49,6 +61,7 @@
             max-width: 800px;
             padding: 40px;
             gap: 60px;
+            width: 100%;
         }
 
         .error-content { flex: 1; }
@@ -56,7 +69,7 @@
         .error-header {
             display: flex;
             align-items: center;
-            margin-bottom: 30px;
+            margin-bottom: 24px;
             gap: 20px;
         }
 
@@ -72,6 +85,12 @@
         }
 
         .error-message { font-size: 18px; color: var(--text-secondary); }
+
+        .friendly-hint {
+            font-size: 14px; color: var(--text-secondary);
+            background: var(--bg-secondary); border-left: 3px solid var(--theme-color);
+            padding: 10px 14px; border-radius: 4px; margin-bottom: 24px;
+        }
 
         .error-details {
             background: var(--bg-secondary);
@@ -95,23 +114,24 @@
         .detail-value {
             color: var(--text-secondary);
             font-family: 'Consolas', 'Monaco', monospace;
+            word-break: break-all;
         }
 
         .action-buttons {
             display: flex;
-            gap: 15px;
-            justify-content: center;
+            gap: 12px;
+            justify-content: flex-start;
             margin-bottom: 30px;
             flex-wrap: wrap;
         }
 
         .btn {
-            padding: 12px 24px;
+            padding: 10px 20px;
             border: none;
             border-radius: 6px;
             font-size: 14px;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: all 0.2s ease;
             text-decoration: none;
             display: inline-block;
         }
@@ -129,24 +149,28 @@
             border: 1px solid var(--border-color);
         }
 
-        .btn-secondary:hover {
-            background: var(--border-color);
+        .btn-secondary:hover { background: var(--border-color); }
+
+        .btn[hidden] { display: none; }
+
+        .kbd-hint { font-size: 12px; color: var(--text-secondary); margin-top: 8px; }
+        kbd {
+            background: var(--bg-tertiary); border: 1px solid var(--border-color);
+            border-radius: 4px; padding: 1px 6px; font-family: inherit; font-size: 12px;
         }
 
         @media (max-width: 600px) {
-            .error-container {
-                flex-direction: column;
-                padding: 20px;
-                align-items: center;
-            }
+            .error-container { flex-direction: column; padding: 16px; align-items: center; gap: 20px; }
             .error-code { font-size: 36px; }
             .error-message { font-size: 16px; }
-            .action-buttons { flex-direction: column; align-items: center; }
-            .btn { width: 100%; max-width: 200px; }
+            .action-buttons { flex-direction: column; align-items: stretch; }
+            .btn { text-align: center; }
         }
     </style>
 </head>
 <body>
+    <div class="offline-banner" id="offline-banner">⚠️ 当前网络连接已断开 —— 请检查网络后重试</div>
+
     <div class="error-container">
         <div class="error-content">
             <div class="error-header">
@@ -156,14 +180,17 @@
                     <div class="error-message" id="error-message">无法访问此网站</div>
                 </div>
             </div>
-            <div style="font-size: 16px; margin-bottom: 20px; color: var(--text-secondary);">
+            <div class="friendly-hint" id="friendly-hint">
                 抱歉，您访问的页面出现了一些问题。
             </div>
             <div class="action-buttons">
-                <button class="btn btn-primary" onclick="window.history.back()">返回上一页</button>
-                <button class="btn btn-secondary" onclick="reloadPage()">重新加载</button>
+                <button class="btn btn-primary" id="btn-reload">重新加载</button>
+                <button class="btn btn-secondary" onclick="window.history.back()">返回上一页</button>
+                <button class="btn btn-secondary" id="btn-https" hidden>改用 HTTPS 访问</button>
+                <button class="btn btn-secondary" id="btn-copy">复制错误信息</button>
                 <button class="btn btn-secondary" id="details-btn" onclick="toggleDetails()">详细信息</button>
             </div>
+            <div class="kbd-hint">快捷键：<kbd>Enter</kbd> 重新加载 · <kbd>Esc</kbd> 展开/收起详细信息 · <kbd>Backspace</kbd> 返回</div>
             <div class="error-details" id="error-details">
                 <div class="detail-item"><div class="detail-label">错误代码：</div><div class="detail-value" id="detail-code">404 Not Found</div></div>
                 <div class="detail-item"><div class="detail-label">错误原因：</div><div class="detail-value" id="detail-reason">请求的页面不存在或已被移除</div></div>
@@ -173,9 +200,39 @@
             </div>
         </div>
     </div>
+
     <script>
         const COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
         const SAFE_PROTOCOLS = ['http:', 'https:', 'file:', 'cosy:'];
+
+        // Chromium 错误码 -> 中文友好提示。只覆盖高频项，其他走默认。
+        const BROWSER_HINTS = {
+            ERR_NAME_NOT_RESOLVED:     'DNS 解析失败。请检查网址拼写，或确认域名是否已注册/已生效。',
+            ERR_NAME_RESOLUTION_FAILED: 'DNS 解析失败。请检查网址拼写，或确认域名是否已注册/已生效。',
+            ERR_INTERNET_DISCONNECTED: '设备当前未连接到网络。请检查 Wi-Fi / 网线 / 代理设置。',
+            ERR_CONNECTION_REFUSED:    '目标服务器拒绝了连接。端口未开放、服务未启动或被防火墙拦截。',
+            ERR_CONNECTION_TIMED_OUT:  '连接超时。服务器无响应，可能网络不通或对方宕机。',
+            ERR_CONNECTION_RESET:      '连接被中途重置。可能是网络抖动、防火墙或中间设备切断。',
+            ERR_CONNECTION_FAILED:     '连接失败。请检查网络、代理、VPN 设置。',
+            ERR_ADDRESS_UNREACHABLE:   '目标地址不可达。路由/网关问题，或内网地址被拦截。',
+            ERR_EMPTY_RESPONSE:        '服务器返回了空响应。对方可能宕机或反向代理配置有误。',
+            ERR_TIMED_OUT:             '请求超时。请稍后重试。',
+            ERR_SSL_PROTOCOL_ERROR:    'SSL/TLS 协议错误。站点证书或协议版本不受支持。',
+            ERR_CERT_DATE_INVALID:      '证书已过期或未生效。请检查系统时间是否正确。',
+            ERR_CERT_AUTHORITY_INVALID: '证书颁发机构不受信任。可能是自签名证书或中间人代理。',
+            ERR_CERT_COMMON_NAME_INVALID: '证书域名不匹配。',
+            ERR_CERT_REVOKED:           '证书已被吊销。',
+            ERR_BAD_SSL_CLIENT_AUTH_CERT: '客户端证书错误。',
+            ERR_SSL_RENEGOTIATION_REQUESTED: '服务器请求了不安全的 TLS 重协商，已被拦截。',
+            ERR_HTTP_RESPONSE_CODE_FAILURE: '服务器返回了错误的 HTTP 状态码。',
+            ERR_BLOCKED_BY_CLIENT:      '请求被浏览器扩展或本地策略拦截。',
+            ERR_BLOCKED_BY_RESPONSE:   '请求被服务器返回的安全头（如 X-Frame-Options）拦截。',
+            ERR_CONTENT_DECODING_FAILED: '内容解码失败。服务器返回了与 Content-Encoding 不符的响应。',
+            ERR_CONTENT_LENGTH_MISMATCH: '下载被中断，实际内容长度与声明不一致。',
+            ERR_FILE_NOT_FOUND:        '本地文件不存在。',
+            ERR_ACCESS_DENIED:         '权限不足。',
+            ERR_DISALLOWED_URL_SCHEME:  '不支持的网址协议。',
+        };
 
         function isSafeUrl(url) {
             if (!url || typeof url !== 'string') return false;
@@ -187,11 +244,7 @@
         }
 
         function applyDarkMode(isDark) {
-            if (isDark) {
-                document.documentElement.setAttribute('data-theme', 'dark');
-            } else {
-                document.documentElement.removeAttribute('data-theme');
-            }
+            document.documentElement.toggleAttribute('data-theme', !!isDark);
         }
 
         function getUrlParams() {
@@ -206,6 +259,14 @@
             };
         }
 
+        function friendlyHint(browserMessage, code) {
+            if (BROWSER_HINTS[browserMessage]) return BROWSER_HINTS[browserMessage];
+            if (/^4\d\d$/.test(code)) return '这是客户端请求问题。请确认网址是否正确，或稍后再试。';
+            if (/^5\d\d$/.test(code)) return '这是服务器端问题。对方暂时不可用，请稍后重试。';
+            if (browserMessage.startsWith('ERR_CERT_')) return 'HTTPS 证书有问题。通常是系统时间错误、自签名证书或中间人代理。';
+            return '抱歉，您访问的页面出现了一些问题。';
+        }
+
         function updateErrorDisplay() {
             const p = getUrlParams();
             document.getElementById('error-code').textContent = p.code;
@@ -215,12 +276,27 @@
             document.getElementById('detail-url').textContent = p.url;
             document.getElementById('detail-browser-code').textContent = `${p.browserCode} (${p.browserMessage})`;
             document.getElementById('detail-time').textContent = new Date().toLocaleString('zh-CN');
-            setErrorIcon(p.code);
+            document.getElementById('friendly-hint').textContent = friendlyHint(p.browserMessage, p.code);
+            setErrorIcon(p.code, p.browserMessage);
+
+            // 只有 http:// 出错才显示 "改用 HTTPS" 按钮
+            try {
+                const u = new URL(p.url);
+                document.getElementById('btn-https').hidden = u.protocol !== 'http:';
+            } catch {
+                document.getElementById('btn-https').hidden = true;
+            }
         }
 
-        function setErrorIcon(code) {
-            const icons = { '404': '🔍', '403': '🚫', '500': '⚙️', '502': '🌐', '503': '🌐', '400': '❌' };
-            document.getElementById('error-icon').textContent = icons[code] || '⚠️';
+        function setErrorIcon(code, browserMessage) {
+            let icon = '⚠️';
+            if (browserMessage.startsWith('ERR_CERT_')) icon = '🔒';
+            else if (browserMessage === 'ERR_INTERNET_DISCONNECTED') icon = '📡';
+            else if (browserMessage.startsWith('ERR_NAME_')) icon = '🔍';
+            else if (browserMessage.startsWith('ERR_CONNECTION_REFUSED')) icon = '🚫';
+            else if (/^5\d\d$/.test(code)) icon = '⚙️';
+            else if (/^4\d\d$/.test(code)) icon = '🔍';
+            document.getElementById('error-icon').textContent = icon;
         }
 
         function getStatusCodeText(code) {
@@ -240,6 +316,15 @@
             }
         }
 
+        function retryWithHttps() {
+            const p = getUrlParams();
+            try {
+                const u = new URL(p.url);
+                u.protocol = 'https:';
+                window.location.href = u.toString();
+            } catch {}
+        }
+
         function toggleDetails() {
             const el = document.getElementById('error-details');
             const btn = document.getElementById('details-btn');
@@ -252,17 +337,51 @@
             document.documentElement.style.setProperty('--theme-color', color);
         }
 
+        function copyErrorDetails() {
+            const p = getUrlParams();
+            const text = [
+                `Code: ${p.code}`,
+                `Message: ${p.message}`,
+                `Reason: ${p.reason}`,
+                `URL: ${p.url}`,
+                `Browser: ${p.browserCode} (${p.browserMessage})`,
+                `Time: ${new Date().toISOString()}`,
+            ].join('\n');
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = document.getElementById('btn-copy');
+                const old = btn.textContent;
+                btn.textContent = '已复制 ✓';
+                setTimeout(() => { btn.textContent = old; }, 1500);
+            }).catch(() => {
+                window.prompt('复制以下内容：', text);
+            });
+        }
+
+        function updateOfflineBanner() {
+            document.getElementById('offline-banner').classList.toggle('show', !navigator.onLine);
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
             updateErrorDisplay();
+            updateOfflineBanner();
+            window.addEventListener('online', updateOfflineBanner);
+            window.addEventListener('offline', updateOfflineBanner);
             try {
                 const s = JSON.parse(localStorage.getItem('cosySettings') || '{}');
                 if (isValidColor(s.themeColor)) applyThemeColor(s.themeColor);
                 if (s.darkMode === true || s.darkMode === 'true') applyDarkMode(true);
             } catch {}
+            document.getElementById('btn-reload').addEventListener('click', reloadPage);
+            document.getElementById('btn-https').addEventListener('click', retryWithHttps);
+            document.getElementById('btn-copy').addEventListener('click', copyErrorDetails);
+            document.getElementById('btn-reload').focus();
         });
 
         document.addEventListener('keydown', function(e) {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
             if (e.key === 'Escape') toggleDetails();
+            else if (e.key === 'Enter') reloadPage();
+            else if (e.key === 'Backspace') history.back();
         });
     </script>
 </body>
