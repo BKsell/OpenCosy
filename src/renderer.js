@@ -903,3 +903,16 @@ if (window.electronAPI) {
     if (typeof tabManager !== 'undefined') renderPersistentBookmarksBar();
   });
 }
+
+// ===== 查看网页源代码（Ctrl+U）=====
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && (e.key === 'u' || e.key === 'U')) {
+    e.preventDefault();
+    if (typeof tabManager !== 'undefined' && tabManager.currentTabId) {
+      const t = tabManager.tabs.find(x => x.id === tabManager.currentTabId);
+      if (t && t.url && /^https?:/i.test(t.url)) {
+        tabManager.createNewTab('view-source:' + t.url);
+      }
+    }
+  }
+});
