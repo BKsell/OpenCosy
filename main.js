@@ -1,4 +1,4 @@
-const { app, BrowserWindow, WebContentsView, ipcMain, session, protocol, Menu, MenuItem, dialog, shell, globalShortcut, clipboard, net } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, session, protocol, Menu, MenuItem, dialog, shell, globalShortcut, clipboard, net, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
@@ -15,6 +15,10 @@ let bookmarks = [];
 let history = [];
 let recentlyClosedTabs = [];
 const MAX_RECENTLY_CLOSED = 10;
+
+// httpsOnlyEnabled 是运行时开关，默认 true；用户可以在设置里关掉。
+// onBeforeRequest 据此决定是否把 http:// 升级成 https://。
+let httpsOnlyEnabled = true;
 
 const ALLOWED_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'cosy:']);
 const MAX_HISTORY_ENTRIES = 1000;
@@ -286,6 +290,23 @@ function isPrivateNetworkHost(url) {
   } catch { return false; }
 }
 
+// readStoredSettings 只读不校验，启动时用来还原 darkMode / httpsOnly 等运行时状态。
+// 校验交给 save-settings 里的 sanitizeSettings。
+function readStoredSettings() {
+  try {
+    const p = path.join(app.getPath('userData'), 'cosySettings.json');
+    if (fsSync.existsSync(p)) return JSON.parse(fsSync.readFileSync(p, 'utf-8'));
+  } catch (e) { console.error('读取设置失败:', e); }
+  return {};
+}
+
+// applyDarkMode 切 Chromium 原生暗色主题，影响滚动条、文件对话框、DevTools 外壳。
+// renderer 的 CSS 暗色由 settings-loaded 自己管，这里只管原生 UI。
+function applyDarkMode(dark) {
+  nativeTheme.themeSource = dark ? 'dark' : 'light';
+  sendToRenderer('native-theme-changed', { dark: !!dark });
+}
+
 function setupSecurityHeaders() {
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const headers = details.responseHeaders || {};
@@ -317,7 +338,8 @@ function setupSecurityHeaders() {
   });
 
   session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
-    if (details.url.startsWith('http://') && !isPrivateNetworkHost(details.url)) {
+    // HTTPS-only 模式：用户可在设置里关掉；私网/回环主机永远保留 http://
+    if (httpsOnlyEnabled && details.url.startsWith('http://') && !isPrivateNetworkHost(details.url)) {
       callback({ redirectURL: 'https://' + details.url.slice(7) });
     } else {
       callback({});
@@ -1051,6 +1073,11 @@ app.whenReady().then(async () => {
   loadHistory();
   loadBookmarks();
 
+  // 启动时还原 darkMode / httpsOnly 等运行时状态
+  const stored = readStoredSettings();
+  applyDarkMode(!!stored.darkMode);
+  httpsOnlyEnabled = stored.httpsOnly !== false;
+
   if (process.platform === 'win32') app.setAsDefaultProtocolClient('cosy');
 
   protocol.registerFileProtocol('cosy', (request, callback) => {
@@ -1504,6 +1531,10 @@ function isSafeEntryName(name) {
   return name && name !== '.' && name !== '..' && !name.includes('/') && !name.includes('\\') && !path.isAbsolute(name);
 }
 
+// copyExtensionToStorage 递归复制扩展文件到 extensionsPath。
+// 安全关键：用 lstat 而不是 stat，并且跳过 symlink。否则一个恶意扩展包里塞个
+// 符号链接指到 C:\Users\xxx\.ssh\id_rsa，我们会把私钥复制进扩展目录，
+// renderer 里的扩展脚本就能直接读到。
 async function copyExtensionToStorage(sourcePath, extensionId) {
   try {
     const targetPath = path.join(extensionsPath, extensionId);
@@ -1513,7 +1544,8 @@ async function copyExtensionToStorage(sourcePath, extensionId) {
       if (!isSafeEntryName(file)) continue;
       const sourceFile = path.join(sourcePath, file);
       const targetFile = path.join(targetPath, file);
-      const stat = await fs.stat(sourceFile);
+      const stat = await fs.lstat(sourceFile);
+      if (stat.IsSymbolicLink()) continue;
       if (stat.isDirectory()) await copyExtensionToStorage(sourceFile, path.join(extensionId, file));
       else await fs.copyFile(sourceFile, targetFile);
     }
@@ -1636,6 +1668,7 @@ ipcMain.on('show-context-menu', (event, data) => {
 
 const ALLOWED_SETTING_KEYS = {
   darkMode: v => typeof v === 'boolean',
+  httpsOnly: v => typeof v === 'boolean',
   themeColor: v => isValidColor(v),
   defaultTab: v => ['bing', 'custom', 'newtab'].includes(v),
   customUrl: v => typeof v === 'string' && isSafeUrl(v),
@@ -1660,6 +1693,9 @@ ipcMain.on('save-settings', (event, settings) => {
     const clean = sanitizeSettings(settings);
     const settingsPath = path.join(app.getPath('userData'), 'cosySettings.json');
     fsSync.writeFileSync(settingsPath, JSON.stringify(clean, null, 2), 'utf-8');
+    // 立即把 darkMode / httpsOnly 应用到运行时
+    applyDarkMode(clean.darkMode);
+    httpsOnlyEnabled = clean.httpsOnly !== false;
     event.reply('settings-saved', { success: true });
   } catch (e) {
     console.error('保存设置失败:', e);
@@ -1722,6 +1758,16 @@ ipcMain.handle('clear-history', (event) => {
   history = [];
   saveHistory();
   return { success: true };
+});
+
+ipcMain.handle('get-https-only', (event) => {
+  if (!isMainSender(event)) return { success: false };
+  return { success: true, enabled: httpsOnlyEnabled };
+});
+
+ipcMain.handle('get-network-status', (event) => {
+  if (!isMainSender(event)) return { success: false };
+  return { success: true, online: net.isOnline() };
 });
 
 ipcMain.handle('clear-browsing-data', async (event, options) => {
