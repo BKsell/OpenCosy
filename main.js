@@ -1,4 +1,4 @@
-const { app, BrowserWindow, WebContentsView, ipcMain, session, protocol, Menu, MenuItem, dialog, shell, globalShortcut, clipboard } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, session, protocol, Menu, MenuItem, dialog, shell, globalShortcut, clipboard, net } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
@@ -62,6 +62,8 @@ class Tab {
     this.isLoading = false;
     this.retry403 = false;
     this.bookmarked = false;
+    this.canGoBack = false;
+    this.canGoForward = false;
   }
 }
 
@@ -385,6 +387,18 @@ function setupGlobalWebContentsHooks() {
   });
 }
 
+// setupNetworkStatus 监听 Chromium 的 online/offline 事件，把状态推给 renderer，
+// 地址栏/错误页可以据此显示"已断开连接"横幅。
+function setupNetworkStatus() {
+  const report = () => {
+    sendToRenderer('network-status-changed', { online: net.isOnline() });
+  };
+  app.on('online', report);
+  app.on('offline', report);
+  // 启动时先报一次当前状态
+  setTimeout(report, 500);
+}
+
 function getTabLayout() {
   const settingsPath = path.join(app.getPath('userData'), 'cosySettings.json');
   try {
@@ -499,6 +513,21 @@ function registerShortcuts() {
       // Ctrl+Shift+B：切换书签栏（Chrome/Edge 惯例）
       sendToRenderer('toggle-bookmarks-bar');
       event.preventDefault();
+    } else if (ctrl && key === 'd' && shift) {
+      // Ctrl+Shift+D：把所有打开的标签一键加为书签
+      const newBookmarks = tabs
+        .filter(t => isSafeUrl(t.url) && !t.url.startsWith('cosy://'))
+        .map(t => ({ url: t.url, title: t.title, addedDate: new Date().toISOString() }))
+        .filter(b => !bookmarks.find(x => x.url === b.url));
+      if (newBookmarks.length > 0) {
+        bookmarks.push(...newBookmarks);
+        saveBookmarks();
+        sendToRenderer('bookmarks-updated', bookmarks);
+        sendToRenderer('show-toast', `已收藏 ${newBookmarks.length} 个标签页`);
+      } else {
+        sendToRenderer('show-toast', '没有可收藏的标签页');
+      }
+      event.preventDefault();
     } else if (ctrl && key === 'tab') {
       const nextIndex = shift
         ? (currentTabIndex - 1 + tabs.length) % tabs.length
@@ -573,7 +602,7 @@ function registerShortcuts() {
       const wc = getCurrentTabWebContents();
       if (wc?.canGoForward()) wc.goForward();
       event.preventDefault();
-    } else if (ctrl && key === 'd') {
+    } else if (ctrl && key === 'd' && !shift) {
       const tab = tabs[currentTabIndex];
       if (tab && isSafeUrl(tab.url) && !tab.url.startsWith('cosy://')) {
         const existing = bookmarks.findIndex(b => b.url === tab.url);
@@ -608,7 +637,7 @@ function getUrlProtocol(url) {
 
 function createNewTab(url = 'cosy://newtab') {
   if (!isSafeUrl(url)) url = 'cosy://newtab';
-  const tabId = Date.now().toString();
+  const tabId = Date.now().toString() + Math.random().toString(36).slice(2, 6);
   const tab = new Tab(tabId, url);
 
   if (getUrlProtocol(url) === 'cosy:') {
@@ -640,6 +669,16 @@ function showErrorPage(tab, errorCode, errorDescription, validatedURL) {
   tab.url = validatedURL;
   tab.title = `错误 - ${getHttpStatusCode(errorCode)}`;
   sendToRenderer('tab-updated', { id: tab.id, url: validatedURL, title: tab.title });
+}
+
+// pushNavState 每次导航完成后同步 canGoBack/canGoForward，让 renderer 知道按钮该灰掉还是点亮
+function pushNavState(tab) {
+  if (!tab?.view?.webContents) return;
+  tab.canGoBack = tab.view.webContents.canGoBack();
+  tab.canGoForward = tab.view.webContents.canGoForward();
+  sendToRenderer('tab-history-changed', {
+    id: tab.id, canGoBack: tab.canGoBack, canGoForward: tab.canGoForward
+  });
 }
 
 function loadTabContent(tab) {
@@ -679,6 +718,9 @@ function loadTabContent(tab) {
       addToHistory(navigationUrl, tab.title);
       sendToRenderer('tab-updated', { id: tab.id, url: navigationUrl });
     });
+
+    tab.view.webContents.on('did-navigate', () => pushNavState(tab));
+    tab.view.webContents.on('did-navigate-in-page', () => pushNavState(tab));
 
     tab.view.webContents.on('did-redirect-navigation', (event, url) => {
       if (!isSafeUrl(url)) return;
@@ -830,6 +872,7 @@ function switchToTab(tabIndex) {
       updateBrowserViewBounds();
     }
     sendToRenderer('tab-switched', { id: tab.id, index: tabIndex });
+    pushNavState(tab);
   }
 }
 
@@ -1049,6 +1092,7 @@ app.whenReady().then(async () => {
   setupSecurityHeaders();
   setupDownloadManager();
   setupGlobalWebContentsHooks();
+  setupNetworkStatus();
   try { session.defaultSession.setSpellCheckerLanguages(SPELLCHECK_LANGUAGES); }
   catch (e) { console.error('设置拼写检查语言失败:', e); }
   session.defaultSession.setUserAgent(generateUserAgent());
@@ -1115,6 +1159,30 @@ ipcMain.handle('navigate-forward', (event) => {
   const wc = getCurrentTabWebContents();
   if (wc?.canGoForward()) { wc.goForward(); return { success: true }; }
   return { success: false };
+});
+
+ipcMain.handle('reload-tab', (event, hard) => {
+  if (!isMainSender(event)) return { success: false };
+  const wc = getCurrentTabWebContents();
+  if (!wc) return { success: false };
+  if (hard) wc.reloadIgnoringCache(); else wc.reload();
+  return { success: true };
+});
+
+ipcMain.handle('stop-loading', (event) => {
+  if (!isMainSender(event)) return { success: false };
+  const wc = getCurrentTabWebContents();
+  if (wc) wc.stop();
+  return { success: true };
+});
+
+ipcMain.handle('duplicate-tab', (event, tabIndex) => {
+  if (!isMainSender(event)) return { success: false };
+  const idx = typeof tabIndex === 'number' && tabIndex >= 0 ? tabIndex : currentTabIndex;
+  const tab = tabs[idx];
+  if (!tab || !isSafeUrl(tab.url)) return { success: false };
+  const newTab = createNewTab(tab.url);
+  return { id: newTab.id, index: tabs.indexOf(newTab) };
 });
 
 ipcMain.handle('create-tab', (event, url) => {
@@ -1315,14 +1383,20 @@ ipcMain.handle('get-current-tab', (event) => {
   if (!isMainSender(event)) return null;
   if (tabs.length > 0 && currentTabIndex >= 0) {
     const tab = tabs[currentTabIndex];
-    return { id: tab.id, url: tab.url, title: tab.title, favicon: tab.favicon, isLoading: tab.isLoading };
+    return {
+      id: tab.id, url: tab.url, title: tab.title, favicon: tab.favicon,
+      isLoading: tab.isLoading, canGoBack: tab.canGoBack, canGoForward: tab.canGoForward
+    };
   }
   return null;
 });
 
 ipcMain.handle('get-all-tabs', (event) => {
   if (!isMainSender(event)) return [];
-  return tabs.map(tab => ({ id: tab.id, url: tab.url, title: tab.title, favicon: tab.favicon, isLoading: tab.isLoading }));
+  return tabs.map(tab => ({
+    id: tab.id, url: tab.url, title: tab.title, favicon: tab.favicon,
+    isLoading: tab.isLoading, canGoBack: tab.canGoBack, canGoForward: tab.canGoForward
+  }));
 });
 
 ipcMain.on('close-current-tab', (event) => {
