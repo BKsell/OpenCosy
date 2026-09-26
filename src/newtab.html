@@ -25,15 +25,23 @@
         .quick-link-icon { width: 56px; height: 56px; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700; color: white; box-shadow: 0 4px 16px rgba(0,0,0,0.25); backdrop-filter: blur(8px); }
         .quick-link-icon.add { background: rgba(255,255,255,0.12); border: 2px dashed rgba(255,255,255,0.4); font-size: 28px; }
         .quick-link-name { font-size: 12px; text-shadow: 0 1px 3px rgba(0,0,0,0.6); max-width: 72px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .quick-link .del { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; font-size: 12px; line-height: 18px; display: none; }
-        .quick-link.custom:hover .del { display: block; }
-        .footer { position: absolute; bottom: 20px; font-size: 12px; opacity: 0.7; z-index: 2; text-shadow: 0 1px 3px rgba(0,0,0,0.5); }
+        .quick-link .del, .quick-link .edit { position: absolute; width: 18px; height: 18px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; font-size: 12px; line-height: 18px; display: none; }
+        .quick-link .del { top: -6px; right: -6px; }
+        .quick-link .edit { top: -6px; right: 16px; font-size: 11px; }
+        .quick-link.custom:hover .del, .quick-link.custom:hover .edit { display: block; }
+        .footer { position: absolute; bottom: 20px; font-size: 12px; opacity: 0.7; z-index: 2; text-shadow: 0 1px 3px rgba(0,0,0,0.5); display: flex; gap: 14px; align-items: center; }
+        .net-pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-size: 11px; background: rgba(255,255,255,0.15); backdrop-filter: blur(6px); }
+        .net-dot { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 6px #4ade80; }
+        .net-pill.offline .net-dot { background: #f87171; box-shadow: 0 0 6px #f87171; }
+        .search-hint { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); font-size: 11px; opacity: 0.7; }
+        kbd { background: rgba(0,0,0,0.4); padding: 1px 6px; border-radius: 4px; font-family: inherit; font-size: 11px; }
         @media (max-width: 768px) {
             .logo { font-size: 48px; }
             .subtitle { font-size: 16px; }
             .search-input { padding: 15px 20px; font-size: 14px; }
             .newtab-container { padding: 20px; }
             .quick-link-icon { width: 48px; height: 48px; border-radius: 12px; font-size: 18px; }
+            .search-hint { display: none; }
         }
     </style>
 </head>
@@ -43,14 +51,20 @@
         <div class="logo">OpenCosy</div>
         <div class="subtitle">快速、安全、舒适</div>
         <div class="search-box">
-            <input type="text" class="search-input" placeholder="搜索网页或输入网址" id="search-input">
+            <input type="text" class="search-input" placeholder="搜索网页或输入网址" id="search-input" autocomplete="off">
+            <span class="search-hint"><kbd>/</kbd> 聚焦搜索</span>
         </div>
         <div class="quick-links" id="quick-links"></div>
     </div>
-    <div class="footer" id="footer">OpenCosy浏览器</div>
+    <div class="footer" id="footer">
+        <span class="net-pill" id="net-pill"><span class="net-dot"></span><span id="net-text">已联网</span></span>
+        <span id="footer-name">OpenCosy浏览器</span>
+    </div>
     <script>
         const ALLOWED_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'cosy:']);
         const CUSTOM_KEY = 'cosyQuickLinks';
+        const VISIT_KEY = 'cosyQuickLinkVisits';
+        const MAX_CUSTOM_LINKS = 24;
 
         const DEFAULT_LINKS = [
             { name: '热土工作室', url: 'https://rtstu.com',                  color: '#E65100', letter: '热' },
@@ -72,11 +86,7 @@
         ];
 
         function isSafeUrl(url) {
-            try {
-                return ALLOWED_PROTOCOLS.has(new URL(url).protocol);
-            } catch {
-                return false;
-            }
+            try { return ALLOWED_PROTOCOLS.has(new URL(url).protocol); } catch { return false; }
         }
 
         function escapeCssUrl(url) {
@@ -90,20 +100,31 @@
         }
 
         function navigateTo(url) {
-            if (isSafeUrl(url)) window.location.href = url;
+            if (!isSafeUrl(url)) return;
+            bumpVisit(url);
+            window.location.href = url;
         }
 
         function loadCustomLinks() {
             try {
                 const raw = JSON.parse(localStorage.getItem(CUSTOM_KEY) || '[]');
                 return Array.isArray(raw) ? raw.filter(l => l && l.url && isSafeUrl(l.url)) : [];
-            } catch {
-                return [];
-            }
+            } catch { return []; }
         }
 
         function saveCustomLinks(links) {
-            localStorage.setItem(CUSTOM_KEY, JSON.stringify(links));
+            localStorage.setItem(CUSTOM_KEY, JSON.stringify(links.slice(0, MAX_CUSTOM_LINKS)));
+        }
+
+        function loadVisits() {
+            try { return JSON.parse(localStorage.getItem(VISIT_KEY) || '{}') || {}; }
+            catch { return {}; }
+        }
+
+        function bumpVisit(url) {
+            const v = loadVisits();
+            v[url] = (v[url] || 0) + 1;
+            try { localStorage.setItem(VISIT_KEY, JSON.stringify(v)); } catch {}
         }
 
         function guessColor(url) {
@@ -117,12 +138,12 @@
             el.className = 'quick-link' + (custom ? ' custom' : '');
             el.title = link.url;
             el.innerHTML = `
-                <div class="quick-link-icon" style="background:${link.color}">${escapeHtml(link.letter)}</div>
+                <div class="quick-link-icon" style="background:${escapeHtml(link.color)}">${escapeHtml(link.letter)}</div>
                 <div class="quick-link-name">${escapeHtml(link.name)}</div>
-                ${custom ? '<span class="del" title="删除">×</span>' : ''}
+                ${custom ? '<span class="del" title="删除">×</span><span class="edit" title="重命名">✎</span>' : ''}
             `;
             el.addEventListener('click', e => {
-                if (e.target.classList.contains('del')) return;
+                if (e.target.classList.contains('del') || e.target.classList.contains('edit')) return;
                 navigateTo(link.url);
             });
             if (custom) {
@@ -130,6 +151,18 @@
                     e.stopPropagation();
                     const rest = loadCustomLinks().filter(l => l.url !== link.url);
                     saveCustomLinks(rest);
+                    renderQuickLinks();
+                });
+                el.querySelector('.edit').addEventListener('click', e => {
+                    e.stopPropagation();
+                    const next = prompt('新名称：', link.name);
+                    if (next === null) return;
+                    const trimmed = next.trim().slice(0, 24);
+                    if (!trimmed) return;
+                    const links = loadCustomLinks().map(l =>
+                        l.url === link.url ? { ...l, name: trimmed, letter: trimmed.charAt(0).toUpperCase() } : l
+                    );
+                    saveCustomLinks(links);
                     renderQuickLinks();
                 });
             }
@@ -156,8 +189,13 @@
             if (!isSafeUrl(url)) { alert('不支持的协议'); return; }
             let name = prompt('显示名称：');
             if (!name) name = url.replace(/^https?:\/\//, '').split('/')[0];
+            name = name.trim().slice(0, 24);
             const links = loadCustomLinks();
             if (links.some(l => l.url === url)) return;
+            if (links.length >= MAX_CUSTOM_LINKS) {
+                alert(`最多 ${MAX_CUSTOM_LINKS} 个自定义磁贴`);
+                return;
+            }
             links.push({ name, url, color: guessColor(url), letter: name.charAt(0).toUpperCase() });
             saveCustomLinks(links);
             renderQuickLinks();
@@ -167,9 +205,29 @@
             const container = document.getElementById('quick-links');
             if (!container) return;
             container.innerHTML = '';
-            DEFAULT_LINKS.forEach(link => container.appendChild(renderLink(link, false)));
+
+            // 默认磁贴按访问次数排序（经常访问的靠前），没访问过的保持原顺序
+            const visits = loadVisits();
+            const defaults = DEFAULT_LINKS
+                .map((l, i) => ({ ...l, _v: visits[l.url] || 0, _i: i }))
+                .sort((a, b) => b._v - a._v || a._i - b._i);
+
+            defaults.forEach(link => container.appendChild(renderLink(link, false)));
             loadCustomLinks().forEach(link => container.appendChild(renderLink(link, true)));
             container.appendChild(renderAddTile());
+        }
+
+        function updateNetworkPill() {
+            const pill = document.getElementById('net-pill');
+            const text = document.getElementById('net-text');
+            const online = navigator.onLine;
+            pill.classList.toggle('offline', !online);
+            text.textContent = online ? '已联网' : '离线';
+        }
+
+        function focusSearch() {
+            const s = document.getElementById('search-input');
+            if (s) { s.focus(); s.select(); }
         }
 
         document.getElementById('search-input').addEventListener('keydown', function(e) {
@@ -182,11 +240,8 @@
                         navigateTo('https://' + query);
                     } else {
                         let settings;
-                        try {
-                            settings = JSON.parse(localStorage.getItem('cosySettings') || '{}');
-                        } catch {
-                            settings = {};
-                        }
+                        try { settings = JSON.parse(localStorage.getItem('cosySettings') || '{}'); }
+                        catch { settings = {}; }
                         const searchEngine = settings.searchEngine || 'bing';
                         let searchUrl;
                         switch (searchEngine) {
@@ -206,21 +261,30 @@
         }
 
         function setBackgroundImage(imageUrl) {
-            const backgroundContainer = document.getElementById('background-container');
-            if (backgroundContainer && (isSafeUrl(imageUrl) || !imageUrl.includes('://'))) {
-                backgroundContainer.style.backgroundImage = `url('${escapeCssUrl(imageUrl)}')`;
+            const bg = document.getElementById('background-container');
+            if (bg && (isSafeUrl(imageUrl) || !imageUrl.includes('://'))) {
+                bg.style.backgroundImage = `url('${escapeCssUrl(imageUrl)}')`;
             }
         }
 
         document.addEventListener('DOMContentLoaded', function() {
-            const searchInput = document.getElementById('search-input');
-            if (searchInput) searchInput.focus();
-            if (typeof COSY_CONSTANTS !== 'undefined' && COSY_CONSTANTS.APP_INFO) {
-                const footer = document.getElementById('footer');
-                if (footer) footer.textContent = COSY_CONSTANTS.APP_INFO.name;
-            }
             renderQuickLinks();
             setDefaultBackground();
+            updateNetworkPill();
+            window.addEventListener('online', updateNetworkPill);
+            window.addEventListener('offline', updateNetworkPill);
+            window.addEventListener('keydown', e => {
+                if (e.key === '/' && document.activeElement.tagName !== 'INPUT') {
+                    e.preventDefault();
+                    focusSearch();
+                }
+            });
+            // 没设默认搜索就自动聚焦
+            if (!location.hash) focusSearch();
+            if (typeof COSY_CONSTANTS !== 'undefined' && COSY_CONSTANTS.APP_INFO) {
+                const f = document.getElementById('footer-name');
+                if (f) f.textContent = COSY_CONSTANTS.APP_INFO.name;
+            }
         });
     </script>
 </body>
