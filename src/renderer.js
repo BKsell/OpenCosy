@@ -862,3 +862,44 @@ document.addEventListener('keydown', (e) => {
     toggleReaderMode();
   }
 });
+
+// ===== 常驻书签栏（Ctrl+Shift+B 切换）=====
+function renderPersistentBookmarksBar() {
+  let bar = document.getElementById('cosy-persist-bookmarks');
+  const show = localStorage.getItem('cosyShowBookmarksBar') === '1';
+  if (!show) { if (bar) bar.remove(); return; }
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'cosy-persist-bookmarks';
+    bar.style.cssText = 'display:flex;align-items:center;gap:4px;padding:4px 8px;background:#f3f3f3;border-bottom:1px solid #ddd;overflow-x:auto;font:12px/1.4 system-ui,sans-serif;';
+    document.body.insertBefore(bar, document.body.firstChild);
+  }
+  bar.innerHTML = '';
+  (typeof tabManager !== 'undefined' ? tabManager.bookmarks : []).forEach(b => {
+    const chip = document.createElement('div');
+    chip.style.cssText = 'padding:3px 10px;border-radius:4px;background:#fff;border:1px solid #ddd;cursor:pointer;white-space:nowrap;';
+    chip.textContent = b.title || b.url;
+    chip.title = b.url;
+    chip.addEventListener('click', () => tabManager.createNewTab(b.url));
+    bar.appendChild(chip);
+  });
+  if (bar.children.length === 0) {
+    bar.innerHTML = '<span style="color:#888;padding:0 8px;">暂无书签 · Ctrl+D 添加</span>';
+  }
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && e.shiftKey && (e.key === 'B' || e.key === 'b')) {
+    e.preventDefault();
+    const cur = localStorage.getItem('cosyShowBookmarksBar') === '1';
+    localStorage.setItem('cosyShowBookmarksBar', cur ? '0' : '1');
+    renderPersistentBookmarksBar();
+  }
+});
+
+document.addEventListener('DOMContentLoaded', renderPersistentBookmarksBar);
+if (window.electronAPI) {
+  window.electronAPI.on('bookmarks-updated', () => {
+    if (typeof tabManager !== 'undefined') renderPersistentBookmarksBar();
+  });
+}
