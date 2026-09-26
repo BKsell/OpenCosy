@@ -326,6 +326,19 @@ function setupSecurityHeaders() {
     if (isLocal && !headers['Content-Security-Policy'] && !headers['content-security-policy']) {
       headers['Content-Security-Policy'] = ["default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:;"];
     }
+    // 本地页面（cosy:// / file://）加 COOP/COEP/CORP，跨源资源进不来，
+    // 防止恶意网页把我们的设置页 / 下载页 iframe 化后读内容（Spectre 类侧信道）。
+    if (isLocal) {
+      headers['Cross-Origin-Opener-Policy'] = ['same-origin'];
+      headers['Cross-Origin-Embedder-Policy'] = ['require-corp'];
+      headers['Cross-Origin-Resource-Policy'] = ['same-origin'];
+    }
+    // HTTPS 响应默认补 HSTS，让浏览器后续访问自动升级（1 年 + includeSubDomains）。
+    // 已经自带 HSTS 的站点不覆盖。
+    if (details.url.startsWith('https://') &&
+        !headers['Strict-Transport-Security'] && !headers['strict-transport-security']) {
+      headers['Strict-Transport-Security'] = ['max-age=31536000; includeSubDomains'];
+    }
     callback({ responseHeaders: headers });
   });
 
@@ -347,17 +360,79 @@ function setupSecurityHeaders() {
   });
 }
 
+// 注意：'openExternal' 不再自动放行。网页调 window.openExternal / <a href="ms-*:">
+// 之前只要在这个集合里就会被静默拉系统程序，等于把 Follina 那类协议投毒开放给任意站点。
+// 外部协议走 confirmAndOpenExternal()，先白名单 scheme 再弹原生确认框。
 const ALLOWED_PERMISSIONS = new Set([
   'media', 'geolocation', 'notifications', 'midi', 'midiSysex',
   'pointerLock', 'fullscreen', 'clipboard-read', 'clipboard-sanitized-write',
-  'pop-up', 'openExternal'
+  'pop-up'
 ]);
+
+// SAFE_EXTERNAL_SCHEMES 是唯一允许 shell.openExternal 的外部协议白名单。
+// mailto: / tel: 是用户点邮箱/电话链接时该有的行为；
+// file: / smb: / ms-*: / vbscript: / javascript: 一律走弹窗拒绝。
+const SAFE_EXTERNAL_SCHEMES = new Set(['mailto:', 'tel:']);
+
+function isSafeExternalProtocol(url) {
+  if (!url || typeof url !== 'string') return false;
+  const lower = String(url).toLowerCase();
+  for (const scheme of SAFE_EXTERNAL_SCHEMES) {
+    if (lower.startsWith(scheme)) return true;
+  }
+  return false;
+}
+
+// confirmAndOpenExternal 统一入口：http(s) 开新标签，外部协议白名单 + 原生确认。
+// renderer 想让浏览器"点 mailto:" 必须走这个 IPC，不许直接 shell.openExternal。
+async function confirmAndOpenExternal(url) {
+  if (!url || typeof url !== 'string') return { ok: false, reason: 'empty url' };
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    if (!isSafeUrl(url)) return { ok: false, reason: 'unsafe url' };
+    createNewTab(url);
+    return { ok: true };
+  }
+  if (!isSafeExternalProtocol(url)) {
+    sendToRenderer('show-toast', `已阻止打开外部协议: ${url.slice(0, 60)}`);
+    return { ok: false, reason: 'blocked scheme' };
+  }
+  const choice = dialog.showMessageBoxSync(mainWindow, {
+    type: 'question',
+    buttons: ['允许打开', '取消'],
+    defaultId: 1,
+    cancelId: 1,
+    title: '网站想要打开外部应用',
+    message: `当前页面尝试打开:\n${url}\n\n是否允许？`
+  });
+  if (choice !== 0) return { ok: false, reason: 'user denied' };
+  try {
+    await shell.openExternal(url, { activate: true });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: String(e && e.message || e) };
+  }
+}
 
 function setupPermissionHandlers() {
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    // openExternal 不再静默放行：弹一次原生确认。这里拿不到具体 URL，
+    // 真正带 URL 的外部协议请求走 confirmAndOpenExternal IPC。
+    if (permission === 'openExternal') {
+      const choice = dialog.showMessageBoxSync(mainWindow, {
+        type: 'question',
+        buttons: ['允许', '拒绝'],
+        defaultId: 1,
+        cancelId: 1,
+        title: '网站请求打开外部程序',
+        message: '当前网站请求调用系统外部应用，是否允许？'
+      });
+      callback(choice === 0);
+      return;
+    }
     callback(ALLOWED_PERMISSIONS.has(permission));
   });
   session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+    if (permission === 'openExternal') return false;
     return ALLOWED_PERMISSIONS.has(permission);
   });
 }
@@ -1396,6 +1471,13 @@ ipcMain.on('open-folder', (event, filePath) => {
   if (isInSafeDirs(resolved) && fsSync.existsSync(resolved)) shell.showItemInFolder(resolved);
 });
 
+// open-external-url renderer 统一入口：点 mailto:/tel: 走这里，
+// 主进程做 scheme 白名单 + 原生确认，再调 shell.openExternal。
+ipcMain.handle('open-external-url', async (event, url) => {
+  if (!isMainSender(event)) return { ok: false, reason: 'unauthorized' };
+  return await confirmAndOpenExternal(String(url || ''));
+});
+
 ipcMain.on('clear-downloads', (event) => {
   if (!isMainSender(event)) return;
   downloads = [];
@@ -1516,7 +1598,7 @@ async function validateExtensionFolder(folderPath) {
     const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
     if (!manifest.name) return { valid: false, error: 'manifest.json中缺少name字段' };
     if (!manifest.version) return { valid: false, error: 'manifest.json中缺少version字段' };
-    if (!manifest.manifest_version) return { valid: false, error: 'manifest.json中缺少manifest_version字段' };
+    if (!manifest.manifest_version) return { valid: false, error: 'manifest_version字段缺失' };
     if (manifest.permissions && Array.isArray(manifest.permissions)) {
       const dangerousPermissions = ['<all_urls>', 'tabs', 'history', 'bookmarks', 'cookies', 'webRequest', 'webRequestBlocking', 'proxy', 'management', 'debugger', 'nativeMessaging'];
       if (manifest.permissions.some(p => dangerousPermissions.includes(p))) {
