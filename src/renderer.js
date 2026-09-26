@@ -777,3 +777,59 @@ window.addEventListener('offline', () => showNetworkPill('网络已断开，浏�
 if (!navigator.onLine) {
   document.addEventListener('DOMContentLoaded', () => showNetworkPill('当前处于离线状态', '#c62828'));
 }
+
+// ===== 标签页切换器（Ctrl+Shift+A）=====
+function openTabSwitcher() {
+  let ov = document.getElementById('cosy-tab-switcher');
+  if (ov) { ov.remove(); return; }
+  ov = document.createElement('div');
+  ov.id = 'cosy-tab-switcher';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding-top:15vh;';
+  const panel = document.createElement('div');
+  panel.style.cssText = 'background:#fff;border-radius:10px;width:560px;max-height:60vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,.3);font:13px/1.5 system-ui,sans-serif;';
+  const inp = document.createElement('input');
+  inp.placeholder = '筛选标签页...';
+  inp.style.cssText = 'width:100%;box-sizing:border-box;padding:10px 14px;border:none;border-bottom:1px solid #eee;outline:none;font-size:14px;';
+  panel.appendChild(inp);
+  const list = document.createElement('div');
+  list.style.cssText = 'padding:6px 0;';
+  function render(filter) {
+    list.innerHTML = '';
+    tabManager.tabs
+      .filter(t => !filter || (t.title && t.title.toLowerCase().includes(filter)) || (t.url && t.url.toLowerCase().includes(filter)))
+      .forEach(t => {
+        const row = document.createElement('div');
+        row.style.cssText = 'padding:8px 14px;cursor:pointer;display:flex;flex-direction:column;' + (t.id === tabManager.currentTabId ? 'background:#e8f0fe;' : '');
+        const title = document.createElement('div');
+        title.style.cssText = 'font-weight:600;color:#222;';
+        title.textContent = t.title || t.url || '(无标题)';
+        const url = document.createElement('div');
+        url.style.cssText = 'font-size:11px;color:#888;';
+        url.textContent = t.url || '';
+        row.appendChild(title); row.appendChild(url);
+        row.addEventListener('click', () => { ov.remove(); tabManager.switchToTab(t.id); });
+        list.appendChild(row);
+      });
+  }
+  render('');
+  inp.addEventListener('input', () => render(inp.value.trim().toLowerCase()));
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') ov.remove();
+    if (e.key === 'Enter') {
+      const first = list.querySelector('div');
+      if (first) first.click();
+    }
+  });
+  panel.appendChild(list);
+  ov.appendChild(panel);
+  ov.addEventListener('click', (e) => { if (e.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
+  inp.focus();
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
+    e.preventDefault();
+    openTabSwitcher();
+  }
+});
