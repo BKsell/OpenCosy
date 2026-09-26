@@ -50,6 +50,8 @@ const allowedInvokeChannels = new Set([
   'get-history',
   'clear-history',
   'clear-browsing-data',
+  'get-https-only',
+  'get-network-status',
 ]);
 
 // 接收方向白名单：main -> renderer
@@ -85,6 +87,7 @@ const allowedOnChannels = new Set([
   'show-clear-data-dialog',
   'toggle-bookmarks-bar',
   'network-status-changed',
+  'native-theme-changed',
 ]);
 
 // sanitizeArg 过滤掉 renderer 传入的可疑对象：只保留 JSON 可序列化的纯数据，
