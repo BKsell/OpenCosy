@@ -382,9 +382,6 @@ function setupGlobalWebContentsHooks() {
         contents.destroy();
       }
     });
-
-    // 任何 webContents 都不许开 DevTools 协议、远程调试
-    contents.setWindowOpenHandler?.({ action: 'deny' });
   });
 }
 
