@@ -33,6 +33,22 @@
         .net-pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-size: 11px; background: rgba(255,255,255,0.15); backdrop-filter: blur(6px); }
         .net-dot { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 6px #4ade80; }
         .net-pill.offline .net-dot { background: #f87171; box-shadow: 0 0 6px #f87171; }
+        .gear-btn { cursor: pointer; width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.15); transition: transform 0.3s; user-select: none; font-size: 13px; }
+        .gear-btn:hover { transform: rotate(90deg); background: rgba(255,255,255,0.3); }
+        .settings-panel { position: absolute; bottom: 56px; right: 20px; width: 260px; padding: 16px; border-radius: 14px; background: rgba(20,20,30,0.88); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 40px rgba(0,0,0,0.4); z-index: 10; display: none; text-align: left; }
+        .settings-panel.open { display: block; }
+        .settings-panel h4 { font-size: 11px; opacity: 0.6; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+        .settings-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-size: 13px; gap: 10px; }
+        .settings-row select { background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 3px 8px; font-size: 12px; outline: none; }
+        .settings-row select option { background: #222; color: #fff; }
+        .settings-row button { background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
+        .settings-row button:hover { background: rgba(255,255,255,0.25); }
+        .switch { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .switch .slider { position: absolute; inset: 0; background: rgba(255,255,255,0.2); border-radius: 20px; cursor: pointer; transition: 0.2s; }
+        .switch .slider::before { content: ''; position: absolute; width: 14px; height: 14px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: 0.2s; }
+        .switch input:checked + .slider { background: #4ade80; }
+        .switch input:checked + .slider::before { transform: translateX(16px); }
         .search-hint { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); font-size: 11px; opacity: 0.7; }
         kbd { background: rgba(0,0,0,0.4); padding: 1px 6px; border-radius: 4px; font-family: inherit; font-size: 11px; }
         @media (max-width: 768px) {
@@ -59,6 +75,27 @@
     <div class="footer" id="footer">
         <span class="net-pill" id="net-pill"><span class="net-dot"></span><span id="net-text">已联网</span></span>
         <span id="footer-name">OpenCosy浏览器</span>
+        <span class="gear-btn" id="gear-btn" title="新标签页设置">⚙</span>
+    </div>
+    <div class="settings-panel" id="settings-panel">
+        <h4>新标签页设置</h4>
+        <div class="settings-row">
+            <span>默认搜索引擎</span>
+            <select id="sel-engine">
+                <option value="bing">Bing</option>
+                <option value="google">Google</option>
+                <option value="baidu">百度</option>
+                <option value="ddg">DuckDuckGo</option>
+            </select>
+        </div>
+        <div class="settings-row">
+            <span>按访问频率排序</span>
+            <label class="switch"><input type="checkbox" id="toggle-sort"><span class="slider"></span></label>
+        </div>
+        <div class="settings-row">
+            <span>恢复默认磁贴</span>
+            <button id="btn-reset">重置</button>
+        </div>
     </div>
     <script>
         const ALLOWED_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'cosy:']);
@@ -206,15 +243,67 @@
             if (!container) return;
             container.innerHTML = '';
 
+            const settings = loadNTSettings();
             // 默认磁贴按访问次数排序（经常访问的靠前），没访问过的保持原顺序
             const visits = loadVisits();
-            const defaults = DEFAULT_LINKS
-                .map((l, i) => ({ ...l, _v: visits[l.url] || 0, _i: i }))
-                .sort((a, b) => b._v - a._v || a._i - b._i);
+            let defaults = DEFAULT_LINKS
+                .map((l, i) => ({ ...l, _v: visits[l.url] || 0, _i: i }));
+            if (settings.sortByVisits !== false) {
+                defaults = defaults.sort((a, b) => b._v - a._v || a._i - b._i);
+            }
 
             defaults.forEach(link => container.appendChild(renderLink(link, false)));
             loadCustomLinks().forEach(link => container.appendChild(renderLink(link, true)));
             container.appendChild(renderAddTile());
+        }
+
+        // ---- 新标签页设置面板 ----
+        const NTS_KEY = 'cosyNewtabSettings';
+        function loadNTSettings() {
+            try { return Object.assign({ sortByVisits: true, searchEngine: 'bing' },
+                JSON.parse(localStorage.getItem(NTS_KEY) || '{}')); }
+            catch { return { sortByVisits: true, searchEngine: 'bing' }; }
+        }
+        function saveNTSettings(patch) {
+            const s = Object.assign(loadNTSettings(), patch);
+            localStorage.setItem(NTS_KEY, JSON.stringify(s));
+            // 同步到全局 cosySettings 供搜索框读取
+            let global;
+            try { global = JSON.parse(localStorage.getItem('cosySettings') || '{}'); }
+            catch { global = {}; }
+            global.searchEngine = s.searchEngine;
+            localStorage.setItem('cosySettings', JSON.stringify(global));
+        }
+        function setupSettingsPanel() {
+            const gear = document.getElementById('gear-btn');
+            const panel = document.getElementById('settings-panel');
+            const sel = document.getElementById('sel-engine');
+            const tgl = document.getElementById('toggle-sort');
+            const rst = document.getElementById('btn-reset');
+            if (!gear || !panel) return;
+            const s = loadNTSettings();
+            sel.value = s.searchEngine;
+            tgl.checked = s.sortByVisits !== false;
+            gear.addEventListener('click', e => {
+                e.stopPropagation();
+                panel.classList.toggle('open');
+            });
+            document.addEventListener('click', e => {
+                if (!panel.contains(e.target) && e.target !== gear) panel.classList.remove('open');
+            });
+            sel.addEventListener('change', () => {
+                saveNTSettings({ searchEngine: sel.value });
+            });
+            tgl.addEventListener('change', () => {
+                saveNTSettings({ sortByVisits: tgl.checked });
+                renderQuickLinks();
+            });
+            rst.addEventListener('click', () => {
+                if (!confirm('清除所有自定义磁贴和访问记录？')) return;
+                localStorage.removeItem(CUSTOM_KEY);
+                localStorage.removeItem(VISIT_KEY);
+                renderQuickLinks();
+            });
         }
 
         function updateNetworkPill() {
@@ -247,6 +336,7 @@
                         switch (searchEngine) {
                             case 'google': searchUrl = 'https://www.google.com/search?q='; break;
                             case 'baidu': searchUrl = 'https://www.baidu.com/s?wd='; break;
+                            case 'ddg': searchUrl = 'https://duckduckgo.com/?q='; break;
                             case 'bing':
                             default: searchUrl = 'https://www.bing.com/search?q='; break;
                         }
@@ -271,6 +361,7 @@
             renderQuickLinks();
             setDefaultBackground();
             updateNetworkPill();
+            setupSettingsPanel();
             window.addEventListener('online', updateNetworkPill);
             window.addEventListener('offline', updateNetworkPill);
             window.addEventListener('keydown', e => {
