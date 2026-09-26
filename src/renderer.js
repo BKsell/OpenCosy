@@ -833,3 +833,32 @@ document.addEventListener('keydown', (e) => {
     openTabSwitcher();
   }
 });
+
+// ===== 阅读模式（Ctrl+Shift+R）：注入简化 CSS =====
+let readerStyleEl = null;
+function toggleReaderMode() {
+  if (readerStyleEl) {
+    readerStyleEl.remove();
+    readerStyleEl = null;
+    return;
+  }
+  const css = `
+    body { max-width: 720px !important; margin: 0 auto !important;
+      font-family: system-ui, sans-serif !important; line-height: 1.7 !important;
+      color: #222 !important; background: #faf8f2 !important; }
+    nav, header, footer, aside, .ad, .advertisement, [class*="banner"], [id*="banner"],
+    [class*="sidebar"], [id*="sidebar"], [class*="comment"], [id*="comment"] { display: none !important; }
+    img, video { max-width: 100% !important; height: auto !important; }
+    a { color: #1a73e8 !important; }
+  `;
+  readerStyleEl = document.createElement('style');
+  readerStyleEl.id = 'cosy-reader-style';
+  readerStyleEl.textContent = css;
+  document.head.appendChild(readerStyleEl);
+}
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && e.shiftKey && (e.key === 'R' || e.key === 'r')) {
+    e.preventDefault();
+    toggleReaderMode();
+  }
+});
