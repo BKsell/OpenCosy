@@ -1237,3 +1237,96 @@ document.addEventListener('DOMContentLoaded', setupTabContextMenu);
     }
   });
 })();
+
+// ===== 快捷键速查浮层（F1 或 Ctrl+/）=====
+(function setupShortcutsHelp() {
+  const GROUPS = [
+    { title: '标签页', items: [
+      ['Ctrl + T', '新建标签页'],
+      ['Ctrl + W', '关闭当前标签页'],
+      ['Ctrl + Tab / Ctrl + Shift + Tab', '下一个 / 上一个标签页'],
+      ['Ctrl + 1 ~ 8', '切换到第 N 个标签页'],
+      ['Ctrl + 9', '切换到最后一个标签页'],
+      ['Ctrl + Shift + T', '恢复最近关闭的标签页'],
+      ['Ctrl + Shift + K', '复制当前标签页'],
+      ['中键点击标签', '关闭该标签页'],
+    ]},
+    { title: '导航', items: [
+      ['Alt + ← / Alt + →', '后退 / 前进'],
+      ['Ctrl + R / F5', '重新加载'],
+      ['Ctrl + L / F6', '聚焦地址栏'],
+      ['Ctrl + Enter', '裸域名自动补 .com'],
+      ['Ctrl + U', '查看网页源代码'],
+      ['Ctrl + H', '历史记录'],
+      ['Ctrl + D', '添加书签'],
+      ['Ctrl + Shift + B', '常驻书签栏开关'],
+    ]},
+    { title: '阅读与查找', items: [
+      ['Ctrl + F', '页内查找'],
+      ['Ctrl + Shift + R', '阅读模式'],
+      ['Ctrl + Shift + A', '标签页切换器'],
+    ]},
+    { title: '隐私与外观', items: [
+      ['Ctrl + Shift + D', '暗色模式开关'],
+      ['Ctrl + Shift + Delete', '清除浏览数据'],
+      ['F1 / Ctrl + /', '本快捷键速查表'],
+    ]},
+  ];
+
+  function kbd(text) {
+    const el = document.createElement('kbd');
+    el.textContent = text;
+    el.style.cssText = 'display:inline-block;padding:2px 8px;border:1px solid #ccc;border-bottom-width:2px;border-radius:5px;background:#f7f7f7;font:12px/1.5 Consolas,monospace;color:#333;';
+    return el;
+  }
+
+  function open() {
+    if (document.getElementById('cosy-shortcuts-help')) return;
+    const ov = document.createElement('div');
+    ov.id = 'cosy-shortcuts-help';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10002;display:flex;align-items:flex-start;justify-content:center;padding:6vh 16px;';
+    const panel = document.createElement('div');
+    panel.style.cssText = 'background:#fff;border-radius:12px;width:640px;max-width:100%;max-height:84vh;overflow:auto;box-shadow:0 16px 48px rgba(0,0,0,.3);font:13px/1.6 system-ui,sans-serif;color:#222;';
+    const h = document.createElement('h2');
+    h.textContent = '键盘快捷键';
+    h.style.cssText = 'margin:0;padding:18px 22px;font-size:17px;border-bottom:1px solid #eee;position:sticky;top:0;background:#fff;';
+    panel.appendChild(h);
+    const body = document.createElement('div');
+    body.style.cssText = 'padding:12px 22px 22px;';
+    GROUPS.forEach(g => {
+      const gt = document.createElement('h3');
+      gt.textContent = g.title;
+      gt.style.cssText = 'margin:14px 0 6px;font-size:13px;color:#666;text-transform:uppercase;letter-spacing:.05em;';
+      body.appendChild(gt);
+      const table = document.createElement('div');
+      g.items.forEach(([key, desc]) => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;justify-content:space-between;gap:16px;padding:5px 0;border-bottom:1px solid #f5f5f5;';
+        const d = document.createElement('span');
+        d.textContent = desc;
+        const k = document.createElement('span');
+        k.appendChild(kbd(key));
+        k.style.flexShrink = '0';
+        row.appendChild(d);
+        row.appendChild(k);
+        table.appendChild(row);
+      });
+      body.appendChild(table);
+    });
+    panel.appendChild(body);
+    ov.appendChild(panel);
+    ov.addEventListener('click', (e) => { if (e.target === ov) ov.remove(); });
+    document.addEventListener('keydown', function esc(ev) {
+      if (ev.key === 'Escape') { ov.remove(); document.removeEventListener('keydown', esc); }
+    });
+    document.body.appendChild(ov);
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'F1' || (e.ctrlKey && (e.key === '/' || e.key === '？'))) {
+      e.preventDefault();
+      const ov = document.getElementById('cosy-shortcuts-help');
+      if (ov) ov.remove(); else open();
+    }
+  });
+})();
