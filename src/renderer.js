@@ -916,3 +916,54 @@ document.addEventListener('keydown', (e) => {
     }
   }
 });
+
+// ===== 地址栏自动补全（输入时匹配历史/书签）=====
+function setupOmniboxAutocomplete() {
+  const input = document.getElementById('url-input');
+  if (!input || input._autocompleteAttached) return;
+  input._autocompleteAttached = true;
+  let drop = document.getElementById('omnibox-dropdown');
+  if (!drop) {
+    drop = document.createElement('div');
+    drop.id = 'omnibox-dropdown';
+    drop.style.cssText = 'position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #ddd;border-top:none;max-height:320px;overflow-y:auto;z-index:999;display:none;box-shadow:0 8px 20px rgba(0,0,0,.15);font:13px/1.4 system-ui,sans-serif;';
+    input.parentElement.style.position = 'relative';
+    input.parentElement.appendChild(drop);
+  }
+  function render() {
+    const q = input.value.trim().toLowerCase();
+    if (!q || typeof tabManager === 'undefined') { drop.style.display = 'none'; return; }
+    const seen = new Set();
+    const matches = [];
+    const pool = [
+      ...(tabManager.bookmarks || []).map(b => ({ title: b.title, url: b.url, tag: '书签' })),
+      ...(tabManager.history || []).map(h => ({ title: h.title || h.url, url: h.url, tag: '历史' })),
+    ];
+    for (const item of pool) {
+      if (seen.has(item.url)) continue;
+      if (item.url.toLowerCase().includes(q) || (item.title || '').toLowerCase().includes(q)) {
+        matches.push(item); seen.add(item.url);
+      }
+      if (matches.length >= 8) break;
+    }
+    if (matches.length === 0) { drop.style.display = 'none'; return; }
+    drop.innerHTML = '';
+    matches.forEach(m => {
+      const row = document.createElement('div');
+      row.style.cssText = 'padding:8px 12px;cursor:pointer;display:flex;flex-direction:column;';
+      row.innerHTML = `<strong style="color:#222;font-weight:600;">${escapeHtml(m.title || m.url)}</strong><span style="color:#888;font-size:11px;">${escapeHtml(m.url)} · ${m.tag}</span>`;
+      row.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        input.value = m.url;
+        drop.style.display = 'none';
+        tabManager.navigateFromAddressBar();
+      });
+      drop.appendChild(row);
+    });
+    drop.style.display = 'block';
+  }
+  input.addEventListener('input', render);
+  input.addEventListener('blur', () => setTimeout(() => { drop.style.display = 'none'; }, 150));
+  input.addEventListener('focus', render);
+}
+document.addEventListener('DOMContentLoaded', setupOmniboxAutocomplete);
