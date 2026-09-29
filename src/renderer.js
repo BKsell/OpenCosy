@@ -1202,3 +1202,38 @@ document.addEventListener('DOMContentLoaded', setupTabContextMenu);
   // 标签容器可能延迟渲染，再兜底一次
   setTimeout(init, 500);
 })();
+
+// ===== 键盘标签切换：Ctrl+Tab / Ctrl+Shift+Tab / Ctrl+1~9 =====
+(function setupTabKeyboardNav() {
+  function cycle(step) {
+    const tabs = tabManager.tabs || [];
+    if (tabs.length === 0) return;
+    const idx = tabs.findIndex(t => t.id === tabManager.currentTabId);
+    const n = tabs.length;
+    const next = tabs[(idx + step + n) % n];
+    if (next) tabManager.switchToTab(next.id);
+  }
+  document.addEventListener('keydown', (e) => {
+    // Ctrl+Tab 下一个，Ctrl+Shift+Tab 上一个（部分系统拦截，再补 PgUp/PgDn）
+    if (e.ctrlKey && (e.key === 'Tab' || e.key === 'PageDown')) {
+      e.preventDefault();
+      cycle(e.shiftKey ? -1 : 1);
+      return;
+    }
+    if (e.ctrlKey && e.shiftKey && e.key === 'PageUp') {
+      e.preventDefault();
+      cycle(-1);
+      return;
+    }
+    // Ctrl+1..8 切到第 N 个，Ctrl+9 切到最后一个
+    if (e.ctrlKey && !e.altKey && !e.shiftKey && /^[1-9]$/.test(e.key)) {
+      const tabs = tabManager.tabs || [];
+      const n = parseInt(e.key, 10);
+      const target = n === 9 ? tabs[tabs.length - 1] : tabs[n - 1];
+      if (target) {
+        e.preventDefault();
+        tabManager.switchToTab(target.id);
+      }
+    }
+  });
+})();
