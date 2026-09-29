@@ -967,3 +967,26 @@ function setupOmniboxAutocomplete() {
   input.addEventListener('focus', render);
 }
 document.addEventListener('DOMContentLoaded', setupOmniboxAutocomplete);
+
+// ===== 暗色模式切换（Ctrl+Shift+D）=====
+function applyDarkMode(on) {
+  document.documentElement.style.filter = on ? 'invert(0.92) hue-rotate(180deg)' : '';
+  localStorage.setItem('cosyDark', on ? '1' : '0');
+}
+applyDarkMode(localStorage.getItem('cosyDark') === '1');
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
+    e.preventDefault();
+    applyDarkMode(localStorage.getItem('cosyDark') !== '1');
+  }
+});
+
+// ===== 快速清空浏览数据（Ctrl+Shift+Delete）=====
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && e.shiftKey && (e.key === 'Delete' || e.key === 'Backspace')) {
+    e.preventDefault();
+    if (confirm('确定清除所有浏览数据（缓存 / Cookie / 历史）？')) {
+      window.electronAPI.send('clear-browsing-data');
+    }
+  }
+});
