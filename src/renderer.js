@@ -1065,3 +1065,45 @@ function setupTabContextMenu() {
   });
 }
 document.addEventListener('DOMContentLoaded', setupTabContextMenu);
+
+// ===== 会话恢复：退出前保存标签，下次启动自动还原 =====
+(function setupSessionRestore() {
+  const KEY = 'cosySession';
+  function snapshot() {
+    try {
+      if (typeof tabManager === 'undefined' || !tabManager.tabs) return;
+      const urls = tabManager.tabs.map(t => t.url).filter(u => u && isSafeUrl(u));
+      if (urls.length === 0) return;
+      const active = tabManager.tabs.findIndex(t => t.id === tabManager.currentTabId);
+      localStorage.setItem(KEY, JSON.stringify({ urls, active: active < 0 ? 0 : active, ts: Date.now() }));
+    } catch (e) { /* 忽略存储异常 */ }
+  }
+  setInterval(snapshot, 1500);
+  window.addEventListener('beforeunload', snapshot);
+
+  async function restore() {
+    let data;
+    try { data = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch { return; }
+    if (!data || !Array.isArray(data.urls) || data.urls.length === 0) return;
+    // 启动时主进程自动开的空白新标签页，记录下来稍后关掉
+    const defaultTabIds = (tabManager.tabs || [])
+      .filter(t => !t.url || t.url === 'cosy://newtab')
+      .map(t => t.id);
+    let firstId = null;
+    for (const url of data.urls) {
+      const id = await tabManager.createNewTab(url);
+      if (!firstId && id) firstId = id;
+    }
+    // 等 IPC 把新标签状态同步回来再关默认标签
+    setTimeout(() => {
+      const stillDefault = (tabManager.tabs || [])
+        .filter(t => defaultTabIds.includes(t.id) && (!t.url || t.url === 'cosy://newtab'));
+      stillDefault.forEach((t, i) => { if (i < defaultTabIds.length) tabManager.closeTab(t.id); });
+    }, 400);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => setTimeout(restore, 300));
+  } else {
+    setTimeout(restore, 300);
+  }
+})();
