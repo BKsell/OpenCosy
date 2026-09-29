@@ -990,3 +990,35 @@ document.addEventListener('keydown', (e) => {
     }
   }
 });
+
+// ===== 历史记录面板（Ctrl+H）=====
+function openHistoryPanel() {
+  let ov = document.getElementById('cosy-history-panel');
+  if (ov) { ov.remove(); return; }
+  ov = document.createElement('div');
+  ov.id = 'cosy-history-panel';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding-top:10vh;';
+  const panel = document.createElement('div');
+  panel.style.cssText = 'background:#fff;border-radius:10px;width:560px;max-height:70vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,.3);font:13px/1.5 system-ui,sans-serif;';
+  panel.innerHTML = '<h3 style="margin:0;padding:14px 16px;border-bottom:1px solid #eee;">最近访问</h3>';
+  const list = document.createElement('div');
+  list.style.cssText = 'padding:6px 0;';
+  (typeof tabManager !== 'undefined' ? tabManager.history.slice(-50).reverse() : []).forEach(h => {
+    const row = document.createElement('div');
+    row.style.cssText = 'padding:8px 16px;cursor:pointer;';
+    row.innerHTML = `<strong style="color:#222;">${escapeHtml(h.title || h.url)}</strong><br><span style="color:#888;font-size:11px;">${escapeHtml(h.url)}</span>`;
+    row.addEventListener('click', () => { ov.remove(); tabManager.createNewTab(h.url); });
+    list.appendChild(row);
+  });
+  if (list.children.length === 0) list.innerHTML = '<div style="padding:20px;color:#888;text-align:center;">暂无历史记录</div>';
+  panel.appendChild(list);
+  ov.appendChild(panel);
+  ov.addEventListener('click', (e) => { if (e.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
+}
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && (e.key === 'h' || e.key === 'H')) {
+    e.preventDefault();
+    openHistoryPanel();
+  }
+});
