@@ -1107,3 +1107,98 @@ document.addEventListener('DOMContentLoaded', setupTabContextMenu);
     setTimeout(restore, 300);
   }
 })();
+
+// ===== 标签交互增强：修正右键菜单目标 + 中键关闭 + Ctrl+Enter .com + 复制标签 =====
+(function setupTabExtras() {
+  let menu = null;
+  function buildMenu(x, y, tabId) {
+    if (!menu) {
+      menu = document.createElement('div');
+      menu.id = 'cosy-tab-ctx2';
+      menu.style.cssText = 'position:fixed;background:#fff;border:1px solid #ddd;border-radius:6px;box-shadow:0 6px 20px rgba(0,0,0,.18);z-index:10001;display:none;min-width:180px;font:13px/1.4 system-ui,sans-serif;';
+      document.body.appendChild(menu);
+    }
+    menu.innerHTML = '';
+    const items = [
+      { label: '重新加载', fn: () => tabManager.reloadTab(tabId) },
+      { label: '复制标签页', fn: () => {
+          const t = tabManager.tabs.find(t => t.id === tabId);
+          if (t && t.url) tabManager.createNewTab(t.url);
+        } },
+      { label: '复制网址', fn: () => {
+          const t = tabManager.tabs.find(t => t.id === tabId);
+          if (t) navigator.clipboard.writeText(t.url || '');
+        } },
+      { label: '关闭标签页', fn: () => tabManager.closeTab(tabId) },
+      { label: '关闭其他标签页', fn: () => tabManager.tabs.filter(t => t.id !== tabId).forEach(t => tabManager.closeTab(t.id)) },
+    ];
+    items.forEach(it => {
+      const row = document.createElement('div');
+      row.textContent = it.label;
+      row.style.cssText = 'padding:8px 14px;cursor:pointer;';
+      row.addEventListener('mouseenter', () => row.style.background = '#f0f0f0');
+      row.addEventListener('mouseleave', () => row.style.background = '');
+      row.addEventListener('click', () => { menu.style.display = 'none'; it.fn(); });
+      menu.appendChild(row);
+    });
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+    menu.style.display = 'block';
+  }
+  document.addEventListener('click', () => { if (menu) menu.style.display = 'none'; });
+
+  function bindStrip() {
+    const strip = document.getElementById('tabs-container');
+    if (!strip || strip._extraAttached) return false;
+    strip._extraAttached = true;
+    strip.addEventListener('contextmenu', (e) => {
+      const tabEl = e.target.closest('.tab');
+      if (!tabEl) return;
+      e.preventDefault();
+      buildMenu(e.clientX, e.clientY, parseInt(tabEl.dataset.tabId));
+    });
+    // 中键点击标签直接关闭
+    strip.addEventListener('mousedown', (e) => {
+      if (e.button !== 1) return;
+      const tabEl = e.target.closest('.tab');
+      if (!tabEl) return;
+      e.preventDefault();
+      tabManager.closeTab(parseInt(tabEl.dataset.tabId));
+    });
+    return true;
+  }
+
+  // 地址栏 Ctrl+Enter：裸域名自动补 .com，含空格走搜索
+  function bindOmnibox() {
+    const input = document.getElementById('url-input');
+    if (!input || input._comAttached) return;
+    input._comAttached = true;
+    input.addEventListener('keydown', (e) => {
+      if (e.ctrlKey && e.key === 'Enter') {
+        e.preventDefault();
+        let v = input.value.trim();
+        if (!v) return;
+        if (v.includes(' ')) {
+          input.value = 'https://www.bing.com/search?q=' + encodeURIComponent(v);
+        } else if (!/^[a-z]+:/i.test(v) && !v.includes('.') && !v.startsWith('//')) {
+          input.value = 'https://' + v + '.com';
+        }
+        tabManager.navigateFromAddressBar();
+      }
+    });
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.shiftKey && (e.key === 'K' || e.key === 'k')) {
+      e.preventDefault();
+      const t = tabManager.tabs.find(t => t.id === tabManager.currentTabId);
+      if (t && t.url) tabManager.createNewTab(t.url);
+    }
+  });
+
+  function init() { bindStrip(); bindOmnibox(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+  // 标签容器可能延迟渲染，再兜底一次
+  setTimeout(init, 500);
+})();
