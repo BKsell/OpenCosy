@@ -843,10 +843,15 @@ function loadTabContent(tab) {
       sendToRenderer('tab-loading', { id: tab.id, loading: false });
     });
 
-    // 音频播放状态变化：把是否正在发声 / 是否静音广播给渲染进程，
-    // 用于在标签标题旁显示喇叭图标与静音切换。
-    tab.view.webContents.on('audio-state-changed', (event, audible) => {
-      tab.audible = !!audible;
+    // 音频播放状态变化：Electron 此事件不带状态参数，需主动查询
+    // isCurrentlyAudible / isAudioMuted，再广播给渲染进程显示喇叭图标。
+    tab.view.webContents.on('audio-state-changed', () => {
+      try {
+        tab.audible = !!tab.view.webContents.isCurrentlyAudible();
+        tab.muted = !!tab.view.webContents.isAudioMuted();
+      } catch {
+        return;
+      }
       sendToRenderer('tab-audio-changed', { id: tab.id, audible: tab.audible, muted: tab.muted });
     });
 
@@ -1341,6 +1346,7 @@ ipcMain.handle('set-tab-muted', (event, payload = {}) => {
   if (!tab || !tab.view || !tab.view.webContents) return { success: false };
   tab.muted = !!muted;
   tab.view.webContents.setAudioMuted(tab.muted);
+  try { tab.audible = !!tab.view.webContents.isCurrentlyAudible(); } catch {}
   sendToRenderer('tab-audio-changed', { id: tab.id, audible: tab.audible, muted: tab.muted });
   return { success: true, muted: tab.muted };
 });
