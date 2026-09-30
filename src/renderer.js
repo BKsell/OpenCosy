@@ -44,6 +44,57 @@ const SEARCH_BANGS = {
   map: ['地图', 'https://www.bing.com/maps?q='],
 };
 
+// ===== IDN 同形异义字（仿冒域名）警示 =====
+// 钓鱼者常用西里尔/希腊字母伪装拉丁域名（如 аmаzоn）。这里只做启发式提示，
+// 不阻断：含非 ASCII 主机名且标签内混用多套文字（scripts）时要求用户确认。
+const SCRIPT_RANGES = [
+  [0x0041, 0x007A, 'Latin'],        // 基本拉丁 + 拉丁补充
+  [0x0400, 0x052F, 'Cyrillic'],
+  [0x0370, 0x03FF, 'Greek'],
+  [0x0590, 0x05FF, 'Hebrew'],
+  [0x0600, 0x06FF, 'Arabic'],
+  [0x4E00, 0x9FFF, 'CJK'],
+  [0x3040, 0x30FF, 'Kana'],
+  [0x0E00, 0x0E7F, 'Thai'],
+];
+
+function codeScript(code) {
+  for (const [lo, hi, name] of SCRIPT_RANGES) {
+    if (code >= lo && code <= hi) return name;
+  }
+  return null;
+}
+
+// 返回可疑标签数组；空数组表示看起来正常。
+function findSpoofLabels(hostname) {
+  const suspicious = [];
+  for (const label of hostname.split('.')) {
+    if (!label || /^xn--/.test(label)) continue; // punycode 已由浏览器处理
+    const scripts = new Set();
+    let nonAscii = 0;
+    for (const ch of label) {
+      const code = ch.codePointAt(0);
+      if (code > 0x7F) nonAscii++;
+      const s = codeScript(code);
+      if (s) scripts.add(s);
+    }
+    // 同时出现拉丁与其他文字（且存在非 ASCII），是典型同形字混用特征。
+    if (nonAscii > 0 && scripts.has('Latin') && scripts.size > 1) suspicious.push(label);
+  }
+  return suspicious;
+}
+
+function isLikelySpoofUrl(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    const bad = findSpoofLabels(u.hostname);
+    return bad.length ? { hostname: u.hostname, labels: bad } : null;
+  } catch {
+    return null;
+  }
+}
+
 // 解析 bang，返回 null 表示不是 bang 查询；返回 { url } 表示已拼好目标地址。
 function resolveSearchBang(input) {
   if (!input || input.charCodeAt(0) !== 0x21 /* ! */) return null;
@@ -655,6 +706,15 @@ class TabManager {
     if (!this.currentTabId) return;
     if (!isSafeUrl(url)) url = 'cosy://newtab';
     const formattedUrl = this.formatUrl(url);
+    const spoof = isLikelySpoofUrl(formattedUrl);
+    if (spoof) {
+      const ok = window.confirm(
+        '安全提示：该网址的域名 "' + spoof.hostname + '" 混用了不同文字的字符，\n'
+        + '可能是用相似字母伪装的仿冒（钓鱼）网站。\n\n'
+        + '仍要继续访问吗？'
+      );
+      if (!ok) return;
+    }
     const tabIndex = this.tabs.findIndex(t => t.id === this.currentTabId);
     if (tabIndex !== -1) {
       this.tabs[tabIndex].url = formattedUrl;
