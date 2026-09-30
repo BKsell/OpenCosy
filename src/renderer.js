@@ -1876,3 +1876,137 @@ document.addEventListener('keydown', (e) => {
   });
 })();
 
+// ===== 底部下载栏（download shelf）=====
+// Chrome/Edge 风格：下载开始时在窗口底部弹出紧凑卡片，显示文件名/进度/速度，
+// 完成后可直接打开文件或所在目录，不必跳转完整下载页。数据全部来自主进程快照。
+(function setupDownloadShelf() {
+  const api = window.electronAPI;
+  if (!api) return;
+
+  let bar = null;
+  let listEl = null;
+  let state = new Map();
+
+  function bytes(n) {
+    n = Number(n) || 0;
+    if (n < 1024) return n + ' B';
+    const u = ['KB', 'MB', 'GB'];
+    let v = n / 1024, i = 0;
+    while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+    return v.toFixed(v >= 100 ? 0 : 1) + ' ' + u[i];
+  }
+
+  function ensureBar() {
+    if (bar) return;
+    bar = document.createElement('div');
+    bar.id = 'cosy-download-shelf';
+    bar.style.cssText = [
+      'position:fixed', 'left:8px', 'right:8px', 'bottom:8px', 'z-index:10000',
+      'display:flex', 'flex-direction:column', 'gap:6px', 'pointer-events:none',
+      'font:13px/1.4 system-ui,sans-serif',
+    ].join(';');
+    const head = document.createElement('div');
+    head.style.cssText = 'pointer-events:auto;display:flex;align-items:center;justify-content:space-between;padding:4px 12px;background:rgba(255,255,255,.96);border:1px solid #ddd;border-radius:8px 8px 0 0;box-shadow:0 -2px 12px rgba(0,0,0,.08);';
+    const title = document.createElement('span');
+    title.textContent = '下载';
+    title.style.cssText = 'font-weight:600;color:#333;';
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:flex;gap:10px;align-items:center;';
+    const showAll = document.createElement('button');
+    showAll.textContent = '全部显示';
+    showAll.style.cssText = 'border:none;background:none;color:#1a73e8;cursor:pointer;font-size:12px;';
+    showAll.addEventListener('click', () => api.send('shelf-show-all'));
+    const closeAll = document.createElement('button');
+    closeAll.textContent = '✕';
+    closeAll.title = '关闭下载栏';
+    closeAll.style.cssText = 'border:none;background:none;color:#666;cursor:pointer;font-size:13px;';
+    closeAll.addEventListener('click', () => { bar.style.display = 'none'; });
+    actions.appendChild(showAll);
+    actions.appendChild(closeAll);
+    head.appendChild(title);
+    head.appendChild(actions);
+    listEl = document.createElement('div');
+    listEl.style.cssText = 'display:flex;flex-direction:column;gap:6px;';
+    bar.appendChild(head);
+    bar.appendChild(listEl);
+    document.body.appendChild(bar);
+  }
+
+  function actionBtn(text, title, fn) {
+    const b = document.createElement('button');
+    b.textContent = text;
+    b.title = title || text;
+    b.style.cssText = 'border:none;background:none;color:#1a73e8;cursor:pointer;font-size:12px;padding:2px 4px;';
+    b.addEventListener('click', fn);
+    return b;
+  }
+
+  function paint(items) {
+    if (!Array.isArray(items) || !items.length) return;
+    ensureBar();
+    bar.style.display = 'flex';
+    listEl.innerHTML = '';
+    items.forEach(d => {
+      const row = document.createElement('div');
+      row.style.cssText = 'pointer-events:auto;display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(255,255,255,.97);border:1px solid #ddd;border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.1);';
+
+      const info = document.createElement('div');
+      info.style.cssText = 'flex:1;min-width:0;';
+      const name = document.createElement('div');
+      name.textContent = d.filename || '下载';
+      name.title = d.url || '';
+      name.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#222;';
+      const sub = document.createElement('div');
+      sub.style.cssText = 'font-size:11px;color:#777;margin-top:2px;';
+      info.appendChild(name);
+      info.appendChild(sub);
+
+      const ctl = document.createElement('div');
+      ctl.style.cssText = 'display:flex;align-items:center;gap:4px;flex-shrink:0;';
+
+      if (d.status === 'downloading' || d.status === 'pending') {
+        const pct = d.totalBytes > 0 ? Math.min(100, Number(d.progress) || 0) : 0;
+        sub.textContent = d.totalBytes > 0
+          ? `${bytes(d.receivedBytes)} / ${bytes(d.totalBytes)} · ${pct.toFixed(0)}% · ${d.speed || ''}`
+          : `${bytes(d.receivedBytes)} · ${d.speed || ''}`;
+        ctl.appendChild(actionBtn('暂停', '暂停下载', () => api.send('pause-download', d.id)));
+        ctl.appendChild(actionBtn('取消', '取消下载', () => api.send('cancel-download', d.id)));
+      } else if (d.status === 'paused') {
+        sub.textContent = `已暂停 · ${bytes(d.receivedBytes)}`;
+        ctl.appendChild(actionBtn('继续', '继续下载', () => api.send('resume-download', d.id)));
+        ctl.appendChild(actionBtn('取消', '取消下载', () => api.send('cancel-download', d.id)));
+      } else if (d.status === 'complete') {
+        sub.textContent = `已完成 · ${bytes(d.totalBytes || d.receivedBytes)}`;
+        ctl.appendChild(actionBtn('打开', '打开文件', () => d.savePath && api.send('open-file', d.savePath)));
+        ctl.appendChild(actionBtn('文件夹', '在文件夹中显示', () => d.savePath && api.send('open-folder', d.savePath)));
+      } else {
+        sub.textContent = '下载失败';
+        sub.style.color = '#d93025';
+        ctl.appendChild(actionBtn('重试', '重新下载', () => d.url && api.send('retry-download', { url: d.url })));
+      }
+      ctl.appendChild(actionBtn('✕', '移除此项', () => api.send('remove-download', d.id)));
+
+      row.appendChild(info);
+      row.appendChild(ctl);
+      listEl.appendChild(row);
+    });
+  }
+
+  api.on('download-shelf', (items) => {
+    state = new Map((items || []).map(d => [d.id, d]));
+    paint(items);
+  });
+
+  // 主界面加载后拉一次当前 shelf，覆盖“启动时已有下载”的场景。
+  function init() {
+    api.invoke('get-download-shelf').then(items => {
+      if (Array.isArray(items) && items.length) paint(items);
+    }).catch(() => {});
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => setTimeout(init, 300));
+  } else {
+    setTimeout(init, 300);
+  }
+})();
+
