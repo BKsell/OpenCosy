@@ -137,6 +137,7 @@ class TabManager {
     window.electronAPI.on('tab-loading', (tabData) => this.setTabLoading(tabData.id, tabData.loading));
     window.electronAPI.on('tab-switched', (tabData) => this.switchToTabUI(tabData.id));
     window.electronAPI.on('tab-closed', (tabIndex) => this.removeTabFromUI(tabIndex));
+    window.electronAPI.on('tab-audio-changed', (data) => this.updateTabAudio(data));
     window.electronAPI.on('html-fullscreen-changed', (data) => this.toggleFullscreenUI(data.isFullscreen));
     window.electronAPI.on('update-theme-color', (color) => this.applyThemeColor(color));
     window.electronAPI.on('settings-loaded', (settings) => { if (settings.themeColor) this.applyThemeColor(settings.themeColor); });
@@ -418,6 +419,19 @@ class TabManager {
     titleSpan.className = 'tab-title';
     titleSpan.textContent = tabData.title || '';
 
+    // 音频指示：发声时显示喇叭，静音时显示带斜杠的喇叭；点击切换静音。
+    const audioBtn = document.createElement('button');
+    audioBtn.className = 'tab-audio-indicator';
+    audioBtn.title = '点击静音标签页';
+    audioBtn.textContent = '🔊';
+    audioBtn.style.cssText = 'display:none;border:none;background:none;cursor:pointer;padding:0 2px;font-size:12px;line-height:1;flex-shrink:0;';
+    audioBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const tab = this.tabs.find(t => t.id === tabData.id);
+      const nextMuted = !(tab && tab.muted);
+      window.electronAPI.invoke('set-tab-muted', { tabId: tabData.id, muted: nextMuted });
+    });
+
     const closeBtn = document.createElement('button');
     closeBtn.className = 'tab-close';
     closeBtn.textContent = '×';
@@ -427,6 +441,7 @@ class TabManager {
     });
 
     tabElement.appendChild(titleSpan);
+    tabElement.appendChild(audioBtn);
     tabElement.appendChild(closeBtn);
 
     tabElement.addEventListener('click', (e) => {
@@ -453,6 +468,25 @@ class TabManager {
     this.updateTabSelection();
     this.updateAddressBar();
     this.updateTitlebarTitle();
+  }
+
+  // 主进程音频状态回调：更新数据与标签上的喇叭图标。
+  updateTabAudio({ id, audible, muted }) {
+    const tab = this.tabs.find(t => t.id === id);
+    if (tab) { tab.audible = audible; tab.muted = muted; }
+    const el = document.querySelector(`[data-tab-id="${id}"] .tab-audio-indicator`);
+    if (!el) return;
+    if (muted) {
+      el.style.display = '';
+      el.textContent = '🔇';
+      el.title = '取消静音标签页';
+    } else if (audible) {
+      el.style.display = '';
+      el.textContent = '🔊';
+      el.title = '静音标签页';
+    } else {
+      el.style.display = 'none';
+    }
   }
 
   updateTabSelection() {
@@ -1110,6 +1144,12 @@ document.addEventListener('keydown', (e) => {
           if (t) navigator.clipboard.writeText(t.url || '');
         } },
       { label: '重新打开关闭的标签页', fn: reopenClosedTab },
+      { divider: true },
+      { label: tabManager.tabs.find(t => t.id === tabId && t.muted) ? '取消静音标签页' : '静音标签页',
+        fn: () => {
+          const t = tabManager.tabs.find(t => t.id === tabId);
+          window.electronAPI.invoke('set-tab-muted', { tabId, muted: !(t && t.muted) });
+        } },
       { divider: true },
       { label: '关闭标签页', fn: () => tabManager.closeTab(tabId) },
       { label: '关闭其他标签页', fn: () => tabManager.tabs.filter(t => t.id !== tabId).forEach(t => tabManager.closeTab(t.id)) },
