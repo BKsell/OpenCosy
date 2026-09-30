@@ -29,6 +29,18 @@
         .quick-link .del { top: -6px; right: -6px; }
         .quick-link .edit { top: -6px; right: 16px; font-size: 11px; }
         .quick-link.custom:hover .del, .quick-link.custom:hover .edit { display: block; }
+        .suggest-wrap { margin: 26px auto 0; max-width: 600px; }
+        .suggest-title { font-size: 12px; opacity: 0.75; margin-bottom: 10px; text-shadow: 0 1px 3px rgba(0,0,0,0.6); letter-spacing: 1px; }
+        .suggest-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+        .suggest-row:empty { display: none; }
+        .suggest-chip { display: inline-flex; align-items: center; gap: 8px; padding: 5px 8px 5px 6px; border-radius: 999px; background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.18); backdrop-filter: blur(8px); font-size: 12px; cursor: default; transition: background 0.15s; }
+        .suggest-chip:hover { background: rgba(255,255,255,0.22); }
+        .suggest-chip .sc-letter { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; flex-shrink: 0; }
+        .suggest-chip .sc-name { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-shadow: 0 1px 3px rgba(0,0,0,0.6); }
+        .suggest-chip .sc-add { width: 18px; height: 18px; border-radius: 50%; background: rgba(255,255,255,0.25); color: #fff; font-size: 13px; line-height: 16px; text-align: center; cursor: pointer; flex-shrink: 0; }
+        .suggest-chip .sc-add:hover { background: #4ade80; color: #10331c; }
+        .suggest-chip .sc-skip { width: 18px; height: 18px; border-radius: 50%; background: transparent; color: rgba(255,255,255,0.6); font-size: 13px; line-height: 16px; text-align: center; cursor: pointer; flex-shrink: 0; }
+        .suggest-chip .sc-skip:hover { background: rgba(255,255,255,0.25); color: #fff; }
         .footer { position: absolute; bottom: 20px; font-size: 12px; opacity: 0.7; z-index: 2; text-shadow: 0 1px 3px rgba(0,0,0,0.5); display: flex; gap: 14px; align-items: center; }
         .net-pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-size: 11px; background: rgba(255,255,255,0.15); backdrop-filter: blur(6px); }
         .net-dot { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 6px #4ade80; }
@@ -71,6 +83,10 @@
             <span class="search-hint"><kbd>/</kbd> 聚焦搜索</span>
         </div>
         <div class="quick-links" id="quick-links"></div>
+        <div class="suggest-wrap" id="suggest-wrap" style="display:none;">
+            <div class="suggest-title">根据浏览历史推荐 · 点 + 固定为磁贴</div>
+            <div class="suggest-row" id="suggest-row"></div>
+        </div>
     </div>
     <div class="footer" id="footer">
         <span class="net-pill" id="net-pill"><span class="net-dot"></span><span id="net-text">已联网</span></span>
@@ -93,6 +109,10 @@
             <label class="switch"><input type="checkbox" id="toggle-sort"><span class="slider"></span></label>
         </div>
         <div class="settings-row">
+            <span>显示历史推荐磁贴</span>
+            <label class="switch"><input type="checkbox" id="toggle-suggest"><span class="slider"></span></label>
+        </div>
+        <div class="settings-row">
             <span>恢复默认磁贴</span>
             <button id="btn-reset">重置</button>
         </div>
@@ -101,7 +121,9 @@
         const ALLOWED_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'cosy:']);
         const CUSTOM_KEY = 'cosyQuickLinks';
         const VISIT_KEY = 'cosyQuickLinkVisits';
+        const DISMISS_KEY = 'cosySuggestDismiss';
         const MAX_CUSTOM_LINKS = 24;
+        const MAX_SUGGESTIONS = 8;
 
         const DEFAULT_LINKS = [
             { name: '热土工作室', url: 'https://rtstu.com',                  color: '#E65100', letter: '热' },
@@ -189,6 +211,7 @@
                     const rest = loadCustomLinks().filter(l => l.url !== link.url);
                     saveCustomLinks(rest);
                     renderQuickLinks();
+                    renderSuggestions();
                 });
                 el.querySelector('.edit').addEventListener('click', e => {
                     e.stopPropagation();
@@ -238,6 +261,110 @@
             renderQuickLinks();
         }
 
+        // ---- 历史推荐 ----
+        let cachedHistory = [];
+
+        async function fetchHistory() {
+            try {
+                if (!window.electronAPI || !window.electronAPI.invoke) return;
+                const res = await window.electronAPI.invoke('get-history');
+                if (res && res.success && Array.isArray(res.history)) cachedHistory = res.history;
+            } catch { cachedHistory = []; }
+        }
+
+        function loadDismissed() {
+            try {
+                const raw = JSON.parse(localStorage.getItem(DISMISS_KEY) || '[]');
+                return Array.isArray(raw) ? new Set(raw) : new Set();
+            } catch { return new Set(); }
+        }
+
+        function markDismissed(url) {
+            const set = loadDismissed();
+            set.add(url);
+            try { localStorage.setItem(DISMISS_KEY, JSON.stringify([...set].slice(-200))); } catch {}
+        }
+
+        function hostOf(raw) {
+            try { return new URL(raw).hostname.replace(/^www\./, ''); }
+            catch { return raw; }
+        }
+
+        function addSuggestion(url, name) {
+            if (!/^https?:/i.test(url) || !isSafeUrl(url)) return;
+            const links = loadCustomLinks();
+            if (links.length >= MAX_CUSTOM_LINKS || links.some(l => l.url === url)) return;
+            links.push({ name, url, color: guessColor(url), letter: name.charAt(0).toUpperCase() });
+            saveCustomLinks(links);
+        }
+
+        function renderSuggestions() {
+            const wrap = document.getElementById('suggest-wrap');
+            const row = document.getElementById('suggest-row');
+            if (!wrap || !row) return;
+            row.innerHTML = '';
+            const s = loadNTSettings();
+            if (s.suggestFromHistory === false) { wrap.style.display = 'none'; return; }
+
+            const custom = loadCustomLinks();
+            const defaultHosts = new Set(DEFAULT_LINKS.map(l => hostOf(l.url)));
+            const have = new Set(custom.map(l => l.url));
+            const dismissed = loadDismissed();
+            const byHost = new Map();
+
+            for (const h of cachedHistory) {
+                if (!h || !h.url || !/^https?:/i.test(h.url)) continue;
+                const host = hostOf(h.url);
+                if (!host || defaultHosts.has(host) || dismissed.has(h.url)) continue;
+                if (!byHost.has(host)) byHost.set(host, { url: h.url, name: h.title || host, ts: h.timestamp || 0 });
+            }
+            // 历史已按时间倒序，这里再按 ts 兜底，取前 N 个不同主机
+            const picks = [...byHost.values()]
+                .sort((a, b) => b.ts - a.ts)
+                .filter(p => !have.has(p.url))
+                .slice(0, MAX_SUGGESTIONS);
+
+            if (picks.length === 0) { wrap.style.display = 'none'; return; }
+            wrap.style.display = 'block';
+            for (const p of picks) {
+                const name = String(p.name).replace(/\s+[-–|].*$/, '').trim().slice(0, 40) || hostOf(p.url);
+                const chip = document.createElement('span');
+                chip.className = 'suggest-chip';
+                chip.title = p.url;
+                const letter = document.createElement('span');
+                letter.className = 'sc-letter';
+                letter.style.background = guessColor(p.url);
+                letter.textContent = escapeHtml(name.charAt(0).toUpperCase());
+                const nm = document.createElement('span');
+                nm.className = 'sc-name';
+                nm.textContent = name;
+                const add = document.createElement('span');
+                add.className = 'sc-add';
+                add.textContent = '+';
+                add.title = '添加为磁贴';
+                add.addEventListener('click', e => {
+                    e.stopPropagation();
+                    addSuggestion(p.url, name);
+                    renderQuickLinks();
+                    renderSuggestions();
+                });
+                const skip = document.createElement('span');
+                skip.className = 'sc-skip';
+                skip.textContent = '×';
+                skip.title = '不再推荐';
+                skip.addEventListener('click', e => {
+                    e.stopPropagation();
+                    markDismissed(p.url);
+                    renderSuggestions();
+                });
+                chip.appendChild(letter);
+                chip.appendChild(nm);
+                chip.appendChild(add);
+                chip.appendChild(skip);
+                row.appendChild(chip);
+            }
+        }
+
         function renderQuickLinks() {
             const container = document.getElementById('quick-links');
             if (!container) return;
@@ -260,9 +387,9 @@
         // ---- 新标签页设置面板 ----
         const NTS_KEY = 'cosyNewtabSettings';
         function loadNTSettings() {
-            try { return Object.assign({ sortByVisits: true, searchEngine: 'bing' },
+            try { return Object.assign({ sortByVisits: true, searchEngine: 'bing', suggestFromHistory: true },
                 JSON.parse(localStorage.getItem(NTS_KEY) || '{}')); }
-            catch { return { sortByVisits: true, searchEngine: 'bing' }; }
+            catch { return { sortByVisits: true, searchEngine: 'bing', suggestFromHistory: true }; }
         }
         function saveNTSettings(patch) {
             const s = Object.assign(loadNTSettings(), patch);
@@ -279,11 +406,13 @@
             const panel = document.getElementById('settings-panel');
             const sel = document.getElementById('sel-engine');
             const tgl = document.getElementById('toggle-sort');
+            const tglSuggest = document.getElementById('toggle-suggest');
             const rst = document.getElementById('btn-reset');
             if (!gear || !panel) return;
             const s = loadNTSettings();
             sel.value = s.searchEngine;
             tgl.checked = s.sortByVisits !== false;
+            tglSuggest.checked = s.suggestFromHistory !== false;
             gear.addEventListener('click', e => {
                 e.stopPropagation();
                 panel.classList.toggle('open');
@@ -298,11 +427,17 @@
                 saveNTSettings({ sortByVisits: tgl.checked });
                 renderQuickLinks();
             });
+            tglSuggest.addEventListener('change', () => {
+                saveNTSettings({ suggestFromHistory: tglSuggest.checked });
+                renderSuggestions();
+            });
             rst.addEventListener('click', () => {
                 if (!confirm('清除所有自定义磁贴和访问记录？')) return;
                 localStorage.removeItem(CUSTOM_KEY);
                 localStorage.removeItem(VISIT_KEY);
+                localStorage.removeItem(DISMISS_KEY);
                 renderQuickLinks();
+                renderSuggestions();
             });
         }
 
@@ -357,11 +492,13 @@
             }
         }
 
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', async function() {
             renderQuickLinks();
             setDefaultBackground();
             updateNetworkPill();
             setupSettingsPanel();
+            await fetchHistory();
+            renderSuggestions();
             window.addEventListener('online', updateNetworkPill);
             window.addEventListener('offline', updateNetworkPill);
             window.addEventListener('keydown', e => {
