@@ -1462,10 +1462,7 @@ document.addEventListener('keydown', (e) => {
     // 页面缩放：Ctrl + =/+ 放大，- 缩小，0 复位（对齐 Chrome，按站点记忆）
     if (e.ctrlKey && !e.altKey && !e.shiftKey) {
       const k = e.key;
-      if (k === 'p' || k === 'P') {
-        e.preventDefault();
-        window.electronAPI.invoke('print-current-tab');
-      } else if (k === '=' || k === '+' || k === 'Add') {
+      if (k === '=' || k === '+' || k === 'Add') {
         e.preventDefault();
         changeZoom('in');
       } else if (k === '-' || k === '_' || k === 'Subtract') {
