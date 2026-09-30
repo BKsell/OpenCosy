@@ -548,6 +548,12 @@ class TabManager {
     const tabElement = document.createElement('div');
     tabElement.className = 'tab';
     tabElement.setAttribute('data-tab-id', tabData.id);
+    // 从 get-all-tabs 重建标签栏时，保留休眠标签的视觉态（刷新后不丢）。
+    if (tabData.discarded) {
+      tabElement.classList.add('discarded');
+      tabElement.style.opacity = '0.55';
+      tabElement.title = '此标签已休眠以释放内存，点击即可重新加载';
+    }
 
     tabElement.appendChild(this.createFaviconElement(tabData));
 
@@ -1431,11 +1437,10 @@ document.addEventListener('keydown', (e) => {
       { label: '休眠此标签页（释放内存）',
         fn: () => window.electronAPI.invoke('discard-tab', { tabId }) },
       { label: '休眠所有后台标签页',
-        fn: () => {
-          const cur = tabManager.currentTabId;
-          tabManager.tabs.filter(t => t.id !== cur).forEach(t =>
-            window.electronAPI.invoke('discard-tab', { tabId: t.id }));
-        } },
+        fn: () => window.electronAPI.invoke('discard-background-tabs').then(r => {
+          const n = (r && r.count) || 0;
+          tabManager.showToast(n > 0 ? `已休眠 ${n} 个后台标签页` : '没有需要休眠的后台标签页');
+        }) },
       { divider: true },
       { label: tabManager.tabs.find(t => t.id === tabId && t.muted) ? '取消静音标签页' : '静音标签页',
         fn: () => {
@@ -1602,6 +1607,7 @@ document.addEventListener('keydown', (e) => {
       ['Ctrl + 9', '切换到最后一个标签页'],
       ['Ctrl + Shift + T', '恢复最近关闭的标签页'],
       ['Ctrl + Shift + K', '复制当前标签页'],
+      ['Ctrl + Shift + S', '立即休眠所有后台标签页（释放内存）'],
       ['中键点击标签', '关闭该标签页'],
     ]},
     { title: '导航', items: [
