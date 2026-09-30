@@ -1325,7 +1325,34 @@ document.addEventListener('keydown', (e) => {
         tabManager.switchToTab(target.id);
       }
     }
+    // 页面缩放：Ctrl + =/+ 放大，- 缩小，0 复位（对齐 Chrome，按站点记忆）
+    if (e.ctrlKey && !e.altKey && !e.shiftKey) {
+      const k = e.key;
+      if (k === '=' || k === '+' || k === 'Add') {
+        e.preventDefault();
+        changeZoom('in');
+      } else if (k === '-' || k === '_' || k === 'Subtract') {
+        e.preventDefault();
+        changeZoom('out');
+      } else if (k === '0') {
+        e.preventDefault();
+        resetZoom();
+      }
+    }
   });
+
+  async function changeZoom(delta) {
+    const r = await window.electronAPI.invoke('set-zoom', { delta });
+    if (r && r.success && typeof tabManager.showToast === 'function') {
+      tabManager.showToast('缩放 ' + r.percent + '%');
+    }
+  }
+  async function resetZoom() {
+    const r = await window.electronAPI.invoke('set-zoom', { factor: 1 });
+    if (r && r.success && typeof tabManager.showToast === 'function') {
+      tabManager.showToast('缩放 100%');
+    }
+  }
 })();
 
 // ===== 快捷键速查浮层（F1 或 Ctrl+/）=====
@@ -1350,6 +1377,8 @@ document.addEventListener('keydown', (e) => {
       ['Ctrl + H', '历史记录'],
       ['Ctrl + D', '添加书签'],
       ['Ctrl + Shift + B', '常驻书签栏开关'],
+      ['Ctrl + = / -', '放大 / 缩小页面（按站点记忆）'],
+      ['Ctrl + 0', '页面缩放复位 100%'],
     ]},
     { title: '阅读与查找', items: [
       ['Ctrl + F', '页内查找'],
