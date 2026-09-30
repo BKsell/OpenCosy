@@ -880,8 +880,9 @@ function loadTabContent(tab) {
       sendToRenderer('tab-updated', { id: tab.id, url: navigationUrl });
     });
 
-    tab.view.webContents.on('did-navigate', () => pushNavState(tab));
-    tab.view.webContents.on('did-navigate-in-page', () => pushNavState(tab));
+    tab.view.webContents.on('did-navigate', () => { pushNavState(tab); applySavedZoom(tab); });
+    tab.view.webContents.on('did-navigate-in-page', () => { pushNavState(tab); applySavedZoom(tab); });
+    tab.view.webContents.on('dom-ready', () => applySavedZoom(tab));
 
     tab.view.webContents.on('did-redirect-navigation', (event, url) => {
       if (!isSafeUrl(url)) return;
@@ -1399,6 +1400,28 @@ ipcMain.handle('switch-tab', (event, tabIndex) => {
 
 // set-tab-muted 静音 / 取消静音指定标签（默认当前标签）。
 // tabId 由渲染进程传入，统一转字符串比较，避免类型不一致误判。
+// 每个源（origin）记住一个缩放系数，导航 / 刷新后自动恢复，行为对齐 Chrome。
+const zoomFactorsByOrigin = new Map();
+const MIN_ZOOM_FACTOR = 0.25;
+const MAX_ZOOM_FACTOR = 5;
+
+function clampZoomFactor(f) {
+  if (!Number.isFinite(f)) return 1;
+  return Math.min(MAX_ZOOM_FACTOR, Math.max(MIN_ZOOM_FACTOR, f));
+}
+
+function originOfUrl(u) {
+  try { return new URL(u).origin; } catch { return ''; }
+}
+
+function applySavedZoom(tab) {
+  if (!tab || !tab.view || !tab.view.webContents) return;
+  const origin = originOfUrl(tab.url);
+  if (origin && zoomFactorsByOrigin.has(origin)) {
+    tab.view.webContents.setZoomFactor(zoomFactorsByOrigin.get(origin));
+  }
+}
+
 ipcMain.handle('set-tab-muted', (event, payload = {}) => {
   if (!isMainSender(event)) return { success: false };
   const { tabId, muted } = payload || {};
@@ -1411,6 +1434,32 @@ ipcMain.handle('set-tab-muted', (event, payload = {}) => {
   try { tab.audible = !!tab.view.webContents.isCurrentlyAudible(); } catch {}
   sendToRenderer('tab-audio-changed', { id: tab.id, audible: tab.audible, muted: tab.muted });
   return { success: true, muted: tab.muted };
+});
+
+// set-zoom 调整当前标签缩放。delta 为档位变化（Chrome 每档约 1.1/0.9 倍），
+// factor 直接指定（Ctrl+0 复位为 1）。按 origin 记忆，导航后自动恢复。
+ipcMain.handle('set-zoom', (event, payload = {}) => {
+  if (!isMainSender(event)) return { success: false };
+  const tab = tabs[currentTabIndex];
+  if (!tab || !tab.view || !tab.view.webContents) return { success: false };
+  const wc = tab.view.webContents;
+  const origin = originOfUrl(tab.url);
+  let factor = 1;
+  try { factor = wc.getZoomFactor(); } catch { factor = (origin && zoomFactorsByOrigin.get(origin)) || 1; }
+  if (!Number.isFinite(factor) || factor <= 0) factor = 1;
+
+  const { delta, factor: explicit } = payload || {};
+  if (typeof explicit === 'number' && Number.isFinite(explicit)) {
+    factor = explicit;
+  } else if (delta === 'in') {
+    factor *= 1.1;
+  } else if (delta === 'out') {
+    factor /= 1.1;
+  }
+  factor = clampZoomFactor(Math.round(factor * 1000) / 1000);
+  wc.setZoomFactor(factor);
+  if (origin) zoomFactorsByOrigin.set(origin, factor);
+  return { success: true, factor, percent: Math.round(factor * 100) };
 });
 
 ipcMain.on('navigate-to-url', (event, url) => {
