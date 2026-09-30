@@ -1715,9 +1715,23 @@ document.addEventListener('keydown', (e) => {
     { label: '打开下载列表', kw: 'download xiazai liebiao', run: () => tabManager.createNewTab('cosy://downloadlist') },
     { label: '打开设置', kw: 'settings shezhi', run: () => tabManager.createNewTab('cosy://setting') },
     { label: '清除浏览数据', kw: 'clear data qingchu shuju', run: () => tabManager.showClearDataDialog() },
+    { label: '后退', kw: 'back houtui', run: () => tabManager.goBack() },
+    { label: '前进', kw: 'forward qianjin', run: () => tabManager.goForward() },
+    { label: '显示 / 隐藏书签栏', kw: 'bookmarks shuqianlan', run: () => tabManager.showBookmarksBar() },
+    { label: '复制当前标签页', kw: 'duplicate fuzhi biaoqian', run: () => {
+      const idx = tabManager.tabs.findIndex(t => t.id === tabManager.currentTabId);
+      if (idx >= 0) window.electronAPI.invoke('duplicate-tab', idx);
+    } },
+    { label: '静音 / 取消静音当前标签页', kw: 'mute jingyin', run: () => {
+      const cur = tabManager.tabs.find(t => t.id === tabManager.currentTabId);
+      if (cur) window.electronAPI.invoke('set-tab-muted', { tabId: cur.id, muted: !cur.muted });
+    } },
+    { label: '放大页面', kw: 'zoom in fangda', run: () => window.electronAPI.invoke('set-zoom', { delta: 'in' }) },
+    { label: '缩小页面', kw: 'zoom out suoxiao', run: () => window.electronAPI.invoke('set-zoom', { delta: 'out' }) },
+    { label: '重置页面缩放', kw: 'zoom reset chongzhi suofang', run: () => window.electronAPI.invoke('set-zoom', { factor: 1 }) },
   ];
 
-  let overlay, box, input, listEl, matches, active;
+  let overlay, box, input, listEl, footer, matches, active;
 
   function build() {
     overlay = document.createElement('div');
@@ -1730,8 +1744,12 @@ document.addEventListener('keydown', (e) => {
     input.style.cssText = 'display:block;width:100%;box-sizing:border-box;border:none;outline:none;padding:14px 16px;font-size:14px;background:transparent;color:inherit;';
     listEl = document.createElement('div');
     listEl.style.cssText = 'max-height:52vh;overflow:auto;border-top:1px solid rgba(0,0,0,.08);';
+    footer = document.createElement('div');
+    footer.textContent = '↑↓ 选择 · Enter 执行 · Esc 关闭';
+    footer.style.cssText = 'padding:7px 16px;font-size:11px;opacity:.55;border-top:1px solid rgba(0,0,0,.08);';
     box.appendChild(input);
     box.appendChild(listEl);
+    box.appendChild(footer);
     overlay.appendChild(box);
     overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) hide(); });
     document.body.appendChild(overlay);
@@ -1781,6 +1799,8 @@ document.addEventListener('keydown', (e) => {
     [...listEl.children].forEach((r, i) => {
       if (r.style) r.style.background = i === active ? 'rgba(0,120,212,.14)' : '';
     });
+    const activeRow = listEl.children[active];
+    if (activeRow && activeRow.scrollIntoView) activeRow.scrollIntoView({ block: 'nearest' });
   }
 
   function pick(idx) {
