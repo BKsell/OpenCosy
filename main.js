@@ -68,6 +68,8 @@ class Tab {
     this.bookmarked = false;
     this.canGoBack = false;
     this.canGoForward = false;
+    this.audible = false;
+    this.muted = false;
   }
 }
 
@@ -841,6 +843,13 @@ function loadTabContent(tab) {
       sendToRenderer('tab-loading', { id: tab.id, loading: false });
     });
 
+    // 音频播放状态变化：把是否正在发声 / 是否静音广播给渲染进程，
+    // 用于在标签标题旁显示喇叭图标与静音切换。
+    tab.view.webContents.on('audio-state-changed', (event, audible) => {
+      tab.audible = !!audible;
+      sendToRenderer('tab-audio-changed', { id: tab.id, audible: tab.audible, muted: tab.muted });
+    });
+
     tab.view.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
       if (isMainFrame) {
         const httpStatus = getHttpStatusCode(errorCode);
@@ -1319,6 +1328,21 @@ ipcMain.handle('switch-tab', (event, tabIndex) => {
   if (!isMainSender(event)) return { success: false };
   switchToTab(tabIndex);
   return { success: true };
+});
+
+// set-tab-muted 静音 / 取消静音指定标签（默认当前标签）。
+// tabId 由渲染进程传入，统一转字符串比较，避免类型不一致误判。
+ipcMain.handle('set-tab-muted', (event, payload = {}) => {
+  if (!isMainSender(event)) return { success: false };
+  const { tabId, muted } = payload || {};
+  const tab = (tabId === undefined || tabId === null)
+    ? tabs[currentTabIndex]
+    : tabs.find(t => String(t.id) === String(tabId));
+  if (!tab || !tab.view || !tab.view.webContents) return { success: false };
+  tab.muted = !!muted;
+  tab.view.webContents.setAudioMuted(tab.muted);
+  sendToRenderer('tab-audio-changed', { id: tab.id, audible: tab.audible, muted: tab.muted });
+  return { success: true, muted: tab.muted };
 });
 
 ipcMain.on('navigate-to-url', (event, url) => {
