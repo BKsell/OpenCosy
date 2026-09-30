@@ -1428,6 +1428,15 @@ document.addEventListener('keydown', (e) => {
         } },
       { label: '重新打开关闭的标签页', fn: reopenClosedTab },
       { divider: true },
+      { label: '休眠此标签页（释放内存）',
+        fn: () => window.electronAPI.invoke('discard-tab', { tabId }) },
+      { label: '休眠所有后台标签页',
+        fn: () => {
+          const cur = tabManager.currentTabId;
+          tabManager.tabs.filter(t => t.id !== cur).forEach(t =>
+            window.electronAPI.invoke('discard-tab', { tabId: t.id }));
+        } },
+      { divider: true },
       { label: tabManager.tabs.find(t => t.id === tabId && t.muted) ? '取消静音标签页' : '静音标签页',
         fn: () => {
           const t = tabManager.tabs.find(t => t.id === tabId);
