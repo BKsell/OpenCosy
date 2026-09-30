@@ -1195,7 +1195,6 @@ function setupDownloadManager() {
 
     const totalBytes = item.getTotalBytes();
     let downloadInfo = downloads.find(d => d.url === url && d.item === null && d.isItemValid === false);
-    let isNewDownload = false;
     if (downloadInfo) {
       downloadInfo.item = item;
       downloadInfo.filename = safeFilename;
@@ -1203,24 +1202,18 @@ function setupDownloadManager() {
       downloadInfo.isItemValid = true;
       downloadInfo.status = 'downloading';
     } else {
-      event.preventDefault();
+      // 全新下载：不再 preventDefault + 新开下载页等用户确认，
+      // 直接按现代浏览器行为自动保存到下载目录，由底部 shelf 展示进度。
       downloadInfo = {
         id: Date.now().toString(), url, filename: safeFilename, totalBytes,
-        receivedBytes: 0, progress: 0, speed: '0 B/s', status: 'pending',
-        startTime: Date.now(), savePath: null, item: null,
-        lastUpdate: Date.now(), lastReceivedBytes: 0, isItemValid: false,
+        receivedBytes: 0, progress: 0, speed: '0 B/s', status: 'downloading',
+        startTime: Date.now(), savePath: null, item,
+        lastUpdate: Date.now(), lastReceivedBytes: 0, isItemValid: true,
         expectedHash: null
       };
       downloads.push(downloadInfo);
-      isNewDownload = true;
     }
     currentDownloadInfo = downloadInfo;
-    if (isNewDownload) {
-      // 不再强制新开下载页打断浏览：底部 shelf 提供“下载 / 另存为 / 取消”，
-      // 用户也可以在 shelf 上点“全部显示”进入完整下载页。
-      sendShelf();
-      return;
-    }
     if (downloadInfo.savePath) {
       item.setSavePath(downloadInfo.savePath);
     } else {
@@ -1228,6 +1221,7 @@ function setupDownloadManager() {
       item.setSavePath(defaultSavePath);
       downloadInfo.savePath = defaultSavePath;
     }
+    sendShelf();
     sendToRenderer('download-status-changed', { id: downloadInfo.id, status: 'downloading' });
     item.on('updated', (event, state) => {
       if (state === 'progressing') {
