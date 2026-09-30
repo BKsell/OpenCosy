@@ -249,6 +249,7 @@ class TabManager {
     window.electronAPI.on('tab-switched', (tabData) => this.switchToTabUI(tabData.id));
     window.electronAPI.on('tab-closed', (tabIndex) => this.removeTabFromUI(tabIndex));
     window.electronAPI.on('tab-audio-changed', (data) => this.updateTabAudio(data));
+    window.electronAPI.on('popup-blocked', () => this.showToast('已拦截一个弹出窗口（疑似弹窗轰炸）'));
     window.electronAPI.on('permission-request', (data) => this.handlePermissionRequest(data));
     window.electronAPI.on('html-fullscreen-changed', (data) => this.toggleFullscreenUI(data.isFullscreen));
     window.electronAPI.on('update-theme-color', (color) => this.applyThemeColor(color));
@@ -1461,7 +1462,10 @@ document.addEventListener('keydown', (e) => {
     // 页面缩放：Ctrl + =/+ 放大，- 缩小，0 复位（对齐 Chrome，按站点记忆）
     if (e.ctrlKey && !e.altKey && !e.shiftKey) {
       const k = e.key;
-      if (k === '=' || k === '+' || k === 'Add') {
+      if (k === 'p' || k === 'P') {
+        e.preventDefault();
+        window.electronAPI.invoke('print-current-tab');
+      } else if (k === '=' || k === '+' || k === 'Add') {
         e.preventDefault();
         changeZoom('in');
       } else if (k === '-' || k === '_' || k === 'Subtract') {
@@ -1762,6 +1766,19 @@ document.addEventListener('keydown', (e) => {
     { label: '放大页面', kw: 'zoom in fangda', run: () => window.electronAPI.invoke('set-zoom', { delta: 'in' }) },
     { label: '缩小页面', kw: 'zoom out suoxiao', run: () => window.electronAPI.invoke('set-zoom', { delta: 'out' }) },
     { label: '重置页面缩放', kw: 'zoom reset chongzhi suofang', run: () => window.electronAPI.invoke('set-zoom', { factor: 1 }) },
+    { label: '打印当前页面', kw: 'print dayin', run: () => window.electronAPI.invoke('print-current-tab') },
+    { label: '清除当前站点数据', kw: 'clear site data qingchu zhandian cookie', run: async () => {
+      const cur = tabManager.tabs.find(t => t.id === tabManager.currentTabId);
+      if (!cur || !/^https?:/.test(cur.url || '')) {
+        tabManager.showToast('当前页面不是网站，无需清理站点数据');
+        return;
+      }
+      let origin;
+      try { origin = new URL(cur.url).origin; } catch { return; }
+      const r = await window.electronAPI.invoke('clear-site-data', { origin });
+      tabManager.showToast(r && r.success ? `已清除 ${origin} 的站点数据` : ('清除失败' + (r && r.error ? `：${r.error}` : '')));
+      if (r && r.success) location.reload();
+    } },
   ];
 
   let overlay, box, input, listEl, footer, matches, active;
