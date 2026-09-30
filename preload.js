@@ -59,6 +59,8 @@ const allowedInvokeChannels = new Set([
   'permission-response',
   'set-zoom',
   'get-download-shelf',
+  'clear-site-data',
+  'print-current-tab',
 ]);
 
 // 接收方向白名单：main -> renderer
@@ -70,6 +72,7 @@ const allowedOnChannels = new Set([
   'tab-closed',
   'tab-history-changed',
   'tab-audio-changed',
+  'popup-blocked',
   'tab-crashed',
   'permission-request',
   'html-fullscreen-changed',
