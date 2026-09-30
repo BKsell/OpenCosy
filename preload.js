@@ -68,6 +68,7 @@ const allowedOnChannels = new Set([
   'tab-closed',
   'tab-history-changed',
   'tab-audio-changed',
+  'tab-crashed',
   'permission-request',
   'html-fullscreen-changed',
   'update-theme-color',
