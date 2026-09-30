@@ -62,6 +62,8 @@ const allowedInvokeChannels = new Set([
   'clear-site-data',
   'print-current-tab',
   'get-search-suggestions',
+  'discard-tab',
+  'get-memory-saver',
 ]);
 
 // 接收方向白名单：main -> renderer
@@ -75,6 +77,8 @@ const allowedOnChannels = new Set([
   'tab-audio-changed',
   'popup-blocked',
   'tab-crashed',
+  'tab-discarded',
+  'tab-reloaded',
   'permission-request',
   'html-fullscreen-changed',
   'update-theme-color',
