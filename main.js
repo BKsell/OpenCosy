@@ -416,7 +416,23 @@ async function confirmAndOpenExternal(url) {
 }
 
 function setupPermissionHandlers() {
-  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+  // 敏感权限不能再静默放行：旧实现里 media/geolocation/notifications/midi 全部
+  // callback(true)，任意网站都能不经询问打开摄像头、麦克风、定位、通知。
+  // 这些改为向当前标签的渲染层发请求，由页面内询问条决定，默认安全失败。
+  const SENSITIVE_PAGE_PERMISSIONS = new Set([
+    'media', 'geolocation', 'notifications', 'midi', 'midiSysex',
+  ]);
+  // requestId -> settle(granted)，只允许决一次，超时 / 页面销毁默认拒绝。
+  const pendingPermissionRequests = new Map();
+  let permissionSeq = 0;
+  const permissionDecisionTimeoutMs = 60000;
+
+  const tabIdForContents = (wc) => {
+    const tab = tabs.find(t => t.view && t.view.webContents === wc);
+    return tab ? tab.id : null;
+  };
+
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     // openExternal 不再静默放行：弹一次原生确认。这里拿不到具体 URL，
     // 真正带 URL 的外部协议请求走 confirmAndOpenExternal IPC。
     if (permission === 'openExternal') {
@@ -431,11 +447,57 @@ function setupPermissionHandlers() {
       callback(choice === 0);
       return;
     }
+
+    if (SENSITIVE_PAGE_PERMISSIONS.has(permission)) {
+      const requestId = String(++permissionSeq);
+      let origin = '';
+      try { origin = new URL(webContents.getURL()).origin; } catch { origin = ''; }
+      let settled = false;
+      let timer = null;
+      const cleanup = () => {
+        if (timer) clearTimeout(timer);
+        webContents.removeListener('destroyed', onDestroyed);
+        pendingPermissionRequests.delete(requestId);
+      };
+      const finish = (granted) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        try { callback(!!granted); } catch {}
+      };
+      const onDestroyed = () => finish(false);
+      webContents.once('destroyed', onDestroyed);
+      timer = setTimeout(() => finish(false), permissionDecisionTimeoutMs);
+      pendingPermissionRequests.set(requestId, finish);
+
+      sendToRenderer('permission-request', {
+        requestId,
+        tabId: tabIdForContents(webContents),
+        permission,
+        origin,
+        mediaTypes: Array.isArray(details && details.mediaTypes) ? details.mediaTypes.slice(0, 4) : [],
+      });
+      return;
+    }
+
+    // 其余非敏感、通常由用户手势触发的权限（fullscreen / pointerLock / clipboard 等）维持白名单。
     callback(ALLOWED_PERMISSIONS.has(permission));
   });
   session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
     if (permission === 'openExternal') return false;
+    // 敏感权限的“当前是否已授予”检查不自动承认，交给 Chromium 记录的决策。
+    if (SENSITIVE_PAGE_PERMISSIONS.has(permission)) return false;
     return ALLOWED_PERMISSIONS.has(permission);
+  });
+
+  // 渲染层询问条回传决策；找不到对应请求时忽略。
+  ipcMain.handle('permission-response', (event, payload = {}) => {
+    if (!isMainSender(event)) return { success: false };
+    const { requestId, granted } = payload || {};
+    const finish = pendingPermissionRequests.get(String(requestId));
+    if (typeof finish !== 'function') return { success: false, reason: 'unknown request' };
+    finish(!!granted);
+    return { success: true };
   });
 }
 
