@@ -4,6 +4,13 @@ const fs = require('fs').promises;
 const fsSync = require('fs');
 const os = require('os');
 
+// 现代浏览器默认要求“用户与页面有过交互”才允许带声音自动播放，
+// 否则广告页一打开就能外放声音。必须在 app ready 之前设置。
+app.commandLine.appendSwitch('autoplay-policy', 'document-user-activation-required');
+// 禁用后台标签页的定时器节流之外的媒体/后台同步并非必要；这里只关掉
+// 隐私上有顾虑的媒体推荐与 WebRTC 继续采集策略，保持其余行为不变。
+app.commandLine.appendSwitch('disable-features', 'MediaRouter');
+
 let mainWindow;
 let tabs = [];
 let currentTabIndex = 0;
@@ -563,6 +570,21 @@ function setupGlobalWebContentsHooks() {
       // 从 tab 里点 _blank 的，统一丢回我们的 createNewTab
       setImmediate(() => createNewTab(url));
       return { action: 'deny' };
+    });
+
+    // 本浏览器用 WebContentsView 承载页面，从不使用 <webview> 标签。
+    // 若有页面尝试 attach webview，一律阻止：webview 默认能携带自己的
+    // webPreferences（nodeIntegration/disablewebsecurity），是常见提权通道。
+    contents.on('will-attach-webview', (attachEvent, webPreferences, params) => {
+      delete webPreferences.preload;
+      webPreferences.nodeIntegration = false;
+      webPreferences.contextIsolation = true;
+      webPreferences.sandbox = true;
+      webPreferences.webSecurity = true;
+      webPreferences.allowRunningInsecureContent = false;
+      if (!isSafeUrl(params.src)) {
+        attachEvent.preventDefault();
+      }
     });
 
     contents.on('will-navigate', (navEvent, url) => {
@@ -2244,4 +2266,74 @@ ipcMain.handle('print-current-tab', (event) => {
   } catch (e) {
     return { success: false, error: e.message };
   }
+});
+
+// 地址栏搜索建议：固定走 Bing OpenSearch 建议接口（osjson），不接受 renderer
+// 传入的任意 URL，避免被当成 SSRF 跳板。返回严格限定为字符串数组并限量。
+const SUGGEST_ENDPOINT = 'https://api.bing.com/osjson.aspx?query=';
+const SUGGEST_MAX_CHARS = 200;
+const SUGGEST_MAX_ITEMS = 8;
+const SUGGEST_TIMEOUT_MS = 2500;
+
+function fetchSearchSuggestions(query) {
+  return new Promise((resolve) => {
+    const url = SUGGEST_ENDPOINT + encodeURIComponent(query);
+    let settled = false;
+    let request;
+    try {
+      request = net.request({ url, redirect: 'error' });
+    } catch {
+      return resolve([]);
+    }
+    const finish = (list) => {
+      if (!settled) { settled = true; resolve(list); }
+    };
+    const timer = setTimeout(() => {
+      try { request.abort(); } catch {}
+      finish([]);
+    }, SUGGEST_TIMEOUT_MS);
+
+    const chunks = [];
+    request.on('response', (response) => {
+      const ct = (response.headers['content-type'] || []).join('').toLowerCase();
+      // osjson 正常返回 json；跟随到别的类型直接丢弃。
+      if (response.statusCode !== 200 || !ct.includes('json')) {
+        clearTimeout(timer);
+        try { response.destroy(); } catch {}
+        return finish([]);
+      }
+      response.on('data', (c) => chunks.push(c));
+      response.on('end', () => {
+        clearTimeout(timer);
+        try {
+          const data = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+          if (!Array.isArray(data) || !Array.isArray(data[1])) return finish([]);
+          const out = [];
+          for (const item of data[1]) {
+            if (typeof item !== 'string') continue;
+            const s = item.trim();
+            if (!s || s.length > 100) continue;
+            out.push(s);
+            if (out.length >= SUGGEST_MAX_ITEMS) break;
+          }
+          finish(out);
+        } catch {
+          finish([]);
+        }
+      });
+      response.on('error', () => { clearTimeout(timer); finish([]); });
+    });
+    request.on('error', () => { clearTimeout(timer); finish([]); });
+    try { request.end(); } catch { clearTimeout(timer); finish([]); }
+  });
+}
+
+ipcMain.handle('get-search-suggestions', async (event, payload = {}) => {
+  if (!isMainSender(event)) return { success: false, suggestions: [] };
+  const q = typeof payload.q === 'string' ? payload.q.trim() : '';
+  if (!q || q.length > SUGGEST_MAX_CHARS) return { success: false, suggestions: [] };
+  // 已经是完整 URL / 内置协议时不给搜索建议，交给历史/书签补全。
+  if (/^[a-z][a-z0-9+.-]*:/i.test(q) || q.startsWith('//')) return { success: true, suggestions: [] };
+  const suggestions = await fetchSearchSuggestions(q);
+  return { success: true, suggestions };
 });
