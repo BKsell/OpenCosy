@@ -1023,48 +1023,9 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// ===== 标签页右键菜单 =====
-function setupTabContextMenu() {
-  const tabStrip = document.getElementById('tab-strip');
-  if (!tabStrip || tabStrip._ctxAttached) return;
-  tabStrip._ctxAttached = true;
-  let menu = document.getElementById('cosy-tab-ctx');
-  if (!menu) {
-    menu = document.createElement('div');
-    menu.id = 'cosy-tab-ctx';
-    menu.style.cssText = 'position:fixed;background:#fff;border:1px solid #ddd;border-radius:6px;box-shadow:0 6px 20px rgba(0,0,0,.18);z-index:10000;display:none;min-width:180px;font:13px/1.4 system-ui,sans-serif;';
-    document.body.appendChild(menu);
-  }
-  function show(x, y, tabId) {
-    menu.innerHTML = '';
-    const items = [
-      { label: '重新加载', fn: () => { const t = tabManager.tabs.find(t => t.id === tabId); if (t) tabManager.reloadTab(tabId); } },
-      { label: '复制网址', fn: () => { const t = tabManager.tabs.find(t => t.id === tabId); if (t) navigator.clipboard.writeText(t.url || ''); } },
-      { label: '关闭标签页', fn: () => tabManager.closeTab(tabId) },
-      { label: '关闭其他标签页', fn: () => tabManager.tabs.filter(t => t.id !== tabId).forEach(t => tabManager.closeTab(t.id)) },
-    ];
-    items.forEach(it => {
-      const row = document.createElement('div');
-      row.textContent = it.label;
-      row.style.cssText = 'padding:8px 14px;cursor:pointer;';
-      row.addEventListener('mouseenter', () => row.style.background = '#f0f0f0');
-      row.addEventListener('mouseleave', () => row.style.background = '');
-      row.addEventListener('click', () => { menu.style.display = 'none'; it.fn(); });
-      menu.appendChild(row);
-    });
-    menu.style.left = x + 'px';
-    menu.style.top = y + 'px';
-    menu.style.display = 'block';
-  }
-  document.addEventListener('click', () => { menu.style.display = 'none'; });
-  tabStrip.addEventListener('contextmenu', (e) => {
-    const tabEl = e.target.closest('.tab');
-    if (!tabEl) return;
-    e.preventDefault();
-    show(e.clientX, e.clientY, parseInt(tabEl.dataset.id));
-  });
-}
-document.addEventListener('DOMContentLoaded', setupTabContextMenu);
+// 标签页右键菜单统一由下方 setupTabExtras 的 cosy-tab-ctx2 提供。
+// 早期绑定 #tab-strip / dataset.id 的旧菜单已删除：该 DOM 结构不存在，
+// 旧函数拿到 null 后直接返回，属于永不生效的死代码。
 
 // ===== 会话恢复：退出前保存标签，下次启动自动还原 =====
 (function setupSessionRestore() {
@@ -1108,6 +1069,25 @@ document.addEventListener('DOMContentLoaded', setupTabContextMenu);
   }
 })();
 
+// reopenClosedTab 恢复最近关闭的标签页。
+// 主进程在关闭时把 URL 压入 recentlyClosedTabs，这里通过 IPC 取出并新开。
+// 没有可恢复项时给一个轻提示，不报错。
+async function reopenClosedTab() {
+  try {
+    const res = await window.electronAPI.invoke('reopen-closed-tab');
+    if (!res || !res.success) {
+      if (typeof tabManager !== 'undefined' && tabManager.showToast) tabManager.showToast('没有可恢复的标签页');
+    }
+  } catch { /* 主进程不可用时静默 */ }
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && e.shiftKey && (e.key === 'T' || e.key === 't')) {
+    e.preventDefault();
+    reopenClosedTab();
+  }
+});
+
 // ===== 标签交互增强：修正右键菜单目标 + 中键关闭 + Ctrl+Enter .com + 复制标签 =====
 (function setupTabExtras() {
   let menu = null;
@@ -1129,10 +1109,18 @@ document.addEventListener('DOMContentLoaded', setupTabContextMenu);
           const t = tabManager.tabs.find(t => t.id === tabId);
           if (t) navigator.clipboard.writeText(t.url || '');
         } },
+      { label: '重新打开关闭的标签页', fn: reopenClosedTab },
+      { divider: true },
       { label: '关闭标签页', fn: () => tabManager.closeTab(tabId) },
       { label: '关闭其他标签页', fn: () => tabManager.tabs.filter(t => t.id !== tabId).forEach(t => tabManager.closeTab(t.id)) },
     ];
     items.forEach(it => {
+      if (it.divider) {
+        const sep = document.createElement('div');
+        sep.style.cssText = 'height:1px;margin:4px 8px;background:rgba(0,0,0,0.12);';
+        menu.appendChild(sep);
+        return;
+      }
       const row = document.createElement('div');
       row.textContent = it.label;
       row.style.cssText = 'padding:8px 14px;cursor:pointer;';
