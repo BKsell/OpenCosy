@@ -23,6 +23,7 @@ const allowedSendChannels = new Set([
   'open-file',
   'open-folder',
   'clear-downloads',
+  'shelf-show-all',
   'close-current-tab',
   'find-in-page',
   'stop-find',
@@ -57,6 +58,7 @@ const allowedInvokeChannels = new Set([
   'open-external-url',
   'permission-response',
   'set-zoom',
+  'get-download-shelf',
 ]);
 
 // 接收方向白名单：main -> renderer
@@ -79,6 +81,7 @@ const allowedOnChannels = new Set([
   'download-error',
   'download-started',
   'downloads-list',
+  'download-shelf',
   'download-removed',
   'downloads-cleared',
   'clear-downloads-success',
