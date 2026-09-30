@@ -138,6 +138,7 @@ class TabManager {
     window.electronAPI.on('tab-switched', (tabData) => this.switchToTabUI(tabData.id));
     window.electronAPI.on('tab-closed', (tabIndex) => this.removeTabFromUI(tabIndex));
     window.electronAPI.on('tab-audio-changed', (data) => this.updateTabAudio(data));
+    window.electronAPI.on('permission-request', (data) => this.handlePermissionRequest(data));
     window.electronAPI.on('html-fullscreen-changed', (data) => this.toggleFullscreenUI(data.isFullscreen));
     window.electronAPI.on('update-theme-color', (color) => this.applyThemeColor(color));
     window.electronAPI.on('settings-loaded', (settings) => { if (settings.themeColor) this.applyThemeColor(settings.themeColor); });
@@ -487,6 +488,67 @@ class TabManager {
     } else {
       el.style.display = 'none';
     }
+  }
+
+  // 主进程转来的敏感权限请求（摄像头/麦克风/定位/通知/MIDI）。
+  // 旧版本这些权限在主进程被静默允许，这里给一个页面内询问条，默认拒绝。
+  handlePermissionRequest({ requestId, tabId, permission, origin, mediaTypes }) {
+    if (requestId === undefined || requestId === null) return;
+    // 同一请求只弹一次
+    if (document.getElementById('cosy-perm-' + requestId)) return;
+
+    const PERMISSION_TEXT = {
+      media: '使用摄像头和麦克风',
+      geolocation: '获取你的位置信息',
+      notifications: '发送通知',
+      midi: '访问 MIDI 设备',
+      midiSysex: '访问 MIDI 设备（含系统专有消息）',
+    };
+    if (Array.isArray(mediaTypes) && mediaTypes.length) {
+      const hasVideo = mediaTypes.includes('video');
+      const hasAudio = mediaTypes.includes('audio');
+      if (hasVideo && hasAudio) PERMISSION_TEXT.media = '使用摄像头和麦克风';
+      else if (hasVideo) PERMISSION_TEXT.media = '使用摄像头';
+      else if (hasAudio) PERMISSION_TEXT.media = '使用麦克风';
+    }
+    const desc = PERMISSION_TEXT[permission] || ('使用「' + permission + '」权限');
+    const host = (() => { try { return origin ? new URL(origin).host : '当前页面'; } catch { return '当前页面'; } })();
+
+    const bar = document.createElement('div');
+    bar.id = 'cosy-perm-' + requestId;
+    bar.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:52px;z-index:10004;display:flex;align-items:center;gap:12px;max-width:92vw;padding:10px 14px;background:var(--bg,#fff);color:var(--fg,#222);border:1px solid rgba(0,0,0,.15);border-radius:10px;box-shadow:0 10px 32px rgba(0,0,0,.25);font:13px/1.5 system-ui,sans-serif;';
+
+    const icon = document.createElement('span');
+    icon.textContent = '🔒';
+    icon.style.fontSize = '16px';
+    const msg = document.createElement('div');
+    msg.style.minWidth = '0';
+    const line1 = document.createElement('div');
+    line1.textContent = host + ' 想要' + desc;
+    const line2 = document.createElement('div');
+    line2.textContent = '仅在你信任该网站时允许';
+    line2.style.cssText = 'font-size:11px;opacity:.6;';
+    msg.appendChild(line1);
+    msg.appendChild(line2);
+
+    const mkBtn = (text, granted, primary) => {
+      const b = document.createElement('button');
+      b.textContent = text;
+      b.style.cssText = 'flex-shrink:0;padding:5px 14px;border-radius:6px;cursor:pointer;border:1px solid rgba(0,0,0,.2);background:' + (primary ? '#0078d4' : 'transparent') + ';color:' + (primary ? '#fff' : 'inherit') + ';';
+      b.addEventListener('click', () => {
+        window.electronAPI.invoke('permission-response', { requestId, granted });
+        bar.remove();
+      });
+      return b;
+    };
+    const deny = mkBtn('阻止', false, false);
+    const allow = mkBtn('允许', true, true);
+
+    bar.appendChild(icon);
+    bar.appendChild(msg);
+    bar.appendChild(deny);
+    bar.appendChild(allow);
+    document.body.appendChild(bar);
   }
 
   updateTabSelection() {
