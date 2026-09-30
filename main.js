@@ -664,6 +664,28 @@ function createWindow() {
     mainWindow = null;
   });
 
+  // 有关键下载进行中时关闭窗口先二次确认，防止误点 × 中断下载。
+  let allowQuitWithDownloads = false;
+  mainWindow.on('close', (e) => {
+    if (allowQuitWithDownloads || !mainWindow) return;
+    const active = downloads.some(d => d && (d.status === 'downloading' || d.status === 'pending' || d.status === 'paused'));
+    if (!active) return;
+    e.preventDefault();
+    const choice = dialog.showMessageBoxSync(mainWindow, {
+      type: 'warning',
+      buttons: ['继续下载，留在窗口', '放弃下载并退出'],
+      defaultId: 0,
+      cancelId: 0,
+      title: '仍有下载进行中',
+      message: '当前还有未完成的下载，确定要退出吗？',
+      detail: '退出后正在进行的下载会被中断，已完成的文件不受影响。',
+    });
+    if (choice === 1) {
+      allowQuitWithDownloads = true;
+      mainWindow.close();
+    }
+  });
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (isSafeUrl(url)) createNewTab(url);
     return { action: 'deny' };
