@@ -1287,6 +1287,21 @@ ipcMain.handle('duplicate-tab', (event, tabIndex) => {
   return { id: newTab.id, index: tabs.indexOf(newTab) };
 });
 
+// reopen-closed-tab 恢复最近关闭的标签（Ctrl+Shift+T）。
+// recentlyClosedTabs 在入栈时已剔除 cosy:// 内置页，这里再做一次
+// isSafeUrl 校验，防止历史数据被污染后恢复到危险协议。
+ipcMain.handle('reopen-closed-tab', (event) => {
+  if (!isMainSender(event)) return { success: false };
+  while (recentlyClosedTabs.length > 0) {
+    const last = getLastClosedTab();
+    if (!last || !last.url) continue;
+    if (!isSafeUrl(last.url) || last.url.startsWith('cosy://')) continue;
+    const tab = createNewTab(last.url);
+    return { success: true, id: tab.id, index: tabs.indexOf(tab), url: last.url };
+  }
+  return { success: false, empty: true };
+});
+
 ipcMain.handle('create-tab', (event, url) => {
   if (!isMainSender(event)) return { success: false };
   if (!isSafeUrl(url)) url = 'cosy://newtab';
