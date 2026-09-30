@@ -2003,6 +2003,21 @@ document.addEventListener('keydown', (e) => {
     paint(items);
   });
 
+  // Ctrl+J：现代浏览器的下载入口。shelf 可见时收起；不可见时重新拉取并展示，
+  // 若当前没有任何下载项，则直接打开完整下载列表页。
+  document.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey && (e.key === 'j' || e.key === 'J'))) return;
+    e.preventDefault();
+    if (bar && bar.style.display === 'flex') {
+      bar.style.display = 'none';
+      return;
+    }
+    api.invoke('get-download-shelf').then(items => {
+      if (Array.isArray(items) && items.length) paint(items);
+      else api.send('shelf-show-all');
+    }).catch(() => api.send('shelf-show-all'));
+  });
+
   // 主界面加载后拉一次当前 shelf，覆盖“启动时已有下载”的场景。
   function init() {
     api.invoke('get-download-shelf').then(items => {
