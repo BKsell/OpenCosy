@@ -1341,7 +1341,13 @@ document.addEventListener('keydown', (e) => {
         } },
       { divider: true },
       { label: '关闭标签页', fn: () => tabManager.closeTab(tabId) },
+      { label: '关闭右侧标签页', fn: () => {
+          const order = tabManager.tabs.map(t => t.id);
+          const i = order.indexOf(tabId);
+          if (i >= 0) order.slice(i + 1).forEach(id => tabManager.closeTab(id));
+        } },
       { label: '关闭其他标签页', fn: () => tabManager.tabs.filter(t => t.id !== tabId).forEach(t => tabManager.closeTab(t.id)) },
+      { label: '重新加载所有标签页', fn: () => tabManager.tabs.forEach(t => tabManager.reloadTab(t.id)) },
     ];
     items.forEach(it => {
       if (it.divider) {
@@ -2008,5 +2014,50 @@ document.addEventListener('keydown', (e) => {
   } else {
     setTimeout(init, 300);
   }
+})();
+
+// ===== 网络状态提示横幅 =====
+// 断网时在顶部给出一条不打断操作的提示条，恢复后自动消失。
+// 优先用主进程权威状态（可感知虚拟网卡/代理变化），并用浏览器 online/offline 兜底。
+(function setupNetworkBanner() {
+  const api = window.electronAPI;
+  if (!api) return;
+  let banner = null;
+
+  function show(text) {
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.style.cssText = [
+        'position:fixed', 'top:8px', 'left:50%', 'transform:translateX(-50%)',
+        'z-index:10002', 'padding:6px 16px', 'border-radius:16px',
+        'background:rgba(217,48,37,.95)', 'color:#fff',
+        'font:12px/1.4 system-ui,sans-serif', 'box-shadow:0 2px 10px rgba(0,0,0,.25)',
+        'pointer-events:none', 'display:none',
+      ].join(';');
+      document.body.appendChild(banner);
+    }
+    banner.textContent = text;
+    banner.style.display = 'block';
+  }
+
+  function hide() {
+    if (banner) banner.style.display = 'none';
+  }
+
+  function apply(online) {
+    if (online) hide();
+    else show('网络已断开 · 你处于离线状态');
+  }
+
+  window.addEventListener('online', () => apply(true));
+  window.addEventListener('offline', () => apply(false));
+  if (typeof navigator !== undefined && navigator.onLine === false) apply(false);
+
+  api.on('network-status-changed', (status) => {
+    if (status && typeof status.online === 'boolean') apply(status.online);
+  });
+  api.invoke('get-network-status').then(s => {
+    if (s && typeof s.online === 'boolean') apply(s.online);
+  }).catch(() => {});
 })();
 
