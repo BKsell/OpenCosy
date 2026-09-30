@@ -2164,3 +2164,46 @@ document.addEventListener('keydown', (e) => {
   }).catch(() => {});
 })();
 
+// ===== 缩放级别浮层（OSD）：Ctrl+= / Ctrl+- / Ctrl+0 时短暂显示当前百分比 =====
+(function setupZoomOsd() {
+  const api = window.electronAPI;
+  if (!api || !api.on) return;
+  let osd = null;
+  let hideTimer = null;
+
+  function ensureOsd() {
+    if (osd) return osd;
+    osd = document.createElement('div');
+    osd.setAttribute('aria-live', 'polite');
+    osd.style.cssText = [
+      'position:fixed', 'top:92px', 'right:24px', 'z-index:10003',
+      'min-width:96px', 'padding:10px 18px', 'border-radius:10px',
+      'background:rgba(32,33,36,.92)', 'color:#fff', 'text-align:center',
+      'font:600 15px/1.3 system-ui,sans-serif', 'box-shadow:0 6px 20px rgba(0,0,0,.28)',
+      'opacity:0', 'transform:translateY(-6px)',
+      'transition:opacity .15s ease,transform .15s ease',
+      'pointer-events:none', 'user-select:none',
+    ].join(';');
+    document.body.appendChild(osd);
+    return osd;
+  }
+
+  function show(percent) {
+    const el = ensureOsd();
+    const pct = Number.isFinite(percent) ? Math.round(percent) : 100;
+    el.textContent = pct === 100 ? '缩放 100%' : `缩放 ${pct}%`;
+    el.style.opacity = '1';
+    el.style.transform = 'translateY(0)';
+    if (hideTimer) clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => {
+      el.style.opacity = '0';
+      el.style.transform = 'translateY(-6px)';
+    }, 1100);
+  }
+
+  api.on('zoom-level-changed', (payload) => {
+    if (!payload || typeof payload.percent !== 'number') return;
+    show(payload.percent);
+  });
+})();
+
