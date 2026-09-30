@@ -16,6 +16,25 @@ let history = [];
 let recentlyClosedTabs = [];
 const MAX_RECENTLY_CLOSED = 10;
 
+// 弹窗轰炸防护：单个标签在 POPUP_WINDOW_MS 时间窗内最多主动打开 POPUP_WINDOW_MAX 个新窗口。
+// 恶意/广告页可能在脚本里疯狂 window.open 制造窗口洪流耗尽资源；
+// 正常用户点击几乎不会在几秒内连续开这么多窗口，超出的一律拦截并提示。
+const POPUP_WINDOW_MAX = 3;
+const POPUP_WINDOW_MS = 5000;
+const popupOpenTimes = new Map();
+
+function allowPopupForTab(tabId) {
+  const now = Date.now();
+  const times = (popupOpenTimes.get(tabId) || []).filter(t => now - t < POPUP_WINDOW_MS);
+  if (times.length >= POPUP_WINDOW_MAX) {
+    popupOpenTimes.set(tabId, times);
+    return false;
+  }
+  times.push(now);
+  popupOpenTimes.set(tabId, times);
+  return true;
+}
+
 // httpsOnlyEnabled 是运行时开关，默认 true；用户可以在设置里关掉。
 // onBeforeRequest 据此决定是否把 http:// 升级成 https://。
 let httpsOnlyEnabled = true;
@@ -972,6 +991,11 @@ function loadTabContent(tab) {
     tab.view.webContents.setWindowOpenHandler(({ url, disposition }) => {
       if (!isSafeUrl(url)) return { action: 'deny' };
       if (disposition === 'new-window' || disposition === 'foreground-tab') {
+        // 弹窗轰炸限流：短时间内同一标签狂开窗口时拦截，只放行正常节奏的新窗口。
+        if (!allowPopupForTab(tab.id)) {
+          sendToRenderer('popup-blocked', { url });
+          return { action: 'deny' };
+        }
         const newTab = createNewTab(url);
         switchToTab(tabs.indexOf(newTab));
       } else {
@@ -1170,6 +1194,7 @@ function closeTab(tabIndex) {
   if (tabIndex >= 0 && tabIndex < tabs.length) {
     const tab = tabs[tabIndex];
     addToRecentlyClosed(tab);
+    popupOpenTimes.delete(tab.id);
     if (tab.view) tab.view.webContents.destroy();
     tabs.splice(tabIndex, 1);
     if (tabs.length === 0) {
@@ -2164,6 +2189,49 @@ ipcMain.handle('clear-browsing-data', async (event, options) => {
       currentDownloadInfo = null;
     }
     await Promise.all(promises);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+// 仅允许针对 http/https 站点按 origin 清理本地数据，拒绝把内置页/file 等传进来。
+const SITE_DATA_STORAGES = [
+  'cookies', 'filesystem', 'indexdb', 'localstorage',
+  'shadercache', 'websql', 'serviceworkers', 'cachestorage',
+];
+
+ipcMain.handle('clear-site-data', async (event, payload = {}) => {
+  if (!isMainSender(event)) return { success: false, error: 'Unauthorized' };
+  let origin = payload.origin;
+  if (!origin || typeof origin !== 'string') return { success: false, error: 'Invalid origin' };
+  let parsed;
+  try {
+    parsed = new URL(origin);
+  } catch {
+    return { success: false, error: 'Invalid origin' };
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return { success: false, error: 'Only http/https sites are supported' };
+  }
+  origin = parsed.origin;
+  try {
+    await session.defaultSession.clearStorageData({ origin, storages: SITE_DATA_STORAGES });
+    await session.defaultSession.clearCache();
+    return { success: true, origin };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+// 打印当前标签页（Ctrl+P）。只作用于活动标签的网页内容。
+ipcMain.handle('print-current-tab', (event) => {
+  if (!isMainSender(event)) return { success: false, error: 'Unauthorized' };
+  const tab = tabs[currentTabIndex];
+  const wc = tab && tab.view && tab.view.webContents;
+  if (!wc || wc.isDestroyed()) return { success: false, error: 'No active page' };
+  try {
+    wc.print({ silent: false, printBackground: true }, () => {});
     return { success: true };
   } catch (e) {
     return { success: false, error: e.message };
