@@ -792,6 +792,11 @@ function registerShortcuts() {
         sendToRenderer('show-toast', '没有可收藏的标签页');
       }
       event.preventDefault();
+    } else if (ctrl && key === 's' && shift) {
+      // Ctrl+Shift+S：立即释放所有后台标签内存（Memory Saver 手动触发）
+      const n = discardAllBackgroundTabs();
+      sendToRenderer('show-toast', n > 0 ? `已休眠 ${n} 个后台标签页` : '没有需要休眠的后台标签页');
+      event.preventDefault();
     } else if (ctrl && key === 'tab') {
       const nextIndex = shift
         ? (currentTabIndex - 1 + tabs.length) % tabs.length
@@ -1075,6 +1080,17 @@ function startMemorySaver() {
   if (typeof memorySaverTimer.unref === 'function') memorySaverTimer.unref();
 }
 
+// discardAllBackgroundTabs 立即休眠除活动标签外所有可休眠的后台标签，
+// 返回成功休眠的数量，供快捷键 / 右键菜单给用户一个明确反馈。
+function discardAllBackgroundTabs() {
+  let n = 0;
+  for (const tab of tabs) {
+    if (tabKeepsAlive(tab)) continue;
+    if (discardTab(tab, 'manual')) n++;
+  }
+  return n;
+}
+
 ipcMain.handle('discard-tab', (event, payload = {}) => {
   if (!isMainSender(event)) return { success: false };
   const tab = (payload?.tabId === undefined)
@@ -1082,6 +1098,11 @@ ipcMain.handle('discard-tab', (event, payload = {}) => {
     : tabs.find(t => String(t.id) === String(payload.tabId));
   if (!tab) return { success: false };
   return { success: discardTab(tab, 'manual') };
+});
+
+ipcMain.handle('discard-background-tabs', (event) => {
+  if (!isMainSender(event)) return { success: false, count: 0 };
+  return { success: true, count: discardAllBackgroundTabs() };
 });
 
 ipcMain.handle('get-memory-saver', () => ({
@@ -2043,7 +2064,8 @@ ipcMain.handle('get-all-tabs', (event) => {
   if (!isMainSender(event)) return [];
   return tabs.map(tab => ({
     id: tab.id, url: tab.url, title: tab.title, favicon: tab.favicon,
-    isLoading: tab.isLoading, canGoBack: tab.canGoBack, canGoForward: tab.canGoForward
+    isLoading: tab.isLoading, canGoBack: tab.canGoBack, canGoForward: tab.canGoForward,
+    discarded: !!tab.discarded
   }));
 });
 
@@ -2079,6 +2101,15 @@ ipcMain.on('show-more-options-menu', (event, position) => {
     click: () => {
       const lastClosedTab = getLastClosedTab();
       if (lastClosedTab) createNewTab(lastClosedTab.url);
+    }
+  }));
+  menu.append(new MenuItem({ type: 'separator' }));
+  menu.append(new MenuItem({
+    label: '休眠所有后台标签页 (Ctrl+Shift+S)',
+    enabled: memorySaverEnabled,
+    click: () => {
+      const n = discardAllBackgroundTabs();
+      sendToRenderer('show-toast', n > 0 ? `已休眠 ${n} 个后台标签页` : '没有需要休眠的后台标签页');
     }
   }));
   menu.popup({ window: mainWindow, x: position.x, y: position.y });
