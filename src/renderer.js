@@ -1141,7 +1141,7 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// ===== 地址栏自动补全（输入时匹配历史/书签）=====
+// ===== 地址栏自动补全（历史/书签 + 远程搜索建议，支持方向键选择）=====
 function setupOmniboxAutocomplete() {
   const input = document.getElementById('url-input');
   if (!input || input._autocompleteAttached) return;
@@ -1154,41 +1154,115 @@ function setupOmniboxAutocomplete() {
     input.parentElement.style.position = 'relative';
     input.parentElement.appendChild(drop);
   }
-  function render() {
-    const q = input.value.trim().toLowerCase();
-    if (!q || typeof tabManager === 'undefined') { drop.style.display = 'none'; return; }
+
+  // rows 保存当前下拉里每一项；value 是选中后要写进地址栏/用于导航的内容。
+  let rows = [];
+  let active = -1;
+  let debounceTimer = null;
+  let reqSeq = 0;
+
+  function close() {
+    drop.style.display = 'none';
+    rows = [];
+    active = -1;
+  }
+
+  function localMatches(q) {
+    const out = [];
     const seen = new Set();
-    const matches = [];
     const pool = [
-      ...(tabManager.bookmarks || []).map(b => ({ title: b.title, url: b.url, tag: '书签' })),
-      ...(tabManager.history || []).map(h => ({ title: h.title || h.url, url: h.url, tag: '历史' })),
+      ...((tabManager.bookmarks) || []).map(b => ({ title: b.title, url: b.url, tag: '书签' })),
+      ...((tabManager.history) || []).map(h => ({ title: h.title || h.url, url: h.url, tag: '历史' })),
     ];
     for (const item of pool) {
       if (seen.has(item.url)) continue;
       if (item.url.toLowerCase().includes(q) || (item.title || '').toLowerCase().includes(q)) {
-        matches.push(item); seen.add(item.url);
+        out.push({ title: item.title || item.url, value: item.url, tag: item.tag });
+        seen.add(item.url);
       }
-      if (matches.length >= 8) break;
+      if (out.length >= 6) break;
     }
-    if (matches.length === 0) { drop.style.display = 'none'; return; }
+    return out;
+  }
+
+  function draw() {
+    if (rows.length === 0) { close(); return; }
     drop.innerHTML = '';
-    matches.forEach(m => {
+    rows.forEach((m, i) => {
       const row = document.createElement('div');
-      row.style.cssText = 'padding:8px 12px;cursor:pointer;display:flex;flex-direction:column;';
-      row.innerHTML = `<strong style="color:#222;font-weight:600;">${escapeHtml(m.title || m.url)}</strong><span style="color:#888;font-size:11px;">${escapeHtml(m.url)} · ${m.tag}</span>`;
+      row.dataset.idx = i;
+      row.style.cssText = 'padding:8px 12px;cursor:pointer;display:flex;flex-direction:column;' +
+        (i === active ? 'background:#e8f0fe;' : '');
+      row.innerHTML = `<strong style="color:#222;font-weight:600;">${escapeHtml(m.title || m.value)}</strong>` +
+        `<span style="color:#888;font-size:11px;">${escapeHtml(m.tag === '搜索建议' ? m.value : m.value)} · ${m.tag}</span>`;
       row.addEventListener('mousedown', (e) => {
         e.preventDefault();
-        input.value = m.url;
-        drop.style.display = 'none';
+        input.value = m.value;
+        close();
         tabManager.navigateFromAddressBar();
       });
+      row.addEventListener('mouseenter', () => setActive(i));
       drop.appendChild(row);
     });
     drop.style.display = 'block';
   }
-  input.addEventListener('input', render);
-  input.addEventListener('blur', () => setTimeout(() => { drop.style.display = 'none'; }, 150));
-  input.addEventListener('focus', render);
+
+  function setActive(i) {
+    if (rows.length === 0) return;
+    active = (i + rows.length) % rows.length;
+    input.value = rows[active].value;
+    Array.from(drop.children).forEach((el, idx) => {
+      el.style.background = idx === active ? '#e8f0fe' : '';
+    });
+    const cur = drop.children[active];
+    if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest' });
+  }
+
+  async function refresh() {
+    const q = input.value.trim().toLowerCase();
+    if (!q || typeof tabManager === 'undefined') { close(); return; }
+    const seq = ++reqSeq;
+    const base = localMatches(q);
+    let remote = [];
+    try {
+      // 纯 URL / 内置协议不发搜索请求，避免把完整地址泄漏给搜索引擎。
+      if (!/^[a-z][a-z0-9+.-]*:/i.test(q) && !q.startsWith('//')) {
+        const r = await window.electronAPI.invoke('get-search-suggestions', { q: input.value.trim() });
+        if (seq === reqSeq && r && r.success && Array.isArray(r.suggestions)) {
+          const exist = new Set(base.map(b => b.value.toLowerCase()));
+          remote = r.suggestions
+            .filter(s => !exist.has(s.toLowerCase()))
+            .slice(0, 6)
+            .map(s => ({ title: s, value: s, tag: '搜索建议' }));
+        }
+      }
+    } catch {}
+    if (seq !== reqSeq) return; // 已有更新的输入，丢弃过期响应
+    rows = base.concat(remote).slice(0, 10);
+    active = -1;
+    draw();
+  }
+
+  input.addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(refresh, 150);
+  });
+  input.addEventListener('keydown', (e) => {
+    if (drop.style.display !== 'block') {
+      if (e.key === 'Escape') close();
+      return;
+    }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActive(active + 1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(active - 1); }
+    else if (e.key === 'Escape') { e.preventDefault(); close(); }
+    else if (e.key === 'Enter' && active >= 0) {
+      // 选中项的值在方向键选择时已写进输入框，这里只关下拉，
+      // 导航交给地址栏既有的 Enter 处理，避免重复触发。
+      close();
+    }
+  });
+  input.addEventListener('blur', () => setTimeout(close, 150));
+  input.addEventListener('focus', refresh);
 }
 document.addEventListener('DOMContentLoaded', setupOmniboxAutocomplete);
 
