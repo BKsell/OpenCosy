@@ -123,6 +123,11 @@ class Tab {
     this.canGoForward = false;
     this.audible = false;
     this.muted = false;
+    // 内存节省（Memory Saver）相关状态：
+    // lastActiveAt 记录最近一次成为活动标签的时间；discarded 表示其渲染进程
+    // 已被回收，切回时需要按 tab.url 重新加载。
+    this.lastActiveAt = Date.now();
+    this.discarded = false;
   }
 }
 
@@ -1006,6 +1011,85 @@ function handleRenderProcessGone(tab, details) {
   else destroyTabView(tab);
 }
 
+// ===== 内存节省（Memory Saver）：自动休眠后台标签 =====
+// 对齐 Chrome "Memory Saver"：长时间不看的后台标签，其渲染进程（HTML/JS、
+// 图片解码、定时器、网络等占用的内存可达几十~几百 MiB）会被回收，标签壳
+// （URL / 标题 / 图标）保留；用户点回该标签时再按原 URL 重新加载。
+// 这不是崩溃恢复，不弹错误页：tab.discarded 是正常的"已休眠"态。
+let memorySaverEnabled = true;
+const MEMORY_SAVER_IDLE_MS = 30 * 60 * 1000; // 后台连续不活动 30 分钟才休眠
+const MEMORY_SAVER_SWEEP_MS = 60 * 1000;    // 每分钟扫描一次
+let memorySaverTimer = null;
+
+// tabKeepsAlive 判断标签是否必须常驻、不能被休眠。
+function tabKeepsAlive(tab) {
+  if (!tab) return true;
+  const idx = tabs.indexOf(tab);
+  if (idx === currentTabIndex) return true;            // 正在看的标签
+  if (tab.discarded || tab.crashed || !tab.view) return true; // 已休眠/崩溃/无视图
+  if (tab.isLoading) return true;                      // 正在加载，打断会留下半成品
+  try {
+    if (tab.view.webContents.isCurrentlyAudible() && !tab.muted) return true; // 正在放声音
+  } catch {}
+  try {
+    if (tab.view.webContents.isBeingCaptured()) return true; // 正在录屏/共享标签
+  } catch {}
+  if (tab.url.startsWith('cosy://')) return true;      // 内置页面很轻且承载 UI 状态
+  return false;
+}
+
+// discardTab 回收一个后台标签的渲染进程并保留标签壳。
+function discardTab(tab, reason = 'idle') {
+  if (tabKeepsAlive(tab)) return false;
+  destroyTabView(tab);
+  tab.discarded = true;
+  tab.retry403 = false;
+  sendToRenderer('tab-discarded', { id: tab.id, url: tab.url, reason });
+  return true;
+}
+
+// reloadDiscardedTab 唤醒休眠标签：按记录的 URL 重建视图并重新加载。
+function reloadDiscardedTab(tab) {
+  if (!tab || !tab.discarded) return false;
+  tab.discarded = false;
+  tab.lastActiveAt = Date.now();
+  loadTabContent(tab);
+  sendToRenderer('tab-reloaded', { id: tab.id });
+  setTimeout(updateBrowserViewBounds, 0);
+  return true;
+}
+
+// sweepDiscardableTabs 把超过空闲阈值且无需常驻的后台标签休眠掉。
+function sweepDiscardableTabs() {
+  if (!memorySaverEnabled) return;
+  const now = Date.now();
+  for (const tab of tabs) {
+    if (tabKeepsAlive(tab)) continue;
+    if (now - (tab.lastActiveAt || 0) >= MEMORY_SAVER_IDLE_MS) discardTab(tab, 'idle');
+  }
+}
+
+function startMemorySaver() {
+  if (memorySaverTimer) return;
+  memorySaverTimer = setInterval(sweepDiscardableTabs, MEMORY_SAVER_SWEEP_MS);
+  if (typeof memorySaverTimer.unref === 'function') memorySaverTimer.unref();
+}
+
+ipcMain.handle('discard-tab', (event, payload = {}) => {
+  if (!isMainSender(event)) return { success: false };
+  const tab = (payload?.tabId === undefined)
+    ? tabs[currentTabIndex]
+    : tabs.find(t => String(t.id) === String(payload.tabId));
+  if (!tab) return { success: false };
+  return { success: discardTab(tab, 'manual') };
+});
+
+ipcMain.handle('get-memory-saver', () => ({
+  enabled: !!memorySaverEnabled,
+  idleMs: MEMORY_SAVER_IDLE_MS,
+  discarded: tabs.filter(t => t.discarded).map(t => ({ id: t.id, url: t.url })),
+}));
+
 function loadTabContent(tab) {
   if (!tab.view) {
     tab.view = new WebContentsView({
@@ -1216,8 +1300,11 @@ function switchToTab(tabIndex) {
   if (tabIndex >= 0 && tabIndex < tabs.length) {
     currentTabIndex = tabIndex;
     const tab = tabs[tabIndex];
+    tab.lastActiveAt = Date.now();
     // 后台崩溃的标签在此刻才重建视图，避免坏页面在后台空转。
     if (tab.crashed) rebuildCrashedTab(tab);
+    // 被内存节省休眠的标签切回时按原 URL 唤醒重载。
+    if (tab.discarded) reloadDiscardedTab(tab);
     if (tab.view) {
       mainWindow.contentView.addChildView(tab.view);
       updateBrowserViewBounds();
@@ -1448,10 +1535,12 @@ app.whenReady().then(async () => {
   loadBookmarks();
   loadZoomFactors();
 
-  // 启动时还原 darkMode / httpsOnly 等运行时状态
+  // 启动时还原 darkMode / httpsOnly / memorySaver 等运行时状态
   const stored = readStoredSettings();
   applyDarkMode(!!stored.darkMode);
   httpsOnlyEnabled = stored.httpsOnly !== false;
+  if ('memorySaver' in stored) memorySaverEnabled = !!stored.memorySaver;
+  startMemorySaver();
 
   if (process.platform === 'win32') app.setAsDefaultProtocolClient('cosy');
 
@@ -2206,6 +2295,7 @@ const ALLOWED_SETTING_KEYS = {
   customUrl: v => typeof v === 'string' && isSafeUrl(v),
   tabLayout: v => ['horizontal', 'vertical'].includes(v),
   searchEngine: v => ['bing', 'google', 'baidu'].includes(v),
+  memorySaver: v => typeof v === 'boolean',
   backgroundType: v => ['default', 'custom'].includes(v),
   customBackgroundUrl: v => typeof v === 'string' && isSafeUrl(v),
 };
@@ -2225,9 +2315,10 @@ ipcMain.on('save-settings', (event, settings) => {
     const clean = sanitizeSettings(settings);
     const settingsPath = path.join(app.getPath('userData'), 'cosySettings.json');
     fsSync.writeFileSync(settingsPath, JSON.stringify(clean, null, 2), 'utf-8');
-    // 立即把 darkMode / httpsOnly 应用到运行时
+    // 立即把 darkMode / httpsOnly / memorySaver 应用到运行时
     applyDarkMode(clean.darkMode);
     httpsOnlyEnabled = clean.httpsOnly !== false;
+    if ('memorySaver' in clean) memorySaverEnabled = !!clean.memorySaver;
     event.reply('settings-saved', { success: true });
   } catch (e) {
     console.error('保存设置失败:', e);
