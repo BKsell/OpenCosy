@@ -65,6 +65,30 @@ function codeScript(code) {
   return null;
 }
 
+// 常见与拉丁字母视觉相同的西里尔 / 希腊小写字符。键为 Unicode 码点，
+// 值为它伪装成的拉丁字母。仅收录字形在常见字体下几乎无法分辨的那批，
+// 控制误报：像亚马逊这种全拉丁品牌被混入一两个西里尔字母时能被点名。
+const CONFUSABLE_TO_LATIN = new Map([
+  [0x0430, 'a'], [0x0435, 'e'], [0x043E, 'o'], [0x0440, 'p'],
+  [0x0441, 'c'], [0x0443, 'y'], [0x0445, 'x'], [0x0456, 'i'],
+  [0x0458, 'j'], [0x04BB, 'h'], [0x04CF, 'l'], [0x04B9, 'u'],
+  [0x03B1, 'a'], [0x03BF, 'o'], [0x03C1, 'p'], [0x03C5, 'u'],
+  [0x03BA, 'k'], [0x03B5, 'e'], [0x03C4, 't'], [0x03B9, 'i'],
+]);
+
+// 标签里只要出现"形似拉丁的非 ASCII 字符"且同时存在真 ASCII 字母，
+// 基本可判定为有人故意拿外来字母拼拉丁词，是更强的同形字信号。
+function hasLatinLookalikeMix(label) {
+  let asciiLetters = 0;
+  let lookalikes = 0;
+  for (const ch of label) {
+    const code = ch.codePointAt(0);
+    if ((code >= 0x41 && code <= 0x5A) || (code >= 0x61 && code <= 0x7A)) asciiLetters++;
+    else if (CONFUSABLE_TO_LATIN.has(code)) lookalikes++;
+  }
+  return asciiLetters > 0 && lookalikes > 0;
+}
+
 // 返回可疑标签数组；空数组表示看起来正常。
 function findSpoofLabels(hostname) {
   const suspicious = [];
@@ -78,8 +102,11 @@ function findSpoofLabels(hostname) {
       const s = codeScript(code);
       if (s) scripts.add(s);
     }
-    // 同时出现拉丁与其他文字（且存在非 ASCII），是典型同形字混用特征。
+    // 同时出现拉丁与其他文字（且存在非 ASCII），是典型同形字混用特征；
+    // 全西里尔/希腊的 IDN 名（如纯俄文站）不误报，只有混入拉丁才提示。
     if (nonAscii > 0 && scripts.has('Latin') && scripts.size > 1) suspicious.push(label);
+    // 更强信号：一个标签里真拉丁字母 + 形似拉丁的西里尔/希腊字母混排。
+    else if (hasLatinLookalikeMix(label)) suspicious.push(label);
   }
   return suspicious;
 }
