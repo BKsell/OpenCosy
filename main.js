@@ -919,17 +919,19 @@ function loadTabContent(tab) {
     });
 
     tab.view.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
-      if (isMainFrame) {
-        const httpStatus = getHttpStatusCode(errorCode);
-        if (httpStatus === '403' && !tab.retry403) {
-          tab.retry403 = true;
-          tab.view.webContents.loadURL(validatedURL).catch(() => {
-            showErrorPage(tab, errorCode, errorDescription, validatedURL);
-          });
-          return;
-        }
-        showErrorPage(tab, errorCode, errorDescription, validatedURL);
+      if (!isMainFrame) return;
+      // ERR_ABORTED(-3) 不是真失败：下载触发的导航、用户手动取消、被 window.open
+      // 拦截或重定向链中止都会带这个码，此时弹错误页只会把正常页面盖掉。
+      if (errorCode === -3) return;
+      const httpStatus = getHttpStatusCode(errorCode);
+      if (httpStatus === '403' && !tab.retry403) {
+        tab.retry403 = true;
+        tab.view.webContents.loadURL(validatedURL).catch(() => {
+          showErrorPage(tab, errorCode, errorDescription, validatedURL);
+        });
+        return;
       }
+      showErrorPage(tab, errorCode, errorDescription, validatedURL);
     });
 
     tab.view.webContents.on('page-favicon-updated', (event, favicons) => {
@@ -1098,7 +1100,6 @@ function setupDownloadManager() {
 
     // 关键修复：不信任服务端给的 filename，先净化
     const safeFilename = sanitizeDownloadFilename(item.getFilename());
-    item.setSavePath(path.join(app.getPath('downloads'), safeFilename));
 
     const totalBytes = item.getTotalBytes();
     let downloadInfo = downloads.find(d => d.url === url && d.item === null && d.isItemValid === false);
