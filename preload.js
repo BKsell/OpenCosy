@@ -55,6 +55,7 @@ const allowedInvokeChannels = new Set([
   'get-https-only',
   'get-network-status',
   'open-external-url',
+  'permission-response',
 ]);
 
 // 接收方向白名单：main -> renderer
@@ -66,6 +67,7 @@ const allowedOnChannels = new Set([
   'tab-closed',
   'tab-history-changed',
   'tab-audio-changed',
+  'permission-request',
   'html-fullscreen-changed',
   'update-theme-color',
   'settings-loaded',
