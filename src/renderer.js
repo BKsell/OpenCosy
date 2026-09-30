@@ -1318,3 +1318,154 @@ document.addEventListener('keydown', (e) => {
     }
   });
 })();
+
+// ===== 地址栏自动补全：书签 / 历史 / 已打开标签 =====
+(function setupOmniboxAutocomplete() {
+  const MAX_ITEMS = 8;
+  let input = null;
+  let panel = null;
+  let items = [];
+  let active = -1;
+
+  function buildPanel() {
+    panel = document.createElement('div');
+    panel.id = 'cosy-omnibox-ac';
+    panel.style.cssText = 'position:fixed;z-index:10003;background:var(--bg,#fff);color:var(--fg,#222);border:1px solid rgba(0,0,0,0.15);border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.22);overflow:hidden;display:none;font:13px/1.4 system-ui,sans-serif;min-width:260px;';
+    document.body.appendChild(panel);
+  }
+
+  function positionPanel() {
+    const r = input.getBoundingClientRect();
+    panel.style.left = r.left + 'px';
+    panel.style.top = (r.bottom + 4) + 'px';
+    panel.style.width = Math.max(260, r.width) + 'px';
+  }
+
+  function hide() {
+    if (panel) panel.style.display = 'none';
+    items = [];
+    active = -1;
+  }
+
+  // 数据源合并去重：已打开标签页 > 书签 > 历史，按标签/标题/URL 子串匹配。
+  function collect() {
+    const seen = new Set();
+    const out = [];
+    const push = (url, title, kind) => {
+      if (!url || seen.has(url)) return;
+      seen.add(url);
+      out.push({ url, title: title || url, kind });
+    };
+    const tabs = (typeof tabManager !== 'undefined' && tabManager.tabs) ? tabManager.tabs : [];
+    tabs.forEach(t => { if (t.url && !t.url.startsWith('cosy://')) push(t.url, t.title, '标签'); });
+    (tabManager.bookmarks || []).forEach(b => push(b.url, b.title, '书签'));
+    (tabManager.history || []).forEach(h => push(h.url, h.title, '历史'));
+    return out;
+  }
+
+  function score(text, q) {
+    const i = text.toLowerCase().indexOf(q);
+    if (i === -1) return -1;
+    // 命中位置越靠前分越高
+    return text.length - i;
+  }
+
+  function refresh() {
+    const q = input.value.trim().toLowerCase();
+    if (!q) { hide(); return; }
+    const scored = [];
+    for (const it of collect()) {
+      const sUrl = score(it.url, q);
+      const sTitle = score(it.title, q);
+      const s = Math.max(sUrl, sTitle);
+      if (s >= 0) scored.push({ ...it, _s: s });
+    }
+    items = scored.sort((a, b) => b._s - a._s).slice(0, MAX_ITEMS);
+    active = items.length ? 0 : -1;
+    render();
+  }
+
+  function render() {
+    panel.innerHTML = '';
+    if (items.length === 0) { hide(); return; }
+    positionPanel();
+    panel.style.display = 'block';
+    items.forEach((it, idx) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:7px 12px;cursor:pointer;';
+      if (idx === active) row.style.background = 'rgba(0,120,212,0.12)';
+      const tag = document.createElement('span');
+      tag.textContent = it.kind;
+      tag.style.cssText = 'flex-shrink:0;font-size:10px;opacity:0.6;border:1px solid rgba(0,0,0,.2);border-radius:4px;padding:0 5px;';
+      const col = document.createElement('div');
+      col.style.cssText = 'min-width:0;flex:1;';
+      const t = document.createElement('div');
+      t.textContent = it.title;
+      t.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+      const u = document.createElement('div');
+      u.textContent = it.url;
+      u.style.cssText = 'font-size:11px;opacity:0.6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+      col.appendChild(t);
+      col.appendChild(u);
+      row.appendChild(tag);
+      row.appendChild(col);
+      row.addEventListener('mouseenter', () => { active = idx; highlight(); });
+      row.addEventListener('mousedown', (e) => {
+        // mousedown 先于 blur，避免面板被先隐藏
+        e.preventDefault();
+        choose(idx);
+      });
+      panel.appendChild(row);
+    });
+  }
+
+  function highlight() {
+    [...panel.children].forEach((r, i) => {
+      r.style.background = i === active ? 'rgba(0,120,212,0.12)' : '';
+    });
+  }
+
+  function choose(idx) {
+    const it = items[idx];
+    if (!it) return;
+    input.value = it.url;
+    hide();
+    if (typeof tabManager !== 'undefined' && tabManager.navigateCurrentTab) {
+      tabManager.navigateCurrentTab(it.url);
+    }
+  }
+
+  function init() {
+    input = document.getElementById('url-input');
+    if (!input || input._acAttached) return;
+    input._acAttached = true;
+    buildPanel();
+    input.addEventListener('input', refresh);
+    input.addEventListener('focus', refresh);
+    input.addEventListener('blur', () => setTimeout(hide, 120));
+    input.addEventListener('keydown', (e) => {
+      if (panel.style.display !== 'block') {
+        if (e.key === 'ArrowDown') refresh();
+        return;
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (items.length) active = (active + 1) % items.length;
+        highlight();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (items.length) active = (active - 1 + items.length) % items.length;
+        highlight();
+      } else if (e.key === 'Enter' && active >= 0) {
+        e.preventDefault();
+        choose(active);
+      } else if (e.key === 'Escape') {
+        hide();
+      }
+    });
+    window.addEventListener('resize', () => { if (panel.style.display === 'block') positionPanel(); });
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
