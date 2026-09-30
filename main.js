@@ -767,6 +767,14 @@ function registerShortcuts() {
     } else if (ctrl && key === 'l') {
       mainWindow.webContents.send('focus-address-bar');
       event.preventDefault();
+    } else if (input.key === 'F6') {
+      // F6：Chrome/Edge 惯例，聚焦地址栏
+      mainWindow.webContents.send('focus-address-bar');
+      event.preventDefault();
+    } else if (ctrl && input.key === 'F4') {
+      // Ctrl+F4：关闭当前标签页（与 Ctrl+W 等价的多标签窗口惯例）
+      closeTab(currentTabIndex);
+      event.preventDefault();
     } else if (ctrl && key === 'f') {
       mainWindow.webContents.send('show-find-bar');
       event.preventDefault();
