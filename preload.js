@@ -63,6 +63,7 @@ const allowedInvokeChannels = new Set([
   'print-current-tab',
   'get-search-suggestions',
   'discard-tab',
+  'discard-background-tabs',
   'get-memory-saver',
 ]);
 
