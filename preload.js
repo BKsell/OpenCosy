@@ -61,6 +61,7 @@ const allowedInvokeChannels = new Set([
   'get-download-shelf',
   'clear-site-data',
   'print-current-tab',
+  'get-search-suggestions',
 ]);
 
 // 接收方向白名单：main -> renderer
