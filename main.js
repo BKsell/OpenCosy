@@ -842,6 +842,64 @@ function pushNavState(tab) {
   });
 }
 
+// ===== 渲染进程崩溃恢复 =====
+// 渲染进程崩溃（OOM、被杀、完整性失败）后 WebContentsView 已不可用，
+// 必须销毁旧视图、按 tab.url 重建；非活动标签不立即重载，切回时才恢复，
+// 避免一个坏页面在后台无限崩溃-重载循环把 CPU 打满。
+const CRASH_REASON_TEXT = {
+  crashed: '页面崩溃',
+  oom: '内存不足，页面被系统终止',
+  killed: '渲染进程被终止',
+  'launch-failed': '渲染进程启动失败',
+  'integrity-failure': '渲染进程代码完整性校验失败',
+};
+const MAX_CRASH_AUTO_RECOVER = 3;   // 时间窗内自动恢复次数上限
+const CRASH_WINDOW_MS = 60 * 1000; // 崩溃计数滑动窗口
+
+function recordCrash(tab, details) {
+  const now = Date.now();
+  tab.crashEvents = (tab.crashEvents || []).filter(t => now - t < CRASH_WINDOW_MS);
+  tab.crashEvents.push(now);
+  tab.crashed = true;
+  tab.crashReason = CRASH_REASON_TEXT[details?.reason]
+    || `渲染进程异常退出（${details?.reason || 'unknown'}）`;
+  sendToRenderer('tab-crashed', { id: tab.id, reason: tab.crashReason });
+}
+
+function canAutoRecover(tab) {
+  return (tab.crashEvents || []).length <= MAX_CRASH_AUTO_RECOVER;
+}
+
+// 销毁已经死亡的视图；webContents 在崩溃后可能已被回收，全部容错。
+function destroyTabView(tab) {
+  if (!tab.view) return;
+  try { mainWindow.contentView.removeChildView(tab.view); } catch {}
+  try { tab.view.webContents.destroy(); } catch {}
+  tab.view = null;
+}
+
+// 重建崩溃标签的视图；超过自动恢复上限时改显错误页，不再自动加载原 URL。
+function rebuildCrashedTab(tab) {
+  const reason = tab.crashReason;
+  const overLimit = !canAutoRecover(tab);
+  destroyTabView(tab);
+  tab.crashed = false;
+  tab.crashReason = null;
+  loadTabContent(tab);
+  if (overLimit) {
+    showCosyError(tab, '500', reason || '页面崩溃', '该页面短时间内多次崩溃，已停止自动恢复，请手动刷新');
+  }
+}
+
+function handleRenderProcessGone(tab, details) {
+  if (!tab) return;
+  recordCrash(tab, details);
+  const idx = tabs.indexOf(tab);
+  // 活动标签立即恢复；后台标签只清理死视图，等切回时再重建。
+  if (idx === currentTabIndex) rebuildCrashedTab(tab);
+  else destroyTabView(tab);
+}
+
 function loadTabContent(tab) {
   if (!tab.view) {
     tab.view = new WebContentsView({
@@ -932,6 +990,10 @@ function loadTabContent(tab) {
         return;
       }
       showErrorPage(tab, errorCode, errorDescription, validatedURL);
+    });
+
+    tab.view.webContents.on('render-process-gone', (event, details) => {
+      handleRenderProcessGone(tab, details);
     });
 
     tab.view.webContents.on('page-favicon-updated', (event, favicons) => {
@@ -1043,6 +1105,8 @@ function switchToTab(tabIndex) {
   if (tabIndex >= 0 && tabIndex < tabs.length) {
     currentTabIndex = tabIndex;
     const tab = tabs[tabIndex];
+    // 后台崩溃的标签在此刻才重建视图，避免坏页面在后台空转。
+    if (tab.crashed) rebuildCrashedTab(tab);
     if (tab.view) {
       mainWindow.contentView.addChildView(tab.view);
       updateBrowserViewBounds();
