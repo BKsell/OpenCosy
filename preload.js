@@ -56,6 +56,7 @@ const allowedInvokeChannels = new Set([
   'get-network-status',
   'open-external-url',
   'permission-response',
+  'set-zoom',
 ]);
 
 // 接收方向白名单：main -> renderer
