@@ -44,6 +44,34 @@ function sendToRenderer(channel, ...args) {
   }
 }
 
+// ===== 底部下载栏（download shelf）=====
+// 现代浏览器在窗口底部用一条 shelf 展示下载进度，不必每次下载都新开标签页打断浏览。
+// 主进程只推送可序列化的快照给主界面；DownloadItem 等 Electron 对象绝不跨进程暴露。
+const MAX_SHELF_ITEMS = 3;
+
+function shelfSnapshot() {
+  const items = [];
+  for (let i = downloads.length - 1; i >= 0 && items.length < MAX_SHELF_ITEMS; i--) {
+    const d = downloads[i];
+    items.push({
+      id: d.id,
+      filename: d.filename,
+      url: d.url,
+      totalBytes: d.totalBytes || 0,
+      receivedBytes: d.receivedBytes || 0,
+      progress: Number(d.progress) || 0,
+      speed: d.speed || '0 B/s',
+      status: d.status || 'pending',
+      savePath: d.savePath || null,
+    });
+  }
+  return items;
+}
+
+function sendShelf() {
+  sendToRenderer('download-shelf', shelfSnapshot());
+}
+
 function getSafeDirs() {
   return [
     app.getPath('downloads'), app.getPath('documents'),
@@ -1187,7 +1215,12 @@ function setupDownloadManager() {
       isNewDownload = true;
     }
     currentDownloadInfo = downloadInfo;
-    if (isNewDownload) { createNewTab('cosy://download'); return; }
+    if (isNewDownload) {
+      // 不再强制新开下载页打断浏览：底部 shelf 提供“下载 / 另存为 / 取消”，
+      // 用户也可以在 shelf 上点“全部显示”进入完整下载页。
+      sendShelf();
+      return;
+    }
     if (downloadInfo.savePath) {
       item.setSavePath(downloadInfo.savePath);
     } else {
@@ -1213,6 +1246,7 @@ function setupDownloadManager() {
         downloadInfo.lastReceivedBytes = receivedBytes;
         downloadInfo.status = 'downloading';
         sendToRenderer('download-progress', { id: downloadInfo.id, receivedBytes, totalBytes, progress, speed: downloadInfo.speed });
+        sendShelf();
       }
     });
     item.on('done', (event, state) => {
@@ -1225,6 +1259,7 @@ function setupDownloadManager() {
         downloadInfo.status = 'error';
         sendToRenderer('download-error', { id: downloadInfo.id });
       }
+      sendShelf();
     });
   });
 }
@@ -1624,6 +1659,14 @@ ipcMain.on('get-downloads', (event) => {
   event.reply('downloads-list', serializableDownloads);
 });
 
+// ===== 底部下载栏 IPC =====
+ipcMain.handle('get-download-shelf', () => shelfSnapshot());
+
+ipcMain.on('shelf-show-all', (event) => {
+  if (!isMainSender(event)) return;
+  createNewTab('cosy://downloadlist');
+});
+
 ipcMain.on('pause-download', (event, id) => {
   if (!isMainSender(event)) return;
   const download = downloads.find(d => d.id === id);
@@ -1633,6 +1676,7 @@ ipcMain.on('pause-download', (event, id) => {
         download.item.pause();
         download.status = 'paused';
         sendToRenderer('download-status-changed', { id: download.id, status: 'paused' });
+        sendShelf();
       }
     } catch (e) {
       console.error('暂停下载失败:', e);
@@ -1652,6 +1696,7 @@ ipcMain.on('resume-download', (event, id) => {
         download.item.resume();
         download.status = 'downloading';
         sendToRenderer('download-status-changed', { id: download.id, status: 'downloading' });
+        sendShelf();
       }
     } catch (e) {
       console.error('恢复下载失败:', e);
@@ -1690,6 +1735,7 @@ ipcMain.on('remove-download', (event, id) => {
   if (index !== -1) {
     downloads.splice(index, 1);
     sendToRenderer('download-removed', { id });
+    sendShelf();
   }
 });
 
