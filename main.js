@@ -55,7 +55,6 @@ const MIN_WINDOW_HEIGHT = 600;
 const DEFAULT_TAB_BAR_HEIGHT_HORIZONTAL = 116;
 const DEFAULT_TAB_BAR_WIDTH_VERTICAL = 200;
 const COLLAPSED_TAB_BAR_WIDTH = 50;
-const ZOOM_STEP = 0.5;
 const SPELLCHECK_LANGUAGES = ['en-US', 'zh-CN'];
 
 const isDev = !app.isPackaged;
@@ -184,18 +183,15 @@ function getCurrentTabWebContents() {
 }
 
 function zoomIn() {
-  const wc = getCurrentTabWebContents();
-  if (wc) wc.setZoomLevel(wc.getZoomLevel() + ZOOM_STEP);
+  adjustCurrentZoom({ delta: 'in' });
 }
 
 function zoomOut() {
-  const wc = getCurrentTabWebContents();
-  if (wc) wc.setZoomLevel(wc.getZoomLevel() - ZOOM_STEP);
+  adjustCurrentZoom({ delta: 'out' });
 }
 
 function resetZoom() {
-  const wc = getCurrentTabWebContents();
-  if (wc) wc.setZoomLevel(0);
+  adjustCurrentZoom({ factor: 1 });
 }
 
 function toggleDevTools() {
@@ -421,7 +417,7 @@ function setupSecurityHeaders() {
 // 外部协议走 confirmAndOpenExternal()，先白名单 scheme 再弹原生确认框。
 const ALLOWED_PERMISSIONS = new Set([
   'media', 'geolocation', 'notifications', 'midi', 'midiSysex',
-  'pointerLock', 'fullscreen', 'clipboard-read', 'clipboard-sanitized-write',
+  'pointerLock', 'fullscreen', 'clipboard-sanitized-write',
   'pop-up'
 ]);
 
@@ -475,6 +471,9 @@ function setupPermissionHandlers() {
   // 这些改为向当前标签的渲染层发请求，由页面内询问条决定，默认安全失败。
   const SENSITIVE_PAGE_PERMISSIONS = new Set([
     'media', 'geolocation', 'notifications', 'midi', 'midiSysex',
+    // 读剪贴板能拿到密码 / 验证码 / 钱包地址等敏感内容，绝不静默放行，
+    // 必须像摄像头定位那样弹询问条由用户显式授权。
+    'clipboard-read',
   ]);
   // requestId -> settle(granted)，只允许决一次，超时 / 页面销毁默认拒绝。
   const pendingPermissionRequests = new Map();
@@ -704,6 +703,14 @@ function createWindow() {
     saveSession();
     mainWindow = null;
   });
+
+  // 会话原先只在正常退出时落盘，一旦进程崩溃 / 被任务管理器结束，下次启动就
+  // 无法恢复标签。这里周期性自动保存一次，崩溃最多丢失这 15 秒内新开/关闭的标签。
+  const SESSION_AUTOSAVE_MS = 15000;
+  const sessionAutosaveTimer = setInterval(() => {
+    try { saveSession(); } catch {}
+  }, SESSION_AUTOSAVE_MS);
+  if (typeof sessionAutosaveTimer.unref === 'function') sessionAutosaveTimer.unref();
 
   // 有关键下载进行中时关闭窗口先二次确认，防止误点 × 中断下载。
   let allowQuitWithDownloads = false;
@@ -1262,6 +1269,40 @@ function resolveUniqueDownloadPath(dir, filename) {
   return candidate;
 }
 
+// DANGEROUS_DOWNLOAD_EXTS 是 Windows / 跨平台下可直接执行或能启动程序的扩展名。
+// 现代浏览器对这类"可执行"下载会给出强提示；这里在自动保存前先弹原生确认，
+// 防止 drive-by download（页面静默触发）把木马 .exe 直接放进下载目录。
+const DANGEROUS_DOWNLOAD_EXTS = new Set([
+  '.exe', '.msi', '.msix', '.appx', '.appxbundle', '.msixbundle',
+  '.scr', '.bat', '.cmd', '.com', '.ps1', '.psm1', '.vbs', '.vbe',
+  '.jse', '.wsf', '.wsh', '.jar', '.hta', '.cpl',
+  '.dll', '.sys', '.drv', '.ocx', '.lnk', '.reg', '.inf',
+  '.iso', '.vhd', '.vhdx',
+]);
+
+// 危险扩展名提示只按最终落盘文件名判断（URL 路径可能与 Content-Disposition 不一致）。
+// .tar.gz / .zip 这类压缩包不在此列：它们不会被系统直接执行。
+function isDangerousDownloadFilename(filename) {
+  const lower = String(filename || '').toLowerCase();
+  return DANGEROUS_DOWNLOAD_EXTS.has(path.extname(lower));
+}
+
+function confirmDangerousDownload(filename, originUrl) {
+  let host = '';
+  try { host = new URL(originUrl).host; } catch { host = originUrl || '未知来源'; }
+  const choice = dialog.showMessageBoxSync(mainWindow, {
+    type: 'warning',
+    buttons: ['取消下载', '仍然保存'],
+    defaultId: 0,
+    cancelId: 0,
+    title: '安全提示：可执行文件',
+    message: `该文件可能会损害您的计算机，是否仍要保存？`,
+    detail: `文件：${filename}\n来源：${host}\n\n此类型文件可以在您的电脑上运行程序或更改设置，请确认来源可信后再保存。`,
+    noLink: true,
+  });
+  return choice === 1;
+}
+
 function setupDownloadManager() {
   session.defaultSession.on('will-download', (event, item, webContents) => {
     const url = item.getURL();
@@ -1269,6 +1310,16 @@ function setupDownloadManager() {
 
     // 关键修复：不信任服务端给的 filename，先净化
     const safeFilename = sanitizeDownloadFilename(item.getFilename());
+
+    // 可执行/脚本类文件在自动保存前必须让用户显式确认，阻断静默 drive-by 下载。
+    if (isDangerousDownloadFilename(safeFilename)) {
+      const allow = confirmDangerousDownload(safeFilename, url);
+      if (!allow) {
+        try { item.cancel(); } catch {}
+        sendToRenderer('show-toast', `已取消下载可执行文件：${safeFilename}`);
+        return;
+      }
+    }
 
     const totalBytes = item.getTotalBytes();
     let downloadInfo = downloads.find(d => d.url === url && d.item === null && d.isItemValid === false);
@@ -1395,6 +1446,7 @@ app.on('open-file', (event, filePath) => {
 app.whenReady().then(async () => {
   loadHistory();
   loadBookmarks();
+  loadZoomFactors();
 
   // 启动时还原 darkMode / httpsOnly 等运行时状态
   const stored = readStoredSettings();
@@ -1588,6 +1640,9 @@ ipcMain.handle('switch-tab', (event, tabIndex) => {
 const zoomFactorsByOrigin = new Map();
 const MIN_ZOOM_FACTOR = 0.25;
 const MAX_ZOOM_FACTOR = 5;
+const MAX_REMEMBERED_ORIGINS = 500;
+const zoomStorePath = path.join(app.getPath('userData'), 'zoom-store.json');
+let zoomSaveTimer = null;
 
 function clampZoomFactor(f) {
   if (!Number.isFinite(f)) return 1;
@@ -1598,12 +1653,73 @@ function originOfUrl(u) {
   try { return new URL(u).origin; } catch { return ''; }
 }
 
+// loadZoomFactors 启动时从 userData 读取按站点记忆的缩放（对齐 Chrome 跨重启保留缩放）。
+// 文件损坏 / 被外部塞非法内容时静默丢弃，绝不因此影响浏览器启动。
+function loadZoomFactors() {
+  try {
+    const raw = fsSync.readFileSync(zoomStorePath, 'utf8');
+    const data = JSON.parse(raw);
+    if (!data || typeof data !== 'object' || !data.origins || typeof data.origins !== 'object') return;
+    for (const [origin, factor] of Object.entries(data.origins)) {
+      if (typeof origin !== 'string' || !/^https?:|^cosy:/.test(origin)) continue;
+      if (typeof factor !== 'number' || !Number.isFinite(factor)) continue;
+      zoomFactorsByOrigin.set(origin, clampZoomFactor(factor));
+      if (zoomFactorsByOrigin.size >= MAX_REMEMBERED_ORIGINS) break;
+    }
+  } catch {}
+}
+
+// persistZoomFactors 防抖落盘，避免连续放大缩小频繁写文件。
+function persistZoomFactors() {
+  if (zoomSaveTimer) clearTimeout(zoomSaveTimer);
+  zoomSaveTimer = setTimeout(() => {
+    try {
+      const origins = {};
+      for (const [origin, factor] of zoomFactorsByOrigin) origins[origin] = factor;
+      const tmp = zoomStorePath + '.tmp';
+      fsSync.writeFileSync(tmp, JSON.stringify({ version: 1, origins }), 'utf8');
+      fsSync.renameSync(tmp, zoomStorePath);
+    } catch {}
+  }, 400);
+}
+
 function applySavedZoom(tab) {
   if (!tab || !tab.view || !tab.view.webContents) return;
   const origin = originOfUrl(tab.url);
   if (origin && zoomFactorsByOrigin.has(origin)) {
     tab.view.webContents.setZoomFactor(zoomFactorsByOrigin.get(origin));
   }
+}
+
+// adjustCurrentZoom 是菜单快捷键与 IPC 共用的唯一缩放入口：
+// 统一用 setZoomFactor（不要混用 setZoomLevel，二者写同一底层值会互相覆盖），
+// 计算结果按 origin 记忆、导航恢复、并持久化到磁盘。
+function adjustCurrentZoom({ delta, factor: explicit } = {}) {
+  const tab = tabs[currentTabIndex];
+  if (!tab || !tab.view || !tab.view.webContents) return null;
+  const wc = tab.view.webContents;
+  const origin = originOfUrl(tab.url);
+  let factor = 1;
+  try { factor = wc.getZoomFactor(); } catch { factor = (origin && zoomFactorsByOrigin.get(origin)) || 1; }
+  if (!Number.isFinite(factor) || factor <= 0) factor = 1;
+
+  if (typeof explicit === 'number' && Number.isFinite(explicit)) {
+    factor = explicit;
+  } else if (delta === 'in') {
+    factor *= 1.1;
+  } else if (delta === 'out') {
+    factor /= 1.1;
+  }
+  factor = clampZoomFactor(Math.round(factor * 1000) / 1000);
+  wc.setZoomFactor(factor);
+  if (origin) {
+    zoomFactorsByOrigin.set(origin, factor);
+    persistZoomFactors();
+  }
+  const percent = Math.round(factor * 100);
+  // 通知渲染层显示缩放百分比浮层（对齐 Chrome 放大/缩小时的 OSD）。
+  sendToRenderer('zoom-level-changed', { percent, factor });
+  return { factor, percent };
 }
 
 ipcMain.handle('set-tab-muted', (event, payload = {}) => {
@@ -1624,26 +1740,9 @@ ipcMain.handle('set-tab-muted', (event, payload = {}) => {
 // factor 直接指定（Ctrl+0 复位为 1）。按 origin 记忆，导航后自动恢复。
 ipcMain.handle('set-zoom', (event, payload = {}) => {
   if (!isMainSender(event)) return { success: false };
-  const tab = tabs[currentTabIndex];
-  if (!tab || !tab.view || !tab.view.webContents) return { success: false };
-  const wc = tab.view.webContents;
-  const origin = originOfUrl(tab.url);
-  let factor = 1;
-  try { factor = wc.getZoomFactor(); } catch { factor = (origin && zoomFactorsByOrigin.get(origin)) || 1; }
-  if (!Number.isFinite(factor) || factor <= 0) factor = 1;
-
-  const { delta, factor: explicit } = payload || {};
-  if (typeof explicit === 'number' && Number.isFinite(explicit)) {
-    factor = explicit;
-  } else if (delta === 'in') {
-    factor *= 1.1;
-  } else if (delta === 'out') {
-    factor /= 1.1;
-  }
-  factor = clampZoomFactor(Math.round(factor * 1000) / 1000);
-  wc.setZoomFactor(factor);
-  if (origin) zoomFactorsByOrigin.set(origin, factor);
-  return { success: true, factor, percent: Math.round(factor * 100) };
+  const result = adjustCurrentZoom(payload || {});
+  if (!result) return { success: false };
+  return { success: true, factor: result.factor, percent: result.percent };
 });
 
 ipcMain.on('navigate-to-url', (event, url) => {
