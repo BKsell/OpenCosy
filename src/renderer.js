@@ -267,6 +267,25 @@ class TabManager {
       const reason = (data && data.reason) || '页面崩溃';
       this.showToast(reason + '，正在尝试恢复…');
     });
+    // 内存节省：标签被休眠时变灰并提示，唤醒（切回重载）后恢复。
+    window.electronAPI.on('tab-discarded', (data) => this.markTabDiscarded(data && data.id, true));
+    window.electronAPI.on('tab-reloaded', (data) => this.markTabDiscarded(data && data.id, false));
+  }
+
+  // markTabDiscarded 切换标签的"已休眠"视觉态。
+  // 休眠标签仍可点击（switchToTab 会自动唤醒），所以只改外观、不拦截点击。
+  markTabDiscarded(tabId, discarded) {
+    if (tabId === undefined || tabId === null) return;
+    const el = document.querySelector(`[data-tab-id="${tabId}"]`);
+    if (!el) return;
+    el.classList.toggle('discarded', !!discarded);
+    if (discarded) {
+      el.style.opacity = '0.55';
+      el.title = '此标签已休眠以释放内存，点击即可重新加载';
+    } else {
+      el.style.opacity = '';
+      el.title = '';
+    }
   }
 
   toggleFullscreenUI(isFullscreen) {
