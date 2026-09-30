@@ -103,6 +103,7 @@ const allowedOnChannels = new Set([
   'toggle-bookmarks-bar',
   'network-status-changed',
   'native-theme-changed',
+  'zoom-level-changed',
 ]);
 
 // sanitizeArg 过滤掉 renderer 传入的可疑对象：只保留 JSON 可序列化的纯数据，
