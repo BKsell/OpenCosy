@@ -1363,6 +1363,19 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
+// child-process-gone 覆盖 GPU / utility / network 等非渲染子进程。
+// Electron 通常会自动重启 GPU 进程，这里只记录并在异常退出（非正常清理）时
+// 通知用户可能出现花屏/视频解码失效，提示重载标签，而不是静默吞掉。
+app.on('child-process-gone', (event, details) => {
+  console.error('子进程退出:', details?.type, details?.reason, details?.exitCode);
+  try {
+    if (mainWindow && !mainWindow.isDestroyed() && details?.reason !== 'clean-exit') {
+      sendToRenderer('show-toast',
+        `浏览器${details?.type || ''}进程异常（${details?.reason || 'unknown'}），如页面显示异常请按 Ctrl+R 重载`);
+    }
+  } catch {}
+});
+
 ipcMain.on('window-control', (event, action) => {
   if (!isMainSender(event)) return;
   switch (action) {
