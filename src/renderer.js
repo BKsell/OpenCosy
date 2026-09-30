@@ -184,6 +184,10 @@ class TabManager {
     window.electronAPI.on('show-history', () => this.showHistoryPanel());
     window.electronAPI.on('show-find-bar', () => this.toggleFindBar());
     window.electronAPI.on('show-clear-data-dialog', () => this.showClearDataDialog());
+    window.electronAPI.on('tab-crashed', (data) => {
+      const reason = (data && data.reason) || '页面崩溃';
+      this.showToast(reason + '，正在尝试恢复…');
+    });
   }
 
   toggleFullscreenUI(isFullscreen) {
