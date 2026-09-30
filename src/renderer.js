@@ -24,6 +24,39 @@ function getSettings() {
   }
 }
 
+// 地址栏搜索 bang：以 "!缩写 关键词" 开头时强制走指定引擎，无视默认搜索引擎。
+// 缩写小写匹配；只认开头第一个空白前的 token。
+const SEARCH_BANGS = {
+  g: ['Google', 'https://www.google.com/search?q='],
+  google: ['Google', 'https://www.google.com/search?q='],
+  b: ['百度', 'https://www.baidu.com/s?wd='],
+  baidu: ['百度', 'https://www.baidu.com/s?wd='],
+  bing: ['Bing', 'https://www.bing.com/search?q='],
+  y: ['YouTube', 'https://www.youtube.com/results?search_query='],
+  yt: ['YouTube', 'https://www.youtube.com/results?search_query='],
+  w: ['维基百科', 'https://zh.wikipedia.org/w/index.php?search='],
+  wiki: ['维基百科', 'https://zh.wikipedia.org/w/index.php?search='],
+  z: ['知乎', 'https://www.zhihu.com/search?type=content&q='],
+  zhihu: ['知乎', 'https://www.zhihu.com/search?type=content&q='],
+  gh: ['GitHub', 'https://github.com/search?q='],
+  github: ['GitHub', 'https://github.com/search?q='],
+  tb: ['淘宝', 'https://s.taobao.com/search?q='],
+  map: ['地图', 'https://www.bing.com/maps?q='],
+};
+
+// 解析 bang，返回 null 表示不是 bang 查询；返回 { url } 表示已拼好目标地址。
+function resolveSearchBang(input) {
+  if (!input || input.charCodeAt(0) !== 0x21 /* ! */) return null;
+  const sp = input.search(/\s/);
+  if (sp < 0) return null; // 必须带空格 + 关键词，避免把 "!foo" 当裸词
+  const tag = input.slice(1, sp).toLowerCase();
+  const engine = SEARCH_BANGS[tag];
+  if (!engine) return null;
+  const query = input.slice(sp + 1).trim();
+  if (!query) return null;
+  return { url: engine[1] + encodeURIComponent(query), engine: engine[0] };
+}
+
 window.electron = {
   minimize: () => window.electronAPI.minimize(),
   maximize: () => window.electronAPI.maximize(),
@@ -643,6 +676,9 @@ class TabManager {
     } catch {}
 
     if (input.includes('.') && !input.includes(' ')) return 'https://' + input;
+
+    const bang = resolveSearchBang(input);
+    if (bang) return bang.url;
 
     const settings = getSettings();
     const searchEngine = settings.searchEngine || 'bing';
@@ -1600,3 +1636,132 @@ document.addEventListener('keydown', (e) => {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })();
+
+// ===== 命令面板（Ctrl + Shift + P）：键盘即可触达常用命令 =====
+(function setupCommandPalette() {
+  const COMMANDS = [
+    { label: '新建标签页', kw: 'new tab xinjian biaoqian', run: () => tabManager.createNewTab() },
+    { label: '关闭当前标签页', kw: 'close tab guanbi', run: () => tabManager.closeTab(tabManager.currentTabId) },
+    { label: '恢复刚关闭的标签页', kw: 'reopen huifu', run: () => reopenClosedTab() },
+    { label: '重新加载当前页', kw: 'reload shuaxin chongxin jiazai', run: () => tabManager.reloadTab(tabManager.currentTabId) },
+    { label: '回到主页', kw: 'home zhuye xinyebiao', run: () => tabManager.navigateCurrentTab('cosy://newtab') },
+    { label: '聚焦地址栏', kw: 'address dizhilan focus jujiao', run: () => tabManager.focusAddressBar() },
+    { label: '页内查找', kw: 'find chazhao zaiye nei', run: () => tabManager.toggleFindBar() },
+    { label: '查看历史记录', kw: 'history lishi jilu', run: () => tabManager.showHistoryPanel() },
+    { label: '打开下载列表', kw: 'download xiazai liebiao', run: () => tabManager.createNewTab('cosy://downloadlist') },
+    { label: '打开设置', kw: 'settings shezhi', run: () => tabManager.createNewTab('cosy://setting') },
+    { label: '清除浏览数据', kw: 'clear data qingchu shuju', run: () => tabManager.showClearDataDialog() },
+  ];
+
+  let overlay, box, input, listEl, matches, active;
+
+  function build() {
+    overlay = document.createElement('div');
+    overlay.style.cssText = 'display:none;position:fixed;inset:0;z-index:10005;background:rgba(0,0,0,.35);';
+    box = document.createElement('div');
+    box.style.cssText = 'position:absolute;top:12vh;left:50%;transform:translateX(-50%);width:560px;max-width:92vw;background:var(--bg,#fff);color:var(--fg,#222);border:1px solid rgba(0,0,0,.15);border-radius:12px;box-shadow:0 18px 56px rgba(0,0,0,.32);overflow:hidden;font:13px/1.5 system-ui,sans-serif;';
+    input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = '输入命令，如：设置、下载、历史…';
+    input.style.cssText = 'display:block;width:100%;box-sizing:border-box;border:none;outline:none;padding:14px 16px;font-size:14px;background:transparent;color:inherit;';
+    listEl = document.createElement('div');
+    listEl.style.cssText = 'max-height:52vh;overflow:auto;border-top:1px solid rgba(0,0,0,.08);';
+    box.appendChild(input);
+    box.appendChild(listEl);
+    overlay.appendChild(box);
+    overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) hide(); });
+    document.body.appendChild(overlay);
+  }
+
+  function score(cmd, q) {
+    if (!q) return 0;
+    const label = cmd.label.toLowerCase();
+    const hay = (cmd.label + ' ' + cmd.kw).toLowerCase();
+    const i = hay.indexOf(q);
+    if (i < 0) return -1;
+    return label.indexOf(q) >= 0 ? 2 : 1;
+  }
+
+  function refresh() {
+    const q = input.value.trim().toLowerCase();
+    matches = COMMANDS
+      .map(c => ({ c, s: score(c, q) }))
+      .filter(x => x.s >= 0)
+      .sort((a, b) => b.s - a.s)
+      .map(x => x.c);
+    active = matches.length ? 0 : -1;
+    render();
+  }
+
+  function render() {
+    listEl.innerHTML = '';
+    if (!matches.length) {
+      const empty = document.createElement('div');
+      empty.textContent = '没有匹配的命令';
+      empty.style.cssText = 'padding:14px 16px;opacity:.55;';
+      listEl.appendChild(empty);
+      return;
+    }
+    matches.forEach((cmd, idx) => {
+      const row = document.createElement('div');
+      row.textContent = cmd.label;
+      row.style.cssText = 'padding:9px 16px;cursor:pointer;';
+      if (idx === active) row.style.background = 'rgba(0,120,212,.14)';
+      row.addEventListener('mouseenter', () => { active = idx; paint(); });
+      row.addEventListener('mousedown', (e) => { e.preventDefault(); pick(idx); });
+      listEl.appendChild(row);
+    });
+  }
+
+  function paint() {
+    [...listEl.children].forEach((r, i) => {
+      if (r.style) r.style.background = i === active ? 'rgba(0,120,212,.14)' : '';
+    });
+  }
+
+  function pick(idx) {
+    const cmd = matches[idx];
+    hide();
+    if (cmd) {
+      try { cmd.run(); } catch (e) { console.error('命令执行失败:', e); }
+    }
+  }
+
+  function show() {
+    if (!overlay) build();
+    overlay.style.display = 'block';
+    input.value = '';
+    refresh();
+    setTimeout(() => input.focus(), 0);
+  }
+
+  function hide() {
+    if (overlay) overlay.style.display = 'none';
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
+      e.preventDefault();
+      if (overlay && overlay.style.display === 'block') hide();
+      else show();
+      return;
+    }
+    if (!overlay || overlay.style.display !== 'block') return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (matches.length) active = (active + 1) % matches.length;
+      paint();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (matches.length) active = (active + matches.length - 1) % matches.length;
+      paint();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      pick(active);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      hide();
+    }
+  });
+})();
+
