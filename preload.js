@@ -30,6 +30,7 @@ const allowedSendChannels = new Set([
   'reload-tab-by-id',
   'reopen-tab-url',
   'reset-trackers',
+  'report-csp-violation',
 ]);
 
 // 调用方向白名单：renderer -> main -> renderer
@@ -77,6 +78,8 @@ const allowedInvokeChannels = new Set([
   'clear-protocol-decision',
   'list-security-events',
   'clear-security-events',
+  'list-csp-reports',
+  'clear-csp-reports',
   'list-download-hashes',
   'verify-download-hash',
   'remove-download-hash',
@@ -141,6 +144,7 @@ const allowedOnChannels = new Set([
   'gpu-process-gone',
   'trackers-blocked',
   'spoof-warning',
+  'csp-report-added',
 ]);
 
 // sanitizeArg 过滤掉 renderer 传入的可疑对象：只保留 JSON 可序列化的纯数据，
@@ -196,3 +200,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener(channel, listener);
   },
 });
+
+// 所有内部页面共用的 CSP 违规上报。Chromium 在内容被 CSP 拦截时会向 document
+// 派发 securitypolicyviolation 事件；isolated world 里挂的捕获监听同样收得到。
+// 这里只做"搬运"，来源判定（帧地址是否 cosy://）与限流全部在主进程完成，
+// renderer 自报的 documentURI 不会被采信。字段先在本地限长，减少 IPC 负担。
+(function installCspReporter() {
+  const FIELD_LIMIT = 300;
+  const clip = v => {
+    const s = String(v == null ? '' : v);
+    return s.length > FIELD_LIMIT ? s.slice(0, FIELD_LIMIT) : s;
+  };
+  document.addEventListener('securitypolicyviolation', event => {
+    try {
+      const report = {
+        directive: clip(event.effectiveDirective || event.violatedDirective || ''),
+        blockedUri: clip(event.blockedURI || ''),
+        sourceFile: clip(event.sourceFile || ''),
+        lineNumber: Number(event.lineNumber) || 0,
+        columnNumber: Number(event.columnNumber) || 0,
+        disposition: event.disposition === 'report' ? 'report' : 'enforce',
+      };
+      ipcRenderer.send('report-csp-violation', report);
+    } catch {}
+  }, true);
+})();
