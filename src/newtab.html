@@ -22,7 +22,10 @@
         .quick-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 18px; margin-top: 36px; }
         .quick-link { display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; opacity: 0.9; transition: transform 0.15s, opacity 0.15s; position: relative; }
         .quick-link:hover { transform: translateY(-3px); opacity: 1; }
-        .quick-link-icon { width: 56px; height: 56px; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700; color: white; box-shadow: 0 4px 16px rgba(0,0,0,0.25); backdrop-filter: blur(8px); }
+        .quick-link-icon { width: 56px; height: 56px; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700; color: white; box-shadow: 0 4px 16px rgba(0,0,0,0.25); backdrop-filter: blur(8px); position: relative; overflow: hidden; }
+        .quick-link-icon .ql-favicon { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 16px; background: #fff; display: none; }
+        .quick-link-icon.has-favicon .ql-favicon { display: block; }
+        .quick-link-icon.has-favicon .ql-letter { display: none; }
         .quick-link-icon.add { background: rgba(255,255,255,0.12); border: 2px dashed rgba(255,255,255,0.4); font-size: 28px; }
         .quick-link-name { font-size: 12px; text-shadow: 0 1px 3px rgba(0,0,0,0.6); max-width: 72px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .quick-link .del, .quick-link .edit { position: absolute; width: 18px; height: 18px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; font-size: 12px; line-height: 18px; display: none; }
@@ -218,6 +221,16 @@
             return `hsl(${h % 360}, 60%, 45%)`;
         }
 
+        // faviconUrl 只取站点自身的 /favicon.ico（第一方请求），不用第三方
+        // 聚合服务，避免把用户常访问的主机上报给 Google 之类；加载失败就回退字母块。
+        function faviconUrl(url) {
+            try {
+                const u = new URL(url);
+                if (u.protocol !== 'http:' && u.protocol !== 'https:') return '';
+                return `${u.protocol}//${u.host}/favicon.ico`;
+            } catch { return ''; }
+        }
+
         function renderLink(link, custom) {
             const el = document.createElement('div');
             el.className = 'quick-link' + (custom ? ' custom' : '');
@@ -226,14 +239,39 @@
             el.dataset.url = link.url;
             el.tabIndex = 0;
             el.setAttribute('role', 'button');
+            const fav = faviconUrl(link.url);
             el.innerHTML = `
-                <div class="quick-link-icon" style="background:${escapeHtml(link.color)}">${escapeHtml(link.letter)}</div>
+                <div class="quick-link-icon" style="background:${escapeHtml(link.color)}">
+                    <span class="ql-letter">${escapeHtml(link.letter)}</span>
+                    ${fav ? `<img class="ql-favicon" alt="" loading="lazy" referrerpolicy="no-referrer" src="${escapeHtml(fav)}">` : ''}
+                </div>
                 <div class="quick-link-name">${escapeHtml(link.name)}</div>
                 ${custom ? '<span class="del" title="删除">×</span><span class="edit" title="重命名">✎</span>' : ''}
             `;
+            const iconBox = el.querySelector('.quick-link-icon');
+            const favImg = el.querySelector('.ql-favicon');
+            if (favImg) {
+                favImg.addEventListener('load', () => {
+                    // 1x1 透明占位图也视为无图标，保留字母块。
+                    if (favImg.naturalWidth > 1) iconBox.classList.add('has-favicon');
+                });
+                favImg.addEventListener('error', () => favImg.remove());
+            }
             el.addEventListener('click', e => {
                 if (e.target.classList.contains('del') || e.target.classList.contains('edit')) return;
+                if (e.ctrlKey || e.metaKey) return; // Ctrl/⌘+点击交给下面的“新标签页打开”
                 navigateTo(link.url);
+            });
+            // 中键 / Ctrl+点击：新标签页打开（现代浏览器磁贴惯例），不离开当前新标签页。
+            el.addEventListener('auxclick', e => {
+                if (e.button === 1) { e.preventDefault(); window.open(link.url, '_blank', 'noopener'); }
+            });
+            el.addEventListener('click', e => {
+                if ((e.ctrlKey || e.metaKey) &&
+                    !e.target.classList.contains('del') && !e.target.classList.contains('edit')) {
+                    e.preventDefault();
+                    window.open(link.url, '_blank', 'noopener');
+                }
             });
             el.addEventListener('keydown', e => {
                 if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigateTo(link.url); }
@@ -748,28 +786,59 @@
             if (s) { s.focus(); s.select(); }
         }
 
+        // 搜索框“引擎快捷指令”（bang）：!g 词 -> Google，!b/!bd -> Bing/百度，
+        // !yt !bili !zhihu !tb !wiki 直接到对应站点搜索。命中且带关键词才生效，
+        // 单独一个 !g 不带词时忽略，回落到默认搜索。
+        const SEARCH_BANGS = {
+            g: 'https://www.google.com/search?q=', google: 'https://www.google.com/search?q=',
+            b: 'https://www.bing.com/search?q=', bing: 'https://www.bing.com/search?q=',
+            bd: 'https://www.baidu.com/s?wd=', baidu: 'https://www.baidu.com/s?wd=',
+            ddg: 'https://duckduckgo.com/?q=',
+            yt: 'https://www.youtube.com/results?search_query=', youtube: 'https://www.youtube.com/results?search_query=',
+            bili: 'https://search.bilibili.com/all?keyword=',
+            zhihu: 'https://www.zhihu.com/search?type=content&q=',
+            tb: 'https://s.taobao.com/search?q=', taobao: 'https://s.taobao.com/search?q=',
+            wiki: 'https://zh.wikipedia.org/w/index.php?search=',
+            gh: 'https://github.com/search?q=', github: 'https://github.com/search?q=',
+        };
+
+        function resolveBang(query) {
+            const m = /^!([a-z]+)\s+(.+)$/i.exec(query.trim());
+            if (!m) return null;
+            const base = SEARCH_BANGS[m[1].toLowerCase()];
+            const term = m[2].trim();
+            if (!base || !term) return null;
+            return base + encodeURIComponent(term);
+        }
+
+        function searchUrlForEngine(engine) {
+            switch (engine) {
+                case 'google': return 'https://www.google.com/search?q=';
+                case 'baidu': return 'https://www.baidu.com/s?wd=';
+                case 'ddg': return 'https://duckduckgo.com/?q=';
+                case 'bing':
+                default: return 'https://www.bing.com/search?q=';
+            }
+        }
+
         document.getElementById('search-input').addEventListener('keydown', function(e) {
             if (e.key === 'Enter') {
                 const query = this.value.trim();
                 if (query) {
                     if (isSafeUrl(query)) {
                         navigateTo(query);
-                    } else if (query.includes('.') && !query.includes(' ')) {
+                    } else if (query.includes('.') && !query.includes(' ') && !query.startsWith('!')) {
                         navigateTo('https://' + query);
                     } else {
+                        const bang = resolveBang(query);
+                        if (bang) { navigateTo(bang); return; }
                         let settings;
                         try { settings = JSON.parse(localStorage.getItem('cosySettings') || '{}'); }
                         catch { settings = {}; }
-                        const searchEngine = settings.searchEngine || 'bing';
-                        let searchUrl;
-                        switch (searchEngine) {
-                            case 'google': searchUrl = 'https://www.google.com/search?q='; break;
-                            case 'baidu': searchUrl = 'https://www.baidu.com/s?wd='; break;
-                            case 'ddg': searchUrl = 'https://duckduckgo.com/?q='; break;
-                            case 'bing':
-                            default: searchUrl = 'https://www.bing.com/search?q='; break;
-                        }
-                        navigateTo(searchUrl + encodeURIComponent(query));
+                        // 单独一个空 bang（如 "!g"）时去掉前缀再用默认引擎搜，避免把 "!g" 当关键词。
+                        const cleaned = query.replace(/^![a-z]+\s*/i, '').trim() || query;
+                        const searchUrl = searchUrlForEngine(settings.searchEngine || 'bing');
+                        navigateTo(searchUrl + encodeURIComponent(cleaned));
                     }
                 }
             }
