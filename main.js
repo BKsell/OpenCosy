@@ -781,7 +781,11 @@ const ALLOWED_PERMISSIONS = new Set([
 async function confirmAndOpenExternal(url, origin) {
   if (!url || typeof url !== 'string') return { ok: false, reason: 'empty url' };
   if (url.startsWith('http://') || url.startsWith('https://')) {
-    if (!isSafeUrl(url)) return { ok: false, reason: 'unsafe url' };
+    if (!isSafeUrl(url)) {
+      recordSecurityEvent('protocol-blocked', 'critical',
+        `外部协议入口拒绝了不安全的 http(s) 地址: ${url}`, origin);
+      return { ok: false, reason: 'unsafe url' };
+    }
     createNewTab(url);
     return { ok: true };
   }
@@ -3271,7 +3275,12 @@ async function validateExtensionFolder(folderPath) {
       }
     }
     return { valid: true, manifest };
-  } catch (e) { return { valid: false, error: '读取manifest.json失败: ' + e.message }; }
+  } catch (e) {
+    recordSecurityEvent('extension-blocked', 'warn',
+      `扩展 manifest.json 读取或解析失败: ${e && e.message ? e.message : e}`,
+      `extension:${folderPath || ''}`);
+    return { valid: false, error: '读取manifest.json失败: ' + e.message };
+  }
 }
 
 function isSafeEntryName(name) {
