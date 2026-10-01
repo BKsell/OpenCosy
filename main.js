@@ -1159,4 +1159,958 @@ function clearPermissionDecisionsForOrigin(origin) {
   if (n) persistPermissionDecisions();
   return n;
 }
-__TAIL__
+function setupPermissionHandlers() {
+  session.defaultSession.setPermissionCheckHandler((wc, permission, requestingOrigin, details) => {
+    const isMedia = permission === 'media';
+    if (details && details.securityOrigin === 'file://') return false;
+    if (isMedia) {
+      const mediaOrigin = (requestingOrigin || '').replace(/^https?:\/\//, '');
+      return mediaOrigin === 'localhost' || mediaOrigin.startsWith('127.0.0.1') || mediaOrigin.startsWith('192.168.') || mediaOrigin.startsWith('10.') || mediaOrigin.startsWith('172.');
+    }
+    return false;
+  });
+  session.defaultSession.setPermissionRequestHandler((wc, permission, callback, details) => {
+    if (!ALLOWED_PERMISSIONS.has(permission)) {
+      recordSecurityEvent('permission-blocked', 'critical', `阻止未授权权限请求: ${permission}`, wc.getURL());
+      return callback(false);
+    }
+    const origin = (details && (details.requestingUrl || details.securityOrigin)) || wc.getURL();
+    const remembered = getRememberedPermission(origin.replace(/\/$/, ''), permission);
+    if (remembered) return callback(remembered === 'allow');
+    if (permission === 'pointerLock' || permission === 'fullscreen') {
+      recordSecurityEvent('permission-blocked', 'info', `允许低风险权限请求: ${permission}`, wc.getURL());
+      return callback(true);
+    }
+    dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      buttons: ['允许', '阻止'],
+      defaultId: 0,
+      cancelId: 1,
+      title: '权限请求',
+      message: `网站请求权限: ${permission}\n来源: ${origin}\n是否允许？`,
+      checkboxLabel: '记住对此网站的选择（可在设置中撤销）',
+      checkboxChecked: false
+    }).then(result => {
+      const granted = result.response === 0;
+      if (result.checkboxChecked) rememberPermission(origin.replace(/\/$/, ''), permission, granted ? 'allow' : 'deny');
+      recordSecurityEvent('permission-blocked', granted ? 'info' : 'warn',
+        `${granted ? '已授予' : '已阻止'}权限: ${permission}`, origin);
+      callback(granted);
+    });
+  });
+}
+function setupWebRequestBlocking() {
+  session.defaultSession.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, (details, callback) => {
+    if (details.resourceType === 'subFrame' || details.resourceType === 'mainFrame') {
+      const tab = tabs.find(t => t.view && t.view.webContents && t.view.webContents.id === details.webContentsId);
+      if (tab && tab.view && tab.view.webContents) {
+        const blocked = handleFrameNavigationAttempt(tab.view.webContents, details.url, details.resourceType === 'mainFrame');
+        if (blocked) return callback({ cancel: true });
+      }
+    }
+    callback({});
+  });
+}
+function createWindow() {
+  const savedSettings = readStoredSettings();
+  if (typeof savedSettings.httpsOnlyEnabled === 'boolean') httpsOnlyEnabled = savedSettings.httpsOnlyEnabled;
+  if (typeof savedSettings.blockTrackers === 'boolean') blockTrackers = savedSettings.blockTrackers;
+  if (typeof savedSettings.crashRecoveryEnabled === 'boolean') crashRecoveryEnabled = savedSettings.crashRecoveryEnabled;
+  if (typeof savedSettings.clearOnExit === 'boolean') clearOnExit = savedSettings.clearOnExit;
+  if (typeof savedSettings.confirmCloseMultiple === 'boolean') confirmCloseMultiple = savedSettings.confirmCloseMultiple;
+  if (typeof savedSettings.spellcheckEnabled === 'boolean') spellcheckEnabled = savedSettings.spellcheckEnabled;
+  if (Array.isArray(savedSettings.spellcheckLanguages)) spellcheckLanguages = sanitizeSpellcheckLanguages(savedSettings.spellcheckLanguages);
+  if (savedSettings.darkMode === true) nativeTheme.themeSource = 'dark';
+  mainWindow = new BrowserWindow({
+    width: DEFAULT_WINDOW_WIDTH,
+    height: DEFAULT_WINDOW_HEIGHT,
+    minWidth: MIN_WINDOW_WIDTH,
+    minHeight: MIN_WINDOW_HEIGHT,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      webviewTag: false,
+      sandbox: true,
+      spellcheck: spellcheckEnabled
+    }
+  });
+  mainWindow.loadFile('index.html');
+  if (isDev) mainWindow.webContents.openDevTools({ mode: 'detach' });
+  mainWindow.on('close', async (event) => {
+    const tabCount = tabs.length;
+    if (confirmCloseMultiple && tabCount > 1) {
+      const result = await dialog.showMessageBox(mainWindow, {
+        type: 'question',
+        buttons: ['关闭全部', '取消'],
+        defaultId: 1,
+        cancelId: 1,
+        title: '确认关闭',
+        message: `当前有 ${tabCount} 个标签页，确定要关闭窗口吗？`
+      });
+      if (result.response !== 0) { event.preventDefault(); return; }
+    }
+    saveSession();
+    if (clearOnExit) {
+      try { await session.defaultSession.clearStorageData({ storages: ['cookies', 'shadercache', 'cachestorage', 'serviceworkers', 'indexdb', 'localstorage'] }); } catch {}
+    }
+  });
+  mainWindow.on('closed', () => { mainWindow = null; });
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (isSafeUrl(url)) {
+      const tab = tabs[currentTabIndex];
+      if (tab && !allowPopupForTab(tab.id)) {
+        sendToRenderer('show-toast', '已拦截短时间内的连续弹窗（疑似弹窗轰炸）');
+        return { action: 'deny' };
+      }
+      createNewTab(url);
+    } else {
+      recordSecurityEvent('protocol-blocked', 'warn', `窗口打开处理器阻止了不安全地址: ${url}`);
+    }
+    return { action: 'deny' };
+  });
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const blocked = handleFrameNavigationAttempt(mainWindow.webContents, url, true);
+    if (blocked) event.preventDefault();
+  });
+  mainWindow.webContents.session.on('will-download', (event, item, webContents) => {
+    const downloadUrl = item.getURL();
+    if (!isSafeUrl(downloadUrl)) {
+      event.preventDefault();
+      recordSecurityEvent('download-blocked', 'critical', `阻止不安全协议的下载: ${downloadUrl}`, webContents.getURL());
+      dialog.showErrorBox('下载已阻止', '该下载地址使用了不安全或不允许的协议。');
+      return;
+    }
+    if (downloadUrl.startsWith('file://')) {
+      event.preventDefault();
+      recordSecurityEvent('download-blocked', 'warn', 'file:// 下载被阻止', webContents.getURL());
+      return;
+    }
+    const totalBytes = item.getTotalBytes();
+    const knownSize = Number.isFinite(totalBytes) && totalBytes > 0;
+    const dangerous = /\.(exe|msi|bat|cmd|com|scr|ps1|reg|jar|app|dmg|deb|rpm|apk)$/i.test(item.getFilename());
+    dialog.showMessageBox(mainWindow, {
+      type: dangerous ? 'warning' : 'question',
+      buttons: ['保留', '放弃下载'],
+      defaultId: dangerous ? 1 : 0,
+      cancelId: 1,
+      title: dangerous ? '危险下载确认' : '下载确认',
+      message: `即将下载文件：${item.getFilename()}\n来源：${downloadUrl}\n${knownSize ? `大小：${formatBytes(totalBytes)}\n` : ''}${dangerous ? '\n这是可执行文件，可能危害你的电脑。确定保留吗？' : '是否保留此下载？'}`
+    }).then(choice => {
+      if (choice.response !== 0) {
+        item.cancel();
+        recordSecurityEvent('download-rejected', 'info', `用户放弃下载: ${item.getFilename()}`, downloadUrl);
+        return;
+      }
+      beginTrackedDownload(event, item, webContents, downloadUrl);
+    });
+    event.preventDefault();
+  });
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
+    if (!crashRecoveryEnabled) return;
+    const wc = mainWindow.webContents;
+    const n = (crashReloadCounts.get(wc.id) || 0) + 1;
+    if (n > 2) {
+      sendToRenderer('renderer-gone', { reason: details.reason, retries: n - 1, gaveUp: true });
+      return;
+    }
+    crashReloadCounts.set(wc.id, n);
+    sendToRenderer('renderer-gone', { reason: details.reason, retries: n - 1, gaveUp: false });
+    if (!wc.isDestroyed()) {
+      setTimeout(() => { if (!wc.isDestroyed() && wc.isLoading() === false) wc.reload(); }, 600);
+    }
+  });
+  setupSecurityHeaders();
+  setupPermissionHandlers();
+  setupWebRequestBlocking();
+  registerIpcHandlers();
+  registerGlobalShortcuts();
+  registerBookmarkAndHistoryIpc();
+  registerNewtabIpc();
+  setupDownloadIpc();
+  const savedSession = loadSession();
+  if (savedSession && savedSession.length > 0) {
+    for (const t of savedSession) createNewTab(t.url, { restore: true, title: t.title });
+  } else {
+    createNewTab();
+  }
+  app.on('web-contents-created', (event, contents) => {
+    if (contents.getType() === 'webview' || contents.getType() === 'remote') contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  });
+}
+function registerGlobalShortcuts() {
+  globalShortcut.register('CmdOrCtrl+T', () => createNewTab());
+  globalShortcut.register('CmdOrCtrl+W', () => closeCurrentTab());
+  globalShortcut.register('CmdOrCtrl+R', () => reloadCurrentTab());
+  globalShortcut.register('F5', () => reloadCurrentTab());
+  globalShortcut.register('CmdOrCtrl+L', () => sendToRenderer('focus-address-bar'));
+  globalShortcut.register('CmdOrCtrl+Plus', () => zoomIn());
+  globalShortcut.register('CmdOrCtrl+=', () => zoomIn());
+  globalShortcut.register('CmdOrCtrl+-', () => zoomOut());
+  globalShortcut.register('CmdOrCtrl+0', () => resetZoom());
+  globalShortcut.register('F12', () => toggleDevTools());
+  globalShortcut.register('CmdOrCtrl+O', () => showOpenFileDialog());
+  globalShortcut.register('Alt+Home', () => goHome());
+  globalShortcut.register('CmdOrCtrl+Shift+T', () => restoreLastClosedTab());
+}
+function restoreLastClosedTab() {
+  const last = getLastClosedTab();
+  if (last) createNewTab(last.url);
+}
+function adjustCurrentZoom({ delta, factor }) {
+  const tab = tabs[currentTabIndex];
+  if (!tab || !tab.view) return;
+  const wc = tab.view.webContents;
+  const zoomFactor = typeof factor === 'number' ? factor : (wc.getZoomFactor() + (delta === 'in' ? 0.1 : -0.1));
+  wc.setZoomFactor(Math.max(0.25, Math.min(5, zoomFactor)));
+  sendToRenderer('zoom-changed', wc.getZoomFactor());
+}
+function reloadCurrentTab() {
+  const tab = tabs[currentTabIndex];
+  if (tab && tab.view) tab.view.webContents.reload();
+}
+function closeCurrentTab() {
+  if (tabs.length > 0) {
+    const closed = tabs[currentTabIndex];
+    addToRecentlyClosed(closed);
+    const removed = tabs.splice(currentTabIndex, 1)[0];
+    if (removed && removed.view) mainWindow.contentView.removeChildView(removed.view);
+    if (currentTabIndex >= tabs.length) currentTabIndex = tabs.length - 1;
+    if (tabs.length === 0) {
+      createNewTab();
+    } else {
+      switchToTab(currentTabIndex);
+    }
+  }
+}
+function createNewTab(url = 'cosy://newtab', options = {}) {
+  const tab = new Tab(Date.now() + Math.random(), url);
+  tabs.push(tab);
+  const view = new WebContentsView({
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      webSecurity: true,
+      sandbox: true,
+      spellcheck: spellcheckEnabled
+    }
+  });
+  tab.view = view;
+  setupTabView(tab, options);
+  if (currentTabIndex === tabs.length - 2) currentTabIndex = tabs.length - 1;
+  switchToTab(tabs.length - 1);
+  return tab;
+}
+function setupTabView(tab, options = {}) {
+  const wc = tab.view.webContents;
+  wc.on('page-title-updated', (event, title) => {
+    tab.title = title;
+    updateTabBadge(tab);
+  });
+  wc.on('page-favicon-updated', (event, favicons) => {
+    if (favicons && favicons.length > 0) {
+      tab.favicon = favicons[0];
+      updateTabBadge(tab);
+    }
+  });
+  wc.on('did-start-loading', () => {
+    tab.isLoading = true;
+    updateTabBadge(tab);
+  });
+  wc.on('did-stop-loading', () => {
+    tab.isLoading = false;
+    updateTabBadge(tab);
+  });
+  wc.on('did-navigate', (event, url) => {
+    tab.url = url;
+    tab.canGoBack = wc.navigationHistory.canGoBack();
+    tab.canGoForward = wc.navigationHistory.canGoForward();
+    tab.bookmarked = bookmarks.some(b => b.url === url);
+    updateTabBadge(tab);
+    if (!options.restore) addToHistory(url, wc.getTitle());
+  });
+  wc.on('did-navigate-in-page', (event, url) => {
+    tab.url = url;
+    updateTabBadge(tab);
+  });
+  wc.on('media-started-playing', () => { tab.audible = true; updateTabBadge(tab); });
+  wc.on('media-paused', () => { tab.audible = false; updateTabBadge(tab); });
+  wc.setWindowOpenHandler(({ url }) => {
+    if (isSafeUrl(url)) {
+      if (!allowPopupForTab(tab.id)) {
+        sendToRenderer('show-toast', '已拦截短时间内的连续弹窗（疑似弹窗轰炸）');
+        return { action: 'deny' };
+      }
+      createNewTab(url);
+    } else {
+      recordSecurityEvent('protocol-blocked', 'warn', `标签窗口处理器阻止了不安全地址: ${url}`, wc.getURL());
+    }
+    return { action: 'deny' };
+  });
+  wc.on('will-navigate', (event, url) => {
+    if (handleFrameNavigationAttempt(wc, url, true)) event.preventDefault();
+  });
+  wc.on('render-process-gone', (event, details) => {
+    if (!crashRecoveryEnabled) return;
+    const n = (crashReloadCounts.get(wc.id) || 0) + 1;
+    if (n > 2) {
+      sendToRenderer('renderer-gone-tab', { tabId: tab.id, reason: details.reason, gaveUp: true });
+      return;
+    }
+    crashReloadCounts.set(wc.id, n);
+    sendToRenderer('renderer-gone-tab', { tabId: tab.id, reason: details.reason, gaveUp: false });
+  });
+  loadTabContent(tab, options);
+}
+function updateTabBadge(tab) {
+  sendToRenderer('tab-updated', {
+    id: tab.id,
+    title: tab.title,
+    url: tab.url,
+    favicon: tab.favicon,
+    isLoading: tab.isLoading,
+    audible: tab.audible,
+    muted: tab.muted,
+    bookmarked: tab.bookmarked
+  });
+}
+function loadTabContent(tab, options = {}) {
+  if (!tab.view) return;
+  if (tab.url.startsWith('cosy://')) {
+    const pageMap = {
+      'cosy://newtab': 'src/newtab.html',
+      'cosy://history': 'src/history.html',
+      'cosy://bookmarks': 'src/bookmarks.html',
+      'cosy://settings': 'src/settings.html',
+      'cosy://permissions': 'src/permissions.html',
+      'cosy://security': 'src/security.html'
+    };
+    const page = pageMap[tab.url.split('?')[0]];
+    if (page) tab.view.webContents.loadFile(page);
+    else tab.view.webContents.loadFile('src/newtab.html');
+  } else {
+    tab.view.webContents.loadURL(tab.url);
+  }
+  if (options.title) tab.title = options.title;
+}
+function switchToTab(index) {
+  currentTabIndex = index;
+  tabs.forEach((tab, i) => {
+    if (tab.view) tab.view.setVisible(i === index);
+  });
+  updateTabLayout();
+  const tab = tabs[index];
+  if (tab) {
+    sendToRenderer('tab-switched', {
+      index,
+      canGoBack: tab.canGoBack,
+      canGoForward: tab.canGoForward,
+      url: tab.url,
+      title: tab.title
+    });
+  }
+}
+function updateTabLayout() {
+  if (!mainWindow || !mainWindow.contentView) return;
+  const { width, height } = mainWindow.getContentBounds();
+  const isVertical = width > height;
+  const tabBarHeight = isTabBarCollapsed
+    ? (isVertical ? 0 : COLLAPSED_TAB_BAR_WIDTH)
+    : (isVertical ? DEFAULT_TAB_BAR_HEIGHT_HORIZONTAL : DEFAULT_TAB_BAR_WIDTH_VERTICAL);
+  tabs.forEach(tab => {
+    if (tab.view) {
+      tab.view.setBounds({ x: 0, y: isVertical ? tabBarHeight : 0, width: isVertical ? width : width - tabBarHeight, height: isVertical ? height - tabBarHeight : height });
+    }
+  });
+}
+function registerIpcHandlers() {
+  ipcMain.handle('new-tab', (event, url) => {
+    if (!isMainSender(event)) return;
+    createNewTab(url || 'cosy://newtab');
+  });
+  ipcMain.handle('close-tab', (event, tabId) => {
+    if (!isMainSender(event)) return;
+    const idx = tabs.findIndex(t => t.id === tabId);
+    if (idx !== -1) {
+      const closed = tabs[idx];
+      addToRecentlyClosed(closed);
+      const removed = tabs.splice(idx, 1)[0];
+      if (removed && removed.view) mainWindow.contentView.removeChildView(removed.view);
+      if (currentTabIndex >= tabs.length) currentTabIndex = tabs.length - 1;
+      if (tabs.length === 0) createNewTab();
+      else switchToTab(currentTabIndex);
+    }
+  });
+  ipcMain.handle('switch-tab', (event, index) => {
+    if (!isMainSender(event)) return;
+    if (index >= 0 && index < tabs.length) switchToTab(index);
+  });
+  ipcMain.handle('navigate', (event, url) => {
+    if (!isMainSender(event)) return;
+    if (isSafeUrl(url)) {
+      const tab = tabs[currentTabIndex];
+      if (tab) { tab.url = url; loadTabContent(tab); }
+    }
+  });
+  ipcMain.handle('go-back', event => { if (!isMainSender(event)) return; const tab = tabs[currentTabIndex]; if (tab?.view) tab.view.webContents.navigationHistory.goBack(); });
+  ipcMain.handle('go-forward', event => { if (!isMainSender(event)) return; const tab = tabs[currentTabIndex]; if (tab?.view) tab.view.webContents.navigationHistory.goForward(); });
+  ipcMain.handle('reload', event => { if (!isMainSender(event)) return; reloadCurrentTab(); });
+  ipcMain.handle('go-home', event => { if (!isMainSender(event)) return; goHome(); });
+  ipcMain.handle('zoom-in', event => { if (!isMainSender(event)) return; zoomIn(); });
+  ipcMain.handle('zoom-out', event => { if (!isMainSender(event)) return; zoomOut(); });
+  ipcMain.handle('zoom-reset', event => { if (!isMainSender(event)) return; resetZoom(); });
+  ipcMain.handle('toggle-devtools', event => { if (!isMainSender(event)) return; toggleDevTools(); }
+  );
+  ipcMain.handle('open-file', event => { if (!isMainSender(event)) return; showOpenFileDialog(); });
+  ipcMain.handle('toggle-tab-mute', (event, tabId) => {
+    if (!isMainSender(event)) return;
+    const tab = tabs.find(t => t.id === tabId);
+    if (tab?.view) {
+      tab.muted = !tab.muted;
+      tab.view.webContents.setAudioMuted(tab.muted);
+      updateTabBadge(tab);
+    }
+  });
+  ipcMain.handle('discard-tab', (event, tabId) => {
+    if (!isMainSender(event)) return { ok: false };
+    const tab = tabs.find(t => t.id === tabId);
+    if (!tab?.view || tabs[currentTabIndex]?.id === tabId) return { ok: false, reason: 'active' };
+    const wc = tab.view.webContents;
+    try {
+      const pid = wc.getOSProcessId();
+      wc.close();
+      tab.discarded = true;
+      tab.view = null;
+      mainWindow.contentView.removeChildView(tab.view);
+    } catch (e) { return { ok: false, reason: String(e && e.message || e) }; }
+    return { ok: true };
+  });
+  ipcMain.handle('restore-discarded-tab', (event, tabId) => {
+    if (!isMainSender(event)) return { ok: false };
+    const tab = tabs.find(t => t.id === tabId);
+    if (!tab || !tab.discarded) return { ok: false, reason: 'not-discarded' };
+    const view = new WebContentsView({
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.js'),
+        contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: spellcheckEnabled
+      }
+    });
+    tab.view = view;
+    tab.discarded = false;
+    mainWindow.contentView.addChildView(view);
+    setupTabView(tab);
+    switchToTab(tabs.indexOf(tab));
+    return { ok: true };
+  });
+  ipcMain.handle('set-https-only', (event, enabled) => {
+    if (!isMainSender(event)) return { success: false };
+    httpsOnlyEnabled = !!enabled;
+    persistSettings({ httpsOnlyEnabled });
+    return { success: true, httpsOnlyEnabled };
+  });
+  ipcMain.handle('set-block-trackers', (event, enabled) => {
+    if (!isMainSender(event)) return { success: false };
+    blockTrackers = !!enabled;
+    persistSettings({ blockTrackers });
+    return { success: true, blockTrackers };
+  });
+  ipcMain.handle('set-crash-recovery', (event, enabled) => {
+    if (!isMainSender(event)) return { success: false };
+    crashRecoveryEnabled = !!enabled;
+    persistSettings({ crashRecoveryEnabled });
+    return { success: true, crashRecoveryEnabled };
+  });
+  ipcMain.handle('set-clear-on-exit', (event, enabled) => {
+    if (!isMainSender(event)) return { success: false };
+    clearOnExit = !!enabled;
+    persistSettings({ clearOnExit });
+    return { success: true, clearOnExit };
+  });
+  ipcMain.handle('set-confirm-close-multiple', (event, enabled) => {
+    if (!isMainSender(event)) return { success: false };
+    confirmCloseMultiple = !!enabled;
+    persistSettings({ confirmCloseMultiple });
+    return { success: true, confirmCloseMultiple };
+  });
+  ipcMain.handle('set-spellcheck', (event, payload) => {
+    if (!isMainSender(event)) return { success: false };
+    if (payload && typeof payload === 'object') {
+      if (typeof payload.enabled === 'boolean') spellcheckEnabled = payload.enabled;
+      if (Array.isArray(payload.languages)) spellcheckLanguages = sanitizeSpellcheckLanguages(payload.languages);
+      applySpellcheckSettings();
+      persistSettings({ spellcheckEnabled, spellcheckLanguages });
+    }
+    return { success: true, spellcheckEnabled, spellcheckLanguages };
+  });
+  ipcMain.handle('get-spellcheck-info', event => {
+    if (!isMainSender(event)) return { success: false };
+    let available = [];
+    try { available = session.defaultSession.availableSpellCheckerLanguages || []; } catch {}
+    return { success: true, enabled: spellcheckEnabled, languages: spellcheckLanguages, available };
+  });
+  ipcMain.handle('set-dark-mode', (event, dark) => {
+    if (!isMainSender(event)) return { success: false };
+    applyDarkMode(!!dark);
+    persistSettings({ darkMode: !!dark });
+    return { success: true, darkMode: !!dark };
+  });
+  ipcMain.handle('get-settings', event => {
+    if (!isMainSender(event)) return { success: false };
+    return {
+      success: true,
+      httpsOnlyEnabled, blockTrackers, crashRecoveryEnabled,
+      clearOnExit, confirmCloseMultiple, spellcheckEnabled,
+      spellcheckLanguages,
+      darkMode: nativeTheme.shouldUseDarkColors
+    };
+  });
+  ipcMain.handle('get-tracker-stats', event => {
+    if (!isMainSender(event)) return { success: false };
+    return { success: true, count: blockedTrackerCount, top: topBlockedHosts() };
+  });
+  ipcMain.handle('open-external', async (event, url, origin) => {
+    if (!isMainSender(event)) return { ok: false, reason: 'untrusted' };
+    return await confirmAndOpenExternal(url, origin);
+  });
+  ipcMain.handle('open-tab-external', async (event, url) => {
+    if (!isMainSender(event)) return { ok: false, reason: 'untrusted' };
+    if (!isSafeUrl(url)) {
+      recordSecurityEvent('protocol-blocked', 'critical', `外部打开入口拒绝不安全地址: ${url}`);
+      return { ok: false, reason: 'unsafe url' };
+    }
+    try { await shell.openExternal(url, { activate: true }); return { ok: true }; }
+    catch (e) { return { ok: false, reason: String(e && e.message || e) }; }
+  });
+  ipcMain.handle('clear-site-data', async event => {
+    if (!isMainSender(event)) return { success: false };
+    try {
+      await session.defaultSession.clearStorageData({
+        storages: ['cookies', 'filesystem', 'indexdb', 'localstorage', 'shadercache', 'websql', 'serviceworkers', 'cachestorage']
+      });
+      await session.defaultSession.clearCache();
+      return { success: true };
+    } catch (e) { return { success: false, error: String(e && e.message || e) }; }
+  });
+}
+function persistSettings(patch) {
+  try {
+    const p = path.join(app.getPath('userData'), 'cosySettings.json');
+    const current = fsSync.existsSync(p) ? JSON.parse(fsSync.readFileSync(p, 'utf-8')) : {};
+    Object.assign(current, patch);
+    fsSync.writeFileSync(p, JSON.stringify(current, null, 2), 'utf-8');
+  } catch (e) { console.error('保存设置失败:', e); }
+}
+function registerBookmarkAndHistoryIpc() {
+  ipcMain.handle('get-bookmarks', event => { if (!isMainSender(event)) return []; return bookmarks; });
+  ipcMain.handle('add-bookmark', (event, { url, title }) => {
+    if (!isMainSender(event)) return { success: false };
+    if (!isSafeUrl(url)) return { success: false, error: 'unsafe url' };
+    if (!bookmarks.some(b => b.url === url)) {
+      bookmarks.push({ url, title: title || url, addedAt: Date.now() });
+      saveBookmarks();
+      const tab = tabs.find(t => t.url === url);
+      if (tab) { tab.bookmarked = true; updateTabBadge(tab); }
+    }
+    return { success: true, bookmarks };
+  });
+  ipcMain.handle('remove-bookmark', (event, url) => {
+    if (!isMainSender(event)) return { success: false };
+    const before = bookmarks.length;
+    bookmarks = bookmarks.filter(b => b.url !== url);
+    if (bookmarks.length !== before) {
+      saveBookmarks();
+      const tab = tabs.find(t => t.url === url);
+      if (tab) { tab.bookmarked = false; updateTabBadge(tab); }
+    }
+    return { success: true, bookmarks };
+  });
+  ipcMain.handle('is-bookmarked', (event, url) => {
+    if (!isMainSender(event)) return false;
+    return bookmarks.some(b => b.url === url);
+  });
+  ipcMain.handle('export-bookmarks', async event => {
+    if (!isMainSender(event)) return { success: false };
+    try {
+      const result = await dialog.showSaveDialog(mainWindow, {
+        title: '导出书签',
+        defaultPath: path.join(app.getPath('downloads'), 'cosy-bookmarks.html'),
+        filters: [{ name: 'HTML 书签', extensions: ['html', 'htm'] }]
+      });
+      if (result.canceled || !result.filePath) return { success: false, canceled: true };
+      const html = bookmarkIO.buildNetscapeBookmarkHTML(bookmarks);
+      await fs.writeFile(result.filePath, html, 'utf-8');
+      return { success: true, path: result.filePath };
+    } catch (e) { return { success: false, error: String(e && e.message || e) }; }
+  });
+  ipcMain.handle('import-bookmarks', async event => {
+    if (!isMainSender(event)) return { success: false };
+    try {
+      const result = await dialog.showOpenDialog(mainWindow, {
+        title: '导入书签',
+        properties: ['openFile'],
+        filters: [{ name: 'HTML 书签', extensions: ['html', 'htm'] }]
+      });
+      if (result.canceled || !result.filePaths.length) return { success: false, canceled: true };
+      const raw = await fs.readFile(result.filePaths[0], 'utf-8');
+      const imported = bookmarkIO.parseNetscapeBookmarkHTML(raw);
+      let added = 0;
+      for (const item of imported) {
+        if (!isSafeUrl(item.url)) continue;
+        if (!bookmarks.some(b => b.url === item.url)) {
+          bookmarks.push({ url: item.url, title: item.title || item.url, addedAt: Date.now() });
+          added += 1;
+        }
+      }
+      if (added > 0) saveBookmarks();
+      return { success: true, added, total: bookmarks.length };
+    } catch (e) { return { success: false, error: String(e && e.message || e) }; }
+  });
+  ipcMain.handle('get-history', event => {
+    if (!isMainSender(event)) return [];
+    return history;
+  });
+  ipcMain.handle('clear-history', event => {
+    if (!isMainSender(event)) return { success: false };
+    history = [];
+    saveHistory();
+    return { success: true };
+  });
+  ipcMain.handle('remove-history-entry', (event, url) => {
+    if (!isMainSender(event)) return { success: false };
+    const before = history.length;
+    history = history.filter(h => h.url !== url);
+    if (history.length !== before) saveHistory();
+    return { success: true };
+  });
+}
+const DEFAULT_TILES = [
+  { name: '热土工作室', url: 'https://rtstu.com', color: '#ff7043' },
+  { name: 'BHA (PyPI)', url: 'https://pypi.org/project/bool-hybrid-array/', color: '#006dad' },
+  { name: 'BK · GitHub', url: 'https://github.com/BKsell', color: '#24292f' },
+  { name: 'BHA · Gitee', url: 'https://gitee.com/BKsell/bool-hybrid-array', color: '#c71d23' },
+  { name: 'BHA · GitCode', url: 'https://gitcode.com/BKsell/bool-hybrid-array', color: '#e34d3a' },
+  { name: 'BK · CSDN', url: 'https://blog.csdn.net/BKsell', color: '#fc5531' },
+  { name: 'BK · 知乎', url: 'https://www.zhihu.com/people/50-78-41-74', color: '#0066ff' },
+  { name: 'Bing', url: 'https://www.bing.com', color: '#00897b' },
+  { name: '百度', url: 'https://www.baidu.com', color: '#2932e1' },
+  { name: '哔哩哔哩', url: 'https://www.bilibili.com', color: '#00a1d6' },
+  { name: '维基百科', url: 'https://www.wikipedia.org', color: '#636c72' },
+  { name: 'YouTube', url: 'https://www.youtube.com', color: '#ff0000' },
+  { name: '淘宝', url: 'https://www.taobao.com', color: '#ff5000' },
+  { name: 'Gmail', url: 'https://mail.google.com', color: '#ea4335' },
+  { name: 'Outlook', url: 'https://outlook.live.com', color: '#0078d4' }
+];
+const tileStorePath = path.join(app.getPath('userData'), 'newtab-tiles.json');
+function loadTiles() {
+  try {
+    if (!fsSync.existsSync(tileStorePath)) return DEFAULT_TILES.map(t => ({ ...t }));
+    const data = JSON.parse(fsSync.readFileSync(tileStorePath, 'utf8'));
+    if (!Array.isArray(data)) return DEFAULT_TILES.map(t => ({ ...t }));
+    const out = [];
+    for (const t of data) {
+      if (!t || typeof t !== 'object') continue;
+      if (typeof t.url !== 'string' || !isSafeUrl(t.url)) continue;
+      out.push({
+        name: typeof t.name === 'string' ? t.name.slice(0, 60) : t.url,
+        url: t.url,
+        color: isValidColor(t.color) ? t.color : '#455a64'
+      });
+      if (out.length >= 48) break;
+    }
+    return out.length ? out : DEFAULT_TILES.map(t => ({ ...t }));
+  } catch { return DEFAULT_TILES.map(t => ({ ...t })); }
+}
+function saveTiles(tiles) {
+  const safe = [];
+  for (const t of Array.isArray(tiles) ? tiles : []) {
+    if (!t || typeof t !== 'object') continue;
+    if (typeof t.url !== 'string' || !isSafeUrl(t.url)) continue;
+    safe.push({
+      name: typeof t.name === 'string' ? t.name.slice(0, 60) : t.url,
+      url: t.url,
+      color: isValidColor(t.color) ? t.color : '#455a64'
+    });
+    if (safe.length >= 48) break;
+  }
+  try { fsSync.writeFileSync(tileStorePath, JSON.stringify(safe, null, 2), 'utf8'); } catch (e) { console.error('保存磁贴失败:', e); }
+  return safe;
+}
+function registerNewtabIpc() {
+  ipcMain.handle('get-tiles', event => { if (!isMainSender(event)) return []; return loadTiles(); });
+  ipcMain.handle('save-tiles', (event, tiles) => {
+    if (!isMainSender(event)) return { success: false };
+    const safe = saveTiles(tiles);
+    return { success: true, tiles: safe };
+  });
+}
+function formatBytes(n) {
+  if (!Number.isFinite(n) || n < 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let v = n, i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${v.toFixed(v >= 100 || i === 0 ? 0 : 1)} ${units[i]}`;
+}
+function getDownloadFilenameFromUrl(url) {
+  try {
+    const u = new URL(url);
+    const last = u.pathname.split('/').filter(Boolean).pop();
+    return last ? decodeURIComponent(last) : 'download';
+  } catch { return 'download'; }
+}
+function setupDownloadIpc() {
+  ipcMain.handle('choose-download-path', async (event, payload) => {
+    if (!isMainSender(event)) return { ok: false, reason: 'untrusted' };
+    const filename = typeof payload?.filename === 'string' && payload.filename
+      ? path.basename(payload.filename)
+      : 'download';
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: '选择保存位置',
+      defaultPath: path.join(app.getPath('downloads'), filename)
+    });
+    if (result.canceled || !result.filePath) return { ok: false, reason: 'canceled' };
+    return { ok: true, path: result.filePath };
+  });
+  ipcMain.handle('download-resume', (event, id) => {
+    if (!isMainSender(event)) return { ok: false };
+    const rec = downloads.find(d => String(d.id) === String(id));
+    if (!rec) return { ok: false, reason: 'not-found' };
+    if (rec.status === 'completed' && rec.savePath) shell.showItemInFolder(rec.savePath);
+    return { ok: true };
+  });
+  ipcMain.handle('download-cancel', (event, id) => {
+    if (!isMainSender(event)) return { ok: false };
+    const rec = downloads.find(d => String(d.id) === String(id));
+    if (!rec) return { ok: false, reason: 'not-found' };
+    if (rec.item && typeof rec.item.cancel === 'function') {
+      try { rec.item.cancel(); } catch {}
+    }
+    rec.status = 'canceled';
+    sendShelf();
+    return { ok: true };
+  });
+  ipcMain.handle('download-show', (event, id) => {
+    if (!isMainSender(event)) return { ok: false };
+    const rec = downloads.find(d => String(d.id) === String(id));
+    if (!rec || !rec.savePath) return { ok: false, reason: 'not-found' };
+    shell.showItemInFolder(rec.savePath);
+    return { ok: true };
+  });
+  ipcMain.handle('download-open', async (event, id) => {
+    if (!isMainSender(event)) return { ok: false };
+    const rec = downloads.find(d => String(d.id) === String(id));
+    if (!rec || rec.status !== 'completed' || !rec.savePath) return { ok: false, reason: 'not-ready' };
+    const dangerous = /\.(exe|msi|bat|cmd|com|scr|ps1|reg|jar|app|dmg|deb|rpm|apk)$/i.test(rec.filename || '');
+    if (dangerous) {
+      const choice = await dialog.showMessageBox(mainWindow, {
+        type: 'warning', buttons: ['打开', '取消'], defaultId: 1, cancelId: 1,
+        title: '打开可执行文件',
+        message: `文件 ${rec.filename} 是可执行文件，仍要打开吗？`
+      });
+      if (choice.response !== 0) return { ok: false, reason: 'user-cancel' };
+    }
+    const err = await shell.openPath(rec.savePath);
+    return err ? { ok: false, reason: err } : { ok: true };
+  });
+  ipcMain.handle('download-shelf-list', event => {
+    if (!isMainSender(event)) return [];
+    return shelfSnapshot();
+  });
+  ipcMain.handle('list-download-hashes', (event, limit) => {
+    if (!isMainSender(event)) return { success: false };
+    return { success: true, records: listDownloadHashes(limit) };
+  });
+  ipcMain.handle('remove-download-hash', (event, id) => {
+    if (!isMainSender(event)) return { success: false };
+    const removed = removeDownloadHashRecord(id);
+    return { success: true, removed };
+  });
+  ipcMain.handle('clear-download-hashes', event => {
+    if (!isMainSender(event)) return { success: false };
+    clearDownloadHashes();
+    return { success: true };
+  });
+  ipcMain.handle('verify-download-hash', (event, id, expected) => {
+    if (!isMainSender(event)) return { ok: false, reason: 'untrusted' };
+    return verifyDownloadHashById(id, expected);
+  });
+  ipcMain.handle('hash-local-file', event => {
+    if (!isMainSender(event)) return { ok: false, reason: 'untrusted' };
+    return hashLocalFileViaDialog();
+  });
+  ipcMain.handle('list-permission-decisions', event => {
+    if (!isMainSender(event)) return { success: false };
+    return { success: true, decisions: listPermissionDecisions() };
+  });
+  ipcMain.handle('forget-permission', (event, origin, permission) => {
+    if (!isMainSender(event)) return { success: false };
+    const ok = forgetPermission(String(origin || ''), String(permission || ''));
+    return { success: true, forgotten: ok };
+  });
+  ipcMain.handle('clear-permissions-for-origin', (event, origin) => {
+    if (!isMainSender(event)) return { success: false };
+    const n = clearPermissionDecisionsForOrigin(String(origin || ''));
+    return { success: true, removed: n };
+  });
+  ipcMain.handle('list-security-events', (event, type, limit) => {
+    if (!isMainSender(event)) return { success: false };
+    return { success: true, events: listSecurityEvents(type, limit) };
+  });
+  ipcMain.handle('clear-security-events', event => {
+    if (!isMainSender(event)) return { success: false };
+    clearSecurityEvents();
+    return { success: true };
+  });
+  ipcMain.handle('list-csp-reports', (event, limit) => {
+    if (!isMainSender(event)) return { success: false };
+    return { success: true, reports: listCspReports(limit) };
+  });
+  ipcMain.handle('clear-csp-reports', event => {
+    if (!isMainSender(event)) return { success: false };
+    clearCspReports();
+    return { success: true };
+  });
+}
+function beginTrackedDownload(event, item, webContents, downloadUrl) {
+  const downloadId = `dl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const downloadInfo = {
+    id: downloadId,
+    filename: item.getFilename(),
+    url: downloadUrl,
+    totalBytes: item.getTotalBytes(),
+    receivedBytes: 0,
+    progress: 0,
+    speed: '0 B/s',
+    status: 'progressing',
+    startTime: Date.now(), savePath: null, item,
+    lastUpdate: Date.now(), lastReceivedBytes: 0, isItemValid: true,
+        expectedHash: null
+      };
+      downloads.push(downloadInfo);
+  currentDownloadInfo = downloadInfo;
+  sendShelf();
+  item.on('updated', (e, state) => {
+    if (state === 'interrupted') downloadInfo.status = 'paused';
+    if (state === 'progressing') {
+      downloadInfo.status = item.isPaused() ? 'paused' : 'progressing';
+      downloadInfo.receivedBytes = item.getReceivedBytes();
+      downloadInfo.totalBytes = item.getTotalBytes();
+      downloadInfo.progress = downloadInfo.totalBytes > 0 ? (downloadInfo.receivedBytes / downloadInfo.totalBytes) : 0;
+      const now = Date.now();
+      const dt = (now - downloadInfo.lastUpdate) / 1000;
+      if (dt >= 0.5) {
+        const diff = downloadInfo.receivedBytes - downloadInfo.lastReceivedBytes;
+        downloadInfo.speed = `${formatBytes(diff / dt)}/s`;
+        downloadInfo.lastUpdate = now;
+        downloadInfo.lastReceivedBytes = downloadInfo.receivedBytes;
+      }
+      sendShelf();
+    }
+  });
+  item.once('done', (e, state) => {
+    downloadInfo.receivedBytes = item.getReceivedBytes();
+    downloadInfo.totalBytes = item.getTotalBytes();
+    downloadInfo.savePath = item.getSavePath();
+    if (state === 'completed') {
+      downloadInfo.status = 'completed';
+      downloadInfo.progress = 1;
+      downloadInfo.speed = '';
+      sendShelf();
+      if (downloadInfo.savePath) queueDownloadHashing(downloadInfo);
+    } else if (state === 'interrupted') {
+      downloadInfo.status = 'interrupted';
+      sendShelf();
+    } else {
+      downloadInfo.status = 'canceled';
+      sendShelf();
+    }
+  });
+}
+app.whenReady().then(() => {
+  loadHistory();
+  loadBookmarks();
+  applySpellcheckSettings();
+  protocol.registerSchemesAsPrivileged([
+    { scheme: 'cosy', privileges: { standard: true, secure: true, supportFetchAPI: true } }
+  ]);
+  protocol.handle('cosy', request => {
+    const url = new URL(request.url);
+    const map = {
+      '/newtab': path.join(__dirname, 'src/newtab.html'),
+      '/history': path.join(__dirname, 'src/history.html'),
+      '/bookmarks': path.join(__dirname, 'src/bookmarks.html'),
+      '/settings': path.join(__dirname, 'src/settings.html'),
+      '/permissions': path.join(__dirname, 'src/permissions.html'),
+      '/security': path.join(__dirname, 'src/security.html')
+    };
+    const file = map[url.pathname];
+    if (file) return new Response(fsSync.createReadStream(file)) ;
+    return new Response('Not found', { status: 404 });
+  });
+  ipcMain.handle('csp-violation', (event, payload) => {
+    if (!isMainSender(event)) return { accepted: false, reason: 'untrusted' };
+    return recordCspViolationFromRenderer(event.senderFrame, payload);
+  });
+  createWindow();
+});
+app.on('window-all-closed', () => {
+  globalShortcut.unregisterAll();
+  if (process.platform !== 'darwin') app.quit();
+});
+app.on('will-quit', () => { globalShortcut.unregisterAll(); });
+app.on('web-contents-created', (event, contents) => {
+  contents.on('will-attach-webview', (e, webPreferences, params) => {
+    e.preventDefault();
+  });
+});
+ipcMain.handle('get-current-tab-info', event => {
+  if (!isMainSender(event)) return null;
+  const tab = tabs[currentTabIndex];
+  return tab ? { id: tab.id, url: tab.url, title: tab.title, canGoBack: tab.canGoBack, canGoForward: tab.canGoForward } : null;
+});
+ipcMain.handle('find-in-page', (event, text, options = {}) => {
+  if (!isMainSender(event)) return { success: false };
+  const wc = getCurrentTabWebContents();
+  if (!wc || !text) return { success: false, matches: 0 };
+  const result = wc.findInPage(text, { forward: options.forward !== false, findNext: !!options.findNext });
+  return { success: true, matches: result.result, activeMatch: result.activeMatchOrdinal };
+});
+ipcMain.handle('stop-find-in-page', event => {
+  if (!isMainSender(event)) return { success: false };
+  const wc = getCurrentTabWebContents();
+  if (wc) wc.stopFindInPage('clearSelection');
+  return { success: true };
+});
+function fetchSearchSuggestions(query) {
+  return new Promise(resolve => {
+    try {
+      const url = `https://suggestionquay.com/suggestions?query=${encodeURIComponent(query)}`;
+      const request = net.request(url);
+      let body = '';
+      const timer = setTimeout(() => { try { request.abort(); } catch {} resolve([]); }, 4000);
+      request.on('response', response => {
+        if (response.statusCode !== 200) { clearTimeout(timer); resolve([]); return; }
+        response.on('data', chunk => { body += chunk.toString('utf8'); });
+        response.on('end', () => {
+          clearTimeout(timer);
+          try {
+            const data = JSON.parse(body);
+            const suggestions = Array.isArray(data.suggestions) ? data.suggestions.slice(0, 10).filter(s => typeof s === 'string') : [];
+            resolve(suggestions);
+          } catch { resolve([]); }
+        });
+      });
+      request.on('error', () => { clearTimeout(timer); resolve([]); });
+      request.end();
+    } catch { resolve([]); }
+  });
+}
+ipcMain.handle('get-search-suggestions', async (event, query) => {
+  if (!isMainSender(event)) return { success: false, suggestions: [] };
+  const q = String(query || '').trim();
+  if (!q) return { success: true, suggestions: [] };
+  const suggestions = await fetchSearchSuggestions(q);
+  return { success: true, suggestions };
+});
