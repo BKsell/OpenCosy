@@ -304,14 +304,39 @@ class TabManager {
       findBar.className = 'find-bar';
       findBar.innerHTML = `
         <input type="text" id="find-input" placeholder="在页面中查找..." />
-        <span id="find-match-count" class="find-match-count"></span>
+        <span id="find-match-count" class="find-match-count" style="min-width:46px;text-align:center;color:#666;font-size:12px;user-select:none;"></span>
         <button id="find-prev" class="find-btn" title="上一个">▲</button>
         <button id="find-next" class="find-btn" title="下一个">▼</button>
         <button id="find-close" class="find-btn find-close" title="关闭 (Esc)">×</button>
       `;
       document.body.appendChild(findBar);
 
+      // 主进程把活动标签的 found-in-page 结果转发过来，显示“第 x / y 个匹配”。
+      // 0 个匹配时给出明确提示，和 Chrome 查找栏行为一致。
+      window.electronAPI.on('found-in-page-result', (result) => {
+        const el = document.getElementById('find-match-count');
+        if (!el || !this.findBarVisible) return;
+        const total = result && result.matches;
+        if (!total) {
+          el.textContent = '无匹配';
+          el.style.color = '#d13438';
+          return;
+        }
+        el.textContent = `${result.activeMatchOrdinal}/${total}`;
+        el.style.color = '#666';
+      });
+
       const findInput = document.getElementById('find-input');
+      // 输入即搜（现代浏览器行为）：内容变化就重新查找并重置计数。
+      let findInputTimer = null;
+      findInput.addEventListener('input', () => {
+        const el = document.getElementById('find-match-count');
+        if (el) { el.textContent = ''; el.style.color = '#666'; }
+        const value = findInput.value;
+        if (findInputTimer) clearTimeout(findInputTimer);
+        if (!value) return;
+        findInputTimer = setTimeout(() => this.performFind(value, true), 120);
+      });
       findInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
@@ -345,12 +370,16 @@ class TabManager {
   hideFindBar() {
     const findBar = document.getElementById('find-bar');
     if (findBar) findBar.classList.remove('visible');
+    const countEl = document.getElementById('find-match-count');
+    if (countEl) { countEl.textContent = ''; countEl.style.color = '#666'; }
     this.findBarVisible = false;
     window.electronAPI.send('stop-find');
   }
 
   performFind(text, forward) {
     if (!text) return;
+    const countEl = document.getElementById('find-match-count');
+    if (countEl) { countEl.textContent = '…'; countEl.style.color = '#666'; }
     window.electronAPI.send('find-in-page', { text, forward });
   }
 
@@ -1449,6 +1478,11 @@ document.addEventListener('keydown', (e) => {
         } },
       { divider: true },
       { label: '关闭标签页', fn: () => tabManager.closeTab(tabId) },
+      { label: '关闭左侧标签页', fn: () => {
+          const order = tabManager.tabs.map(t => t.id);
+          const i = order.indexOf(tabId);
+          if (i > 0) order.slice(0, i).forEach(id => tabManager.closeTab(id));
+        } },
       { label: '关闭右侧标签页', fn: () => {
           const order = tabManager.tabs.map(t => t.id);
           const i = order.indexOf(tabId);
@@ -1456,6 +1490,12 @@ document.addEventListener('keydown', (e) => {
         } },
       { label: '关闭其他标签页', fn: () => tabManager.tabs.filter(t => t.id !== tabId).forEach(t => tabManager.closeTab(t.id)) },
       { label: '重新加载所有标签页', fn: () => tabManager.tabs.forEach(t => tabManager.reloadTab(t.id)) },
+      { divider: true },
+      { label: '静音其他标签页', fn: () => {
+          tabManager.tabs.filter(t => t.id !== tabId).forEach(t => {
+            if (!t.muted) window.electronAPI.invoke('set-tab-muted', { tabId: t.id, muted: true });
+          });
+        } },
     ];
     items.forEach(it => {
       if (it.divider) {
