@@ -308,9 +308,11 @@ class TabManager {
       findBar.className = 'find-bar';
       findBar.innerHTML = `
         <input type="text" id="find-input" placeholder="在页面中查找..." />
+        <button id="find-case" class="find-toggle" title="区分大小写 (Alt+C)">Aa</button>
+        <button id="find-word" class="find-toggle" title="整词匹配 (Alt+W)">W</button>
         <span id="find-match-count" class="find-match-count" style="min-width:46px;text-align:center;color:#666;font-size:12px;user-select:none;"></span>
-        <button id="find-prev" class="find-btn" title="上一个">▲</button>
-        <button id="find-next" class="find-btn" title="下一个">▼</button>
+        <button id="find-prev" class="find-btn" title="上一个 (Shift+Enter)">▲</button>
+        <button id="find-next" class="find-btn" title="下一个 (Enter)">▼</button>
         <button id="find-close" class="find-btn find-close" title="关闭 (Esc)">×</button>
       `;
       document.body.appendChild(findBar);
@@ -331,6 +333,29 @@ class TabManager {
       });
 
       const findInput = document.getElementById('find-input');
+      // 查找选项（区分大小写 / 整词），跨开关查找栏保留，行为对齐 Chrome。
+      this.findOptions = this.findOptions || { matchCase: false, wholeWord: false };
+      const syncFindToggles = () => {
+        const caseBtn = document.getElementById('find-case');
+        const wordBtn = document.getElementById('find-word');
+        if (caseBtn) caseBtn.classList.toggle('active', !!this.findOptions.matchCase);
+        if (wordBtn) wordBtn.classList.toggle('active', !!this.findOptions.wholeWord);
+      };
+      // 切换查找选项后立即按当前关键词重新查找。
+      const rerunFind = () => {
+        syncFindToggles();
+        if (findInput.value) this.performFind(findInput.value, true);
+      };
+      document.getElementById('find-case').addEventListener('click', () => {
+        this.findOptions.matchCase = !this.findOptions.matchCase;
+        rerunFind();
+      });
+      document.getElementById('find-word').addEventListener('click', () => {
+        this.findOptions.wholeWord = !this.findOptions.wholeWord;
+        rerunFind();
+      });
+      syncFindToggles();
+
       // 输入即搜（现代浏览器行为）：内容变化就重新查找并重置计数。
       let findInputTimer = null;
       findInput.addEventListener('input', () => {
@@ -342,7 +367,16 @@ class TabManager {
         findInputTimer = setTimeout(() => this.performFind(value, true), 120);
       });
       findInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
+        // Alt+C 切换区分大小写、Alt+W 切换整词，对齐 Chrome 查找栏快捷键。
+        if (e.altKey && (e.key === 'c' || e.key === 'C')) {
+          e.preventDefault();
+          this.findOptions.matchCase = !this.findOptions.matchCase;
+          rerunFind();
+        } else if (e.altKey && (e.key === 'w' || e.key === 'W')) {
+          e.preventDefault();
+          this.findOptions.wholeWord = !this.findOptions.wholeWord;
+          rerunFind();
+        } else if (e.key === 'Enter') {
           e.preventDefault();
           const forward = !e.shiftKey;
           this.performFind(findInput.value, forward);
@@ -384,7 +418,12 @@ class TabManager {
     if (!text) return;
     const countEl = document.getElementById('find-match-count');
     if (countEl) { countEl.textContent = '…'; countEl.style.color = '#666'; }
-    window.electronAPI.send('find-in-page', { text, forward });
+    const opts = this.findOptions || { matchCase: false, wholeWord: false };
+    window.electronAPI.send('find-in-page', {
+      text, forward,
+      matchCase: !!opts.matchCase,
+      wholeWord: !!opts.wholeWord,
+    });
   }
 
   attachOutsideClickClose(panel) {
@@ -414,8 +453,50 @@ class TabManager {
     bar.id = 'bookmarks-bar';
     bar.className = 'cosy-panel';
 
+    // 面板头部：标题 + 导入 / 导出操作。导入支持 Chrome/Edge/Firefox 的
+    // Netscape 书签 HTML 以及本浏览器的 JSON；导出提供两种格式。
+    const header = document.createElement('div');
+    header.className = 'cosy-panel-header';
+    header.innerHTML = '<strong class="cosy-panel-title">书签</strong>';
+
+    const exportBtn = document.createElement('button');
+    exportBtn.textContent = '导出';
+    exportBtn.className = 'cosy-panel-clear-btn';
+    exportBtn.title = '导出书签（HTML / JSON）';
+    exportBtn.onclick = (e) => {
+      e.stopPropagation();
+      this.showBookmarkExportMenu(exportBtn);
+    };
+
+    const importBtn = document.createElement('button');
+    importBtn.textContent = '导入';
+    importBtn.className = 'cosy-panel-clear-btn';
+    importBtn.title = '从其他浏览器导入书签（HTML / JSON）';
+    importBtn.onclick = async (e) => {
+      e.stopPropagation();
+      const r = await window.electronAPI.invoke('import-bookmarks');
+      if (r && r.canceled) return;
+      if (r && r.success) {
+        await this.loadBookmarks();
+        this.showToast(r.added > 0
+          ? `已导入 ${r.added} 个新书签（共 ${r.total} 个）`
+          : '没有新的书签（全部重复）');
+        bar.remove();
+        this.showBookmarksBar();
+      } else if (r && r.error) {
+        this.showToast('导入失败：' + r.error);
+      }
+    };
+
+    header.appendChild(exportBtn);
+    header.appendChild(importBtn);
+    bar.appendChild(header);
+
     if (this.bookmarks.length === 0) {
-      bar.innerHTML = '<div class="cosy-panel-empty">暂无书签，按 Ctrl+D 添加书签</div>';
+      const empty = document.createElement('div');
+      empty.className = 'cosy-panel-empty';
+      empty.textContent = '暂无书签，按 Ctrl+D 添加书签';
+      bar.appendChild(empty);
     } else {
       this.bookmarks.forEach(bookmark => {
         const item = this.buildPanelItem(bookmark.title, bookmark.url);
@@ -431,6 +512,46 @@ class TabManager {
     this.attachOutsideClickClose(bar);
   }
 
+  // showBookmarkExportMenu 在“导出”按钮旁给出 HTML / JSON 两种格式选择。
+  showBookmarkExportMenu(anchor) {
+    const old = document.getElementById('bookmark-export-menu');
+    if (old) { old.remove(); return; }
+    const menu = document.createElement('div');
+    menu.id = 'bookmark-export-menu';
+    menu.className = 'cosy-panel bookmark-export-menu';
+    const mk = (label, hint, format) => {
+      const item = document.createElement('div');
+      item.className = 'cosy-panel-item';
+      const title = document.createElement('strong');
+      title.className = 'cosy-panel-title';
+      title.textContent = label;
+      const url = document.createElement('small');
+      url.className = 'cosy-panel-url';
+      url.textContent = hint;
+      item.appendChild(title);
+      item.appendChild(document.createElement('br'));
+      item.appendChild(url);
+      item.onclick = async () => {
+        menu.remove();
+        const r = await window.electronAPI.invoke('export-bookmarks', format);
+        if (r && r.success) this.showToast(`已导出 ${r.count} 个书签（${format.toUpperCase()}）`);
+        else if (r && r.error) this.showToast('导出失败：' + r.error);
+      };
+      return item;
+    };
+    menu.appendChild(mk('导出为 HTML', '兼容 Chrome / Edge / Firefox', 'html'));
+    menu.appendChild(mk('导出为 JSON', 'OpenCosy 自有格式，可再导入', 'json'));
+    document.body.appendChild(menu);
+    const rect = anchor.getBoundingClientRect();
+    menu.style.top = `${rect.bottom + 6}px`;
+    menu.style.right = `${Math.max(8, window.innerWidth - rect.right)}px`;
+    setTimeout(() => {
+      const close = (e) => {
+        if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('click', close); }
+      };
+      document.addEventListener('click', close);
+    }, 50);
+  }
   showHistoryPanel() {
     const existing = document.getElementById('history-panel');
     if (existing) { existing.remove(); return; }
