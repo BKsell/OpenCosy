@@ -263,10 +263,13 @@ class TabManager {
     window.electronAPI.on('show-history', () => this.showHistoryPanel());
     window.electronAPI.on('show-find-bar', () => this.toggleFindBar());
     window.electronAPI.on('show-clear-data-dialog', () => this.showClearDataDialog());
-    window.electronAPI.on('tab-crashed', (data) => {
-      const reason = (data && data.reason) || '页面崩溃';
-      this.showToast(reason + '，正在尝试恢复…');
+    window.electronAPI.on('renderer-gone', (data) => showCrashInfobar(data || {}));
+    window.electronAPI.on('renderer-unresponsive', (data) => showUnresponsiveInfobar(data || {}));
+    window.electronAPI.on('renderer-responsive', () => hideRecoveryInfobar());
+    window.electronAPI.on('gpu-process-gone', () => {
+      this.showToast('GPU 进程崩溃，已自动重启图形进程');
     });
+    window.electronAPI.on('trackers-blocked', (data) => updateTrackerShield(data || {}));
     // 内存节省：标签被休眠时变灰并提示，唤醒（切回重载）后恢复。
     window.electronAPI.on('tab-discarded', (data) => this.markTabDiscarded(data && data.id, true));
     window.electronAPI.on('tab-reloaded', (data) => this.markTabDiscarded(data && data.id, false));
@@ -1055,6 +1058,197 @@ window.addEventListener('offline', () => showNetworkPill('网络已断开，浏�
 if (!navigator.onLine) {
   document.addEventListener('DOMContentLoaded', () => showNetworkPill('当前处于离线状态', '#c62828'));
 }
+
+// ===== 渲染进程崩溃 / 无响应信息条（Chrome 风格横幅）=====
+const RECOVERY_REASON_TEXT = {
+  crashed: '崩溃',
+  oom: '内存不足（OOM）',
+  killed: '进程被系统终止',
+  'abnormal-exit': '异常退出',
+  'launch-failed': '启动失败',
+  unknown: '发生未知错误',
+};
+
+function hideRecoveryInfobar() {
+  const bar = document.getElementById('cosy-recovery-bar');
+  if (bar) bar.remove();
+}
+
+function recoveryActionButton(label, primary, onClick) {
+  const b = document.createElement('button');
+  b.textContent = label;
+  b.style.cssText = 'margin-left:8px;padding:4px 12px;border:none;border-radius:4px;font:12px/1.4 system-ui,sans-serif;cursor:pointer;' +
+    (primary ? 'background:#1a73e8;color:#fff;' : 'background:transparent;color:#1a73e8;border:1px solid #1a73e8;');
+  b.addEventListener('click', () => { onClick(); hideRecoveryInfobar(); });
+  return b;
+}
+
+function showRecoveryBar(message, actions) {
+  hideRecoveryInfobar();
+  const bar = document.createElement('div');
+  bar.id = 'cosy-recovery-bar';
+  bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:10000;display:flex;align-items:center;gap:6px;padding:8px 16px;background:#fce8e6;color:#3c4043;font:13px/1.5 system-ui,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.18);';
+  const span = document.createElement('span');
+  span.textContent = message;
+  span.style.flex = '1';
+  bar.appendChild(span);
+  actions.forEach(a => bar.appendChild(recoveryActionButton(a.label, !!a.primary, a.onClick)));
+  document.body.appendChild(bar);
+}
+
+function showCrashInfobar(data) {
+  const reasonText = RECOVERY_REASON_TEXT[data.reason] || RECOVERY_REASON_TEXT.unknown;
+  const tabId = data.tabId;
+  const url = typeof data.url === 'string' ? data.url : '';
+  const reload = () => window.electronAPI.send('reload-tab-by-id', tabId);
+  const reopen = () => window.electronAPI.send('reopen-tab-url', url);
+  if (data.autoReloaded) {
+    showRecoveryBar(`此页面因${reasonText}崩溃，正在自动重新加载…`, [
+      { label: '立即刷新', primary: true, onClick: reload },
+    ]);
+    return;
+  }
+  const actions = [{ label: '重新加载', primary: true, onClick: reload }];
+  if (/^https?:/i.test(url)) actions.push({ label: '在新标签页重新打开', onClick: reopen });
+  showRecoveryBar(`此页面的渲染进程因${reasonText}已停止。${data.exitCode != null ? `（退出码 ${data.exitCode}）` : ''}`, actions);
+}
+
+function showUnresponsiveInfobar(data) {
+  // 无响应可能只是暂时卡顿，不立刻覆盖已有的崩溃横幅。
+  if (document.getElementById('cosy-recovery-bar')) return;
+  const tabId = data && data.tabId;
+  showRecoveryBar('此页面无响应。可以继续等待，也可以强制刷新。', [
+    { label: '强制刷新', primary: true, onClick: () => window.electronAPI.send('reload-tab-by-id', tabId) },
+  ]);
+}
+
+// ===== 追踪拦截盾牌（右下角计数，点击查看 / 归零）=====
+let trackerSnapshot = { enabled: true, count: 0, top: [] };
+
+function ensureTrackerShield() {
+  let el = document.getElementById('cosy-tracker-shield');
+  if (el) return el;
+  el = document.createElement('div');
+  el.id = 'cosy-tracker-shield';
+  el.style.cssText = 'position:fixed;right:14px;bottom:14px;z-index:9997;display:none;align-items:center;gap:6px;padding:6px 12px;border-radius:18px;background:rgba(26,115,232,.92);color:#fff;font:12px/1 system-ui,sans-serif;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.25);user-select:none;';
+  const icon = document.createElement('span');
+  icon.textContent = '🛡';
+  const num = document.createElement('span');
+  num.id = 'cosy-tracker-num';
+  num.textContent = '0';
+  el.appendChild(icon);
+  el.appendChild(num);
+  el.addEventListener('click', openTrackerReport);
+  document.body.appendChild(el);
+  return el;
+}
+
+function updateTrackerShield(data) {
+  if (!data || data.enabled === false) return;
+  trackerSnapshot = {
+    enabled: true,
+    count: data.count || 0,
+    top: Array.isArray(data.top) ? data.top : [],
+  };
+  const el = ensureTrackerShield();
+  const num = document.getElementById('cosy-tracker-num');
+  if (num) num.textContent = String(trackerSnapshot.count);
+  el.style.display = (trackerSnapshot.count > 0) ? 'flex' : 'none';
+  const panel = document.getElementById('cosy-tracker-list');
+  if (panel) renderTrackerList(panel); // 弹窗开着时实时刷新
+}
+
+function renderTrackerList(container) {
+  container.textContent = '';
+  if (!trackerSnapshot.top.length) {
+    const empty = document.createElement('div');
+    empty.textContent = '本次还没有拦截到追踪请求';
+    empty.style.cssText = 'padding:18px;text-align:center;color:#888;font-size:13px;';
+    container.appendChild(empty);
+    return;
+  }
+  for (const item of trackerSnapshot.top) {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:8px 4px;border-bottom:1px solid #f0f0f0;font-size:13px;';
+    const host = document.createElement('span');
+    host.textContent = item.host;
+    host.style.cssText = 'color:#333;word-break:break-all;';
+    const n = document.createElement('span');
+    n.textContent = String(item.n);
+    n.style.cssText = 'margin-left:12px;color:#1a73e8;font-variant-numeric:tabular-nums;flex:none;';
+    row.appendChild(host);
+    row.appendChild(n);
+    container.appendChild(row);
+  }
+}
+
+function openTrackerReport() {
+  let ov = document.getElementById('cosy-tracker-report');
+  if (ov) { ov.remove(); return; }
+  ov = document.createElement('div');
+  ov.id = 'cosy-tracker-report';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;';
+  ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+
+  const panel = document.createElement('div');
+  panel.style.cssText = 'width:420px;max-width:92vw;background:#fff;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.3);overflow:hidden;font:13px/1.5 system-ui,sans-serif;';
+
+  const head = document.createElement('div');
+  head.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid #eee;';
+  const title = document.createElement('strong');
+  title.textContent = '🛡 追踪拦截';
+  title.style.cssText = 'font-size:15px;color:#222;';
+  const closeX = document.createElement('button');
+  closeX.textContent = '×';
+  closeX.style.cssText = 'border:none;background:none;font-size:20px;line-height:1;color:#888;cursor:pointer;';
+  closeX.addEventListener('click', () => ov.remove());
+  head.appendChild(title);
+  head.appendChild(closeX);
+
+  const summary = document.createElement('div');
+  summary.style.cssText = 'padding:14px 18px;background:#f6f9ff;color:#1a73e8;font-size:14px;';
+  const strong = document.createElement('strong');
+  strong.textContent = String(trackerSnapshot.count);
+  strong.style.cssText = 'font-size:22px;margin-right:6px;';
+  summary.appendChild(strong);
+  summary.appendChild(document.createTextNode('个追踪请求已在本次浏览中被拦截'));
+
+  const list = document.createElement('div');
+  list.id = 'cosy-tracker-list';
+  list.style.cssText = 'max-height:40vh;overflow:auto;padding:4px 18px;';
+  renderTrackerList(list);
+
+  const foot = document.createElement('div');
+  foot.style.cssText = 'display:flex;justify-content:flex-end;gap:10px;padding:12px 18px;border-top:1px solid #eee;';
+  const tip = document.createElement('span');
+  tip.textContent = '仅统计当前会话，可在设置中关闭拦截';
+  tip.style.cssText = 'flex:1;color:#999;font-size:12px;align-self:center;';
+  const resetBtn = document.createElement('button');
+  resetBtn.textContent = '清零计数';
+  resetBtn.style.cssText = 'padding:6px 14px;border:1px solid #ddd;border-radius:6px;background:#fff;color:#444;cursor:pointer;font-size:13px;';
+  resetBtn.addEventListener('click', () => {
+    window.electronAPI.send('reset-trackers');
+    updateTrackerShield({ enabled: true, count: 0, top: [] });
+  });
+  foot.appendChild(tip);
+  foot.appendChild(resetBtn);
+
+  panel.appendChild(head);
+  panel.appendChild(summary);
+  panel.appendChild(list);
+  panel.appendChild(foot);
+  ov.appendChild(panel);
+  document.body.appendChild(ov);
+}
+
+
+// 主界面（可能晚于主进程计数）加载后拉取一次当前拦截状态。
+document.addEventListener('DOMContentLoaded', () => {
+  if (!window.electronAPI || !window.electronAPI.invoke) return;
+  window.electronAPI.invoke('get-trackers')
+    .then(r => { if (r && r.success) updateTrackerShield({ enabled: r.enabled, count: r.count, top: r.top }); })
+    .catch(() => {});
+});
 
 // ===== 标签页切换器（Ctrl+Shift+A）=====
 function openTabSwitcher() {
