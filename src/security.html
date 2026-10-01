@@ -144,6 +144,17 @@
   body.dark-mode .csp-meta { color: #9a9a9a; }
   .view { display: none; }
   .view.active { display: block; }
+  .hits-badge {
+    display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 10px;
+    font-size: 11px; font-weight: 600; background: #eef3f8; color: #0f5a9e;
+  }
+  body.dark-mode .hits-badge { background: #34404d; color: #9cc8f2; }
+  .row-remove {
+    background: transparent; border: 1px solid #c9c9c9; color: #888;
+    padding: 3px 10px; font-size: 12px; border-radius: 5px;
+  }
+  .row-remove:hover:not(:disabled) { color: #c42b1c; border-color: #c42b1c; }
+  body.dark-mode .row-remove { border-color: #555; color: #aaa; }
 </style>
 </head>
 <body>
@@ -421,6 +432,13 @@ function renderCsp() {
     const dir = document.createElement('span');
     dir.className = 'event-type mono';
     dir.textContent = r.directive || '(未知指令)';
+    if (r.hits > 1) {
+      const hitsTag = document.createElement('span');
+      hitsTag.className = 'hits-badge';
+      hitsTag.textContent = '×' + r.hits;
+      hitsTag.title = '同一页面 / 指令 / 被拦截资源累计触发次数';
+      dir.appendChild(hitsTag);
+    }
 
     const badge = document.createElement('span');
     badge.className = 'badge ' + (r.disposition === 'report' ? 'info' : 'warn');
@@ -430,9 +448,26 @@ function renderCsp() {
     time.className = 'event-time';
     time.textContent = formatTime(r.time);
 
-    head.append(dir, badge, time);
+    // event-type 自身 flex:1，会把后面的控件整体推到行尾。
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'row-remove';
+    removeBtn.textContent = '删除';
+    removeBtn.onclick = async () => {
+      const res = await api.invoke('remove-csp-report', { id: r.id });
+      if (res && res.success) { toast('已删除该条 CSP 报告'); loadCspData(); }
+      else toast('删除失败', true);
+    };
+
+    head.append(dir, badge, time, removeBtn);
     row.appendChild(head);
 
+    if (r.hits > 1) {
+      const hits = document.createElement('div');
+      hits.className = 'csp-meta';
+      hits.textContent = '累计触发 ' + r.hits + ' 次（同一页面 / 指令 / 被拦截资源已合并，时间为最近一次）';
+      row.appendChild(hits);
+    }
     if (r.blockedUri && r.blockedUri !== 'about:blank#blocked') {
       const blocked = document.createElement('div');
       blocked.className = 'csp-meta';
