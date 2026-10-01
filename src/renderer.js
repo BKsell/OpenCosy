@@ -270,6 +270,7 @@ class TabManager {
       this.showToast('GPU 进程崩溃，已自动重启图形进程');
     });
     window.electronAPI.on('trackers-blocked', (data) => updateTrackerShield(data || {}));
+    window.electronAPI.on('spoof-warning', (data) => showSpoofWarning(data || {}));
     // 内存节省：标签被休眠时变灰并提示，唤醒（切回重载）后恢复。
     window.electronAPI.on('tab-discarded', (data) => this.markTabDiscarded(data && data.id, true));
     window.electronAPI.on('tab-reloaded', (data) => this.markTabDiscarded(data && data.id, false));
@@ -1120,6 +1121,41 @@ function showUnresponsiveInfobar(data) {
   showRecoveryBar('此页面无响应。可以继续等待，也可以强制刷新。', [
     { label: '强制刷新', primary: true, onClick: () => window.electronAPI.send('reload-tab-by-id', tabId) },
   ]);
+}
+
+// ===== 同形异义 / IDN 反钓鱼提示条（琥珀色，仅提醒不阻断）=====
+const SPOOF_REASON_TEXT = {
+  'mixed-script': '网址混合了不同字母体系（如拉丁字母与西里尔字母），可能在仿冒常见网站',
+  'digit-lookalike': '网址用数字替代了品牌名中的字母，可能是仿冒网站',
+};
+
+function showSpoofWarning(data) {
+  if (!data || !data.hostname) return;
+  // 同一主机一次会话只提醒一次，避免每次子资源/刷新都弹。
+  if (!showSpoofWarning._seen) showSpoofWarning._seen = new Set();
+  if (showSpoofWarning._seen.has(data.hostname)) return;
+  showSpoofWarning._seen.add(data.hostname);
+
+  let bar = document.getElementById('cosy-spoof-bar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'cosy-spoof-bar';
+    bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:10001;display:flex;align-items:center;gap:8px;padding:9px 16px;background:#fef7e0;color:#5f4700;font:13px/1.5 system-ui,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.18);';
+    document.body.appendChild(bar);
+  }
+  bar.textContent = '';
+  const icon = document.createElement('span');
+  icon.textContent = '⚠';
+  const msg = document.createElement('span');
+  msg.style.flex = '1';
+  msg.textContent = `${SPOOF_REASON_TEXT[data.reason] || '该网址含有易混淆字符'}：${data.hostname}。请核对地址栏，勿在此页面输入账号密码或付款信息。`;
+  const close = document.createElement('button');
+  close.textContent = '知道了';
+  close.style.cssText = 'border:1px solid #b08400;background:transparent;color:#5f4700;border-radius:4px;padding:4px 12px;font:12px/1.4 system-ui,sans-serif;cursor:pointer;';
+  close.addEventListener('click', () => bar.remove());
+  bar.appendChild(icon);
+  bar.appendChild(msg);
+  bar.appendChild(close);
 }
 
 // ===== 追踪拦截盾牌（右下角计数，点击查看 / 归零）=====
