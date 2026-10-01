@@ -126,6 +126,24 @@
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
   #toast.error { background: #c42b1c; }
   .back-link { display: inline-block; margin-bottom: 14px; font-size: 13px; text-decoration: none; }
+
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .tab {
+    padding: 8px 18px; border-radius: 8px; border: 1px solid #d0d0d0; background: #fff;
+    color: #555; font-size: 13px; font-weight: 600;
+  }
+  body.dark-mode .tab { background: #2d2d2d; border-color: #555; color: #bbb; }
+  .tab.active { background: #0078d4; border-color: #0078d4; color: #fff; }
+  body.dark-mode .tab.active { background: #106ebe; border-color: #106ebe; color: #fff; }
+  .mono {
+    font-family: Consolas, "Courier New", monospace; font-size: 12px;
+    background: #f4f4f4; border-radius: 4px; padding: 1px 6px; word-break: break-all;
+  }
+  body.dark-mode .mono { background: #3a3a3a; }
+  .csp-meta { margin-top: 6px; font-size: 12px; color: #888; word-break: break-all; }
+  body.dark-mode .csp-meta { color: #9a9a9a; }
+  .view { display: none; }
+  .view.active { display: block; }
 </style>
 </head>
 <body>
@@ -140,6 +158,12 @@
     </p>
   </header>
 
+  <div class="tabs">
+    <button class="tab active" id="tabEvents" type="button">安全拦截事件</button>
+    <button class="tab" id="tabCsp" type="button">CSP 违规报告 <span id="cspCountBadge" style="display:none;"></span></button>
+  </div>
+
+  <div class="view active" id="viewEvents">
   <div class="stats">
     <div class="stat-card"><div class="stat-num" id="statTotal">-</div><div class="stat-label">事件总数</div></div>
     <div class="stat-card"><div class="stat-num" id="statWarn">-</div><div class="stat-label">警告</div></div>
@@ -173,6 +197,25 @@
     <div class="big">&#128737;&#65039;</div>
     <div id="emptyText">近期没有安全拦截事件</div>
   </div>
+  </div><!-- /viewEvents -->
+
+  <div class="view" id="viewCsp">
+    <div class="toolbar">
+      <input class="search-box" id="cspSearchInput" type="search" placeholder="按内部页面、指令或被拦截地址搜索" autocomplete="off">
+      <button class="btn-primary" id="cspRefreshBtn" type="button">刷新</button>
+      <button class="btn-danger-ghost" id="cspClearBtn" type="button">清空 CSP 报告</button>
+    </div>
+    <div class="event-list" id="cspList"></div>
+    <div class="empty" id="cspEmptyState" style="display:none;">
+      <div class="big">&#128274;</div>
+      <div id="cspEmptyText">内部页面没有 CSP 违规记录</div>
+    </div>
+    <p class="subtitle" style="margin-top:14px;">
+      这里只收集 <span class="mono">cosy://</span> 内部页面自己的内容安全策略违规
+      （脚本注入、被拦截的外部资源等）。公网网页的报告不会进入此台账，上报来源由主进程
+      按帧地址重新校验，页面自报的来源一律不采信。
+    </p>
+  </div><!-- /viewCsp -->
 </div>
 
 <div class="modal-mask" id="confirmModal">
@@ -224,9 +267,10 @@ function toast(message, isError = false) {
   toast._timer = setTimeout(() => el.classList.remove('show'), 2600);
 }
 
-function showConfirm() {
+function showConfirm(message) {
   return new Promise(resolve => {
     const modal = $('confirmModal');
+    if (message) document.querySelector('#confirmModal .modal-body').textContent = message;
     modal.classList.add('show');
     const done = ok => {
       modal.classList.remove('show');
@@ -327,12 +371,126 @@ async function loadData() {
 
 $('refreshBtn').onclick = loadData;
 $('clearBtn').onclick = async () => {
-  const ok = await showConfirm();
+  const ok = await showConfirm('将清空全部安全事件记录，且无法恢复。继续？');
   if (!ok) return;
   const r = await api.invoke('clear-security-events');
   if (r && r.success) { toast('已清空安全事件记录'); loadData(); }
   else toast('清空失败', true);
 };
+
+// ===== CSP 违规报告面板 =====
+const cspState = { rows: [] };
+
+function switchView(which) {
+  const isCsp = which === 'csp';
+  $('tabEvents').classList.toggle('active', !isCsp);
+  $('tabCsp').classList.toggle('active', isCsp);
+  $('viewEvents').classList.toggle('active', !isCsp);
+  $('viewCsp').classList.toggle('active', isCsp);
+  if (isCsp) loadCspData();
+}
+$('tabEvents').onclick = () => switchView('events');
+$('tabCsp').onclick = () => switchView('csp');
+
+function updateCspBadge() {
+  const badge = $('cspCountBadge');
+  const n = cspState.rows.length;
+  badge.style.display = n ? 'inline-block' : 'none';
+  badge.textContent = n > 99 ? '99+' : String(n);
+}
+
+function renderCsp() {
+  const query = $('cspSearchInput').value.trim().toLowerCase();
+  const list = $('cspList');
+  list.textContent = '';
+  const rows = cspState.rows.filter(r => {
+    if (!query) return true;
+    const hay = [r.documentUri, r.directive, r.blockedUri, r.sourceFile].join(' ').toLowerCase();
+    return hay.includes(query);
+  });
+  $('cspEmptyState').style.display = rows.length ? 'none' : 'block';
+  $('cspEmptyText').textContent = query ? '没有 CSP 报告匹配当前搜索' : '内部页面没有 CSP 违规记录';
+
+  for (const r of rows) {
+    const row = document.createElement('div');
+    row.className = 'event-row severity-warn';
+
+    const head = document.createElement('div');
+    head.className = 'event-head';
+
+    const dir = document.createElement('span');
+    dir.className = 'event-type mono';
+    dir.textContent = r.directive || '(未知指令)';
+
+    const badge = document.createElement('span');
+    badge.className = 'badge ' + (r.disposition === 'report' ? 'info' : 'warn');
+    badge.textContent = r.disposition === 'report' ? '仅报告' : '已拦截';
+
+    const time = document.createElement('span');
+    time.className = 'event-time';
+    time.textContent = formatTime(r.time);
+
+    head.append(dir, badge, time);
+    row.appendChild(head);
+
+    if (r.blockedUri && r.blockedUri !== 'about:blank#blocked') {
+      const blocked = document.createElement('div');
+      blocked.className = 'csp-meta';
+      blocked.textContent = '被拦截资源：' + r.blockedUri;
+      row.appendChild(blocked);
+    }
+    if (r.sourceFile) {
+      const src = document.createElement('div');
+      src.className = 'csp-meta';
+      src.textContent = '触发位置：' + r.sourceFile +
+        (r.lineNumber ? ':' + r.lineNumber + (r.columnNumber ? ':' + r.columnNumber : '') : '');
+      row.appendChild(src);
+    }
+    const doc = document.createElement('div');
+    doc.className = 'csp-meta';
+    doc.textContent = '内部页面：' + (r.documentUri || '未知');
+    row.appendChild(doc);
+
+    list.appendChild(row);
+  }
+  updateCspBadge();
+}
+
+async function loadCspData() {
+  $('cspRefreshBtn').disabled = true;
+  try {
+    const rows = await api.invoke('list-csp-reports', { limit: 500 });
+    cspState.rows = Array.isArray(rows) ? rows : [];
+    renderCsp();
+  } catch (e) {
+    toast('CSP 报告加载失败：' + (e && e.message ? e.message : e), true);
+  } finally {
+    $('cspRefreshBtn').disabled = false;
+  }
+}
+
+$('cspRefreshBtn').onclick = loadCspData;
+$('cspSearchInput').addEventListener('input', renderCsp);
+$('cspClearBtn').onclick = async () => {
+  const ok = await showConfirm('将清空全部 CSP 违规报告，且无法恢复。继续？');
+  if (!ok) return;
+  const r = await api.invoke('clear-csp-reports');
+  if (r && r.success) { toast('已清空 CSP 报告'); loadCspData(); }
+  else toast('清空失败', true);
+};
+
+// 主进程记录新报告后刷新角标；停留在 CSP 面板时同步列表。
+api.on('csp-report-added', () => {
+  if ($('viewCsp').classList.contains('active')) {
+    loadCspData();
+  } else {
+    // 后台轻量刷新，只让角标数字保持最新。
+    api.invoke('list-csp-reports', { limit: 500 }).then(rows => {
+      cspState.rows = Array.isArray(rows) ? rows : [];
+      updateCspBadge();
+    }).catch(() => {});
+  }
+});
 $('searchInput').addEventListener('input', render);
 $('filterSelect').addEventListener('change', render);
 $('severitySelect').addEventListener('change', render);
@@ -342,6 +500,11 @@ $('confirmModal').addEventListener('click', e => {
 
 applyDarkMode();
 loadData();
+// 首屏只取一次 CSP 数量用于角标，切到面板时才完整加载列表。
+api.invoke('list-csp-reports', { limit: 500 }).then(rows => {
+  cspState.rows = Array.isArray(rows) ? rows : [];
+  updateCspBadge();
+}).catch(() => {});
 </script>
 </body>
 </html>
