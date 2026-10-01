@@ -312,7 +312,61 @@ const MIN_WINDOW_HEIGHT = 600;
 const DEFAULT_TAB_BAR_HEIGHT_HORIZONTAL = 116;
 const DEFAULT_TAB_BAR_WIDTH_VERTICAL = 200;
 const COLLAPSED_TAB_BAR_WIDTH = 50;
-const SPELLCHECK_LANGUAGES = ['en-US', 'zh-CN'];
+// 拼写检查：Chromium 内置 Hunspell 词典，全程本地完成，不发送任何输入内容。
+// DEFAULT 是历史行为（英中双语）；ALLOWED 是设置页允许勾选的语言白名单，
+// 主进程会再次用 session.availableSpellCheckerLanguages 过滤，系统没装词典的
+// 语言直接跳过，避免 setSpellCheckerLanguages 抛错导致整个初始化中断。
+const DEFAULT_SPELLCHECK_LANGUAGES = ['en-US', 'zh-CN'];
+const ALLOWED_SPELLCHECK_LANGUAGES = [
+  'en-US', 'en-GB', 'en-AU', 'zh-CN', 'zh-TW', 'ja',
+  'fr-FR', 'de-DE', 'es-ES', 'ru-RU', 'ko', 'pt-BR', 'it-IT'
+];
+const MAX_SPELLCHECK_LANGUAGES = 5;
+let spellcheckEnabled = true;
+let spellcheckLanguages = DEFAULT_SPELLCHECK_LANGUAGES.slice();
+
+// sanitizeSpellcheckLanguages 归一化语言数组：去重、限数量、白名单校验。
+// 空数组 / 非数组一律回退默认，保证拼写检查不会因为设置文件损坏而彻底失效。
+function sanitizeSpellcheckLanguages(raw) {
+  if (!Array.isArray(raw)) return DEFAULT_SPELLCHECK_LANGUAGES.slice();
+  const out = [];
+  for (const lang of raw) {
+    if (typeof lang !== 'string' || !ALLOWED_SPELLCHECK_LANGUAGES.includes(lang)) continue;
+    if (!out.includes(lang)) out.push(lang);
+    if (out.length >= MAX_SPELLCHECK_LANGUAGES) break;
+  }
+  return out.length ? out : DEFAULT_SPELLCHECK_LANGUAGES.slice();
+}
+
+// applySpellcheckSettings 把当前拼写检查开关 / 语言应用到默认会话。
+// 每次保存设置都会重新调用；语言列表只保留当前平台真正可用的词典。
+function applySpellcheckSettings() {
+  try {
+    const ses = session.defaultSession;
+    ses.setSpellCheckerEnabled(spellcheckEnabled);
+    if (!spellcheckEnabled) return;
+    const available = new Set(ses.availableSpellCheckerLanguages || []);
+    let langs = spellcheckLanguages.filter(l => available.has(l));
+    if (!langs.length) {
+      langs = DEFAULT_SPELLCHECK_LANGUAGES.filter(l => available.has(l));
+    }
+    if (langs.length) ses.setSpellCheckerLanguages(langs);
+  } catch (e) {
+    console.error('应用拼写检查设置失败:', e);
+  }
+}
+
+// readPersistedSettings 在 app 启动早期同步读取已保存的设置，
+// 让拼写检查这类需要在第一个页面加载前生效的偏好不必等渲染层来取。
+function readPersistedSettings() {
+  try {
+    const p = path.join(app.getPath('userData'), 'cosySettings.json');
+    if (fsSync.existsSync(p)) return JSON.parse(fsSync.readFileSync(p, 'utf-8')) || {};
+  } catch (e) {
+    console.error('启动时读取设置失败:', e);
+  }
+  return {};
+}
 
 const isDev = !app.isPackaged;
 
@@ -1769,6 +1823,32 @@ function loadTabContent(tab) {
 
     tab.view.webContents.on('context-menu', (event, params) => {
       const menu = new Menu();
+      // 拼写建议放在菜单最顶部，与 Chromium 浏览器一致。
+      // misspelledWord 来自 Chromium 本地词典匹配，建议不离开本机。
+      if (spellcheckEnabled && params.isEditable && params.misspelledWord) {
+        const suggestions = (params.dictionarySuggestions || []).slice(0, 6);
+        if (suggestions.length) {
+          for (const word of suggestions) {
+            menu.append(new MenuItem({
+              label: word,
+              click: () => tab.view.webContents.replaceMisspelling(word)
+            }));
+          }
+        } else {
+          menu.append(new MenuItem({ label: '（无拼写建议）', enabled: false }));
+        }
+        menu.append(new MenuItem({
+          label: '添加到词典',
+          click: () => {
+            try {
+              tab.view.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord);
+            } catch (e) {
+              console.error('添加自定义词典失败:', e);
+            }
+          }
+        }));
+        menu.append(new MenuItem({ type: 'separator' }));
+      }
       if (params.linkURL && isSafeUrl(params.linkURL)) {
         menu.append(new MenuItem({ label: '在新标签页中打开', click: () => createNewTab(params.linkURL) }));
         menu.append(new MenuItem({ label: '复制链接地址', click: () => clipboard.writeText(params.linkURL) }));
@@ -1783,6 +1863,7 @@ function loadTabContent(tab) {
       }
       if (params.selectionText && params.isEditable) menu.append(new MenuItem({ label: '剪切', role: 'cut' }));
       if (params.isEditable) menu.append(new MenuItem({ label: '粘贴', role: 'paste' }));
+      if (params.isEditable) menu.append(new MenuItem({ label: '全选', role: 'selectAll' }));
       if (menu.items.length > 0) menu.append(new MenuItem({ type: 'separator' }));
       if (isDev) menu.append(new MenuItem({ label: '开发者工具', click: toggleDevTools }));
       menu.popup({ window: mainWindow });
@@ -2162,8 +2243,11 @@ app.whenReady().then(async () => {
   setupDownloadManager();
   setupGlobalWebContentsHooks();
   setupNetworkStatus();
-  try { session.defaultSession.setSpellCheckerLanguages(SPELLCHECK_LANGUAGES); }
-  catch (e) { console.error('设置拼写检查语言失败:', e); }
+  // 拼写检查开关与语言在首个页面加载前就按持久化设置生效。
+  const persisted = readPersistedSettings();
+  spellcheckEnabled = persisted.spellcheckEnabled !== false;
+  spellcheckLanguages = sanitizeSpellcheckLanguages(persisted.spellcheckLanguages);
+  applySpellcheckSettings();
   session.defaultSession.setUserAgent(generateUserAgent());
   createWindow();
   await loadEnabledExtensions();
@@ -2922,6 +3006,10 @@ const ALLOWED_SETTING_KEYS = {
   confirmCloseMultiple: v => typeof v === 'boolean',
   backgroundType: v => ['default', 'custom'].includes(v),
   customBackgroundUrl: v => typeof v === 'string' && isSafeUrl(v),
+  spellcheckEnabled: v => typeof v === 'boolean',
+  spellcheckLanguages: v => Array.isArray(v)
+    && v.length <= MAX_SPELLCHECK_LANGUAGES
+    && v.every(l => typeof l === 'string' && ALLOWED_SPELLCHECK_LANGUAGES.includes(l)),
 };
 
 function sanitizeSettings(raw) {
@@ -2948,6 +3036,9 @@ ipcMain.on('save-settings', (event, settings) => {
     if ('memorySaver' in clean) memorySaverEnabled = !!clean.memorySaver;
     if ('clearOnExit' in clean) clearOnExit = !!clean.clearOnExit;
     if ('confirmCloseMultiple' in clean) confirmCloseMultiple = !!clean.confirmCloseMultiple;
+    if ('spellcheckEnabled' in clean) spellcheckEnabled = !!clean.spellcheckEnabled;
+    if ('spellcheckLanguages' in clean) spellcheckLanguages = sanitizeSpellcheckLanguages(clean.spellcheckLanguages);
+    applySpellcheckSettings();
     event.reply('settings-saved', { success: true });
   } catch (e) {
     console.error('保存设置失败:', e);
@@ -2974,6 +3065,25 @@ ipcMain.on('get-settings', (event) => {
     console.error('读取设置失败:', e);
     event.reply('settings-loaded', {});
   }
+});
+
+// get-spellcheck-info 返回拼写检查当前状态与平台实际可用的语言列表，
+// 设置页据此隐藏当前系统没有词典的语言，避免用户勾了一个永远不生效的选项。
+ipcMain.handle('get-spellcheck-info', (event) => {
+  if (!isMainSender(event)) return { success: false };
+  let available = [];
+  try {
+    available = session.defaultSession.availableSpellCheckerLanguages || [];
+  } catch (e) {
+    console.error('读取可用拼写语言失败:', e);
+  }
+  const availableSet = new Set(available);
+  return {
+    success: true,
+    enabled: spellcheckEnabled,
+    languages: spellcheckLanguages,
+    selectable: ALLOWED_SPELLCHECK_LANGUAGES.filter(l => availableSet.has(l))
+  };
 });
 
 ipcMain.on('export-config', async (event, content) => {
