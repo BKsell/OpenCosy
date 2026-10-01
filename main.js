@@ -692,7 +692,24 @@ function setupSecurityHeaders() {
     ]);
     const isLocal = details.url.startsWith('cosy://') || details.url.startsWith('file://');
     if (isLocal && !headers['Content-Security-Policy'] && !headers['content-security-policy']) {
-      headers['Content-Security-Policy'] = ["default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:;"];
+      // 自有 UI 页面的 CSP 比公网站点更严：
+      //  object-src 'none'      ：彻底禁掉插件 / 嵌入对象（Flash 残留、恶意 <embed>）；
+      //  base-uri 'self'       ：页面不允许被 <base> 改掉所有相对 URL 的基准；
+      //  form-action 'self'    ：表单不允许提交到外部源（防内部页被注入后外发数据）；
+      //  frame-ancestors 'none'：任何页面都不许 iframe 我们的内部 UI（等价 X-Frame-Options DENY）；
+      //  worker-src 'self'     ：worker 只能从自身加载，挡 data: blob: worker 注入。
+      headers['Content-Security-Policy'] = [
+        "default-src 'self'; " +
+        "script-src 'self' 'unsafe-inline'; " +
+        "style-src 'self' 'unsafe-inline'; " +
+        "img-src 'self' data: https:; " +
+        "connect-src 'self' https:; " +
+        "object-src 'none'; " +
+        "base-uri 'self'; " +
+        "form-action 'self'; " +
+        "frame-ancestors 'none'; " +
+        "worker-src 'self';"
+      ];
     }
     // 本地页面（cosy:// / file://）加 COOP/COEP/CORP，跨源资源进不来，
     // 防止恶意网页把我们的设置页 / 下载页 iframe 化后读内容（Spectre 类侧信道）。
@@ -900,12 +917,16 @@ function originOfContents(contents) {
 async function launchExternalWithPrompt(url, origin, remember) {
   const scheme = normalizeExternalScheme(url);
   if (!scheme || !CONFIRMABLE_EXTERNAL_SCHEMES.has(scheme)) {
+    recordSecurityEvent('protocol-blocked', 'warn',
+      `尝试打开不可确认的外部协议 ${scheme || '(无效)'}: ${url}`, origin);
     sendToRenderer('show-toast', `已阻止打开外部协议: ${String(url).slice(0, 60)}`);
     return { ok: false, reason: 'blocked scheme' };
   }
   if (isRememberableOrigin(origin)) {
     const known = getRememberedProtocolDecision(origin, scheme);
     if (known === 'deny') {
+      recordSecurityEvent('protocol-denied', 'info',
+        `按记忆决定阻止 ${scheme} 协议唤起`, origin);
       sendToRenderer('show-toast', `已按记忆阻止 ${scheme} 协议（可在设置中撤销）`);
       return { ok: false, reason: 'remembered deny' };
     }
@@ -935,7 +956,10 @@ async function launchExternalWithPrompt(url, origin, remember) {
   if (remember && checked && isRememberableOrigin(origin)) {
     rememberProtocolDecision(origin, scheme, decision);
   }
-  if (decision !== 'allow') return { ok: false, reason: 'user denied' };
+  if (decision !== 'allow') {
+    recordSecurityEvent('protocol-denied', 'info', `用户拒绝了 ${scheme} 协议唤起`, origin);
+    return { ok: false, reason: 'user denied' };
+  }
   try {
     await shell.openExternal(url, { activate: true });
     return { ok: true };
@@ -956,6 +980,9 @@ function handleFrameNavigationAttempt(contents, url, isMainFrame) {
     return true;
   }
   const scheme = normalizeExternalScheme(url) || '未知协议';
+  recordSecurityEvent('protocol-blocked', isMainFrame ? 'warn' : 'info',
+    `${isMainFrame ? '主框架' : '子框架'}外部协议导航被阻止: ${scheme} ${url}`,
+    originOfContents(contents));
   // 子框架拦截不弹 toast：恶意页面可以一秒塞几十个 iframe，toast 会变成轰炸。
   if (isMainFrame) {
     sendToRenderer('show-toast', `已阻止不安全的外部协议导航: ${scheme}`);
@@ -965,7 +992,121 @@ function handleFrameNavigationAttempt(contents, url, isMainFrame) {
   return true;
 }
 
-// ===== 按站点记忆的敏感权限决定（permission-decisions.json）=====
+// ===== 安全事件中心（security-events.json / cosy://security）=====
+// 浏览器自身的安全闸（外部协议拦截、危险下载确认、设备权限、扩展校验、
+// 权限收口等）以前只有两种反馈：要么 toast 一闪而过，要么只写 console。
+// 用户关掉 toast 后就没有任何地方能回答"刚才浏览器到底替我挡了什么、
+// 是哪个网站在尝试"。这里把这些事件统一留痕：
+//
+//   - 落 userData/security-events.json，原子 rename，最多保留 1000 条；
+//   - 每条明细脱敏限长，不记录 Cookie / 完整 URL 查询串以外的敏感数据，
+//     控制字符一律清掉，防止日志本身成为 XSS / 注入载体；
+//   - cosy://security 页面只读展示，可清空；IPC 仅主框架可调。
+const securityEventStorePath = path.join(app.getPath('userData'), 'security-events.json');
+const MAX_SECURITY_EVENTS = 1000;
+const MAX_SECURITY_DETAIL_CHARS = 300;
+
+// 事件类型即 UI 上的分组；新增拦截点时优先复用已有类型。
+const SECURITY_EVENT_TYPES = new Set([
+  'protocol-blocked',        // 危险外部协议导航 / 唤起被阻止
+  'protocol-denied',         // 用户（或记忆决定）拒绝了外部协议唤起
+  'download-blocked',        // 下载被直接阻止（非法 URL / 不安全来源）
+  'download-rejected',       // 用户在危险文件确认框中取消
+  'permission-blocked',      // 未在白名单内的浏览器权限请求被拒绝
+  'device-permission-blocked', // HID/串口/USB/蓝牙等设备选择被拒绝
+  'extension-blocked',       // 扩展请求危险权限 / 校验未过
+]);
+
+const securityEvents = [];
+let securityEventsLoaded = false;
+let securityEventSaveTimer = null;
+
+function loadSecurityEvents() {
+  if (securityEventsLoaded) return;
+  securityEventsLoaded = true;
+  try {
+    const data = JSON.parse(fsSync.readFileSync(securityEventStorePath, 'utf8'));
+    const entries = Array.isArray(data && data.events) ? data.events : null;
+    if (!entries) return;
+    for (const e of entries) {
+      if (!e || typeof e !== 'object') continue;
+      if (!SECURITY_EVENT_TYPES.has(e.type)) continue;
+      if (e.severity !== 'info' && e.severity !== 'warn' && e.severity !== 'critical') continue;
+      securityEvents.push({
+        id: String(e.id || ''),
+        time: Number(e.time) || Date.now(),
+        type: e.type,
+        severity: e.severity,
+        origin: typeof e.origin === 'string' ? e.origin.slice(0, 300) : '',
+        detail: typeof e.detail === 'string' ? e.detail.slice(0, MAX_SECURITY_DETAIL_CHARS) : '',
+      });
+      if (securityEvents.length >= MAX_SECURITY_EVENTS) break;
+    }
+  } catch {}
+}
+
+function persistSecurityEvents() {
+  if (securityEventSaveTimer) clearTimeout(securityEventSaveTimer);
+  securityEventSaveTimer = setTimeout(() => {
+    try {
+      const tmp = securityEventStorePath + '.tmp';
+      fsSync.writeFileSync(tmp, JSON.stringify({ version: 1, events: securityEvents }), 'utf8');
+      fsSync.renameSync(tmp, securityEventStorePath);
+    } catch {}
+  }, 300);
+}
+
+// sanitizeSecurityDetail 清掉控制字符并限长。安全日志的展示方是我们自己的
+// 内部页面，但仍按"数据不可信"处理：事件 detail 来自 URL / 文件名 / 权限名。
+function sanitizeSecurityDetail(s) {
+  let str = String(s == null ? '' : s);
+  str = str.replace(/[\x00-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (str.length > MAX_SECURITY_DETAIL_CHARS) {
+    str = str.slice(0, MAX_SECURITY_DETAIL_CHARS) + '…';
+  }
+  return str;
+}
+
+function recordSecurityEvent(type, severity, detail = '', origin = '') {
+  if (!SECURITY_EVENT_TYPES.has(type)) return;
+  if (severity !== 'info' && severity !== 'warn' && severity !== 'critical') return;
+  loadSecurityEvents();
+  const event = {
+    id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    time: Date.now(),
+    type,
+    severity,
+    origin: sanitizeSecurityDetail(origin),
+    detail: sanitizeSecurityDetail(detail),
+  };
+  securityEvents.push(event);
+  // 超容丢最旧的，新事件永远在末尾（UI 展示时倒序）。
+  if (securityEvents.length > MAX_SECURITY_EVENTS) {
+    securityEvents.splice(0, securityEvents.length - MAX_SECURITY_EVENTS);
+  }
+  persistSecurityEvents();
+}
+
+// listSecurityEvents 返回事件副本（最新在前）。type 为空表示全部。
+function listSecurityEvents(typeFilter = '', limit = 200) {
+  loadSecurityEvents();
+  let items = securityEvents;
+  if (typeFilter && SECURITY_EVENT_TYPES.has(typeFilter)) {
+    items = securityEvents.filter(e => e.type === typeFilter);
+  }
+  const n = Math.max(1, Math.min(Number(limit) || 200, MAX_SECURITY_EVENTS));
+  return items.slice(-n).reverse().map(e => ({ ...e }));
+}
+
+function clearSecurityEvents() {
+  loadSecurityEvents();
+  securityEvents.length = 0;
+  try { fsSync.unlinkSync(securityEventStorePath); } catch {}
+  persistSecurityEvents();
+  return true;
+}
+
+
 // 与 Chromium 自带的内容设置平行：用户在询问条上勾"始终允许/拒绝"后，按
 // origin+permission 持久化，下次同站点再请求时不再打扰。决定文件与缩放记忆
 // 一样放 userData，原子 rename 落盘，损坏静默丢弃，绝不拖垮启动。
@@ -1164,7 +1305,18 @@ function setupPermissionHandlers() {
     }
 
     // 其余非敏感、通常由用户手势触发的权限（fullscreen / pointerLock / clipboard 等）维持白名单。
-    callback(ALLOWED_PERMISSIONS.has(permission));
+    // 不在白名单内的权限（hid / serial / bluetooth / window-management /
+    // idle-detection / usb 等设备或指纹类权限）默认拒绝并留痕。以前这里直接
+    // 用 Set.has 兜底，虽然结果也是 false，但被拦的请求完全没有记录，用户无从
+    // 知道某个网站在尝试枚举蓝牙 / HID 设备。
+    const allowed = ALLOWED_PERMISSIONS.has(permission);
+    if (!allowed) {
+      let origin = '';
+      try { origin = new URL(webContents.getURL()).origin; } catch {}
+      recordSecurityEvent('permission-blocked', 'warn',
+        `网站请求了未授权的浏览器权限: ${permission}`, origin);
+    }
+    callback(allowed);
   });
   session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
     if (permission === 'openExternal') return false;
@@ -1177,6 +1329,22 @@ function setupPermissionHandlers() {
     }
     return ALLOWED_PERMISSIONS.has(permission);
   });
+
+  // setPermissionRequestHandler 不覆盖 navigator.hid / serial / usb /
+  // bluetooth 的"设备选择授权"——那是另一条独立回调。不设置时各版本
+  // Electron 的默认行为不一致（部分版本直接放行设备选择弹窗），这里显式
+  // 一律拒绝：浏览器场景下网页没有正当理由直连本机 HID / 串口 / USB 设备。
+  if (typeof session.defaultSession.setDevicePermissionHandler === 'function') {
+    session.defaultSession.setDevicePermissionHandler((details) => {
+      let origin = '';
+      try { origin = new URL(details && details.origin ? details.origin : '').origin; } catch {}
+      const mediaType = (details && (details.deviceType || details.device && details.device.deviceClass)) || 'unknown-device';
+      recordSecurityEvent('device-permission-blocked', 'warn',
+        `网站尝试获取本机设备（${mediaType} / ${details && details.permissionType ? details.permissionType : '未知'}）`,
+        origin);
+      return false;
+    });
+  }
 
   // 渲染层询问条回传决策；找不到对应请求时忽略。
   // payload.remember=true 表示用户勾了"始终…"，按 origin+permission 持久化。
@@ -1209,6 +1377,16 @@ function setupPermissionHandlers() {
     const origin = String(payload.origin || '');
     if (!isRememberableOrigin(origin)) return { success: false, reason: 'invalid origin' };
     return { success: true, removed: clearPermissionDecisionsForOrigin(origin) };
+  });
+
+  // ===== 安全事件中心（cosy://security）只读 / 清空 IPC，仅主框架可调 =====
+  ipcMain.handle('list-security-events', (event, payload = {}) => {
+    if (!isMainSender(event)) return [];
+    return listSecurityEvents(String(payload.type || ''), Number(payload.limit) || 200);
+  });
+  ipcMain.handle('clear-security-events', (event) => {
+    if (!isMainSender(event)) return { success: false };
+    return { success: true, cleared: clearSecurityEvents() };
   });
 }
 
@@ -2098,6 +2276,7 @@ function loadTabContent(tab) {
         'extensions': 'src/extensions.html', 'version': 'src/version.html',
         'sitedata': 'src/sitedata.html',
         'permissions': 'src/permissions.html',
+        'security': 'src/security.html',
         'download': 'src/download', 'downloadlist': 'src/downloadlist.html'
       };
       const filePath = pageMap[hostname];
@@ -2248,7 +2427,12 @@ function confirmDangerousDownload(filename, originUrl) {
 function setupDownloadManager() {
   session.defaultSession.on('will-download', (event, item, webContents) => {
     const url = item.getURL();
-    if (!isSafeUrl(url)) { event.preventDefault(); return; }
+    if (!isSafeUrl(url)) {
+      recordSecurityEvent('download-blocked', 'critical',
+        `阻止了来自不安全协议/地址的下载: ${url}`, originOfContents(webContents));
+      event.preventDefault();
+      return;
+    }
 
     // 关键修复：不信任服务端给的 filename，先净化
     const safeFilename = sanitizeDownloadFilename(item.getFilename());
@@ -2258,6 +2442,8 @@ function setupDownloadManager() {
       const allow = confirmDangerousDownload(safeFilename, url);
       if (!allow) {
         try { item.cancel(); } catch {}
+        recordSecurityEvent('download-rejected', 'info',
+          `用户取消了危险类型文件下载: ${safeFilename}`, originOfContents(webContents));
         sendToRenderer('show-toast', `已取消下载可执行文件：${safeFilename}`);
         return;
       }
@@ -2415,6 +2601,7 @@ app.whenReady().then(async () => {
         'version': path.join(__dirname, 'src', 'version.html'),
         'sitedata': path.join(__dirname, 'src', 'sitedata.html'),
         'permissions': path.join(__dirname, 'src', 'permissions.html'),
+        'security': path.join(__dirname, 'src', 'security.html'),
         'download': path.join(__dirname, 'src', 'download', 'index.html'),
         'downloadlist': path.join(__dirname, 'src', 'downloadlist.html')
       };
@@ -3074,6 +3261,12 @@ async function validateExtensionFolder(folderPath) {
     if (manifest.permissions && Array.isArray(manifest.permissions)) {
       const dangerousPermissions = ['<all_urls>', 'tabs', 'history', 'bookmarks', 'cookies', 'webRequest', 'webRequestBlocking', 'proxy', 'management', 'debugger', 'nativeMessaging'];
       if (manifest.permissions.some(p => dangerousPermissions.includes(p))) {
+        const requested = manifest.permissions
+          .filter(p => dangerousPermissions.includes(p))
+          .slice(0, 8).join(', ');
+        recordSecurityEvent('extension-blocked', 'critical',
+          `扩展 ${manifest.name || '(未命名)'} 请求危险权限被拒绝: ${requested}`,
+          `extension:${manifestPath || ''}`);
         return { valid: false, error: '插件请求了危险权限，已被拒绝加载' };
       }
     }
