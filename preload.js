@@ -27,6 +27,9 @@ const allowedSendChannels = new Set([
   'close-current-tab',
   'find-in-page',
   'stop-find',
+  'reload-tab-by-id',
+  'reopen-tab-url',
+  'reset-trackers',
 ]);
 
 // 调用方向白名单：renderer -> main -> renderer
@@ -65,6 +68,7 @@ const allowedInvokeChannels = new Set([
   'discard-tab',
   'discard-background-tabs',
   'get-memory-saver',
+  'get-trackers',
 ]);
 
 // 接收方向白名单：main -> renderer
@@ -110,6 +114,11 @@ const allowedOnChannels = new Set([
   'network-status-changed',
   'native-theme-changed',
   'zoom-level-changed',
+  'renderer-gone',
+  'renderer-unresponsive',
+  'renderer-responsive',
+  'gpu-process-gone',
+  'trackers-blocked',
 ]);
 
 // sanitizeArg 过滤掉 renderer 传入的可疑对象：只保留 JSON 可序列化的纯数据，
