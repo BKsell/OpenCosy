@@ -75,6 +75,8 @@ const allowedInvokeChannels = new Set([
   'clear-permission-decisions',
   'get-protocol-decisions',
   'clear-protocol-decision',
+  'list-security-events',
+  'clear-security-events',
   'print-current-tab',
   'get-search-suggestions',
   'discard-tab',
