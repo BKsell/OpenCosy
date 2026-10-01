@@ -79,6 +79,7 @@ const allowedInvokeChannels = new Set([
   'discard-background-tabs',
   'get-memory-saver',
   'get-trackers',
+  'get-spellcheck-info',
 ]);
 
 // 接收方向白名单：main -> renderer
