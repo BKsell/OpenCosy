@@ -759,48 +759,210 @@ const ALLOWED_PERMISSIONS = new Set([
   'pop-up'
 ]);
 
-// SAFE_EXTERNAL_SCHEMES 是唯一允许 shell.openExternal 的外部协议白名单。
-// mailto: / tel: 是用户点邮箱/电话链接时该有的行为；
-// file: / smb: / ms-*: / vbscript: / javascript: 一律走弹窗拒绝。
-const SAFE_EXTERNAL_SCHEMES = new Set(['mailto:', 'tel:']);
-
-function isSafeExternalProtocol(url) {
-  if (!url || typeof url !== 'string') return false;
-  const lower = String(url).toLowerCase();
-  for (const scheme of SAFE_EXTERNAL_SCHEMES) {
-    if (lower.startsWith(scheme)) return true;
-  }
-  return false;
-}
-
-// confirmAndOpenExternal 统一入口：http(s) 开新标签，外部协议白名单 + 原生确认。
+// confirmAndOpenExternal 统一入口：http(s) 开新标签，外部协议走按站点记忆的确认流。
 // renderer 想让浏览器"点 mailto:" 必须走这个 IPC，不许直接 shell.openExternal。
-async function confirmAndOpenExternal(url) {
+async function confirmAndOpenExternal(url, origin) {
   if (!url || typeof url !== 'string') return { ok: false, reason: 'empty url' };
   if (url.startsWith('http://') || url.startsWith('https://')) {
     if (!isSafeUrl(url)) return { ok: false, reason: 'unsafe url' };
     createNewTab(url);
     return { ok: true };
   }
-  if (!isSafeExternalProtocol(url)) {
-    sendToRenderer('show-toast', `已阻止打开外部协议: ${url.slice(0, 60)}`);
+  return await launchExternalWithPrompt(url, origin || '', false);
+}
+
+// ===== 外部协议唤起防护（protocol-launch guard）=====
+// 背景：Chromium 拉起本机协议处理器（ms-word: / zoommtg: / ms-cmd: 这一族，
+// Follina/CVE-2022-30190 就是协议处理器投毒）不只发生在主框架导航里——
+// 页面里的 <iframe src="ms-word:..">、子框架 302 跳到外部协议，同样可能直接
+// 启动本机程序。而 will-navigate 只覆盖主框架，历史代码因此漏掉了子框架这一面。
+//
+// 这里做三件事：
+//  1. 主框架导航到 mailto:/tel: 时，收口到"按 站点+协议 记忆决定"的确认弹窗；
+//     其它外部协议（ms-*:/smb:/file:/vbscript: 等）一律阻止并提示。
+//  2. 所有 webContents 增加 will-frame-navigate 监听：子框架只允许真正的 Web
+//     协议（http/https/blob/data/about），iframe 永远无法拉起本机程序。
+//  3. 用户在弹窗里勾选"记住对此网站的选择"后按 origin+scheme 持久化，设置页
+//     可查看 / 撤销，决定文件原子落盘。
+
+const protocolDecisionStorePath = path.join(app.getPath('userData'), 'protocol-decisions.json');
+const MAX_PROTOCOL_DECISIONS = 500;
+// 只有这两个协议允许在用户确认后交给系统处理器；其它外部协议没有商量余地。
+const CONFIRMABLE_EXTERNAL_SCHEMES = new Set(['mailto:', 'tel:']);
+// 子框架允许的协议集合。iframe 场景下 blob:/data: 有正当用途（预览、文档），
+// 但 file:/cosy:/任何外部协议都不允许。
+const SUBFRAME_WEB_SCHEMES = new Set(['http:', 'https:', 'blob:', 'data:', 'about:']);
+// key: `${origin} ${scheme}` -> { decision: 'allow'|'deny', updatedAt }
+const protocolDecisions = new Map();
+let protocolDecisionsLoaded = false;
+let protocolSaveTimer = null;
+
+function protocolDecisionKey(origin, scheme) {
+  return origin + ' ' + scheme;
+}
+
+function normalizeExternalScheme(url) {
+  try {
+    const scheme = new URL(url).protocol.toLowerCase();
+    // 协议名只允许 RFC 3986 字母开头的有限字符，挡掉伪造 / 控制字符输入。
+    if (!/^[a-z][a-z0-9+.-]{0,31}:$/.test(scheme)) return '';
+    return scheme;
+  } catch {
+    return '';
+  }
+}
+
+function loadProtocolDecisions() {
+  if (protocolDecisionsLoaded) return;
+  protocolDecisionsLoaded = true;
+  try {
+    const data = JSON.parse(fsSync.readFileSync(protocolDecisionStorePath, 'utf8'));
+    const entries = data && typeof data === 'object' ? data.decisions : null;
+    if (!entries || typeof entries !== 'object') return;
+    for (const [k, v] of Object.entries(entries)) {
+      if (typeof k !== 'string' || !v || typeof v !== 'object') continue;
+      const sp = k.indexOf(' ');
+      if (sp <= 0) continue;
+      const origin = k.slice(0, sp);
+      const scheme = k.slice(sp + 1);
+      if (!isRememberableOrigin(origin)) continue;
+      if (!CONFIRMABLE_EXTERNAL_SCHEMES.has(scheme)) continue;
+      if (v.decision !== 'allow' && v.decision !== 'deny') continue;
+      if (protocolDecisions.size >= MAX_PROTOCOL_DECISIONS) break;
+      protocolDecisions.set(k, { decision: v.decision, updatedAt: Number(v.updatedAt) || Date.now() });
+    }
+  } catch {}
+}
+
+function persistProtocolDecisions() {
+  if (protocolSaveTimer) clearTimeout(protocolSaveTimer);
+  protocolSaveTimer = setTimeout(() => {
+    try {
+      const decisions = {};
+      for (const [k, v] of protocolDecisions) decisions[k] = v;
+      const tmp = protocolDecisionStorePath + '.tmp';
+      fsSync.writeFileSync(tmp, JSON.stringify({ version: 1, decisions }), 'utf8');
+      fsSync.renameSync(tmp, protocolDecisionStorePath);
+    } catch {}
+  }, 300);
+}
+
+function getRememberedProtocolDecision(origin, scheme) {
+  loadProtocolDecisions();
+  if (!isRememberableOrigin(origin) || !CONFIRMABLE_EXTERNAL_SCHEMES.has(scheme)) return null;
+  const v = protocolDecisions.get(protocolDecisionKey(origin, scheme));
+  return v ? v.decision : null;
+}
+
+function rememberProtocolDecision(origin, scheme, decision) {
+  loadProtocolDecisions();
+  if (!isRememberableOrigin(origin)) return false;
+  if (!CONFIRMABLE_EXTERNAL_SCHEMES.has(scheme)) return false;
+  if (decision !== 'allow' && decision !== 'deny') return false;
+  if (protocolDecisions.size >= MAX_PROTOCOL_DECISIONS &&
+      !protocolDecisions.has(protocolDecisionKey(origin, scheme))) {
+    return false;
+  }
+  protocolDecisions.set(protocolDecisionKey(origin, scheme), { decision, updatedAt: Date.now() });
+  persistProtocolDecisions();
+  return true;
+}
+
+// classifyFrameNavigation 判断一次（主/子框架）导航该如何处理：
+//   'in-pane'  ：浏览器内正常加载；
+//   'confirm'  ：外部协议但可在确认后交给系统（mailto/tel）；
+//   'block'    ：危险 / 不允许的协议，必须取消。
+function classifyFrameNavigation(url, isMainFrame) {
+  const scheme = normalizeExternalScheme(url);
+  if (!scheme) return 'block';
+  if (isMainFrame) {
+    // 主框架允许的窗内协议与 isSafeUrl 保持一致，避免这里放行了别处不认的协议。
+    if (scheme === 'http:' || scheme === 'https:' || scheme === 'file:' || scheme === 'cosy:') {
+      return 'in-pane';
+    }
+  } else if (SUBFRAME_WEB_SCHEMES.has(scheme)) {
+    return 'in-pane';
+  }
+  if (CONFIRMABLE_EXTERNAL_SCHEMES.has(scheme)) return 'confirm';
+  return 'block';
+}
+
+function originOfContents(contents) {
+  try {
+    return new URL(contents.getURL()).origin;
+  } catch {
+    return '';
+  }
+}
+
+// launchExternalWithPrompt 是所有"页面想唤起外部程序"的唯一出口。
+// remembered 决定直接兑现，否则弹原生确认框；remember=true 时按 origin+scheme 记忆。
+async function launchExternalWithPrompt(url, origin, remember) {
+  const scheme = normalizeExternalScheme(url);
+  if (!scheme || !CONFIRMABLE_EXTERNAL_SCHEMES.has(scheme)) {
+    sendToRenderer('show-toast', `已阻止打开外部协议: ${String(url).slice(0, 60)}`);
     return { ok: false, reason: 'blocked scheme' };
   }
-  const choice = dialog.showMessageBoxSync(mainWindow, {
+  if (isRememberableOrigin(origin)) {
+    const known = getRememberedProtocolDecision(origin, scheme);
+    if (known === 'deny') {
+      sendToRenderer('show-toast', `已按记忆阻止 ${scheme} 协议（可在设置中撤销）`);
+      return { ok: false, reason: 'remembered deny' };
+    }
+    if (known === 'allow') {
+      try {
+        await shell.openExternal(url, { activate: true });
+        return { ok: true, reason: 'remembered allow' };
+      } catch (e) {
+        return { ok: false, reason: String(e && e.message || e) };
+      }
+    }
+  }
+  const siteLabel = isRememberableOrigin(origin) ? origin : '当前页面';
+  // 必须用异步版：showMessageBoxSync 只返回按钮序号，拿不到 checkbox 状态。
+  const choice = await dialog.showMessageBox(mainWindow, {
     type: 'question',
-    buttons: ['允许打开', '取消'],
+    buttons: ['允许打开', '拒绝'],
     defaultId: 1,
     cancelId: 1,
     title: '网站想要打开外部应用',
-    message: `当前页面尝试打开:\n${url}\n\n是否允许？`
+    message: `${siteLabel} 想要打开:\n${url}\n\n是否允许？`,
+    checkboxLabel: '记住对此网站的选择（可在设置中撤销）',
+    checkboxChecked: false
   });
-  if (choice !== 0) return { ok: false, reason: 'user denied' };
+  const checked = !!choice.checkboxChecked;
+  const decision = choice.response === 0 ? 'allow' : 'deny';
+  if (remember && checked && isRememberableOrigin(origin)) {
+    rememberProtocolDecision(origin, scheme, decision);
+  }
+  if (decision !== 'allow') return { ok: false, reason: 'user denied' };
   try {
     await shell.openExternal(url, { activate: true });
     return { ok: true };
   } catch (e) {
     return { ok: false, reason: String(e && e.message || e) };
   }
+}
+
+// handleFrameNavigationAttempt 供 will-navigate / will-frame-navigate /
+// will-redirect 统一调用，返回 true 表示"已经接管，原导航必须 preventDefault"。
+function handleFrameNavigationAttempt(contents, url, isMainFrame) {
+  const kind = classifyFrameNavigation(url, isMainFrame);
+  if (kind === 'in-pane') return false;
+  if (kind === 'confirm') {
+    const origin = originOfContents(contents);
+    // 不 await：导航事件里不能挂起异步流程，弹窗结果在另一条路径里处理。
+    launchExternalWithPrompt(url, origin, true);
+    return true;
+  }
+  const scheme = normalizeExternalScheme(url) || '未知协议';
+  // 子框架拦截不弹 toast：恶意页面可以一秒塞几十个 iframe，toast 会变成轰炸。
+  if (isMainFrame) {
+    sendToRenderer('show-toast', `已阻止不安全的外部协议导航: ${scheme}`);
+  } else {
+    console.log(`[protocol-guard] 已阻止子框架外部协议导航: ${scheme}`);
+  }
+  return true;
 }
 
 // ===== 按站点记忆的敏感权限决定（permission-decisions.json）=====
@@ -1069,6 +1231,12 @@ function setupGlobalWebContentsHooks() {
     if (contents === mainWindow?.webContents) return;
 
     contents.setWindowOpenHandler(({ url }) => {
+      // 兜底窗口：外部协议走确认流，不允许直接 openExternal。
+      const extScheme = normalizeExternalScheme(url);
+      if (CONFIRMABLE_EXTERNAL_SCHEMES.has(extScheme)) {
+        launchExternalWithPrompt(url, originOfContents(contents), true);
+        return { action: 'deny' };
+      }
       if (!isSafeUrl(url)) return { action: 'deny' };
       // 从 tab 里点 _blank 的，统一丢回我们的 createNewTab
       setImmediate(() => createNewTab(url));
@@ -1090,9 +1258,22 @@ function setupGlobalWebContentsHooks() {
       }
     });
 
+    // 主框架导航：http(s)/file/cosy 放行，mailto/tel 走按站点记忆的确认弹窗，
+    // 其它外部协议（ms-*:/smb:/vbscript: 等）直接阻止。
     contents.on('will-navigate', (navEvent, url) => {
-      if (!isSafeUrl(url)) {
+      if (handleFrameNavigationAttempt(contents, url, true)) {
         navEvent.preventDefault();
+      }
+    });
+
+    // 子框架导航：这是历史代码漏掉的面——iframe src="ms-word:.." 或子框架 302
+    // 到外部协议同样能唤起本机程序。子框架只允许纯 Web 协议，其余一律取消。
+    contents.on('will-frame-navigate', (frameEvent, url, isMainFrame) => {
+      // 主框架导航已由上面的 will-navigate 统一处理（它还要更新地址栏 / 历史），
+      // 这里只接管子框架，否则一次导航会弹两次确认框。
+      if (isMainFrame) return;
+      if (handleFrameNavigationAttempt(contents, url, false)) {
+        frameEvent.preventDefault();
       }
     });
 
@@ -1107,8 +1288,18 @@ function setupGlobalWebContentsHooks() {
       });
     });
 
+    // 服务端 302 也可能把框架重定向到外部协议（下载站常见手法）。
+    // will-redirect 覆盖主框架；will-frame-redirect 覆盖子框架（旧 Electron
+    // 没有该事件时监听器静默不生效，主框架面仍被兜住）。
     contents.on('will-redirect', (redirectEvent, url) => {
-      if (!isSafeUrl(url)) {
+      if (handleFrameNavigationAttempt(contents, url, true)) {
+        redirectEvent.preventDefault();
+      }
+    });
+
+    contents.on('will-frame-redirect', (redirectEvent, url, isMainFrame) => {
+      if (isMainFrame) return;
+      if (handleFrameNavigationAttempt(contents, url, false)) {
         redirectEvent.preventDefault();
       }
     });
@@ -1724,6 +1915,13 @@ function loadTabContent(tab) {
     updateBrowserViewBounds();
 
     tab.view.webContents.setWindowOpenHandler(({ url, disposition }) => {
+      // 页面用 window.open 唤起 mailto/tel 时不弹窗（没有新窗口的位置），
+      // 直接走外部协议确认流；其它非 Web 协议照旧拒绝。
+      const extScheme = normalizeExternalScheme(url);
+      if (CONFIRMABLE_EXTERNAL_SCHEMES.has(extScheme)) {
+        launchExternalWithPrompt(url, originOfContents(tab.view.webContents), true);
+        return { action: 'deny' };
+      }
       if (!isSafeUrl(url)) return { action: 'deny' };
       if (disposition === 'new-window' || disposition === 'foreground-tab') {
         // 弹窗轰炸限流：短时间内同一标签狂开窗口时拦截，只放行正常节奏的新窗口。
@@ -1741,7 +1939,12 @@ function loadTabContent(tab) {
     });
 
     tab.view.webContents.on('will-navigate', (event, navigationUrl) => {
-      if (!isSafeUrl(navigationUrl)) { event.preventDefault(); return; }
+      // 外部协议 / 危险协议的拦截与确认由全局 web-contents 钩子统一处理
+      // （否则这里和全局各弹一次确认框）；这里只负责窗内导航的状态同步。
+      if (classifyFrameNavigation(navigationUrl, true) !== 'in-pane') {
+        event.preventDefault();
+        return;
+      }
       tab.url = navigationUrl;
       addToHistory(navigationUrl, tab.title);
       sendToRenderer('tab-updated', { id: tab.id, url: navigationUrl });
@@ -2677,10 +2880,37 @@ ipcMain.on('open-folder', (event, filePath) => {
 });
 
 // open-external-url renderer 统一入口：点 mailto:/tel: 走这里，
-// 主进程做 scheme 白名单 + 原生确认，再调 shell.openExternal。
+// 主进程做协议校验 + 按站点记忆 + 原生确认，再调 shell.openExternal。
 ipcMain.handle('open-external-url', async (event, url) => {
   if (!isMainSender(event)) return { ok: false, reason: 'unauthorized' };
-  return await confirmAndOpenExternal(String(url || ''));
+  let origin = '';
+  try { origin = new URL(event.sender.getURL()).origin; } catch {}
+  return await confirmAndOpenExternal(String(url || ''), origin);
+});
+
+// 供设置页读取 / 撤销"站点 -> 外部协议"的记忆决定。
+ipcMain.handle('get-protocol-decisions', (event) => {
+  if (!isMainSender(event)) return { ok: false, reason: 'unauthorized' };
+  loadProtocolDecisions();
+  const items = [];
+  for (const [k, v] of protocolDecisions) {
+    const sp = k.indexOf(' ');
+    items.push({ origin: k.slice(0, sp), scheme: k.slice(sp + 1), decision: v.decision, updatedAt: v.updatedAt });
+  }
+  items.sort((a, b) => b.updatedAt - a.updatedAt);
+  return { ok: true, items };
+});
+
+ipcMain.handle('clear-protocol-decision', (event, data) => {
+  if (!isMainSender(event)) return { ok: false, reason: 'unauthorized' };
+  const origin = data && typeof data.origin === 'string' ? data.origin : '';
+  const scheme = data && typeof data.scheme === 'string' ? data.scheme : '';
+  if (!isRememberableOrigin(origin) || !CONFIRMABLE_EXTERNAL_SCHEMES.has(scheme)) {
+    return { ok: false, reason: 'invalid key' };
+  }
+  const deleted = protocolDecisions.delete(protocolDecisionKey(origin, scheme));
+  if (deleted) persistProtocolDecisions();
+  return { ok: true, deleted };
 });
 
 ipcMain.on('clear-downloads', (event) => {
