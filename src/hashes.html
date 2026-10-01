@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>下载校验和 - OpenCosy</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #f3f3f3; color: #1f1f1f; min-height: 100vh;
+    transition: background 0.3s, color 0.3s;
+  }
+  body.dark-mode { background: #1a1a1a; color: #e0e0e0; }
+  .container { max-width: 980px; margin: 0 auto; padding: 32px 24px 60px; }
+  header { margin-bottom: 24px; }
+  h1 { font-size: 26px; font-weight: 600; color: #0078d4; margin-bottom: 6px; }
+  body.dark-mode h1 { color: #4da3ff; }
+  .subtitle { color: #666; font-size: 13px; line-height: 1.6; }
+  body.dark-mode .subtitle { color: #999; }
+
+  .toolbar {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    background: #fff; border-radius: 10px; padding: 14px 16px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08); margin-bottom: 16px;
+  }
+  body.dark-mode .toolbar { background: #2d2d2d; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+  .search-box {
+    flex: 1; min-width: 220px; padding: 9px 12px; border: 1px solid #d0d0d0;
+    border-radius: 6px; font-size: 14px; outline: none; background: #fafafa; color: inherit;
+  }
+  .search-box:focus { border-color: #0078d4; }
+  body.dark-mode .search-box { background: #3d3d3d; border-color: #555; }
+  button {
+    border: none; border-radius: 6px; padding: 8px 14px; font-size: 13px;
+    cursor: pointer; transition: background 0.15s, opacity 0.15s; font-family: inherit;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary { background: #0078d4; color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: #106ebe; }
+  .btn-ghost { background: transparent; color: #0078d4; border: 1px solid #0078d4; }
+  .btn-ghost:hover:not(:disabled) { background: rgba(0,120,212,0.08); }
+  body.dark-mode .btn-ghost { color: #4da3ff; border-color: #4da3ff; }
+  .btn-danger-ghost { background: transparent; color: #c42b1c; border: 1px solid #c42b1c; }
+  .btn-danger-ghost:hover:not(:disabled) { background: rgba(196,43,28,0.08); }
+  body.dark-mode .btn-danger-ghost { color: #ff6a5c; border-color: #ff6a5c; }
+
+  .stats { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  .stat-card {
+    flex: 1; min-width: 150px; background: #fff; border-radius: 10px; padding: 14px 18px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+  }
+  body.dark-mode .stat-card { background: #2d2d2d; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+  .stat-num { font-size: 22px; font-weight: 600; color: #0078d4; }
+  body.dark-mode .stat-num { color: #4da3ff; }
+  .stat-label { font-size: 12px; color: #777; margin-top: 2px; }
+  body.dark-mode .stat-label { color: #999; }
+
+  .hash-list { display: flex; flex-direction: column; gap: 10px; }
+  .hash-row {
+    background: #fff; border-radius: 10px; padding: 13px 18px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    border-left: 4px solid #0078d4;
+  }
+  body.dark-mode .hash-row { background: #2d2d2d; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+  .hash-row.match-ok { border-left-color: #107c10; }
+  .hash-row.match-bad { border-left-color: #c42b1c; }
+  .hash-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .hash-name { font-size: 14px; font-weight: 600; flex: 1; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .hash-host {
+    font-size: 12px; color: #555; background: #eef3f8; border-radius: 5px;
+    padding: 2px 8px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  body.dark-mode .hash-host { color: #c7d3e0; background: #34404d; }
+  .hash-time { font-size: 11px; color: #999; }
+  body.dark-mode .hash-time { color: #8a8a8a; }
+  .hash-digest {
+    margin-top: 8px; font-family: Consolas, "Courier New", monospace; font-size: 12px;
+    color: #444; word-break: break-all; user-select: all; line-height: 1.5;
+  }
+  body.dark-mode .hash-digest { color: #c4c4c4; }
+  .hash-verify { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .hash-verify input {
+    flex: 1; min-width: 260px; padding: 7px 10px; border: 1px solid #d0d0d0;
+    border-radius: 6px; font-family: Consolas, monospace; font-size: 12px;
+    outline: none; background: #fafafa; color: inherit;
+  }
+  .hash-verify input:focus { border-color: #0078d4; }
+  body.dark-mode .hash-verify input { background: #3d3d3d; border-color: #555; }
+  .verify-result { font-size: 12px; font-weight: 600; align-self: center; }
+  .verify-result.ok { color: #107c10; }
+  .verify-result.bad { color: #c42b1c; }
+
+  .badge {
+    display: inline-block; padding: 2px 9px; border-radius: 10px; font-size: 11px; font-weight: 600;
+  }
+  .badge.size { background: #e8f1fb; color: #0f5a9e; }
+  body.dark-mode .badge.size { background: #16314d; color: #6cb0f0; }
+  .badge.ok { background: #e7f4e8; color: #0b6a22; }
+  body.dark-mode .badge.ok { background: #14371c; color: #5fc877; }
+  .badge.bad { background: #fdeaea; color: #c42b1c; }
+  body.dark-mode .badge.bad { background: #431d1a; color: #ff6a5c; }
+
+  .empty {
+    text-align: center; padding: 70px 20px; color: #888; background: #fff;
+    border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+  }
+  body.dark-mode .empty { background: #2d2d2d; color: #999; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+  .empty .big { font-size: 40px; margin-bottom: 10px; }
+
+  .local-panel {
+    background: #fff; border-radius: 10px; padding: 16px 18px; margin-bottom: 16px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+  }
+  body.dark-mode .local-panel { background: #2d2d2d; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+  .local-panel h2 { font-size: 15px; margin-bottom: 8px; color: #0078d4; }
+  body.dark-mode .local-panel h2 { color: #4da3ff; }
+  .local-panel p { font-size: 12px; color: #666; line-height: 1.6; margin-bottom: 12px; }
+  body.dark-mode .local-panel p { color: #999; }
+  #localResult { font-size: 12px; margin-top: 10px; display: none; }
+  #localResult .digest { font-family: Consolas, monospace; word-break: break-all; margin-top: 6px; }
+
+  .modal-mask {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+    align-items: center; justify-content: center; z-index: 100; padding: 20px;
+  }
+  .modal-mask.show { display: flex; }
+  .modal { background: #fff; border-radius: 12px; width: 100%; max-width: 440px; overflow: hidden; }
+  body.dark-mode .modal { background: #2d2d2d; }
+  .modal-head { padding: 16px 20px; border-bottom: 1px solid #eee; font-size: 16px; font-weight: 600; }
+  body.dark-mode .modal-head { border-bottom-color: #444; }
+  .modal-body { padding: 14px 20px; font-size: 13px; line-height: 1.7; }
+  .modal-foot { padding: 14px 20px; border-top: 1px solid #eee; display: flex; gap: 10px; justify-content: flex-end; }
+  body.dark-mode .modal-foot { border-top-color: #444; }
+
+  #toast {
+    position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: #323232; color: #fff; padding: 10px 20px; border-radius: 8px;
+    font-size: 13px; opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; z-index: 200;
+    max-width: 80vw;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.error { background: #c42b1c; }
+  .back-link { display: inline-block; margin-bottom: 14px; font-size: 13px; text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="container">
+  <a class="back-link btn-ghost" style="display:inline-block;" href="cosy://setting">&larr; 返回设置</a>
+  <header>
+    <h1>下载文件校验和</h1>
+    <p class="subtitle">
+      每次下载完成后，浏览器都会在后台用流式 SHA-256 计算文件校验和并只保存在本机。
+      下载安装包 / 压缩包后，把官方公布的 SHA-256 粘贴到对应条目即可比对，防止被镜像或
+      中间人掉包。记录最多保留最近 500 条，可随时清空；这里不保存文件的完整路径。
+    </p>
+  </header>
+
+  <div class="local-panel">
+    <h2>校验任意本地文件</h2>
+    <p>对不是用本浏览器下载、或从别处拷贝来的文件，也可以直接选文件算 SHA-256。</p>
+    <button class="btn-primary" id="pickLocalBtn">选择文件计算 SHA-256</button>
+    <div id="localResult">
+      <div id="localName"></div>
+      <div id="localSize" class="badge size" style="margin-top:6px;"></div>
+      <div class="digest" id="localDigest"></div>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat-card"><div class="stat-num" id="statTotal">-</div><div class="stat-label">记录总数</div></div>
+    <div class="stat-card"><div class="stat-num" id="statBytes">-</div><div class="stat-label">覆盖下载量</div></div>
+    <div class="stat-card"><div class="stat-num" id="statHosts">-</div><div class="stat-label">来源主机数</div></div>
+  </div>
+
+  <div class="toolbar">
+    <input class="search-box" id="searchInput" type="search" placeholder="按文件名或来源主机搜索" autocomplete="off">
+    <button class="btn-primary" id="refreshBtn">刷新</button>
+    <button class="btn-danger-ghost" id="clearBtn">清空记录</button>
+  </div>
+
+  <div class="hash-list" id="hashList"></div>
+  <div class="empty" id="emptyState" style="display:none;">
+    <div class="big">&#128230;</div>
+    <div id="emptyText">还没有已计算校验和的下载</div>
+  </div>
+</div>
+
+<div class="modal-mask" id="confirmModal">
+  <div class="modal">
+    <div class="modal-head">确认操作</div>
+    <div class="modal-body">将清空全部下载校验和记录，且无法恢复。继续？</div>
+    <div class="modal-foot">
+      <button class="btn-ghost" id="confirmCancel">取消</button>
+      <button class="btn-danger-ghost" id="confirmOk">确认清空</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+const api = window.electronAPI;
+const state = { rows: [] };
+const $ = id => document.getElementById(id);
+
+function applyDarkMode() {
+  let settings = {};
+  try { settings = JSON.parse(localStorage.getItem('cosySettings') || '{}'); } catch { settings = {}; }
+  if (settings.darkMode === true || settings.darkMode === 'true') {
+    document.body.classList.add('dark-mode');
+  }
+}
+
+function toast(message, isError = false) {
+  const el = $('toast');
+  el.textContent = message;
+  el.classList.toggle('error', isError);
+  el.classList.add('show');
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+function showConfirm() {
+  return new Promise(resolve => {
+    const modal = $('confirmModal');
+    modal.classList.add('show');
+    const done = ok => {
+      modal.classList.remove('show');
+      $('confirmOk').onclick = null;
+      $('confirmCancel').onclick = null;
+      resolve(ok);
+    };
+    $('confirmOk').onclick = () => done(true);
+    $('confirmCancel').onclick = () => done(false);
+  });
+}
+
+function formatTime(ts) {
+  const n = Number(ts);
+  if (!n) return '';
+  try { return new Date(n).toLocaleString(); } catch { return ''; }
+}
+
+function formatSize(n) {
+  let v = Number(n) || 0;
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return (i === 0 ? v.toFixed(0) : v.toFixed(v >= 100 ? 0 : 1)) + ' ' + units[i];
+}
+
+async function verifyRow(rowId, inputEl, resultEl) {
+  const expected = inputEl.value.trim();
+  if (!/^[a-fA-F0-9]{64}$/.test(expected)) {
+    resultEl.textContent = '请粘贴 64 位十六进制 SHA-256';
+    resultEl.className = 'verify-result bad';
+    return;
+  }
+  try {
+    const r = await api.invoke('verify-download-hash', { id: rowId, expected });
+    if (r && r.ok) {
+      resultEl.textContent = '✓ 校验一致';
+      resultEl.className = 'verify-result ok';
+      toast('校验一致：' + (r.filename || ''));
+    } else if (r && r.match === false) {
+      resultEl.textContent = '✗ 校验不一致，文件可能被篡改';
+      resultEl.className = 'verify-result bad';
+      toast('校验不一致！', true);
+    } else {
+      resultEl.textContent = '校验失败：' + ((r && r.reason) || 'unknown');
+      resultEl.className = 'verify-result bad';
+    }
+  } catch (e) {
+    resultEl.textContent = '校验出错';
+    resultEl.className = 'verify-result bad';
+  }
+}
+
+async function removeRow(rowId) {
+  const r = await api.invoke('remove-download-hash', { id: rowId });
+  if (r && r.success) { toast('已删除该条记录'); loadData(); }
+}
+
+function render() {
+  const query = $('searchInput').value.trim().toLowerCase();
+  const list = $('hashList');
+  list.textContent = '';
+
+  let totalBytes = 0;
+  const hosts = new Set();
+  for (const r of state.rows) {
+    totalBytes += Number(r.size) || 0;
+    if (r.host) hosts.add(r.host);
+  }
+  $('statTotal').textContent = state.rows.length;
+  $('statBytes').textContent = formatSize(totalBytes);
+  $('statHosts').textContent = hosts.size;
+
+  const rows = state.rows.filter(r => {
+    if (!query) return true;
+    return ((r.filename || '') + ' ' + (r.host || '')).toLowerCase().includes(query);
+  });
+
+  $('emptyState').style.display = rows.length ? 'none' : 'block';
+  $('emptyText').textContent = query ? '没有记录匹配当前搜索' : '还没有已计算校验和的下载';
+
+  // 文件名 / 主机 / 摘要全部来自不可信数据，一律 textContent，杜绝 XSS。
+  for (const r of rows) {
+    const row = document.createElement('div');
+    row.className = 'hash-row';
+    row.dataset.id = r.id;
+
+    const head = document.createElement('div');
+    head.className = 'hash-head';
+
+    const name = document.createElement('span');
+    name.className = 'hash-name';
+    name.textContent = r.filename || 'download';
+    name.title = r.filename || '';
+
+    const sizeBadge = document.createElement('span');
+    sizeBadge.className = 'badge size';
+    sizeBadge.textContent = formatSize(r.size);
+
+    head.appendChild(name);
+    head.appendChild(sizeBadge);
+    if (r.host) {
+      const host = document.createElement('span');
+      host.className = 'hash-host';
+      host.textContent = r.host;
+      head.appendChild(host);
+    }
+    const time = document.createElement('span');
+    time.className = 'hash-time';
+    time.textContent = formatTime(r.time);
+    head.appendChild(time);
+
+    const digest = document.createElement('div');
+    digest.className = 'hash-digest';
+    digest.textContent = 'SHA-256  ' + r.sha256;
+
+    const verifyBox = document.createElement('div');
+    verifyBox.className = 'hash-verify';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = '粘贴官方 SHA-256 后点比对';
+    input.spellcheck = false;
+    input.autocomplete = 'off';
+    const btn = document.createElement('button');
+    btn.className = 'btn-ghost';
+    btn.textContent = '比对';
+    const result = document.createElement('span');
+    result.className = 'verify-result';
+    const del = document.createElement('button');
+    del.className = 'btn-danger-ghost';
+    del.textContent = '删除';
+    btn.onclick = () => verifyRow(r.id, input, result);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') verifyRow(r.id, input, result); });
+    del.onclick = () => removeRow(r.id);
+    verifyBox.append(input, btn, result, del);
+
+    row.append(head, digest, verifyBox);
+    list.appendChild(row);
+  }
+}
+
+async function loadData() {
+  $('refreshBtn').disabled = true;
+  try {
+    const rows = await api.invoke('list-download-hashes', { limit: 500 });
+    state.rows = Array.isArray(rows) ? rows : [];
+    render();
+  } catch (e) {
+    toast('加载失败：' + (e && e.message ? e.message : e), true);
+  } finally {
+    $('refreshBtn').disabled = false;
+  }
+}
+
+$('pickLocalBtn').onclick = async () => {
+  const btn = $('pickLocalBtn');
+  btn.disabled = true;
+  btn.textContent = '计算中…';
+  try {
+    const r = await api.invoke('hash-local-file');
+    if (r && r.ok) {
+      $('localResult').style.display = 'block';
+      $('localName').textContent = r.filename;
+      $('localSize').textContent = formatSize(r.size);
+      $('localDigest').textContent = 'SHA-256  ' + r.sha256;
+      toast('已计算：' + r.filename);
+    } else if (r && r.reason !== 'canceled') {
+      toast('计算失败：' + r.reason, true);
+    }
+  } catch (e) {
+    toast('计算失败：' + (e && e.message ? e.message : e), true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '选择文件计算 SHA-256';
+  }
+};
+
+$('refreshBtn').onclick = loadData;
+$('clearBtn').onclick = async () => {
+  const ok = await showConfirm();
+  if (!ok) return;
+  const r = await api.invoke('clear-download-hashes');
+  if (r && r.success) { toast('已清空校验和记录'); loadData(); }
+  else toast('清空失败', true);
+};
+$('searchInput').addEventListener('input', render);
+$('confirmModal').addEventListener('click', e => {
+  if (e.target === $('confirmModal')) $('confirmModal').classList.remove('show');
+});
+
+// 后台摘要完成时即时刷新列表。
+if (api && api.on) {
+  api.on('download-hashed', () => loadData());
+}
+
+applyDarkMode();
+loadData();
+</script>
+</body>
+</html>
