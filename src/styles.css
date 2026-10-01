@@ -744,3 +744,40 @@ body {
 .cosy-btn-primary:hover {
     filter: brightness(1.1);
 }
+
+/* ===== 页内查找：区分大小写 / 整词开关（r13） ===== */
+.find-toggle {
+    width: 30px;
+    height: 28px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+    user-select: none;
+}
+
+.find-toggle:hover {
+    background: var(--glass-bg);
+    color: var(--text-primary);
+}
+
+.find-toggle.active {
+    background: var(--theme-color);
+    border-color: var(--theme-color);
+    color: #fff;
+}
+
+/* ===== 书签导出格式菜单（r13） ===== */
+.bookmark-export-menu {
+    min-width: 240px;
+    max-width: 300px;
+    z-index: 100002;
+}
