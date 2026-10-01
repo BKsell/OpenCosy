@@ -55,6 +55,12 @@
         .toggle-slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 3px; background-color: white; transition: 0.3s; border-radius: 50%; }
         .toggle-switch input:checked + .toggle-slider { background-color: var(--theme-color, #0078d4); }
         .toggle-switch input:checked + .toggle-slider:before { transform: translateX(24px); }
+        .spellcheck-langs { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 12px; }
+        .spellcheck-langs.spellcheck-off { display: none; }
+        .spellcheck-langs label { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: normal; color: #444; cursor: pointer; }
+        body.dark-mode .spellcheck-langs label { color: #ccc; }
+        .spellcheck-langs input[type="checkbox"] { margin: 0; cursor: pointer; }
+        .spellcheck-langs label.spellcheck-unavailable { display: none; }
         @media (max-width: 600px) {
             .settings-container { padding: 20px 10px; }
             .settings-section { padding: 20px; }
@@ -195,6 +201,36 @@
                         <input type="checkbox" id="stripTrackingParams" checked>
                         <span class="toggle-slider"></span>
                     </label>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M4 19V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v14l-4-3H6a2 2 0 0 0-2 2Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+                        <path d="M9 7h4M9 10h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">拼写检查</label>
+                    <p class="setting-description">在网页输入框中检查拼写错误，右键错词可查看本地词典给出的替换建议或加入自定义词典；检查完全在本机完成，不会上传你输入的内容</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="spellcheckEnabled" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <div id="spellcheckLangs" class="spellcheck-langs">
+                        <label><input type="checkbox" class="spellcheck-lang" value="en-US" checked> 英语（美国）</label>
+                        <label><input type="checkbox" class="spellcheck-lang" value="en-GB"> 英语（英国）</label>
+                        <label><input type="checkbox" class="spellcheck-lang" value="zh-CN" checked> 中文（简体）</label>
+                        <label><input type="checkbox" class="spellcheck-lang" value="zh-TW"> 中文（繁体）</label>
+                        <label><input type="checkbox" class="spellcheck-lang" value="ja"> 日语</label>
+                        <label><input type="checkbox" class="spellcheck-lang" value="ko"> 韩语</label>
+                        <label><input type="checkbox" class="spellcheck-lang" value="fr-FR"> 法语</label>
+                        <label><input type="checkbox" class="spellcheck-lang" value="de-DE"> 德语</label>
+                        <label><input type="checkbox" class="spellcheck-lang" value="es-ES"> 西班牙语</label>
+                        <label><input type="checkbox" class="spellcheck-lang" value="ru-RU"> 俄语</label>
+                        <label><input type="checkbox" class="spellcheck-lang" value="pt-BR"> 葡萄牙语（巴西）</label>
+                        <label><input type="checkbox" class="spellcheck-lang" value="it-IT"> 意大利语</label>
+                    </div>
                 </div>
             </div>
             <div class="setting-item">
@@ -355,9 +391,13 @@
         <button class="save-button" onclick="saveSettings()">保存设置</button>
     </div>
     <script>
-        const ALLOWED_SETTING_KEYS = new Set(['defaultTab', 'tabLayout', 'searchEngine', 'backgroundType', 'customUrl', 'customBackgroundUrl', 'themeColor', 'darkMode', 'memorySaver', 'clearOnExit', 'confirmCloseMultiple', 'blockTrackers', 'crashRecovery', 'stripTrackingParams']);
+        const ALLOWED_SETTING_KEYS = new Set(['defaultTab', 'tabLayout', 'searchEngine', 'backgroundType', 'customUrl', 'customBackgroundUrl', 'themeColor', 'darkMode', 'memorySaver', 'clearOnExit', 'confirmCloseMultiple', 'blockTrackers', 'crashRecovery', 'stripTrackingParams', 'spellcheckEnabled', 'spellcheckLanguages']);
         const ALLOWED_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'cosy:']);
         const COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
+        const DEFAULT_SPELLCHECK_LANGS = ['en-US', 'zh-CN'];
+        // 这些键在 .inf 配置里保存为 true/false，导入时必须还原成布尔值，
+        // 否则字符串 'false' 会被当成真值，导致"关闭"类设置永远关不掉。
+        const BOOLEAN_SETTING_KEYS = new Set(['darkMode', 'memorySaver', 'clearOnExit', 'confirmCloseMultiple', 'blockTrackers', 'crashRecovery', 'stripTrackingParams', 'spellcheckEnabled']);
 
         function isSafeUrl(url) {
             try {
@@ -404,7 +444,34 @@
             document.getElementById('darkMode').addEventListener('change', function() {
                 applyDarkMode(this.checked);
             });
+            document.getElementById('spellcheckEnabled').addEventListener('change', syncSpellcheckUi);
+            // 向主进程查询平台实际安装了词典的语言；没有词典的选项直接隐藏，
+            // 勾了也不生效的语言不展示给用户。
+            window.electronAPI.invoke('get-spellcheck-info').then(function(info) {
+                if (!info || !info.success) return;
+                const selectable = new Set(info.selectable || []);
+                document.querySelectorAll('.spellcheck-lang').forEach(function(cb) {
+                    if (!selectable.has(cb.value)) {
+                        cb.parentElement.classList.add('spellcheck-unavailable');
+                        cb.checked = false;
+                    }
+                });
+                // 主进程的实时状态优先于本地缓存（可能在别处被改过）。
+                document.getElementById('spellcheckEnabled').checked = info.enabled !== false;
+                const langs = Array.isArray(info.languages) && info.languages.length ? info.languages : DEFAULT_SPELLCHECK_LANGS;
+                const langSet = new Set(langs);
+                document.querySelectorAll('.spellcheck-lang').forEach(function(cb) {
+                    if (selectable.has(cb.value)) cb.checked = langSet.has(cb.value);
+                });
+                syncSpellcheckUi();
+            }).catch(function() { /* preload 不可用时静默，保留默认勾选 */ });
+            syncSpellcheckUi();
         });
+
+        function syncSpellcheckUi() {
+            const enabled = document.getElementById('spellcheckEnabled').checked;
+            document.getElementById('spellcheckLangs').classList.toggle('spellcheck-off', !enabled);
+        }
 
         function detectEngineVersion() {
             const engineVersion = document.getElementById('engine-version');
@@ -461,6 +528,13 @@
             document.getElementById('blockTrackers').checked = settings.blockTrackers !== false;
             document.getElementById('crashRecovery').checked = settings.crashRecovery !== false;
             document.getElementById('stripTrackingParams').checked = settings.stripTrackingParams !== false;
+            document.getElementById('spellcheckEnabled').checked = settings.spellcheckEnabled !== false;
+            const spellLangs = Array.isArray(settings.spellcheckLanguages) && settings.spellcheckLanguages.length
+                ? settings.spellcheckLanguages
+                : DEFAULT_SPELLCHECK_LANGS;
+            const spellLangSet = new Set(spellLangs);
+            document.querySelectorAll('.spellcheck-lang').forEach(cb => { cb.checked = spellLangSet.has(cb.value); });
+            syncSpellcheckUi();
             applyThemeColor(settings.themeColor || '#0078d4');
         }
 
@@ -484,6 +558,8 @@
             const blockTrackers = document.getElementById('blockTrackers').checked;
             const crashRecovery = document.getElementById('crashRecovery').checked;
             const stripTrackingParams = document.getElementById('stripTrackingParams').checked;
+            const spellcheckEnabled = document.getElementById('spellcheckEnabled').checked;
+            const spellcheckLanguages = [...document.querySelectorAll('.spellcheck-lang:checked')].map(cb => cb.value);
 
             if (customUrl && !isSafeUrl(customUrl)) {
                 alert('自定义网址必须是 http/https/file/cosy 协议');
@@ -509,7 +585,9 @@
                 confirmCloseMultiple,
                 blockTrackers,
                 crashRecovery,
-                stripTrackingParams
+                stripTrackingParams,
+                spellcheckEnabled,
+                spellcheckLanguages
             };
 
             localStorage.setItem('cosySettings', JSON.stringify(settings));
@@ -584,9 +662,16 @@
                             if (key === 'customUrl' && value && !isSafeUrl(value)) continue;
                             if (key === 'customBackgroundUrl' && value && !isSafeUrl(value)) continue;
                             if (key === 'themeColor' && value && !isValidColor(value)) continue;
-                            // .inf 里所有值都是字符串，darkMode 需要还原成布尔值才能通过主进程白名单
-                            if (key === 'darkMode') {
+                            // .inf 里所有值都是字符串，布尔类设置必须还原，
+                            // 否则字符串 'false' 为真值会让"关闭"类选项永远关不掉。
+                            if (BOOLEAN_SETTING_KEYS.has(key)) {
                                 settings[key] = (value === 'true' || value === '1');
+                            } else if (key === 'spellcheckLanguages') {
+                                // .inf 里语言列表存成逗号分隔字符串，导回时拆回数组，
+                                // 非白名单语言直接丢弃，最终是否可用由主进程再校验一次。
+                                const langs = value.split(',').map(s => s.trim())
+                                    .filter(s => s && document.querySelectorAll(`.spellcheck-lang[value="${s}"]`).length);
+                                if (langs.length) settings[key] = langs.slice(0, 5);
                             } else {
                                 settings[key] = value;
                             }
