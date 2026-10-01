@@ -46,6 +46,135 @@ function allowPopupForTab(tabId) {
 // onBeforeRequest 据此决定是否把 http:// 升级成 https://。
 let httpsOnlyEnabled = true;
 
+// blockTrackers：第三方追踪/广告请求拦截（隐私），默认开启。
+// 只拦“子资源”请求（脚本/图片/xhr/ping 等），从不拦 mainFrame 顶层导航，
+// 所以即使域名误判，用户手动点开对应网站也不会被挡。
+let blockTrackers = true;
+// crashRecovery：渲染进程崩溃 / OOM 时自动重载一次并弹横幅；可在设置关闭。
+let crashRecoveryEnabled = true;
+// 每个 webContents 的崩溃次数，用于阻止“崩溃→重载→又崩溃”的无限循环。
+const crashReloadCounts = new Map();
+// 本次会话累计拦截数与按域名计数，渲染层用来显示“已拦截 N 个追踪器”。
+let blockedTrackerCount = 0;
+const blockedTrackerByHost = new Map();
+
+// 常见纯第三方追踪 / 广告网络域名（不含任何会被当主站直接访问的通用服务）。
+// 按用途分组，最后合并成集合；只用于“子资源”请求拦截，绝不拦顶层导航。
+const TRACKER_DOMAIN_GROUPS = {
+  // 大型站点分析 / 统计
+  analytics: [
+    'google-analytics.com', 'googletagmanager.com', 'googletagservices.com',
+    'analytics.google.com', 'stats.g.doubleclick.net', 'ssl.google-analytics.com',
+    'www-google-analytics.l.google.com',
+    'mixpanel.com', 'api.mixpanel.com', 'static.mixpanel.com',
+    'segment.io', 'api.segment.io', 'cdn.segment.com', 'cdn-settings.segment.com',
+    'amplitude.com', 'api.amplitude.com', 'cdn.amplitude.com',
+    'fullstory.com', 'rs.fullstory.com', 'edge.fullstory.com',
+    'hotjar.com', 'static.hotjar.com', 'script.hotjar.com', 'vars.hotjar.com',
+    'clarity.ms', 'c.clarity.ms', 'i.clarity.ms',
+    'matomo.cloud', 'plausible.io',
+    'quantserve.com', 'pixel.quantserve.com', 'quantcount.com',
+    'scorecardresearch.com', 'chartbeat.com', 'static.chartbeat.com',
+    'newrelic.com', 'bam.nr-data.net', 'nr-data.net',
+    'mouseflow.com', 'cdn.mouseflow.com',
+    'luckyorange.com', 'd10lpsik1i8c69.cloudfront.net',
+    'crazyegg.com', 'tracking.crazyegg.com', 'visualwebsiteoptimizer.com',
+    'clicktale.net', 'decibelinsight.net', 'sessioncam.com',
+    'logentries.com', 'loggly.com', 'heap.io',
+  ],
+  // 广告联盟 / 竞价 / 投放
+  ads: [
+    'doubleclick.net', 'googleadservices.com', 'adservice.google.com',
+    'pagead2.googlesyndication.com', 'tpc.googlesyndication.com',
+    'googlesyndication.com', 'adsystem.com', 'adnxs.com',
+    'casalemedia.com', 'criteo.com', 'criteo.net', 'creativecdn.com',
+    'taboola.com', 'trc.taboola.com', 'cdn.taboola.com',
+    'outbrain.com', 'widgets.outbrain.com', 'mads.one', 'moatads.com',
+    'liverail.com', 'rubiconproject.com', 'openx.net', 'pubmatic.com',
+    'yieldmo.com', 'bidr.io', 'adsrvr.org', 'advertising.com',
+    'adform.net', 'smartyads.com', '3lift.com', 'sharethrough.com',
+    'appnexus.com', 'rfihub.com', 'krxd.net', 'bluekai.com',
+    'demdex.net', 'everesttech.net', 'rlcdn.com', 'tapad.com',
+    'addthis.com', 's7.addthis.com', 'zedo.com', 'adcolony.com',
+    'appsflyer.com', 't.appsflyer.com', 'adjust.com', 'branch.io',
+    'kochava.com', 'singular.net', 'tenjin.com',
+  ],
+  // 社交像素 / 跨站身份
+  social: [
+    'connect.facebook.net', 'pixel.facebook.com', 'graph.facebook.com',
+    'an.facebook.com', 'staticxx.facebook.com', 'syndication.twitter.com',
+    'platform.twitter.com', 'analytics.twitter.com',
+    'tr.snapchat.com', 'sc-static.net',
+    'ads.pinterest.com', 'ct.pinterest.com',
+    'snap.licdn.com', 'platform.linkedin.com', 'px.ads.linkedin.com',
+    'ads.linkedin.com', 'bat.bing.com', 'ads.youtube.com',
+    'ads-api.tiktok.com', 'analytics.tiktok.com', 'pixel.tiktok.com',
+  ],
+  // 营销 / CRM / 邮件转化跟踪
+  marketing: [
+    'list-manage.com', 'mc.us18.list-manage.com',
+    'hubspot.com', 'js.hs-scripts.com', 'js.hs-analytics.net',
+    'js.hsadspixel.net', 'js.hs-banner.com',
+    'intercom.io', 'js.intercomcdn.com', 'widget.intercom.io',
+    'drift.com', 'js.driftt.com',
+    'olark.com', 'static.olark.com', 'salesforceliveagent.com',
+    'marketo.com', 'mktoresp.com', 'engage.marketo.com',
+    'pardot.com', 'pi.pardot.com', 'convertkit.com', 'kajabi.com',
+  ],
+  // 隐私指纹 / 设备识别 / 遥测
+  fingerprint: [
+    'fingerprint.com', 'api.fpjs.sh', 'fpcdn.io', 'fpjs.sh',
+    'iovation.com', 'mpsnare.iesnare.com', 'first-party.iovation.com',
+    'threatmetrix.com', 'h-sdk.online-metrix.net', 'online-metrix.net',
+    'deviceidentify.com', 'deepintent.com', 'drawbrid.ge',
+    'mediavoice.com', 'bidtheatre.com', 'streampixel.io',
+    'bouncex.net', 'cdn.bouncex.net', 'addroplet.com',
+  ],
+};
+
+// 合并各分组，得到最终拦截集合（名单去重）。
+const TRACKER_HOSTS = new Set(Object.values(TRACKER_DOMAIN_GROUPS).flat());
+
+// hostMatchesTracker 判断主机是否为已知追踪域（精确或其子域）。
+function hostMatchesTracker(hostname) {
+  let h = String(hostname || '').toLowerCase().replace(/\.$/, '');
+  if (!h) return false;
+  if (TRACKER_HOSTS.has(h)) return true;
+  for (const t of TRACKER_HOSTS) {
+    if (h.endsWith('.' + t)) return true;
+  }
+  return false;
+}
+
+// isTrackerRequest 只拦子资源，顶层框架 / iframe 框架文档一律放行，避免误伤导航。
+function isTrackerRequest(details) {
+  if (!blockTrackers) return false;
+  const rt = details.resourceType;
+  if (rt === 'mainFrame' || rt === 'subFrame') return false;
+  let host = '';
+  try { host = new URL(details.url).hostname; } catch { return false; }
+  return hostMatchesTracker(host);
+}
+
+function recordBlockedTracker(url) {
+  blockedTrackerCount += 1;
+  let host = '';
+  try { host = new URL(url).hostname; } catch { host = '(unknown)'; }
+  blockedTrackerByHost.set(host, (blockedTrackerByHost.get(host) || 0) + 1);
+  sendToRenderer('trackers-blocked', {
+    count: blockedTrackerCount,
+    host,
+    top: topBlockedHosts(),
+  });
+}
+
+function topBlockedHosts() {
+  return [...blockedTrackerByHost.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([host, n]) => ({ host, n }));
+}
+
 // clearOnExit：退出时自动清空缓存 / Cookie / 站点存储 / 历史 / 下载记录（隐私模式）。
 // confirmCloseMultiple：仍有多个标签页时点 × 先二次确认，防止误关整窗。
 let clearOnExit = false;
@@ -413,6 +542,12 @@ function setupSecurityHeaders() {
   });
 
   session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+    // 第三方追踪 / 广告子资源：直接取消（不动顶层导航）。
+    if ((details.url.startsWith('http://') || details.url.startsWith('https://')) &&
+        isTrackerRequest(details)) {
+      recordBlockedTracker(details.url);
+      return callback({ cancel: true });
+    }
     // HTTPS-only 模式：用户可在设置里关掉；私网/回环主机永远保留 http://
     if (httpsOnlyEnabled && details.url.startsWith('http://') && !isPrivateNetworkHost(details.url)) {
       callback({ redirectURL: 'https://' + details.url.slice(7) });
@@ -570,6 +705,14 @@ function setupPermissionHandlers() {
 // - 拦 will-navigate，不允许跳到 javascript:/data:/vbscript: 这些危险 scheme；
 // - beforeunload 弹确认，避免用户关标签时把没保存的表单/SQL 编辑器内容直接丢了。
 function setupGlobalWebContentsHooks() {
+  // GPU 进程崩溃时通知界面（Electron 14+ 的统一子进程事件）。GPU 进程通常会自动重启，
+  // 这里只提示一次，避免用户面对“画面突然空白却不知道发生了什么”。
+  app.on('child-process-gone', (_gpuEvent, details) => {
+    if (details && details.type === 'GPU') {
+      sendToRenderer('gpu-process-gone', { reason: details.reason || 'unknown' });
+    }
+  });
+
   app.on('web-contents-created', (_event, contents) => {
     // 主窗口 UI 自己管 navigation，跳过；只给页面 tab 兜底
     if (contents === mainWindow?.webContents) return;
@@ -617,6 +760,43 @@ function setupGlobalWebContentsHooks() {
       if (!isSafeUrl(url)) {
         redirectEvent.preventDefault();
       }
+    });
+
+    // ===== 渲染进程崩溃 / 卡死恢复 =====
+    // 现代浏览器在某个标签的渲染进程崩溃后会给横幅而不是整窗静默死掉。
+    // 崩溃 / OOM 自动重载“一次”（第二次不再自动，避免崩溃循环把 CPU 打满），
+    // 被系统杀死(killed)不自动重载；无响应时给横幅让用户选“等待 / 强制刷新”。
+    contents.on('render-process-gone', (_goneEvent, details) => {
+      const tab = tabs.find(t => t.view && t.view.webContents === contents);
+      const payload = {
+        tabId: contents.id,
+        reason: details.reason || 'unknown',
+        exitCode: typeof details.exitCode === 'number' ? details.exitCode : null,
+        url: tab?.url || '',
+        title: tab?.title || '',
+        autoReloaded: false,
+      };
+      const count = (crashReloadCounts.get(contents.id) || 0) + 1;
+      crashReloadCounts.set(contents.id, count);
+      if (crashRecoveryEnabled &&
+          (details.reason === 'crashed' || details.reason === 'oom') &&
+          count === 1 && !contents.isDestroyed()) {
+        payload.autoReloaded = true;
+        setTimeout(() => {
+          if (!contents.isDestroyed()) contents.reload();
+        }, 400);
+      }
+      sendToRenderer('renderer-gone', payload);
+    });
+
+    // 页面恢复正常后，把该标签的崩溃计数清零，给下次真正的崩溃留出自动重载机会。
+    contents.on('did-finish-load', () => crashReloadCounts.delete(contents.id));
+
+    contents.on('unresponsive', () => {
+      sendToRenderer('renderer-unresponsive', { tabId: contents.id });
+    });
+    contents.on('responsive', () => {
+      sendToRenderer('renderer-responsive', { tabId: contents.id });
     });
 
     // 页面调 window.close() 之前触发的 beforeunload，弹原生确认
@@ -1615,6 +1795,8 @@ app.whenReady().then(async () => {
   const stored = readStoredSettings();
   applyDarkMode(!!stored.darkMode);
   httpsOnlyEnabled = stored.httpsOnly !== false;
+  blockTrackers = stored.blockTrackers !== false;
+  crashRecoveryEnabled = stored.crashRecovery !== false;
   if ('memorySaver' in stored) memorySaverEnabled = !!stored.memorySaver;
   if ('clearOnExit' in stored) clearOnExit = !!stored.clearOnExit;
   if ('confirmCloseMultiple' in stored) confirmCloseMultiple = !!stored.confirmCloseMultiple;
@@ -2378,6 +2560,8 @@ ipcMain.on('show-context-menu', (event, data) => {
 const ALLOWED_SETTING_KEYS = {
   darkMode: v => typeof v === 'boolean',
   httpsOnly: v => typeof v === 'boolean',
+  blockTrackers: v => typeof v === 'boolean',
+  crashRecovery: v => typeof v === 'boolean',
   themeColor: v => isValidColor(v),
   defaultTab: v => ['bing', 'custom', 'newtab'].includes(v),
   customUrl: v => typeof v === 'string' && isSafeUrl(v),
@@ -2408,6 +2592,8 @@ ipcMain.on('save-settings', (event, settings) => {
     // 立即把 darkMode / httpsOnly / memorySaver 应用到运行时
     applyDarkMode(clean.darkMode);
     httpsOnlyEnabled = clean.httpsOnly !== false;
+    blockTrackers = clean.blockTrackers !== false;
+    crashRecoveryEnabled = clean.crashRecovery !== false;
     if ('memorySaver' in clean) memorySaverEnabled = !!clean.memorySaver;
     if ('clearOnExit' in clean) clearOnExit = !!clean.clearOnExit;
     if ('confirmCloseMultiple' in clean) confirmCloseMultiple = !!clean.confirmCloseMultiple;
@@ -2483,6 +2669,36 @@ ipcMain.handle('get-https-only', (event) => {
 ipcMain.handle('get-network-status', (event) => {
   if (!isMainSender(event)) return { success: false };
   return { success: true, online: net.isOnline() };
+});
+
+ipcMain.handle('get-trackers', (event) => {
+  if (!isMainSender(event)) return { success: false };
+  return { success: true, enabled: blockTrackers, count: blockedTrackerCount, top: topBlockedHosts() };
+});
+
+ipcMain.on('reset-trackers', (event) => {
+  if (!isMainSender(event)) return;
+  blockedTrackerCount = 0;
+  blockedTrackerByHost.clear();
+  sendToRenderer('trackers-blocked', { count: 0, host: '', top: [] });
+});
+
+// 崩溃横幅上的“强制刷新”：按 tabId 找到对应标签重载（无响应 / 连续崩溃后由用户手动触发）。
+ipcMain.on('reload-tab-by-id', (event, tabId) => {
+  if (!isMainSender(event)) return;
+  const id = Number(tabId);
+  const tab = tabs.find(t => t.view && t.view.webContents.id === id);
+  const wc = tab?.view?.webContents;
+  if (wc && !wc.isDestroyed()) {
+    crashReloadCounts.delete(id);
+    wc.reload();
+  }
+});
+
+// 崩溃横幅上的“重新打开”：连续崩溃不再自动重载时，让用户在全新标签里重试该 URL。
+ipcMain.on('reopen-tab-url', (event, url) => {
+  if (!isMainSender(event)) return;
+  if (typeof url === 'string' && isSafeUrl(url)) createNewTab(url);
 });
 
 // purgeBrowsingDataOnExit 在用户开启“退出时清除浏览数据”时执行一次性彻底清理：
