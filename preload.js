@@ -53,6 +53,8 @@ const allowedInvokeChannels = new Set([
   'remove-extension',
   'browse-folder',
   'get-bookmarks',
+  'export-bookmarks',
+  'import-bookmarks',
   'get-history',
   'clear-history',
   'clear-browsing-data',
