@@ -46,6 +46,11 @@ function allowPopupForTab(tabId) {
 // onBeforeRequest 据此决定是否把 http:// 升级成 https://。
 let httpsOnlyEnabled = true;
 
+// clearOnExit：退出时自动清空缓存 / Cookie / 站点存储 / 历史 / 下载记录（隐私模式）。
+// confirmCloseMultiple：仍有多个标签页时点 × 先二次确认，防止误关整窗。
+let clearOnExit = false;
+let confirmCloseMultiple = false;
+
 const ALLOWED_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'cosy:']);
 const MAX_HISTORY_ENTRIES = 1000;
 const DEFAULT_WINDOW_WIDTH = 1200;
@@ -597,6 +602,17 @@ function setupGlobalWebContentsHooks() {
       }
     });
 
+    // 页内查找结果转发：findInPage 只会作用于活动标签，所以这里也只把
+    // 当前活动 webContents 的匹配结果送回主界面，更新“第 x / y 个匹配”。
+    // 非活动标签的结果直接忽略，避免后台标签覆盖计数。
+    contents.on('found-in-page', (_findEvent, result) => {
+      if (contents !== getCurrentTabWebContents()) return;
+      sendToRenderer('found-in-page-result', {
+        activeMatchOrdinal: result.activeMatchOrdinal || 0,
+        matches: result.matches || 0,
+      });
+    });
+
     contents.on('will-redirect', (redirectEvent, url) => {
       if (!isSafeUrl(url)) {
         redirectEvent.preventDefault();
@@ -705,7 +721,8 @@ function createWindow() {
   mainWindow.on('resize', updateBrowserViewBounds);
   mainWindow.on('move', updateBrowserViewBounds);
   mainWindow.once('closed', () => {
-    saveSession();
+    // 开启了“退出时清除浏览数据”就不要把本次标签会话落盘，避免下次又恢复出来。
+    if (!clearOnExit) saveSession();
     mainWindow = null;
   });
 
@@ -713,28 +730,66 @@ function createWindow() {
   // 无法恢复标签。这里周期性自动保存一次，崩溃最多丢失这 15 秒内新开/关闭的标签。
   const SESSION_AUTOSAVE_MS = 15000;
   const sessionAutosaveTimer = setInterval(() => {
-    try { saveSession(); } catch {}
+    try { if (!clearOnExit) saveSession(); } catch {}
   }, SESSION_AUTOSAVE_MS);
   if (typeof sessionAutosaveTimer.unref === 'function') sessionAutosaveTimer.unref();
 
-  // 有关键下载进行中时关闭窗口先二次确认，防止误点 × 中断下载。
+  // 关闭窗口时按顺序做两道确认，再按设置执行隐私清理：
+  // 1) 开了“多标签退出确认”且仍有多个标签 → 二次确认；
+  // 2) 有关键下载进行中 → 放弃下载确认；
+  // 3) 开了“退出时清除浏览数据”→ 清理完成后才真正退出。
   let allowQuitWithDownloads = false;
-  mainWindow.on('close', (e) => {
-    if (allowQuitWithDownloads || !mainWindow) return;
-    const active = downloads.some(d => d && (d.status === 'downloading' || d.status === 'pending' || d.status === 'paused'));
-    if (!active) return;
-    e.preventDefault();
-    const choice = dialog.showMessageBoxSync(mainWindow, {
-      type: 'warning',
-      buttons: ['继续下载，留在窗口', '放弃下载并退出'],
-      defaultId: 0,
-      cancelId: 0,
-      title: '仍有下载进行中',
-      message: '当前还有未完成的下载，确定要退出吗？',
-      detail: '退出后正在进行的下载会被中断，已完成的文件不受影响。',
-    });
-    if (choice === 1) {
-      allowQuitWithDownloads = true;
+  let multiTabConfirmed = false;
+  let exitPurged = false;
+  mainWindow.on('close', async (e) => {
+    if (!mainWindow) return;
+
+    if (!multiTabConfirmed && confirmCloseMultiple && tabs.length > 1) {
+      e.preventDefault();
+      const choice = dialog.showMessageBoxSync(mainWindow, {
+        type: 'question',
+        buttons: ['取消', '全部关闭'],
+        defaultId: 0,
+        cancelId: 0,
+        title: '关闭所有标签页？',
+        message: `当前还有 ${tabs.length} 个标签页打开，确定要退出 OpenCosy 吗？`,
+        detail: '退出将结束本次浏览会话。',
+      });
+      if (choice !== 1) return;
+      multiTabConfirmed = true;
+      mainWindow.close();
+      return;
+    }
+
+    if (!allowQuitWithDownloads) {
+      const active = downloads.some(d => d && (d.status === 'downloading' || d.status === 'pending' || d.status === 'paused'));
+      if (active) {
+        e.preventDefault();
+        const choice = dialog.showMessageBoxSync(mainWindow, {
+          type: 'warning',
+          buttons: ['继续下载，留在窗口', '放弃下载并退出'],
+          defaultId: 0,
+          cancelId: 0,
+          title: '仍有下载进行中',
+          message: '当前还有未完成的下载，确定要退出吗？',
+          detail: '退出后正在进行的下载会被中断，已完成的文件不受影响。',
+        });
+        if (choice === 1) {
+          allowQuitWithDownloads = true;
+          mainWindow.close();
+        }
+        return;
+      }
+    }
+
+    if (clearOnExit && !exitPurged) {
+      e.preventDefault();
+      exitPurged = true;
+      try {
+        await purgeBrowsingDataOnExit();
+      } catch (err) {
+        console.error('退出时清除浏览数据失败:', err);
+      }
       mainWindow.close();
     }
   });
@@ -1561,6 +1616,8 @@ app.whenReady().then(async () => {
   applyDarkMode(!!stored.darkMode);
   httpsOnlyEnabled = stored.httpsOnly !== false;
   if ('memorySaver' in stored) memorySaverEnabled = !!stored.memorySaver;
+  if ('clearOnExit' in stored) clearOnExit = !!stored.clearOnExit;
+  if ('confirmCloseMultiple' in stored) confirmCloseMultiple = !!stored.confirmCloseMultiple;
   startMemorySaver();
 
   if (process.platform === 'win32') app.setAsDefaultProtocolClient('cosy');
@@ -2327,6 +2384,8 @@ const ALLOWED_SETTING_KEYS = {
   tabLayout: v => ['horizontal', 'vertical'].includes(v),
   searchEngine: v => ['bing', 'google', 'baidu'].includes(v),
   memorySaver: v => typeof v === 'boolean',
+  clearOnExit: v => typeof v === 'boolean',
+  confirmCloseMultiple: v => typeof v === 'boolean',
   backgroundType: v => ['default', 'custom'].includes(v),
   customBackgroundUrl: v => typeof v === 'string' && isSafeUrl(v),
 };
@@ -2350,6 +2409,8 @@ ipcMain.on('save-settings', (event, settings) => {
     applyDarkMode(clean.darkMode);
     httpsOnlyEnabled = clean.httpsOnly !== false;
     if ('memorySaver' in clean) memorySaverEnabled = !!clean.memorySaver;
+    if ('clearOnExit' in clean) clearOnExit = !!clean.clearOnExit;
+    if ('confirmCloseMultiple' in clean) confirmCloseMultiple = !!clean.confirmCloseMultiple;
     event.reply('settings-saved', { success: true });
   } catch (e) {
     console.error('保存设置失败:', e);
@@ -2423,6 +2484,27 @@ ipcMain.handle('get-network-status', (event) => {
   if (!isMainSender(event)) return { success: false };
   return { success: true, online: net.isOnline() };
 });
+
+// purgeBrowsingDataOnExit 在用户开启“退出时清除浏览数据”时执行一次性彻底清理：
+// 网络缓存、Cookie / localStorage / IndexedDB 等站点存储、历史与下载记录，
+// 以及用于恢复标签的 session.json，保证下次启动是干净状态，不留本次痕迹。
+async function purgeBrowsingDataOnExit() {
+  const sessionObj = session.defaultSession;
+  await Promise.all([
+    sessionObj.clearCache(),
+    sessionObj.clearStorageData({
+      storages: [
+        'cookies', 'filesystem', 'indexdb', 'localstorage',
+        'shadercache', 'websql', 'serviceworkers', 'cachestorage',
+      ],
+    }),
+  ]);
+  history = [];
+  saveHistory();
+  downloads = [];
+  currentDownloadInfo = null;
+  clearSession();
+}
 
 ipcMain.handle('clear-browsing-data', async (event, options) => {
   if (!isMainSender(event)) return { success: false, error: 'Unauthorized' };
