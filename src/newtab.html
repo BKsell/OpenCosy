@@ -29,6 +29,13 @@
         .quick-link .del { top: -6px; right: -6px; }
         .quick-link .edit { top: -6px; right: 16px; font-size: 11px; }
         .quick-link.custom:hover .del, .quick-link.custom:hover .edit { display: block; }
+        .quick-link.dragging { opacity: 0.35; }
+        .quick-link.drag-over .quick-link-icon { outline: 2px solid #93c5fd; outline-offset: 3px; }
+        .tile-menu { position: fixed; z-index: 30; min-width: 150px; padding: 6px; border-radius: 10px; background: rgba(20,20,30,0.94); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 40px rgba(0,0,0,0.45); display: none; }
+        .tile-menu.open { display: block; }
+        .tile-menu-item { padding: 7px 10px; font-size: 12px; border-radius: 6px; cursor: pointer; color: #fff; }
+        .tile-menu-item:hover { background: rgba(255,255,255,0.14); }
+        .tile-menu-item.danger { color: #fca5a5; }
         .suggest-wrap { margin: 26px auto 0; max-width: 600px; }
         .suggest-title { font-size: 12px; opacity: 0.75; margin-bottom: 10px; text-shadow: 0 1px 3px rgba(0,0,0,0.6); letter-spacing: 1px; }
         .suggest-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
@@ -116,14 +123,33 @@
             <span>恢复默认磁贴</span>
             <button id="btn-reset">重置</button>
         </div>
+        <div class="settings-row">
+            <span>恢复被隐藏磁贴</span>
+            <button id="btn-unhide">恢复</button>
+        </div>
+        <div class="settings-row">
+            <span>磁贴备份</span>
+            <span style="display:flex;gap:6px;">
+                <button id="btn-export">导出</button>
+                <button id="btn-import">导入</button>
+            </span>
+        </div>
+        <input type="file" id="import-file" accept="application/json,.json" style="display:none;">
     </div>
+    <div class="tile-menu" id="tile-menu"></div>
     <script>
         const ALLOWED_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'cosy:']);
         const CUSTOM_KEY = 'cosyQuickLinks';
         const VISIT_KEY = 'cosyQuickLinkVisits';
         const DISMISS_KEY = 'cosySuggestDismiss';
+        const ORDER_KEY = 'cosyQuickLinkOrder';
+        const HIDDEN_KEY = 'cosyQuickLinkHidden';
         const MAX_CUSTOM_LINKS = 24;
         const MAX_SUGGESTIONS = 8;
+
+        // 当前正在拖拽的磁贴 URL；磁贴右键菜单的状态对象。
+        let dragSrcUrl = null;
+        let tileMenuTarget = null;
 
         const DEFAULT_LINKS = [
             { name: '热土工作室', url: 'https://rtstu.com',                  color: '#E65100', letter: '热' },
@@ -196,6 +222,10 @@
             const el = document.createElement('div');
             el.className = 'quick-link' + (custom ? ' custom' : '');
             el.title = link.url;
+            el.draggable = true;
+            el.dataset.url = link.url;
+            el.tabIndex = 0;
+            el.setAttribute('role', 'button');
             el.innerHTML = `
                 <div class="quick-link-icon" style="background:${escapeHtml(link.color)}">${escapeHtml(link.letter)}</div>
                 <div class="quick-link-name">${escapeHtml(link.name)}</div>
@@ -204,6 +234,35 @@
             el.addEventListener('click', e => {
                 if (e.target.classList.contains('del') || e.target.classList.contains('edit')) return;
                 navigateTo(link.url);
+            });
+            el.addEventListener('keydown', e => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigateTo(link.url); }
+            });
+            el.addEventListener('contextmenu', e => {
+                e.preventDefault();
+                openTileMenu(e.clientX, e.clientY, link, custom);
+            });
+            // HTML5 拖拽排序：dragover 时高亮落点，drop 后按当前 DOM 顺序持久化。
+            el.addEventListener('dragstart', () => {
+                dragSrcUrl = link.url;
+                el.classList.add('dragging');
+            });
+            el.addEventListener('dragend', () => {
+                dragSrcUrl = null;
+                el.classList.remove('dragging');
+                document.querySelectorAll('.quick-link.drag-over')
+                    .forEach(n => n.classList.remove('drag-over'));
+            });
+            el.addEventListener('dragover', e => {
+                e.preventDefault();
+                if (dragSrcUrl && dragSrcUrl !== link.url) el.classList.add('drag-over');
+            });
+            el.addEventListener('dragleave', () => el.classList.remove('drag-over'));
+            el.addEventListener('drop', e => {
+                e.preventDefault();
+                el.classList.remove('drag-over');
+                if (!dragSrcUrl || dragSrcUrl === link.url) return;
+                reorderTiles(dragSrcUrl, link.url);
             });
             if (custom) {
                 el.querySelector('.del').addEventListener('click', e => {
@@ -365,22 +424,237 @@
             }
         }
 
+        // ---- 磁贴排序 / 隐藏 / 备份 ----
+        function loadOrder() {
+            try {
+                const raw = JSON.parse(localStorage.getItem(ORDER_KEY) || '[]');
+                return Array.isArray(raw) ? raw.filter(u => typeof u === 'string') : [];
+            } catch { return []; }
+        }
+
+        function saveOrder(urls) {
+            try { localStorage.setItem(ORDER_KEY, JSON.stringify(urls.slice(0, 200))); } catch {}
+        }
+
+        function loadHidden() {
+            try {
+                const raw = JSON.parse(localStorage.getItem(HIDDEN_KEY) || '[]');
+                return Array.isArray(raw) ? new Set(raw) : new Set();
+            } catch { return new Set(); }
+        }
+
+        function saveHidden(set) {
+            try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...set].slice(-200))); } catch {}
+        }
+
+        function isCustomUrl(customs, url) {
+            return customs.some(l => l.url === url);
+        }
+
+        // reorderTiles 把 src 移动到 target 前面，结果写回 ORDER_KEY。
+        // 顺序数组对默认磁贴和自定义磁贴都生效；未在数组里的磁贴追加在后面。
+        function reorderTiles(srcUrl, targetUrl) {
+            const customs = loadCustomLinks();
+            const known = DEFAULT_LINKS.map(l => l.url).concat(customs.map(l => l.url));
+            const hidden = loadHidden();
+            const visible = known.filter(u => !hidden.has(u));
+            const saved = loadOrder().filter(u => visible.includes(u));
+            for (const u of visible) if (!saved.includes(u)) saved.push(u);
+            const from = saved.indexOf(srcUrl);
+            if (from === -1) return;
+            saved.splice(from, 1);
+            const to = saved.indexOf(targetUrl);
+            saved.splice(to === -1 ? saved.length : to, 0, srcUrl);
+            saveOrder(saved);
+            renderQuickLinks();
+        }
+
+        function hideTile(url) {
+            const set = loadHidden();
+            set.add(url);
+            saveHidden(set);
+            renderQuickLinks();
+        }
+
+        function unhideAllTiles() {
+            try { localStorage.removeItem(HIDDEN_KEY); } catch {}
+            renderQuickLinks();
+        }
+
+        function exportTiles() {
+            const payload = {
+                version: 1,
+                exportedAt: new Date().toISOString(),
+                customs: loadCustomLinks(),
+                order: loadOrder(),
+                hidden: [...loadHidden()],
+            };
+            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'opencosy-tiles.json';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+        }
+
+        function importTiles(file) {
+            const reader = new FileReader();
+            reader.onload = () => {
+                let data;
+                try { data = JSON.parse(String(reader.result || '')); }
+                catch { alert('文件不是有效的 JSON'); return; }
+                const incoming = Array.isArray(data) ? data : data && data.customs;
+                if (!Array.isArray(incoming)) { alert('备份文件里没有磁贴列表'); return; }
+                const links = loadCustomLinks();
+                let added = 0;
+                for (const item of incoming) {
+                    if (!item || typeof item.url !== 'string' || !isSafeUrl(item.url)) continue;
+                    if (!/^https?:/i.test(item.url)) continue;
+                    if (links.some(l => l.url === item.url)) continue;
+                    const name = String(item.name || item.url).trim().slice(0, 24) || hostOf(item.url);
+                    links.push({
+                        name, url: item.url,
+                        color: typeof item.color === 'string' ? item.color : guessColor(item.url),
+                        letter: name.charAt(0).toUpperCase(),
+                    });
+                    added++;
+                    if (links.length >= MAX_CUSTOM_LINKS) break;
+                }
+                saveCustomLinks(links);
+                if (Array.isArray(data.order) && data.order.length) {
+                    const valid = data.order.filter(u => typeof u === 'string');
+                    if (valid.length) saveOrder(valid);
+                }
+                renderQuickLinks();
+                renderSuggestions();
+                alert(`已导入 ${added} 个磁贴`);
+            };
+            reader.onerror = () => alert('读取文件失败');
+            reader.readAsText(file);
+        }
+
+        // openTileMenu 是磁贴右键菜单：自定义磁贴可打开 / 重命名 / 删除，
+        // 默认磁贴可打开 / 隐藏（隐藏后可在设置面板恢复，不删任何内置数据）。
+        function openTileMenu(x, y, link, custom) {
+            const menu = document.getElementById('tile-menu');
+            if (!menu) return;
+            tileMenuTarget = { link, custom };
+            const items = [
+                { label: '打开', fn: () => navigateTo(link.url) },
+                { label: '在新标签页中打开', fn: () => window.open(link.url, '_blank', 'noopener') },
+            ];
+            if (custom) {
+                items.push({ label: '重命名', fn: () => renameCustomTile(link.url) });
+                items.push({ label: '删除磁贴', danger: true, fn: () => removeCustomTile(link.url) });
+            } else {
+                items.push({ label: '隐藏磁贴', danger: true, fn: () => hideTile(link.url) });
+            }
+            menu.innerHTML = '';
+            for (const it of items) {
+                const row = document.createElement('div');
+                row.className = 'tile-menu-item' + (it.danger ? ' danger' : '');
+                row.textContent = it.label;
+                row.addEventListener('click', () => { closeTileMenu(); it.fn(); });
+                menu.appendChild(row);
+            }
+            menu.classList.add('open');
+            const rect = menu.getBoundingClientRect();
+            const px = Math.min(x, window.innerWidth - rect.width - 8);
+            const py = Math.min(y, window.innerHeight - rect.height - 8);
+            menu.style.left = Math.max(8, px) + 'px';
+            menu.style.top = Math.max(8, py) + 'px';
+        }
+
+        function closeTileMenu() {
+            const menu = document.getElementById('tile-menu');
+            if (menu) menu.classList.remove('open');
+            tileMenuTarget = null;
+        }
+
+        function renameCustomTile(url) {
+            const links = loadCustomLinks();
+            const target = links.find(l => l.url === url);
+            if (!target) return;
+            const next = prompt('新名称：', target.name);
+            if (next === null) return;
+            const trimmed = next.trim().slice(0, 24);
+            if (!trimmed) return;
+            target.name = trimmed;
+            target.letter = trimmed.charAt(0).toUpperCase();
+            saveCustomLinks(links);
+            renderQuickLinks();
+        }
+
+        function removeCustomTile(url) {
+            saveCustomLinks(loadCustomLinks().filter(l => l.url !== url));
+            renderQuickLinks();
+            renderSuggestions();
+        }
+
+        // setupTileKeyboard 让磁贴支持方向键导航（现代新标签页惯例）：
+        // 左右在磁贴间移动，Home/End 跳到首尾，Enter 打开。
+        function setupTileKeyboard() {
+            const container = document.getElementById('quick-links');
+            if (!container) return;
+            container.addEventListener('keydown', e => {
+                const tiles = [...container.querySelectorAll('.quick-link')];
+                const idx = tiles.indexOf(document.activeElement);
+                if (idx === -1) return;
+                let next = -1;
+                if (e.key === 'ArrowRight') next = (idx + 1) % tiles.length;
+                else if (e.key === 'ArrowLeft') next = (idx - 1 + tiles.length) % tiles.length;
+                else if (e.key === 'Home') next = 0;
+                else if (e.key === 'End') next = tiles.length - 1;
+                if (next !== -1) {
+                    e.preventDefault();
+                    tiles[next].focus();
+                }
+            });
+        }
+
         function renderQuickLinks() {
             const container = document.getElementById('quick-links');
             if (!container) return;
             container.innerHTML = '';
 
             const settings = loadNTSettings();
+            const hidden = loadHidden();
+            const customs = loadCustomLinks();
             // 默认磁贴按访问次数排序（经常访问的靠前），没访问过的保持原顺序
             const visits = loadVisits();
             let defaults = DEFAULT_LINKS
+                .filter(l => !hidden.has(l.url))
                 .map((l, i) => ({ ...l, _v: visits[l.url] || 0, _i: i }));
             if (settings.sortByVisits !== false) {
                 defaults = defaults.sort((a, b) => b._v - a._v || a._i - b._i);
             }
 
-            defaults.forEach(link => container.appendChild(renderLink(link, false)));
-            loadCustomLinks().forEach(link => container.appendChild(renderLink(link, true)));
+            // 一旦用户拖拽过（ORDER_KEY 有数据），就按保存的顺序合并默认与自定义磁贴；
+            // 顺序数组里没列到的磁贴按当前顺序追加在后面，保证新磁贴不会消失。
+            const savedOrder = loadOrder();
+            const byUrl = new Map();
+            for (const l of defaults) byUrl.set(l.url, { link: l, custom: false });
+            for (const l of customs) if (!hidden.has(l.url)) byUrl.set(l.url, { link: l, custom: true });
+            const ordered = [];
+            const seen = new Set();
+            if (savedOrder.length) {
+                for (const u of savedOrder) {
+                    const hit = byUrl.get(u);
+                    if (hit && !seen.has(u)) { ordered.push(hit); seen.add(u); }
+                }
+            }
+            for (const l of defaults) {
+                if (!seen.has(l.url)) { ordered.push({ link: l, custom: false }); seen.add(l.url); }
+            }
+            for (const l of customs) {
+                if (!hidden.has(l.url) && !seen.has(l.url)) {
+                    ordered.push({ link: l, custom: true }); seen.add(l.url);
+                }
+            }
+
+            for (const { link, custom } of ordered) container.appendChild(renderLink(link, custom));
             container.appendChild(renderAddTile());
         }
 
@@ -408,6 +682,10 @@
             const tgl = document.getElementById('toggle-sort');
             const tglSuggest = document.getElementById('toggle-suggest');
             const rst = document.getElementById('btn-reset');
+            const btnUnhide = document.getElementById('btn-unhide');
+            const btnExport = document.getElementById('btn-export');
+            const btnImport = document.getElementById('btn-import');
+            const importFile = document.getElementById('import-file');
             if (!gear || !panel) return;
             const s = loadNTSettings();
             sel.value = s.searchEngine;
@@ -432,13 +710,29 @@
                 renderSuggestions();
             });
             rst.addEventListener('click', () => {
-                if (!confirm('清除所有自定义磁贴和访问记录？')) return;
+                if (!confirm('清除所有自定义磁贴、排序、隐藏状态和访问记录？')) return;
                 localStorage.removeItem(CUSTOM_KEY);
                 localStorage.removeItem(VISIT_KEY);
                 localStorage.removeItem(DISMISS_KEY);
+                localStorage.removeItem(ORDER_KEY);
+                localStorage.removeItem(HIDDEN_KEY);
                 renderQuickLinks();
                 renderSuggestions();
             });
+            if (btnUnhide) btnUnhide.addEventListener('click', unhideAllTiles);
+            if (btnExport) btnExport.addEventListener('click', exportTiles);
+            if (btnImport) btnImport.addEventListener('click', () => importFile && importFile.click());
+            if (importFile) importFile.addEventListener('change', () => {
+                const f = importFile.files && importFile.files[0];
+                if (f) importTiles(f);
+                importFile.value = '';
+            });
+            document.addEventListener('click', e => {
+                const menu = document.getElementById('tile-menu');
+                if (menu && menu.classList.contains('open') && !menu.contains(e.target)) closeTileMenu();
+            });
+            document.addEventListener('keydown', e => { if (e.key === 'Escape') closeTileMenu(); });
+            window.addEventListener('blur', closeTileMenu);
         }
 
         function updateNetworkPill() {
@@ -494,6 +788,7 @@
 
         document.addEventListener('DOMContentLoaded', async function() {
             renderQuickLinks();
+            setupTileKeyboard();
             setDefaultBackground();
             updateNetworkPill();
             setupSettingsPanel();
