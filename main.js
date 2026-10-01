@@ -55,6 +55,7 @@ const blockedTrackerByHost = new Map();
 // 常见纯第三方追踪 / 广告网络域名（不含任何会被当主站直接访问的通用服务）。
 // 按用途分组，最后合并成集合；只用于“子资源”请求拦截，绝不拦顶层导航。
 const TRACKER_DOMAIN_GROUPS = {
+  // 大型站点分析 / 统计
   analytics: [
     'google-analytics.com', 'googletagmanager.com', 'googletagservices.com',
     'analytics.google.com', 'stats.g.doubleclick.net', 'ssl.google-analytics.com',
@@ -75,6 +76,7 @@ const TRACKER_DOMAIN_GROUPS = {
     'clicktale.net', 'decibelinsight.net', 'sessioncam.com',
     'logentries.com', 'loggly.com', 'heap.io',
   ],
+  // 广告联盟 / 竞价 / 投放
   ads: [
     'doubleclick.net', 'googleadservices.com', 'adservice.google.com',
     'pagead2.googlesyndication.com', 'tpc.googlesyndication.com',
@@ -91,6 +93,7 @@ const TRACKER_DOMAIN_GROUPS = {
     'appsflyer.com', 't.appsflyer.com', 'adjust.com', 'branch.io',
     'kochava.com', 'singular.net', 'tenjin.com',
   ],
+  // 社交像素 / 跨站身份
   social: [
     'connect.facebook.net', 'pixel.facebook.com', 'graph.facebook.com',
     'an.facebook.com', 'staticxx.facebook.com', 'syndication.twitter.com',
@@ -101,6 +104,7 @@ const TRACKER_DOMAIN_GROUPS = {
     'ads.linkedin.com', 'bat.bing.com', 'ads.youtube.com',
     'ads-api.tiktok.com', 'analytics.tiktok.com', 'pixel.tiktok.com',
   ],
+  // 营销 / CRM / 邮件转化跟踪
   marketing: [
     'list-manage.com', 'mc.us18.list-manage.com',
     'hubspot.com', 'js.hs-scripts.com', 'js.hs-analytics.net',
@@ -111,6 +115,7 @@ const TRACKER_DOMAIN_GROUPS = {
     'marketo.com', 'mktoresp.com', 'engage.marketo.com',
     'pardot.com', 'pi.pardot.com', 'convertkit.com', 'kajabi.com',
   ],
+  // 隐私指纹 / 设备识别 / 遥测
   fingerprint: [
     'fingerprint.com', 'api.fpjs.sh', 'fpcdn.io', 'fpjs.sh',
     'iovation.com', 'mpsnare.iesnare.com', 'first-party.iovation.com',
@@ -120,7 +125,9 @@ const TRACKER_DOMAIN_GROUPS = {
     'bouncex.net', 'cdn.bouncex.net', 'addroplet.com',
   ],
 };
+// 合并各分组，得到最终拦截集合（名单去重）。
 const TRACKER_HOSTS = new Set(Object.values(TRACKER_DOMAIN_GROUPS).flat());
+// hostMatchesTracker 判断主机是否为已知追踪域（精确或其子域）。
 function hostMatchesTracker(hostname) {
   let h = String(hostname || '').toLowerCase().replace(/\.$/, '');
   if (!h) return false;
@@ -130,6 +137,7 @@ function hostMatchesTracker(hostname) {
   }
   return false;
 }
+// isTrackerRequest 只拦子资源，顶层框架 / iframe 框架文档一律放行，避免误伤导航。
 function isTrackerRequest(details) {
   if (!blockTrackers) return false;
   const rt = details.resourceType;
@@ -155,7 +163,12 @@ function topBlockedHosts() {
     .slice(0, 8)
     .map(([host, n]) => ({ host, n }));
 }
+// ===== 导航 URL 追踪参数剥离（privacy hygiene）=====
+// stripTrackingParams：地址栏直接打开 / 跳转的顶层页面，去掉 utm_*、fbclid、gclid 等
+// 只用于归因、对页面内容无意义的查询参数。只作用于 http(s) 顶层导航，绝不碰 POST、
+// fragment（# 后可能是前端路由）或子资源，避免破坏登录回调与应用状态。
 let stripTrackingParams = true;
+// 完整匹配的追踪参数名（小写）。
 const TRACKING_QUERY_KEYS = new Set([
   'fbclid', 'gclid', 'gbraid', 'wbraid', 'dclid', 'gclsrc', 'msclkid',
   'yclid', 'mc_cid', 'mc_eid', 'igshid', 'ttclid', 'twclid', 'li_fat_id',
@@ -163,6 +176,7 @@ const TRACKING_QUERY_KEYS = new Set([
   'oly_anon_id', 'oly_enc_id', 'vero_conv', 'soc_src', 'soc_trk',
   'spm', 'scm', 'sourceFrom', 'fromSource',
 ]);
+// 按前缀匹配的追踪参数名（小写），覆盖 utm_source / utm_medium / utm_campaign 等整族。
 const TRACKING_QUERY_PREFIXES = ['utm_', 'pk_', 'piwik_', 'matomo_', 'ga_', 'oasid_'];
 function isTrackingQueryKey(rawKey) {
   const key = String(rawKey || '').toLowerCase();
@@ -170,6 +184,7 @@ function isTrackingQueryKey(rawKey) {
   if (TRACKING_QUERY_KEYS.has(key)) return true;
   return TRACKING_QUERY_PREFIXES.some(p => key.startsWith(p));
 }
+// 返回剥离追踪参数后的 URL；没有可删参数时返回 null（调用方据此避免无谓重定向）。
 function stripTrackingFromUrl(rawUrl) {
   if (!stripTrackingParams) return null;
   if (!(rawUrl.startsWith('http://') || rawUrl.startsWith('https://'))) return null;
@@ -178,6 +193,7 @@ function stripTrackingFromUrl(rawUrl) {
   if (!u.search) return null;
   const params = u.searchParams;
   let removed = false;
+  // 先收集再删，避免边遍历边改。
   const keys = [];
   for (const key of params.keys()) keys.push(key);
   for (const key of keys) {
@@ -188,13 +204,20 @@ function stripTrackingFromUrl(rawUrl) {
   const rebuilt = u.origin + u.pathname + (query ? '?' + query : '') + u.hash;
   return rebuilt === rawUrl ? null : rebuilt;
 }
+// ===== 同形异义（homograph / IDN）反钓鱼提示 =====
+// 只“提示”不拦截：对包含非 ASCII（含西里尔/希腊等与拉丁形近的字符）或易混拉丁字符、
+// 且非用户常用站点的主机，发横幅让用户留意，地址栏仍照常显示，避免误伤合法国际化域名。
 const SKEW_LATIN_HOSTS = new Set([
   'google', 'youtube', 'facebook', 'amazon', 'apple', 'microsoft', 'github',
   'twitter', 'x', 'instagram', 'netflix', 'paypal', 'alibaba', 'taobao',
   'baidu', 'bing', 'office', 'live', 'steam', 'epicgames',
 ]);
+// 主机里只要出现这些码位就视为“可能在冒充拉丁字母”。
 function hostnameHasSuspiciousChars(hostname) {
+  // 非 ASCII：IDN（punycode 解码后的 unicode 主机），本身不是错，但组合常见品牌词要提醒。
+  // eslint-disable-next-line no-control-regex
   if (/[^\x00-\x7F]/.test(hostname)) return 'nonascii';
+  // 纯拉丁里的易混对：数字/特殊形替字母（如 0 替 o、1 替 l、rn 替 m 由调用方另判）。
   if (/\d/.test(hostname)) {
     const label = hostname.split('.')[0].toLowerCase();
     if (SKEW_LATIN_HOSTS.has(label.replace(/[0-9]/g, ''))) return 'digit-lookalike';
@@ -206,8 +229,12 @@ function analyzeHostForSpoof(hostname) {
   const h = hostname.toLowerCase().replace(/\.$/, '');
   const labels = h.split('.');
   const registrable = labels.length >= 2 ? labels[labels.length - 2] : labels[0];
+  // 含非 ASCII，且品牌主体与已知拉丁品牌高度重合（去掉非拉丁后等于某品牌）→ 高危提示。
+  // eslint-disable-next-line no-control-regex
   if (/[^\x00-\x7F]/.test(registrable)) {
     const asciiOnly = registrable.replace(/[^\x21-\x7e]/g, '');
+    // 混合脚本：同一主体里既有拉丁又有非拉丁，是 homograph 攻击最典型特征。
+    // eslint-disable-next-line no-control-regex
     const hasLatin = /[a-z]/.test(registrable);
     const hasNonLatin = /[^\x00-\x7fa-z0-9.-]/.test(registrable);
     if (hasLatin && hasNonLatin) {
@@ -220,6 +247,13 @@ function analyzeHostForSpoof(hostname) {
   }
   return null;
 }
+// ===== Referrer 收敛（默认 strict-origin-when-cross-origin 语义）=====
+// 网页自己的 <meta name=referrer> / 页面策略由 Chromium 处理；这里兜底修正 Electron
+// 可能仍带“完整来路 URL（含查询/路径）”的情况，避免把上个页面的敏感路径、搜索词、
+// token 经 Referer 头泄露给第三方：
+//   - 同源：保留完整 Referer；
+//   - 跨源且安全等级不降低：收敛为源（origin/）；
+//   - https → http 降级：直接去除 Referer。
 function originOf(u) {
   try { return new URL(u).origin; } catch { return null; }
 }
@@ -229,7 +263,7 @@ function trimReferrerHeader(details, headers) {
   const fromOrigin = originOf(referrer);
   const toOrigin = originOf(details.url);
   if (!fromOrigin || !toOrigin) return;
-  if (fromOrigin === toOrigin) return;
+  if (fromOrigin === toOrigin) return; // 同源不裁剪
   const fromHttps = referrer.startsWith('https://');
   const toHttp = details.url.startsWith('http://');
   if (fromHttps && toHttp) {
@@ -237,10 +271,13 @@ function trimReferrerHeader(details, headers) {
     delete headers['referer'];
     return;
   }
+  // 跨源：只暴露源，不暴露路径与查询串。
   const trimmed = fromOrigin === 'null' ? '' : fromOrigin + '/';
   headers['Referer'] = trimmed;
   delete headers['referer'];
 }
+// clearOnExit：退出时自动清空缓存 / Cookie / 站点存储 / 历史 / 下载记录（隐私模式）。
+// confirmCloseMultiple：仍有多个标签页时点 × 先二次确认，防止误关整窗。
 let clearOnExit = false;
 let confirmCloseMultiple = false;
 const ALLOWED_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'cosy:']);
@@ -252,6 +289,10 @@ const MIN_WINDOW_HEIGHT = 600;
 const DEFAULT_TAB_BAR_HEIGHT_HORIZONTAL = 116;
 const DEFAULT_TAB_BAR_WIDTH_VERTICAL = 200;
 const COLLAPSED_TAB_BAR_WIDTH = 50;
+// 拼写检查：Chromium 内置 Hunspell 词典，全程本地完成，不发送任何输入内容。
+// DEFAULT 是历史行为（英中双语）；ALLOWED 是设置页允许勾选的语言白名单，
+// 主进程会再次用 session.availableSpellCheckerLanguages 过滤，系统没装词典的
+// 语言直接跳过，避免 setSpellCheckerLanguages 抛错导致整个初始化中断。
 const DEFAULT_SPELLCHECK_LANGUAGES = ['en-US', 'zh-CN'];
 const ALLOWED_SPELLCHECK_LANGUAGES = [
   'en-US', 'en-GB', 'en-AU', 'zh-CN', 'zh-TW', 'ja',
@@ -260,6 +301,8 @@ const ALLOWED_SPELLCHECK_LANGUAGES = [
 const MAX_SPELLCHECK_LANGUAGES = 5;
 let spellcheckEnabled = true;
 let spellcheckLanguages = DEFAULT_SPELLCHECK_LANGUAGES.slice();
+// sanitizeSpellcheckLanguages 归一化语言数组：去重、限数量、白名单校验。
+// 空数组 / 非数组一律回退默认，保证拼写检查不会因为设置文件损坏而彻底失效。
 function sanitizeSpellcheckLanguages(raw) {
   if (!Array.isArray(raw)) return DEFAULT_SPELLCHECK_LANGUAGES.slice();
   const out = [];
@@ -270,6 +313,8 @@ function sanitizeSpellcheckLanguages(raw) {
   }
   return out.length ? out : DEFAULT_SPELLCHECK_LANGUAGES.slice();
 }
+// applySpellcheckSettings 把当前拼写检查开关 / 语言应用到默认会话。
+// 每次保存设置都会重新调用；语言列表只保留当前平台真正可用的词典。
 function applySpellcheckSettings() {
   try {
     const ses = session.defaultSession;
@@ -285,6 +330,8 @@ function applySpellcheckSettings() {
     console.error('应用拼写检查设置失败:', e);
   }
 }
+// readPersistedSettings 在 app 启动早期同步读取已保存的设置，
+// 让拼写检查这类需要在第一个页面加载前生效的偏好不必等渲染层来取。
 function readPersistedSettings() {
   try {
     const p = path.join(app.getPath('userData'), 'cosySettings.json');
@@ -303,6 +350,9 @@ function sendToRenderer(channel, ...args) {
     mainWindow.webContents.send(channel, ...args);
   }
 }
+// ===== 底部下载栏（download shelf）=====
+// 现代浏览器在窗口底部用一条 shelf 展示下载进度，不必每次下载都新开标签页打断浏览。
+// 主进程只推送可序列化的快照给主界面；DownloadItem 等 Electron 对象绝不跨进程暴露。
 const MAX_SHELF_ITEMS = 3;
 function shelfSnapshot() {
   const items = [];
@@ -349,6 +399,9 @@ class Tab {
     this.canGoForward = false;
     this.audible = false;
     this.muted = false;
+    // 内存节省（Memory Saver）相关状态：
+    // lastActiveAt 记录最近一次成为活动标签的时间；discarded 表示其渲染进程
+    // 已被回收，切回时需要按 tab.url 重新加载。
     this.lastActiveAt = Date.now();
     this.discarded = false;
   }
@@ -401,9 +454,15 @@ function getCurrentTabWebContents() {
   const tab = tabs[currentTabIndex];
   return tab?.view?.webContents || null;
 }
-function zoomIn() { adjustCurrentZoom({ delta: 'in' }); }
-function zoomOut() { adjustCurrentZoom({ delta: 'out' }); }
-function resetZoom() { adjustCurrentZoom({ factor: 1 }); }
+function zoomIn() {
+  adjustCurrentZoom({ delta: 'in' });
+}
+function zoomOut() {
+  adjustCurrentZoom({ delta: 'out' });
+}
+function resetZoom() {
+  adjustCurrentZoom({ factor: 1 });
+}
 function toggleDevTools() {
   const wc = getCurrentTabWebContents();
   if (wc) wc.toggleDevTools();
@@ -439,25 +498,39 @@ function addToHistory(url, title) {
 }
 function saveHistory() {
   const historyPath = path.join(app.getPath('userData'), 'history.json');
-  try { fsSync.writeFileSync(historyPath, JSON.stringify(history, null, 2), 'utf-8'); }
-  catch (e) { console.error('保存历史记录失败:', e); }
+  try {
+    fsSync.writeFileSync(historyPath, JSON.stringify(history, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('保存历史记录失败:', e);
+  }
 }
 function loadHistory() {
   const historyPath = path.join(app.getPath('userData'), 'history.json');
   try {
-    if (fsSync.existsSync(historyPath)) history = JSON.parse(fsSync.readFileSync(historyPath, 'utf-8'));
-  } catch (e) { console.error('读取历史记录失败:', e); }
+    if (fsSync.existsSync(historyPath)) {
+      history = JSON.parse(fsSync.readFileSync(historyPath, 'utf-8'));
+    }
+  } catch (e) {
+    console.error('读取历史记录失败:', e);
+  }
 }
 function saveBookmarks() {
   const bookmarksPath = path.join(app.getPath('userData'), 'bookmarks.json');
-  try { fsSync.writeFileSync(bookmarksPath, JSON.stringify(bookmarks, null, 2), 'utf-8'); }
-  catch (e) { console.error('保存书签失败:', e); }
+  try {
+    fsSync.writeFileSync(bookmarksPath, JSON.stringify(bookmarks, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('保存书签失败:', e);
+  }
 }
 function loadBookmarks() {
   const bookmarksPath = path.join(app.getPath('userData'), 'bookmarks.json');
   try {
-    if (fsSync.existsSync(bookmarksPath)) bookmarks = JSON.parse(fsSync.readFileSync(bookmarksPath, 'utf-8'));
-  } catch (e) { console.error('读取书签失败:', e); }
+    if (fsSync.existsSync(bookmarksPath)) {
+      bookmarks = JSON.parse(fsSync.readFileSync(bookmarksPath, 'utf-8'));
+    }
+  } catch (e) {
+    console.error('读取书签失败:', e);
+  }
 }
 function saveSession() {
   try {
@@ -466,30 +539,40 @@ function saveSession() {
       .filter(tab => !tab.url.startsWith('cosy://') && isSafeUrl(tab.url))
       .map(tab => ({ url: tab.url, title: tab.title }));
     fsSync.writeFileSync(sessionPath, JSON.stringify(sessionTabs, null, 2), 'utf-8');
-  } catch (e) { console.error('保存会话失败:', e); }
+  } catch (e) {
+    console.error('保存会话失败:', e);
+  }
 }
 function loadSession() {
   try {
     const sessionPath = path.join(app.getPath('userData'), 'session.json');
     if (fsSync.existsSync(sessionPath)) {
       const sessionTabs = JSON.parse(fsSync.readFileSync(sessionPath, 'utf-8'));
-      if (Array.isArray(sessionTabs) && sessionTabs.length > 0) return sessionTabs.filter(tab => isSafeUrl(tab.url));
+      if (Array.isArray(sessionTabs) && sessionTabs.length > 0) {
+        return sessionTabs.filter(tab => isSafeUrl(tab.url));
+      }
     }
-  } catch (e) { console.error('读取会话失败:', e); }
+  } catch (e) {
+    console.error('读取会话失败:', e);
+  }
   return null;
 }
 function clearSession() {
   try {
     const sessionPath = path.join(app.getPath('userData'), 'session.json');
     if (fsSync.existsSync(sessionPath)) fsSync.unlinkSync(sessionPath);
-  } catch (e) { console.error('清除会话失败:', e); }
+  } catch (e) {
+    console.error('清除会话失败:', e);
+  }
 }
 function addToRecentlyClosed(tab) {
   if (!tab || !tab.url || tab.url.startsWith('cosy://')) return;
   recentlyClosedTabs.push({ url: tab.url, title: tab.title, closedAt: Date.now() });
   if (recentlyClosedTabs.length > MAX_RECENTLY_CLOSED) recentlyClosedTabs.shift();
 }
-function getLastClosedTab() { return recentlyClosedTabs.pop(); }
+function getLastClosedTab() {
+  return recentlyClosedTabs.pop();
+}
 function isLocalhost(url) {
   try {
     const host = new URL(url).hostname;
@@ -513,6 +596,8 @@ function isPrivateNetworkHost(url) {
     return false;
   } catch { return false; }
 }
+// readStoredSettings 只读不校验，启动时用来还原 darkMode / httpsOnly 等运行时状态。
+// 校验交给 save-settings 里的 sanitizeSettings。
 function readStoredSettings() {
   try {
     const p = path.join(app.getPath('userData'), 'cosySettings.json');
@@ -520,6 +605,8 @@ function readStoredSettings() {
   } catch (e) { console.error('读取设置失败:', e); }
   return {};
 }
+// applyDarkMode 切 Chromium 原生暗色主题，影响滚动条、文件对话框、DevTools 外壳。
+// renderer 的 CSS 暗色由 settings-loaded 自己管，这里只管原生 UI。
 function applyDarkMode(dark) {
   nativeTheme.themeSource = dark ? 'dark' : 'light';
   sendToRenderer('native-theme-changed', { dark: !!dark });
@@ -533,6 +620,7 @@ function setupSecurityHeaders() {
     setIfMissing('X-Content-Type-Options', ['nosniff']);
     setIfMissing('X-Frame-Options', ['SAMEORIGIN']);
     setIfMissing('Referrer-Policy', ['strict-origin-when-cross-origin']);
+    // 关闭 FLoC / 广告兴趣组 / 隐私令牌等现代浏览器默认放开但我们不需要的特性
     setIfMissing('Permissions-Policy', [
       'interest-cohort=()', 'run-ad-auction=()',
       'private-state-token-issuance=()', 'private-state-token-redemption=()',
@@ -540,6 +628,12 @@ function setupSecurityHeaders() {
     ]);
     const isLocal = details.url.startsWith('cosy://') || details.url.startsWith('file://');
     if (isLocal && !headers['Content-Security-Policy'] && !headers['content-security-policy']) {
+      // 自有 UI 页面的 CSP 比公网站点更严：
+      //  object-src 'none'      ：彻底禁掉插件 / 嵌入对象（Flash 残留、恶意 <embed>）；
+      //  base-uri 'self'       ：页面不允许被 <base> 改掉所有相对 URL 的基准；
+      //  form-action 'self'    ：表单不允许提交到外部源（防内部页被注入后外发数据）；
+      //  frame-ancestors 'none'：任何页面都不许 iframe 我们的内部 UI（等价 X-Frame-Options DENY）；
+      //  worker-src 'self'     ：worker 只能从自身加载，挡 data: blob: worker 注入。
       headers['Content-Security-Policy'] = [
         "default-src 'self'; " +
         "script-src 'self' 'unsafe-inline'; " +
@@ -553,11 +647,15 @@ function setupSecurityHeaders() {
         "worker-src 'self';"
       ];
     }
+    // 本地页面（cosy:// / file://）加 COOP/COEP/CORP，跨源资源进不来，
+    // 防止恶意网页把我们的设置页 / 下载页 iframe 化后读内容（Spectre 类侧信道）。
     if (isLocal) {
       headers['Cross-Origin-Opener-Policy'] = ['same-origin'];
       headers['Cross-Origin-Embedder-Policy'] = ['require-corp'];
       headers['Cross-Origin-Resource-Policy'] = ['same-origin'];
     }
+    // HTTPS 响应默认补 HSTS，让浏览器后续访问自动升级（1 年 + includeSubDomains）。
+    // 已经自带 HSTS 的站点不覆盖。
     if (details.url.startsWith('https://') &&
         !headers['Strict-Transport-Security'] && !headers['strict-transport-security']) {
       headers['Strict-Transport-Security'] = ['max-age=31536000; includeSubDomains'];
@@ -574,19 +672,25 @@ function setupSecurityHeaders() {
   });
   session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
     const isHttpUrl = details.url.startsWith('http://') || details.url.startsWith('https://');
+    // 第三方追踪 / 广告子资源：直接取消（不动顶层导航）。
     if (isHttpUrl && isTrackerRequest(details)) {
       recordBlockedTracker(details.url);
       return callback({ cancel: true });
     }
+    // 顶层导航：剥离 utm_* 等追踪参数（只重定向一次，不动 fragment / 子资源）。
     let workingUrl = details.url;
     if (isHttpUrl && details.resourceType === 'mainFrame') {
       const stripped = stripTrackingFromUrl(details.url);
-      if (stripped && stripped !== details.url) return callback({ redirectURL: stripped });
+      if (stripped && stripped !== details.url) {
+        return callback({ redirectURL: stripped });
+      }
+      // 同形异义 / IDN 反钓鱼提示（只提示，不阻断导航）。
       try {
         const spoof = analyzeHostForSpoof(new URL(details.url).hostname);
         if (spoof) sendToRenderer('spoof-warning', spoof);
-      } catch {}
+      } catch { /* 无效主机名忽略 */ }
     }
+    // HTTPS-only 模式：用户可在设置里关掉；私网/回环主机永远保留 http://
     if (httpsOnlyEnabled && workingUrl.startsWith('http://') && !isPrivateNetworkHost(workingUrl)) {
       callback({ redirectURL: 'https://' + workingUrl.slice(7) });
     } else {
@@ -594,11 +698,16 @@ function setupSecurityHeaders() {
     }
   });
 }
+// 注意：'openExternal' 不再自动放行。网页调 window.openExternal / <a href="ms-*:">
+// 之前只要在这个集合里就会被静默拉系统程序，等于把 Follina 那类协议投毒开放给任意站点。
+// 外部协议走 confirmAndOpenExternal()，先白名单 scheme 再弹原生确认框。
 const ALLOWED_PERMISSIONS = new Set([
   'media', 'geolocation', 'notifications', 'midi', 'midiSysex',
   'pointerLock', 'fullscreen', 'clipboard-sanitized-write',
   'pop-up'
 ]);
+// confirmAndOpenExternal 统一入口：http(s) 开新标签，外部协议走按站点记忆的确认流。
+// renderer 想让浏览器"点 mailto:" 必须走这个 IPC，不许直接 shell.openExternal。
 async function confirmAndOpenExternal(url, origin) {
   if (!url || typeof url !== 'string') return { ok: false, reason: 'empty url' };
   if (url.startsWith('http://') || url.startsWith('https://')) {
@@ -612,20 +721,42 @@ async function confirmAndOpenExternal(url, origin) {
   }
   return await launchExternalWithPrompt(url, origin || '', false);
 }
+// ===== 外部协议唤起防护（protocol-launch guard）=====
+// 背景：Chromium 拉起本机协议处理器（ms-word: / zoommtg: / ms-cmd: 这一族，
+// Follina/CVE-2022-30190 就是协议处理器投毒）不只发生在主框架导航里——
+// 页面里的 <iframe src="ms-word:..">、子框架 302 跳到外部协议，同样可能直接
+// 启动本机程序。而 will-navigate 只覆盖主框架，历史代码因此漏掉了子框架这一面。
+//
+// 这里做三件事：
+//  1. 主框架导航到 mailto:/tel: 时，收口到"按 站点+协议 记忆决定"的确认弹窗；
+//     其它外部协议（ms-*:/smb:/file:/vbscript: 等）一律阻止并提示。
+//  2. 所有 webContents 增加 will-frame-navigate 监听：子框架只允许真正的 Web
+//     协议（http/https/blob/data/about），iframe 永远无法拉起本机程序。
+//  3. 用户在弹窗里勾选"记住对此网站的选择"后按 origin+scheme 持久化，设置页
+//     可查看 / 撤销，决定文件原子落盘。
 const protocolDecisionStorePath = path.join(app.getPath('userData'), 'protocol-decisions.json');
 const MAX_PROTOCOL_DECISIONS = 500;
+// 只有这两个协议允许在用户确认后交给系统处理器；其它外部协议没有商量余地。
 const CONFIRMABLE_EXTERNAL_SCHEMES = new Set(['mailto:', 'tel:']);
+// 子框架允许的协议集合。iframe 场景下 blob:/data: 有正当用途（预览、文档），
+// 但 file:/cosy:/任何外部协议都不允许。
 const SUBFRAME_WEB_SCHEMES = new Set(['http:', 'https:', 'blob:', 'data:', 'about:']);
+// key: `${origin} ${scheme}` -> { decision: 'allow'|'deny', updatedAt }
 const protocolDecisions = new Map();
 let protocolDecisionsLoaded = false;
 let protocolSaveTimer = null;
-function protocolDecisionKey(origin, scheme) { return origin + ' ' + scheme; }
+function protocolDecisionKey(origin, scheme) {
+  return origin + ' ' + scheme;
+}
 function normalizeExternalScheme(url) {
   try {
     const scheme = new URL(url).protocol.toLowerCase();
+    // 协议名只允许 RFC 3986 字母开头的有限字符，挡掉伪造 / 控制字符输入。
     if (!/^[a-z][a-z0-9+.-]{0,31}:$/.test(scheme)) return '';
     return scheme;
-  } catch { return ''; }
+  } catch {
+    return '';
+  }
 }
 function loadProtocolDecisions() {
   if (protocolDecisionsLoaded) return;
@@ -672,16 +803,25 @@ function rememberProtocolDecision(origin, scheme, decision) {
   if (!CONFIRMABLE_EXTERNAL_SCHEMES.has(scheme)) return false;
   if (decision !== 'allow' && decision !== 'deny') return false;
   if (protocolDecisions.size >= MAX_PROTOCOL_DECISIONS &&
-      !protocolDecisions.has(protocolDecisionKey(origin, scheme))) return false;
+      !protocolDecisions.has(protocolDecisionKey(origin, scheme))) {
+    return false;
+  }
   protocolDecisions.set(protocolDecisionKey(origin, scheme), { decision, updatedAt: Date.now() });
   persistProtocolDecisions();
   return true;
 }
+// classifyFrameNavigation 判断一次（主/子框架）导航该如何处理：
+//   'in-pane'  ：浏览器内正常加载；
+//   'confirm'  ：外部协议但可在确认后交给系统（mailto/tel）；
+//   'block'    ：危险 / 不允许的协议，必须取消。
 function classifyFrameNavigation(url, isMainFrame) {
   const scheme = normalizeExternalScheme(url);
   if (!scheme) return 'block';
   if (isMainFrame) {
-    if (scheme === 'http:' || scheme === 'https:' || scheme === 'file:' || scheme === 'cosy:') return 'in-pane';
+    // 主框架允许的窗内协议与 isSafeUrl 保持一致，避免这里放行了别处不认的协议。
+    if (scheme === 'http:' || scheme === 'https:' || scheme === 'file:' || scheme === 'cosy:') {
+      return 'in-pane';
+    }
   } else if (SUBFRAME_WEB_SCHEMES.has(scheme)) {
     return 'in-pane';
   }
@@ -689,8 +829,14 @@ function classifyFrameNavigation(url, isMainFrame) {
   return 'block';
 }
 function originOfContents(contents) {
-  try { return new URL(contents.getURL()).origin; } catch { return ''; }
+  try {
+    return new URL(contents.getURL()).origin;
+  } catch {
+    return '';
+  }
 }
+// launchExternalWithPrompt 是所有"页面想唤起外部程序"的唯一出口。
+// remembered 决定直接兑现，否则弹原生确认框；remember=true 时按 origin+scheme 记忆。
 async function launchExternalWithPrompt(url, origin, remember) {
   const scheme = normalizeExternalScheme(url);
   if (!scheme || !CONFIRMABLE_EXTERNAL_SCHEMES.has(scheme)) {
@@ -702,20 +848,27 @@ async function launchExternalWithPrompt(url, origin, remember) {
   if (isRememberableOrigin(origin)) {
     const known = getRememberedProtocolDecision(origin, scheme);
     if (known === 'deny') {
-      recordSecurityEvent('protocol-denied', 'info', `按记忆决定阻止 ${scheme} 协议唤起`, origin);
+      recordSecurityEvent('protocol-denied', 'info',
+        `按记忆决定阻止 ${scheme} 协议唤起`, origin);
       sendToRenderer('show-toast', `已按记忆阻止 ${scheme} 协议（可在设置中撤销）`);
       return { ok: false, reason: 'remembered deny' };
     }
     if (known === 'allow') {
-      try { await shell.openExternal(url, { activate: true }); return { ok: true, reason: 'remembered allow' }; }
-      catch (e) { return { ok: false, reason: String(e && e.message || e) }; }
+      try {
+        await shell.openExternal(url, { activate: true });
+        return { ok: true, reason: 'remembered allow' };
+      } catch (e) {
+        return { ok: false, reason: String(e && e.message || e) };
+      }
     }
   }
   const siteLabel = isRememberableOrigin(origin) ? origin : '当前页面';
+  // 必须用异步版：showMessageBoxSync 只返回按钮序号，拿不到 checkbox 状态。
   const choice = await dialog.showMessageBox(mainWindow, {
     type: 'question',
     buttons: ['允许打开', '拒绝'],
-    defaultId: 1, cancelId: 1,
+    defaultId: 1,
+    cancelId: 1,
     title: '网站想要打开外部应用',
     message: `${siteLabel} 想要打开:\n${url}\n\n是否允许？`,
     checkboxLabel: '记住对此网站的选择（可在设置中撤销）',
@@ -723,19 +876,28 @@ async function launchExternalWithPrompt(url, origin, remember) {
   });
   const checked = !!choice.checkboxChecked;
   const decision = choice.response === 0 ? 'allow' : 'deny';
-  if (remember && checked && isRememberableOrigin(origin)) rememberProtocolDecision(origin, scheme, decision);
+  if (remember && checked && isRememberableOrigin(origin)) {
+    rememberProtocolDecision(origin, scheme, decision);
+  }
   if (decision !== 'allow') {
     recordSecurityEvent('protocol-denied', 'info', `用户拒绝了 ${scheme} 协议唤起`, origin);
     return { ok: false, reason: 'user denied' };
   }
-  try { await shell.openExternal(url, { activate: true }); return { ok: true }; }
-  catch (e) { return { ok: false, reason: String(e && e.message || e) }; }
+  try {
+    await shell.openExternal(url, { activate: true });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: String(e && e.message || e) };
+  }
 }
+// handleFrameNavigationAttempt 供 will-navigate / will-frame-navigate /
+// will-redirect 统一调用，返回 true 表示"已经接管，原导航必须 preventDefault"。
 function handleFrameNavigationAttempt(contents, url, isMainFrame) {
   const kind = classifyFrameNavigation(url, isMainFrame);
   if (kind === 'in-pane') return false;
   if (kind === 'confirm') {
     const origin = originOfContents(contents);
+    // 不 await：导航事件里不能挂起异步流程，弹窗结果在另一条路径里处理。
     launchExternalWithPrompt(url, origin, true);
     return true;
   }
@@ -743,16 +905,36 @@ function handleFrameNavigationAttempt(contents, url, isMainFrame) {
   recordSecurityEvent('protocol-blocked', isMainFrame ? 'warn' : 'info',
     `${isMainFrame ? '主框架' : '子框架'}外部协议导航被阻止: ${scheme} ${url}`,
     originOfContents(contents));
-  if (isMainFrame) sendToRenderer('show-toast', `已阻止不安全的外部协议导航: ${scheme}`);
-  else console.log(`[protocol-guard] 已阻止子框架外部协议导航: ${scheme}`);
+  // 子框架拦截不弹 toast：恶意页面可以一秒塞几十个 iframe，toast 会变成轰炸。
+  if (isMainFrame) {
+    sendToRenderer('show-toast', `已阻止不安全的外部协议导航: ${scheme}`);
+  } else {
+    console.log(`[protocol-guard] 已阻止子框架外部协议导航: ${scheme}`);
+  }
   return true;
 }
+// ===== 安全事件中心（security-events.json / cosy://security）=====
+// 浏览器自身的安全闸（外部协议拦截、危险下载确认、设备权限、扩展校验、
+// 权限收口等）以前只有两种反馈：要么 toast 一闪而过，要么只写 console。
+// 用户关掉 toast 后就没有任何地方能回答"刚才浏览器到底替我挡了什么、
+// 是哪个网站在尝试"。这里把这些事件统一留痕：
+//
+//   - 落 userData/security-events.json，原子 rename，最多保留 1000 条；
+//   - 每条明细脱敏限长，不记录 Cookie / 完整 URL 查询串以外的敏感数据，
+//     控制字符一律清掉，防止日志本身成为 XSS / 注入载体；
+//   - cosy://security 页面只读展示，可清空；IPC 仅主框架可调。
 const securityEventStorePath = path.join(app.getPath('userData'), 'security-events.json');
 const MAX_SECURITY_EVENTS = 1000;
 const MAX_SECURITY_DETAIL_CHARS = 300;
+// 事件类型即 UI 上的分组；新增拦截点时优先复用已有类型。
 const SECURITY_EVENT_TYPES = new Set([
-  'protocol-blocked', 'protocol-denied', 'download-blocked', 'download-rejected',
-  'permission-blocked', 'device-permission-blocked', 'extension-blocked',
+  'protocol-blocked',        // 危险外部协议导航 / 唤起被阻止
+  'protocol-denied',         // 用户（或记忆决定）拒绝了外部协议唤起
+  'download-blocked',        // 下载被直接阻止（非法 URL / 不安全来源）
+  'download-rejected',       // 用户在危险文件确认框中取消
+  'permission-blocked',      // 未在白名单内的浏览器权限请求被拒绝
+  'device-permission-blocked', // HID/串口/USB/蓝牙等设备选择被拒绝
+  'extension-blocked',       // 扩展请求危险权限 / 校验未过
 ]);
 const securityEvents = [];
 let securityEventsLoaded = false;
@@ -790,10 +972,14 @@ function persistSecurityEvents() {
     } catch {}
   }, 300);
 }
+// sanitizeSecurityDetail 清掉控制字符并限长。安全日志的展示方是我们自己的
+// 内部页面，但仍按"数据不可信"处理：事件 detail 来自 URL / 文件名 / 权限名。
 function sanitizeSecurityDetail(s) {
   let str = String(s == null ? '' : s);
   str = str.replace(/[\x00-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim();
-  if (str.length > MAX_SECURITY_DETAIL_CHARS) str = str.slice(0, MAX_SECURITY_DETAIL_CHARS) + '…';
+  if (str.length > MAX_SECURITY_DETAIL_CHARS) {
+    str = str.slice(0, MAX_SECURITY_DETAIL_CHARS) + '…';
+  }
   return str;
 }
 function recordSecurityEvent(type, severity, detail = '', origin = '') {
@@ -802,18 +988,26 @@ function recordSecurityEvent(type, severity, detail = '', origin = '') {
   loadSecurityEvents();
   const event = {
     id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-    time: Date.now(), type, severity,
+    time: Date.now(),
+    type,
+    severity,
     origin: sanitizeSecurityDetail(origin),
     detail: sanitizeSecurityDetail(detail),
   };
   securityEvents.push(event);
-  if (securityEvents.length > MAX_SECURITY_EVENTS) securityEvents.splice(0, securityEvents.length - MAX_SECURITY_EVENTS);
+  // 超容丢最旧的，新事件永远在末尾（UI 展示时倒序）。
+  if (securityEvents.length > MAX_SECURITY_EVENTS) {
+    securityEvents.splice(0, securityEvents.length - MAX_SECURITY_EVENTS);
+  }
   persistSecurityEvents();
 }
+// listSecurityEvents 返回事件副本（最新在前）。type 为空表示全部。
 function listSecurityEvents(typeFilter = '', limit = 200) {
   loadSecurityEvents();
   let items = securityEvents;
-  if (typeFilter && SECURITY_EVENT_TYPES.has(typeFilter)) items = securityEvents.filter(e => e.type === typeFilter);
+  if (typeFilter && SECURITY_EVENT_TYPES.has(typeFilter)) {
+    items = securityEvents.filter(e => e.type === typeFilter);
+  }
   const n = Math.max(1, Math.min(Number(limit) || 200, MAX_SECURITY_EVENTS));
   return items.slice(-n).reverse().map(e => ({ ...e }));
 }
@@ -824,6 +1018,21 @@ function clearSecurityEvents() {
   persistSecurityEvents();
   return true;
 }
+// ===== CSP 违规报告中心（csp-reports.json / cosy://security 面板）=====
+// Chromium 的内容安全策略只负责"拦"，拦完之后在 Electron 里没有像 DevTools
+// 那样统一的主进程出口：内部页面（cosy:// 系列）一旦出现注入尝试或资源
+// 误引用，console 里的 Refused to load/exec 一闪而过，发布版根本看不到。
+//
+// 这里实现一条只服务于"我们自己内部页面"的上报链：
+//   1. 内部页面监听 document 的 securitypolicyviolation（捕获阶段），
+//      通过 preload 白名单通道 report-csp-violation 上报结构化字段；
+//   2. 主进程不信任 renderer 自报的 documentURI / origin——一律以
+//      event.senderFrame.url 为准重新判定，非 cosy:// 帧直接丢弃，
+//      这样公网页面即使拿到 preload 桥也无法伪造或灌爆台账；
+//   3. 每窗 10 秒最多 20 条，超出只记一条安全事件（防止恶意内部页面
+//      死循环上报制造磁盘 / 渲染压力）；
+//   4. 落 csp-reports.json（原子 rename，最近 500 条），字段全部控制
+//      字符清洗 + 限长，UI 一律 textContent 渲染。
 const cspReportStorePath = path.join(app.getPath('userData'), 'csp-reports.json');
 const MAX_CSP_REPORTS = 500;
 const CSP_RATE_WINDOW_MS = 10_000;
@@ -832,7 +1041,7 @@ const CSP_FIELD_MAX = 300;
 const cspReports = [];
 let cspReportsLoaded = false;
 let cspReportSaveTimer = null;
-const cspRateBuckets = new Map();
+const cspRateBuckets = new Map(); // senderFrame.id -> { start, count }
 function isInternalFrameSender(senderFrame) {
   if (!senderFrame || typeof senderFrame.url !== 'string') return false;
   let u = '';
@@ -880,6 +1089,9 @@ function sanitizeCspField(v) {
   s = s.replace(/[\x00-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim();
   return s.length > CSP_FIELD_MAX ? s.slice(0, CSP_FIELD_MAX) + '…' : s;
 }
+// cspRateLimitAllowed 判断该帧当前窗口内是否还能再上报一条。
+// 帧关闭后 bucket 不会立刻清理，但 Map 体积受存活内部页数量限制，
+// 下一轮窗口自然过期复用，无需额外生命周期钩子。
 function cspRateLimitAllowed(frame) {
   const now = Date.now();
   const key = frame && frame.frameTreeNodeId != null ? frame.frameTreeNodeId : 0;
@@ -891,8 +1103,12 @@ function cspRateLimitAllowed(frame) {
   bucket.count += 1;
   return bucket.count <= CSP_RATE_MAX_PER_WINDOW;
 }
+// recordCspViolationFromRenderer 处理 renderer 上报。返回 { accepted }；
+// 拒绝不抛错（上报通道本身不能影响页面运行）。
 function recordCspViolationFromRenderer(senderFrame, payload) {
-  if (!isInternalFrameSender(senderFrame)) return { accepted: false, reason: 'non-internal frame' };
+  if (!isInternalFrameSender(senderFrame)) {
+    return { accepted: false, reason: 'non-internal frame' };
+  }
   if (!cspRateLimitAllowed(senderFrame)) {
     recordSecurityEvent('permission-blocked', 'warn',
       '内部页面 CSP 上报过于频繁，已丢弃后续报告', senderFrame.url);
@@ -915,7 +1131,9 @@ function recordCspViolationFromRenderer(senderFrame, payload) {
     disposition: payload && payload.disposition === 'report' ? 'report' : 'enforce',
   };
   cspReports.push(report);
-  if (cspReports.length > MAX_CSP_REPORTS) cspReports.splice(0, cspReports.length - MAX_CSP_REPORTS);
+  if (cspReports.length > MAX_CSP_REPORTS) {
+    cspReports.splice(0, cspReports.length - MAX_CSP_REPORTS);
+  }
   persistCspReports();
   sendToRenderer('csp-report-added', { ...report });
   return { accepted: true };
@@ -932,11 +1150,24 @@ function clearCspReports() {
   persistCspReports();
   return true;
 }
+// ===== 下载完整性校验（download-hashes.json / cosy://hashes）=====
+// Electron 的下载项只保证"字节传完了"，不保证字节没被中间人 / 镜像污染。
+// 现代浏览器在"显示下载文件的校验和"这件事上普遍缺位：用户从第三方站下了
+// 安装包后想核对官方公布的 SHA-256，只能自己翻 certutil。这里在每次下载
+// 完成后异步流式计算 SHA-256（不占大内存），登记到本机台账，并在
+// cosy://hashes 页面提供一键比对 + 任意本地文件校验。
+//
+// 设计约束：
+//  - 串行队列：多个大文件同时下完时顺序摘要，避免把磁盘 IO 打满；
+//  - 只跟普通文件，拒绝符号链接，防止摘要时被人换掉路径；
+//  - 体积上限 512 GiB——正常下载永远碰不到，只有"恶意/失控的超大文件
+//    拖死磁盘"时才触发；
+//  - 台账只记文件名与来源主机，不记完整本地路径，减少隐私落盘。
 const nodeCrypto = require('crypto');
 const downloadHashStorePath = path.join(app.getPath('userData'), 'download-hashes.json');
 const MAX_DOWNLOAD_HASH_RECORDS = 500;
-const MAX_HASHABLE_DOWNLOAD_BYTES = 512 << 30;
-const HASH_READ_CHUNK = 1024 * 1024;
+const MAX_HASHABLE_DOWNLOAD_BYTES = 512 << 30; // 512 GiB
+const HASH_READ_CHUNK = 1024 * 1024;           // 1 MiB 读取块
 const downloadHashRecords = [];
 let downloadHashesLoaded = false;
 let downloadHashSaveTimer = null;
@@ -974,18 +1205,28 @@ function persistDownloadHashes() {
     } catch {}
   }, 300);
 }
+// hashFileSha256 以 1 MiB 流式块计算摘要，返回 { sha256, size }。
+// 路径必须是普通文件；不存在 / 是符号链接 / 超体积上限一律拒绝。
 function hashFileSha256(filePath) {
   return new Promise((resolve, reject) => {
     let stat;
-    try { stat = fsSync.lstatSync(filePath); } catch (e) { reject(e); return; }
+    try {
+      stat = fsSync.lstatSync(filePath);
+    } catch (e) { reject(e); return; }
     if (!stat.isFile()) { reject(new Error('目标不是普通文件（拒绝摘要符号链接或特殊文件）')); return; }
-    if (stat.size > MAX_HASHABLE_DOWNLOAD_BYTES) { reject(new Error('文件体积超过摘要安全上限')); return; }
+    if (stat.size > MAX_HASHABLE_DOWNLOAD_BYTES) {
+      reject(new Error('文件体积超过摘要安全上限'));
+      return;
+    }
     const hash = nodeCrypto.createHash('sha256');
     const input = fsSync.createReadStream(filePath, { highWaterMark: HASH_READ_CHUNK });
     let size = 0;
     input.on('data', chunk => {
       size += chunk.length;
-      if (size > MAX_HASHABLE_DOWNLOAD_BYTES) { input.destroy(new Error('文件体积超过摘要安全上限')); return; }
+      if (size > MAX_HASHABLE_DOWNLOAD_BYTES) {
+        input.destroy(new Error('文件体积超过摘要安全上限'));
+        return;
+      }
       hash.update(chunk);
     });
     input.on('end', () => resolve({ sha256: hash.digest('hex'), size }));
@@ -1002,6 +1243,8 @@ function upsertDownloadHashRecord(record) {
   }
   persistDownloadHashes();
 }
+// queueDownloadHashing 把一次下载完成事件排进串行摘要链。
+// 摘要是附加能力，任何失败都静默跳过，绝不能影响下载本身的可用性。
 function queueDownloadHashing(task) {
   downloadHashChain = downloadHashChain.then(async () => {
     try {
@@ -1009,9 +1252,12 @@ function queueDownloadHashing(task) {
       let host = '';
       try { host = new URL(task.url).host; } catch {}
       const record = {
-        id: String(task.id), time: Date.now(),
+        id: String(task.id),
+        time: Date.now(),
         filename: String(task.filename || '').slice(0, 255) || 'download',
-        size, sha256, host,
+        size,
+        sha256,
+        host,
       };
       upsertDownloadHashRecord(record);
       sendToRenderer('download-hashed', record);
@@ -1041,6 +1287,8 @@ function clearDownloadHashes() {
   persistDownloadHashes();
   return true;
 }
+// normalizeExpectedHash 校验用户粘贴的期望摘要：支持 64 位 hex，
+// 兼容大小写与首尾空白；其它输入返回空串，由调用方判定为非法。
 function normalizeExpectedHash(input) {
   const s = String(input || '').trim().toLowerCase();
   return /^[a-f0-9]{64}$/.test(s) ? s : '';
@@ -1051,1066 +1299,10 @@ function verifyDownloadHashById(id, expected) {
   if (!want) return { ok: false, reason: 'invalid-expected' };
   const rec = downloadHashRecords.find(r => r.id === String(id));
   if (!rec) return { ok: false, reason: 'not-found' };
+  // 常量时间比较，避免把摘要比对变成时序侧信道。
   let acc = 0;
   for (let i = 0; i < 64; i++) acc |= rec.sha256.charCodeAt(i) ^ want.charCodeAt(i);
   const match = acc === 0;
   return { ok: match, match, filename: rec.filename, actual: rec.sha256 };
 }
-async function hashLocalFileViaDialog() {
-  const choice = await dialog.showOpenDialog(mainWindow, {
-    title: '选择要计算 SHA-256 的文件',
-    properties: ['openFile']
-  });
-  if (choice.canceled || !choice.filePaths || !choice.filePaths.length) return { ok: false, reason: 'canceled' };
-  const filePath = choice.filePaths[0];
-  const { sha256, size } = await hashFileSha256(filePath);
-  return { ok: true, filename: path.basename(filePath), size, sha256 };
-}
-const REMEMBERED_PAGE_PERMISSIONS = new Set([
-  'media', 'geolocation', 'notifications', 'midi', 'midiSysex', 'clipboard-read',
-]);
-const permissionStorePath = path.join(app.getPath('userData'), 'permission-decisions.json');
-const MAX_PERMISSION_DECISIONS = 1000;
-const permissionDecisions = new Map();
-let permissionDecisionsLoaded = false;
-let permissionSaveTimer = null;
-function permissionStoreKey(origin, permission) { return origin + ' ' + permission; }
-function isRememberableOrigin(origin) {
-  if (typeof origin !== 'string' || origin.length === 0 || origin.length > 300) return false;
-  try {
-    const u = new URL(origin);
-    return (u.protocol === 'https:' || u.protocol === 'http:') && !!u.hostname;
-  } catch { return false; }
-}
-function loadPermissionDecisions() {
-  if (permissionDecisionsLoaded) return;
-  permissionDecisionsLoaded = true;
-  try {
-    const data = JSON.parse(fsSync.readFileSync(permissionStorePath, 'utf8'));
-    const entries = data && typeof data === 'object' ? data.decisions : null;
-    if (!entries || typeof entries !== 'object') return;
-    for (const [k, v] of Object.entries(entries)) {
-      if (typeof k !== 'string' || !v || typeof v !== 'object') continue;
-      const sp = k.indexOf(' ');
-      if (sp <= 0) continue;
-      const origin = k.slice(0, sp);
-      const permission = k.slice(sp + 1);
-      if (!isRememberableOrigin(origin)) continue;
-      if (!REMEMBERED_PAGE_PERMISSIONS.has(permission)) continue;
-      if (v.decision !== 'allow' && v.decision !== 'deny') continue;
-      if (permissionDecisions.size >= MAX_PERMISSION_DECISIONS) break;
-      permissionDecisions.set(k, { decision: v.decision, updatedAt: Number(v.updatedAt) || Date.now() });
-    }
-  } catch {}
-}
-function persistPermissionDecisions() {
-  if (permissionSaveTimer) clearTimeout(permissionSaveTimer);
-  permissionSaveTimer = setTimeout(() => {
-    try {
-      const decisions = {};
-      for (const [k, v] of permissionDecisions) decisions[k] = v;
-      const tmp = permissionStorePath + '.tmp';
-      fsSync.writeFileSync(tmp, JSON.stringify({ version: 1, decisions }), 'utf8');
-      fsSync.renameSync(tmp, permissionStorePath);
-    } catch {}
-  }, 300);
-}
-function getRememberedPermission(origin, permission) {
-  loadPermissionDecisions();
-  if (!isRememberableOrigin(origin) || !REMEMBERED_PAGE_PERMISSIONS.has(permission)) return null;
-  const v = permissionDecisions.get(permissionStoreKey(origin, permission));
-  return v ? v.decision : null;
-}
-function rememberPermission(origin, permission, decision) {
-  loadPermissionDecisions();
-  if (!isRememberableOrigin(origin)) return false;
-  if (!REMEMBERED_PAGE_PERMISSIONS.has(permission)) return false;
-  if (decision !== 'allow' && decision !== 'deny') return false;
-  const key = permissionStoreKey(origin, permission);
-  if (!permissionDecisions.has(key) && permissionDecisions.size >= MAX_PERMISSION_DECISIONS) return false;
-  permissionDecisions.set(key, { decision, updatedAt: Date.now() });
-  persistPermissionDecisions();
-  return true;
-}
-function forgetPermission(origin, permission) {
-  loadPermissionDecisions();
-  const deleted = permissionDecisions.delete(permissionStoreKey(origin, permission));
-  if (deleted) persistPermissionDecisions();
-  return deleted;
-}
-function listPermissionDecisions() {
-  loadPermissionDecisions();
-  const out = [];
-  for (const [k, v] of permissionDecisions) {
-    const sp = k.indexOf(' ');
-    out.push({ origin: k.slice(0, sp), permission: k.slice(sp + 1), decision: v.decision, updatedAt: v.updatedAt });
-  }
-  out.sort((a, b) => a.origin.localeCompare(b.origin) || a.permission.localeCompare(b.permission));
-  return out;
-}
-function clearPermissionDecisionsForOrigin(origin) {
-  loadPermissionDecisions();
-  if (!isRememberableOrigin(origin)) return 0;
-  let n = 0;
-  const prefix = origin + ' ';
-  for (const k of Array.from(permissionDecisions.keys())) {
-    if (k.startsWith(prefix)) { permissionDecisions.delete(k); n++; }
-  }
-  if (n) persistPermissionDecisions();
-  return n;
-}
-function setupPermissionHandlers() {
-  session.defaultSession.setPermissionCheckHandler((wc, permission, requestingOrigin, details) => {
-    const isMedia = permission === 'media';
-    if (details && details.securityOrigin === 'file://') return false;
-    if (isMedia) {
-      const mediaOrigin = (requestingOrigin || '').replace(/^https?:\/\//, '');
-      return mediaOrigin === 'localhost' || mediaOrigin.startsWith('127.0.0.1') || mediaOrigin.startsWith('192.168.') || mediaOrigin.startsWith('10.') || mediaOrigin.startsWith('172.');
-    }
-    return false;
-  });
-  session.defaultSession.setPermissionRequestHandler((wc, permission, callback, details) => {
-    if (!ALLOWED_PERMISSIONS.has(permission)) {
-      recordSecurityEvent('permission-blocked', 'critical', `阻止未授权权限请求: ${permission}`, wc.getURL());
-      return callback(false);
-    }
-    const origin = (details && (details.requestingUrl || details.securityOrigin)) || wc.getURL();
-    const remembered = getRememberedPermission(origin.replace(/\/$/, ''), permission);
-    if (remembered) return callback(remembered === 'allow');
-    if (permission === 'pointerLock' || permission === 'fullscreen') {
-      recordSecurityEvent('permission-blocked', 'info', `允许低风险权限请求: ${permission}`, wc.getURL());
-      return callback(true);
-    }
-    dialog.showMessageBox(mainWindow, {
-      type: 'question',
-      buttons: ['允许', '阻止'],
-      defaultId: 0,
-      cancelId: 1,
-      title: '权限请求',
-      message: `网站请求权限: ${permission}\n来源: ${origin}\n是否允许？`,
-      checkboxLabel: '记住对此网站的选择（可在设置中撤销）',
-      checkboxChecked: false
-    }).then(result => {
-      const granted = result.response === 0;
-      if (result.checkboxChecked) rememberPermission(origin.replace(/\/$/, ''), permission, granted ? 'allow' : 'deny');
-      recordSecurityEvent('permission-blocked', granted ? 'info' : 'warn',
-        `${granted ? '已授予' : '已阻止'}权限: ${permission}`, origin);
-      callback(granted);
-    });
-  });
-}
-function setupWebRequestBlocking() {
-  session.defaultSession.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, (details, callback) => {
-    if (details.resourceType === 'subFrame' || details.resourceType === 'mainFrame') {
-      const tab = tabs.find(t => t.view && t.view.webContents && t.view.webContents.id === details.webContentsId);
-      if (tab && tab.view && tab.view.webContents) {
-        const blocked = handleFrameNavigationAttempt(tab.view.webContents, details.url, details.resourceType === 'mainFrame');
-        if (blocked) return callback({ cancel: true });
-      }
-    }
-    callback({});
-  });
-}
-function createWindow() {
-  const savedSettings = readStoredSettings();
-  if (typeof savedSettings.httpsOnlyEnabled === 'boolean') httpsOnlyEnabled = savedSettings.httpsOnlyEnabled;
-  if (typeof savedSettings.blockTrackers === 'boolean') blockTrackers = savedSettings.blockTrackers;
-  if (typeof savedSettings.crashRecoveryEnabled === 'boolean') crashRecoveryEnabled = savedSettings.crashRecoveryEnabled;
-  if (typeof savedSettings.clearOnExit === 'boolean') clearOnExit = savedSettings.clearOnExit;
-  if (typeof savedSettings.confirmCloseMultiple === 'boolean') confirmCloseMultiple = savedSettings.confirmCloseMultiple;
-  if (typeof savedSettings.spellcheckEnabled === 'boolean') spellcheckEnabled = savedSettings.spellcheckEnabled;
-  if (Array.isArray(savedSettings.spellcheckLanguages)) spellcheckLanguages = sanitizeSpellcheckLanguages(savedSettings.spellcheckLanguages);
-  if (savedSettings.darkMode === true) nativeTheme.themeSource = 'dark';
-  mainWindow = new BrowserWindow({
-    width: DEFAULT_WINDOW_WIDTH,
-    height: DEFAULT_WINDOW_HEIGHT,
-    minWidth: MIN_WINDOW_WIDTH,
-    minHeight: MIN_WINDOW_HEIGHT,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      webSecurity: true,
-      allowRunningInsecureContent: false,
-      webviewTag: false,
-      sandbox: true,
-      spellcheck: spellcheckEnabled
-    }
-  });
-  mainWindow.loadFile('index.html');
-  if (isDev) mainWindow.webContents.openDevTools({ mode: 'detach' });
-  mainWindow.on('close', async (event) => {
-    const tabCount = tabs.length;
-    if (confirmCloseMultiple && tabCount > 1) {
-      const result = await dialog.showMessageBox(mainWindow, {
-        type: 'question',
-        buttons: ['关闭全部', '取消'],
-        defaultId: 1,
-        cancelId: 1,
-        title: '确认关闭',
-        message: `当前有 ${tabCount} 个标签页，确定要关闭窗口吗？`
-      });
-      if (result.response !== 0) { event.preventDefault(); return; }
-    }
-    saveSession();
-    if (clearOnExit) {
-      try { await session.defaultSession.clearStorageData({ storages: ['cookies', 'shadercache', 'cachestorage', 'serviceworkers', 'indexdb', 'localstorage'] }); } catch {}
-    }
-  });
-  mainWindow.on('closed', () => { mainWindow = null; });
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (isSafeUrl(url)) {
-      const tab = tabs[currentTabIndex];
-      if (tab && !allowPopupForTab(tab.id)) {
-        sendToRenderer('show-toast', '已拦截短时间内的连续弹窗（疑似弹窗轰炸）');
-        return { action: 'deny' };
-      }
-      createNewTab(url);
-    } else {
-      recordSecurityEvent('protocol-blocked', 'warn', `窗口打开处理器阻止了不安全地址: ${url}`);
-    }
-    return { action: 'deny' };
-  });
-  mainWindow.webContents.on('will-navigate', (event, url) => {
-    const blocked = handleFrameNavigationAttempt(mainWindow.webContents, url, true);
-    if (blocked) event.preventDefault();
-  });
-  mainWindow.webContents.session.on('will-download', (event, item, webContents) => {
-    const downloadUrl = item.getURL();
-    if (!isSafeUrl(downloadUrl)) {
-      event.preventDefault();
-      recordSecurityEvent('download-blocked', 'critical', `阻止不安全协议的下载: ${downloadUrl}`, webContents.getURL());
-      dialog.showErrorBox('下载已阻止', '该下载地址使用了不安全或不允许的协议。');
-      return;
-    }
-    if (downloadUrl.startsWith('file://')) {
-      event.preventDefault();
-      recordSecurityEvent('download-blocked', 'warn', 'file:// 下载被阻止', webContents.getURL());
-      return;
-    }
-    const totalBytes = item.getTotalBytes();
-    const knownSize = Number.isFinite(totalBytes) && totalBytes > 0;
-    const dangerous = /\.(exe|msi|bat|cmd|com|scr|ps1|reg|jar|app|dmg|deb|rpm|apk)$/i.test(item.getFilename());
-    dialog.showMessageBox(mainWindow, {
-      type: dangerous ? 'warning' : 'question',
-      buttons: ['保留', '放弃下载'],
-      defaultId: dangerous ? 1 : 0,
-      cancelId: 1,
-      title: dangerous ? '危险下载确认' : '下载确认',
-      message: `即将下载文件：${item.getFilename()}\n来源：${downloadUrl}\n${knownSize ? `大小：${formatBytes(totalBytes)}\n` : ''}${dangerous ? '\n这是可执行文件，可能危害你的电脑。确定保留吗？' : '是否保留此下载？'}`
-    }).then(choice => {
-      if (choice.response !== 0) {
-        item.cancel();
-        recordSecurityEvent('download-rejected', 'info', `用户放弃下载: ${item.getFilename()}`, downloadUrl);
-        return;
-      }
-      beginTrackedDownload(event, item, webContents, downloadUrl);
-    });
-    event.preventDefault();
-  });
-  mainWindow.webContents.on('render-process-gone', (event, details) => {
-    if (!crashRecoveryEnabled) return;
-    const wc = mainWindow.webContents;
-    const n = (crashReloadCounts.get(wc.id) || 0) + 1;
-    if (n > 2) {
-      sendToRenderer('renderer-gone', { reason: details.reason, retries: n - 1, gaveUp: true });
-      return;
-    }
-    crashReloadCounts.set(wc.id, n);
-    sendToRenderer('renderer-gone', { reason: details.reason, retries: n - 1, gaveUp: false });
-    if (!wc.isDestroyed()) {
-      setTimeout(() => { if (!wc.isDestroyed() && wc.isLoading() === false) wc.reload(); }, 600);
-    }
-  });
-  setupSecurityHeaders();
-  setupPermissionHandlers();
-  setupWebRequestBlocking();
-  registerIpcHandlers();
-  registerGlobalShortcuts();
-  registerBookmarkAndHistoryIpc();
-  registerNewtabIpc();
-  setupDownloadIpc();
-  const savedSession = loadSession();
-  if (savedSession && savedSession.length > 0) {
-    for (const t of savedSession) createNewTab(t.url, { restore: true, title: t.title });
-  } else {
-    createNewTab();
-  }
-  app.on('web-contents-created', (event, contents) => {
-    if (contents.getType() === 'webview' || contents.getType() === 'remote') contents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  });
-}
-function registerGlobalShortcuts() {
-  globalShortcut.register('CmdOrCtrl+T', () => createNewTab());
-  globalShortcut.register('CmdOrCtrl+W', () => closeCurrentTab());
-  globalShortcut.register('CmdOrCtrl+R', () => reloadCurrentTab());
-  globalShortcut.register('F5', () => reloadCurrentTab());
-  globalShortcut.register('CmdOrCtrl+L', () => sendToRenderer('focus-address-bar'));
-  globalShortcut.register('CmdOrCtrl+Plus', () => zoomIn());
-  globalShortcut.register('CmdOrCtrl+=', () => zoomIn());
-  globalShortcut.register('CmdOrCtrl+-', () => zoomOut());
-  globalShortcut.register('CmdOrCtrl+0', () => resetZoom());
-  globalShortcut.register('F12', () => toggleDevTools());
-  globalShortcut.register('CmdOrCtrl+O', () => showOpenFileDialog());
-  globalShortcut.register('Alt+Home', () => goHome());
-  globalShortcut.register('CmdOrCtrl+Shift+T', () => restoreLastClosedTab());
-}
-function restoreLastClosedTab() {
-  const last = getLastClosedTab();
-  if (last) createNewTab(last.url);
-}
-function adjustCurrentZoom({ delta, factor }) {
-  const tab = tabs[currentTabIndex];
-  if (!tab || !tab.view) return;
-  const wc = tab.view.webContents;
-  const zoomFactor = typeof factor === 'number' ? factor : (wc.getZoomFactor() + (delta === 'in' ? 0.1 : -0.1));
-  wc.setZoomFactor(Math.max(0.25, Math.min(5, zoomFactor)));
-  sendToRenderer('zoom-changed', wc.getZoomFactor());
-}
-function reloadCurrentTab() {
-  const tab = tabs[currentTabIndex];
-  if (tab && tab.view) tab.view.webContents.reload();
-}
-function closeCurrentTab() {
-  if (tabs.length > 0) {
-    const closed = tabs[currentTabIndex];
-    addToRecentlyClosed(closed);
-    const removed = tabs.splice(currentTabIndex, 1)[0];
-    if (removed && removed.view) mainWindow.contentView.removeChildView(removed.view);
-    if (currentTabIndex >= tabs.length) currentTabIndex = tabs.length - 1;
-    if (tabs.length === 0) {
-      createNewTab();
-    } else {
-      switchToTab(currentTabIndex);
-    }
-  }
-}
-function createNewTab(url = 'cosy://newtab', options = {}) {
-  const tab = new Tab(Date.now() + Math.random(), url);
-  tabs.push(tab);
-  const view = new WebContentsView({
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      webSecurity: true,
-      sandbox: true,
-      spellcheck: spellcheckEnabled
-    }
-  });
-  tab.view = view;
-  setupTabView(tab, options);
-  if (currentTabIndex === tabs.length - 2) currentTabIndex = tabs.length - 1;
-  switchToTab(tabs.length - 1);
-  return tab;
-}
-function setupTabView(tab, options = {}) {
-  const wc = tab.view.webContents;
-  wc.on('page-title-updated', (event, title) => {
-    tab.title = title;
-    updateTabBadge(tab);
-  });
-  wc.on('page-favicon-updated', (event, favicons) => {
-    if (favicons && favicons.length > 0) {
-      tab.favicon = favicons[0];
-      updateTabBadge(tab);
-    }
-  });
-  wc.on('did-start-loading', () => {
-    tab.isLoading = true;
-    updateTabBadge(tab);
-  });
-  wc.on('did-stop-loading', () => {
-    tab.isLoading = false;
-    updateTabBadge(tab);
-  });
-  wc.on('did-navigate', (event, url) => {
-    tab.url = url;
-    tab.canGoBack = wc.navigationHistory.canGoBack();
-    tab.canGoForward = wc.navigationHistory.canGoForward();
-    tab.bookmarked = bookmarks.some(b => b.url === url);
-    updateTabBadge(tab);
-    if (!options.restore) addToHistory(url, wc.getTitle());
-  });
-  wc.on('did-navigate-in-page', (event, url) => {
-    tab.url = url;
-    updateTabBadge(tab);
-  });
-  wc.on('media-started-playing', () => { tab.audible = true; updateTabBadge(tab); });
-  wc.on('media-paused', () => { tab.audible = false; updateTabBadge(tab); });
-  wc.setWindowOpenHandler(({ url }) => {
-    if (isSafeUrl(url)) {
-      if (!allowPopupForTab(tab.id)) {
-        sendToRenderer('show-toast', '已拦截短时间内的连续弹窗（疑似弹窗轰炸）');
-        return { action: 'deny' };
-      }
-      createNewTab(url);
-    } else {
-      recordSecurityEvent('protocol-blocked', 'warn', `标签窗口处理器阻止了不安全地址: ${url}`, wc.getURL());
-    }
-    return { action: 'deny' };
-  });
-  wc.on('will-navigate', (event, url) => {
-    if (handleFrameNavigationAttempt(wc, url, true)) event.preventDefault();
-  });
-  wc.on('render-process-gone', (event, details) => {
-    if (!crashRecoveryEnabled) return;
-    const n = (crashReloadCounts.get(wc.id) || 0) + 1;
-    if (n > 2) {
-      sendToRenderer('renderer-gone-tab', { tabId: tab.id, reason: details.reason, gaveUp: true });
-      return;
-    }
-    crashReloadCounts.set(wc.id, n);
-    sendToRenderer('renderer-gone-tab', { tabId: tab.id, reason: details.reason, gaveUp: false });
-  });
-  loadTabContent(tab, options);
-}
-function updateTabBadge(tab) {
-  sendToRenderer('tab-updated', {
-    id: tab.id,
-    title: tab.title,
-    url: tab.url,
-    favicon: tab.favicon,
-    isLoading: tab.isLoading,
-    audible: tab.audible,
-    muted: tab.muted,
-    bookmarked: tab.bookmarked
-  });
-}
-function loadTabContent(tab, options = {}) {
-  if (!tab.view) return;
-  if (tab.url.startsWith('cosy://')) {
-    const pageMap = {
-      'cosy://newtab': 'src/newtab.html',
-      'cosy://history': 'src/history.html',
-      'cosy://bookmarks': 'src/bookmarks.html',
-      'cosy://settings': 'src/settings.html',
-      'cosy://permissions': 'src/permissions.html',
-      'cosy://security': 'src/security.html'
-    };
-    const page = pageMap[tab.url.split('?')[0]];
-    if (page) tab.view.webContents.loadFile(page);
-    else tab.view.webContents.loadFile('src/newtab.html');
-  } else {
-    tab.view.webContents.loadURL(tab.url);
-  }
-  if (options.title) tab.title = options.title;
-}
-function switchToTab(index) {
-  currentTabIndex = index;
-  tabs.forEach((tab, i) => {
-    if (tab.view) tab.view.setVisible(i === index);
-  });
-  updateTabLayout();
-  const tab = tabs[index];
-  if (tab) {
-    sendToRenderer('tab-switched', {
-      index,
-      canGoBack: tab.canGoBack,
-      canGoForward: tab.canGoForward,
-      url: tab.url,
-      title: tab.title
-    });
-  }
-}
-function updateTabLayout() {
-  if (!mainWindow || !mainWindow.contentView) return;
-  const { width, height } = mainWindow.getContentBounds();
-  const isVertical = width > height;
-  const tabBarHeight = isTabBarCollapsed
-    ? (isVertical ? 0 : COLLAPSED_TAB_BAR_WIDTH)
-    : (isVertical ? DEFAULT_TAB_BAR_HEIGHT_HORIZONTAL : DEFAULT_TAB_BAR_WIDTH_VERTICAL);
-  tabs.forEach(tab => {
-    if (tab.view) {
-      tab.view.setBounds({ x: 0, y: isVertical ? tabBarHeight : 0, width: isVertical ? width : width - tabBarHeight, height: isVertical ? height - tabBarHeight : height });
-    }
-  });
-}
-function registerIpcHandlers() {
-  ipcMain.handle('new-tab', (event, url) => {
-    if (!isMainSender(event)) return;
-    createNewTab(url || 'cosy://newtab');
-  });
-  ipcMain.handle('close-tab', (event, tabId) => {
-    if (!isMainSender(event)) return;
-    const idx = tabs.findIndex(t => t.id === tabId);
-    if (idx !== -1) {
-      const closed = tabs[idx];
-      addToRecentlyClosed(closed);
-      const removed = tabs.splice(idx, 1)[0];
-      if (removed && removed.view) mainWindow.contentView.removeChildView(removed.view);
-      if (currentTabIndex >= tabs.length) currentTabIndex = tabs.length - 1;
-      if (tabs.length === 0) createNewTab();
-      else switchToTab(currentTabIndex);
-    }
-  });
-  ipcMain.handle('switch-tab', (event, index) => {
-    if (!isMainSender(event)) return;
-    if (index >= 0 && index < tabs.length) switchToTab(index);
-  });
-  ipcMain.handle('navigate', (event, url) => {
-    if (!isMainSender(event)) return;
-    if (isSafeUrl(url)) {
-      const tab = tabs[currentTabIndex];
-      if (tab) { tab.url = url; loadTabContent(tab); }
-    }
-  });
-  ipcMain.handle('go-back', event => { if (!isMainSender(event)) return; const tab = tabs[currentTabIndex]; if (tab?.view) tab.view.webContents.navigationHistory.goBack(); });
-  ipcMain.handle('go-forward', event => { if (!isMainSender(event)) return; const tab = tabs[currentTabIndex]; if (tab?.view) tab.view.webContents.navigationHistory.goForward(); });
-  ipcMain.handle('reload', event => { if (!isMainSender(event)) return; reloadCurrentTab(); });
-  ipcMain.handle('go-home', event => { if (!isMainSender(event)) return; goHome(); });
-  ipcMain.handle('zoom-in', event => { if (!isMainSender(event)) return; zoomIn(); });
-  ipcMain.handle('zoom-out', event => { if (!isMainSender(event)) return; zoomOut(); });
-  ipcMain.handle('zoom-reset', event => { if (!isMainSender(event)) return; resetZoom(); });
-  ipcMain.handle('toggle-devtools', event => { if (!isMainSender(event)) return; toggleDevTools(); }
-  );
-  ipcMain.handle('open-file', event => { if (!isMainSender(event)) return; showOpenFileDialog(); });
-  ipcMain.handle('toggle-tab-mute', (event, tabId) => {
-    if (!isMainSender(event)) return;
-    const tab = tabs.find(t => t.id === tabId);
-    if (tab?.view) {
-      tab.muted = !tab.muted;
-      tab.view.webContents.setAudioMuted(tab.muted);
-      updateTabBadge(tab);
-    }
-  });
-  ipcMain.handle('discard-tab', (event, tabId) => {
-    if (!isMainSender(event)) return { ok: false };
-    const tab = tabs.find(t => t.id === tabId);
-    if (!tab?.view || tabs[currentTabIndex]?.id === tabId) return { ok: false, reason: 'active' };
-    const wc = tab.view.webContents;
-    try {
-      const pid = wc.getOSProcessId();
-      wc.close();
-      tab.discarded = true;
-      tab.view = null;
-      mainWindow.contentView.removeChildView(tab.view);
-    } catch (e) { return { ok: false, reason: String(e && e.message || e) }; }
-    return { ok: true };
-  });
-  ipcMain.handle('restore-discarded-tab', (event, tabId) => {
-    if (!isMainSender(event)) return { ok: false };
-    const tab = tabs.find(t => t.id === tabId);
-    if (!tab || !tab.discarded) return { ok: false, reason: 'not-discarded' };
-    const view = new WebContentsView({
-      webPreferences: {
-        preload: path.join(__dirname, 'preload.js'),
-        contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: spellcheckEnabled
-      }
-    });
-    tab.view = view;
-    tab.discarded = false;
-    mainWindow.contentView.addChildView(view);
-    setupTabView(tab);
-    switchToTab(tabs.indexOf(tab));
-    return { ok: true };
-  });
-  ipcMain.handle('set-https-only', (event, enabled) => {
-    if (!isMainSender(event)) return { success: false };
-    httpsOnlyEnabled = !!enabled;
-    persistSettings({ httpsOnlyEnabled });
-    return { success: true, httpsOnlyEnabled };
-  });
-  ipcMain.handle('set-block-trackers', (event, enabled) => {
-    if (!isMainSender(event)) return { success: false };
-    blockTrackers = !!enabled;
-    persistSettings({ blockTrackers });
-    return { success: true, blockTrackers };
-  });
-  ipcMain.handle('set-crash-recovery', (event, enabled) => {
-    if (!isMainSender(event)) return { success: false };
-    crashRecoveryEnabled = !!enabled;
-    persistSettings({ crashRecoveryEnabled });
-    return { success: true, crashRecoveryEnabled };
-  });
-  ipcMain.handle('set-clear-on-exit', (event, enabled) => {
-    if (!isMainSender(event)) return { success: false };
-    clearOnExit = !!enabled;
-    persistSettings({ clearOnExit });
-    return { success: true, clearOnExit };
-  });
-  ipcMain.handle('set-confirm-close-multiple', (event, enabled) => {
-    if (!isMainSender(event)) return { success: false };
-    confirmCloseMultiple = !!enabled;
-    persistSettings({ confirmCloseMultiple });
-    return { success: true, confirmCloseMultiple };
-  });
-  ipcMain.handle('set-spellcheck', (event, payload) => {
-    if (!isMainSender(event)) return { success: false };
-    if (payload && typeof payload === 'object') {
-      if (typeof payload.enabled === 'boolean') spellcheckEnabled = payload.enabled;
-      if (Array.isArray(payload.languages)) spellcheckLanguages = sanitizeSpellcheckLanguages(payload.languages);
-      applySpellcheckSettings();
-      persistSettings({ spellcheckEnabled, spellcheckLanguages });
-    }
-    return { success: true, spellcheckEnabled, spellcheckLanguages };
-  });
-  ipcMain.handle('get-spellcheck-info', event => {
-    if (!isMainSender(event)) return { success: false };
-    let available = [];
-    try { available = session.defaultSession.availableSpellCheckerLanguages || []; } catch {}
-    return { success: true, enabled: spellcheckEnabled, languages: spellcheckLanguages, available };
-  });
-  ipcMain.handle('set-dark-mode', (event, dark) => {
-    if (!isMainSender(event)) return { success: false };
-    applyDarkMode(!!dark);
-    persistSettings({ darkMode: !!dark });
-    return { success: true, darkMode: !!dark };
-  });
-  ipcMain.handle('get-settings', event => {
-    if (!isMainSender(event)) return { success: false };
-    return {
-      success: true,
-      httpsOnlyEnabled, blockTrackers, crashRecoveryEnabled,
-      clearOnExit, confirmCloseMultiple, spellcheckEnabled,
-      spellcheckLanguages,
-      darkMode: nativeTheme.shouldUseDarkColors
-    };
-  });
-  ipcMain.handle('get-tracker-stats', event => {
-    if (!isMainSender(event)) return { success: false };
-    return { success: true, count: blockedTrackerCount, top: topBlockedHosts() };
-  });
-  ipcMain.handle('open-external', async (event, url, origin) => {
-    if (!isMainSender(event)) return { ok: false, reason: 'untrusted' };
-    return await confirmAndOpenExternal(url, origin);
-  });
-  ipcMain.handle('open-tab-external', async (event, url) => {
-    if (!isMainSender(event)) return { ok: false, reason: 'untrusted' };
-    if (!isSafeUrl(url)) {
-      recordSecurityEvent('protocol-blocked', 'critical', `外部打开入口拒绝不安全地址: ${url}`);
-      return { ok: false, reason: 'unsafe url' };
-    }
-    try { await shell.openExternal(url, { activate: true }); return { ok: true }; }
-    catch (e) { return { ok: false, reason: String(e && e.message || e) }; }
-  });
-  ipcMain.handle('clear-site-data', async event => {
-    if (!isMainSender(event)) return { success: false };
-    try {
-      await session.defaultSession.clearStorageData({
-        storages: ['cookies', 'filesystem', 'indexdb', 'localstorage', 'shadercache', 'websql', 'serviceworkers', 'cachestorage']
-      });
-      await session.defaultSession.clearCache();
-      return { success: true };
-    } catch (e) { return { success: false, error: String(e && e.message || e) }; }
-  });
-}
-function persistSettings(patch) {
-  try {
-    const p = path.join(app.getPath('userData'), 'cosySettings.json');
-    const current = fsSync.existsSync(p) ? JSON.parse(fsSync.readFileSync(p, 'utf-8')) : {};
-    Object.assign(current, patch);
-    fsSync.writeFileSync(p, JSON.stringify(current, null, 2), 'utf-8');
-  } catch (e) { console.error('保存设置失败:', e); }
-}
-function registerBookmarkAndHistoryIpc() {
-  ipcMain.handle('get-bookmarks', event => { if (!isMainSender(event)) return []; return bookmarks; });
-  ipcMain.handle('add-bookmark', (event, { url, title }) => {
-    if (!isMainSender(event)) return { success: false };
-    if (!isSafeUrl(url)) return { success: false, error: 'unsafe url' };
-    if (!bookmarks.some(b => b.url === url)) {
-      bookmarks.push({ url, title: title || url, addedAt: Date.now() });
-      saveBookmarks();
-      const tab = tabs.find(t => t.url === url);
-      if (tab) { tab.bookmarked = true; updateTabBadge(tab); }
-    }
-    return { success: true, bookmarks };
-  });
-  ipcMain.handle('remove-bookmark', (event, url) => {
-    if (!isMainSender(event)) return { success: false };
-    const before = bookmarks.length;
-    bookmarks = bookmarks.filter(b => b.url !== url);
-    if (bookmarks.length !== before) {
-      saveBookmarks();
-      const tab = tabs.find(t => t.url === url);
-      if (tab) { tab.bookmarked = false; updateTabBadge(tab); }
-    }
-    return { success: true, bookmarks };
-  });
-  ipcMain.handle('is-bookmarked', (event, url) => {
-    if (!isMainSender(event)) return false;
-    return bookmarks.some(b => b.url === url);
-  });
-  ipcMain.handle('export-bookmarks', async event => {
-    if (!isMainSender(event)) return { success: false };
-    try {
-      const result = await dialog.showSaveDialog(mainWindow, {
-        title: '导出书签',
-        defaultPath: path.join(app.getPath('downloads'), 'cosy-bookmarks.html'),
-        filters: [{ name: 'HTML 书签', extensions: ['html', 'htm'] }]
-      });
-      if (result.canceled || !result.filePath) return { success: false, canceled: true };
-      const html = bookmarkIO.buildNetscapeBookmarkHTML(bookmarks);
-      await fs.writeFile(result.filePath, html, 'utf-8');
-      return { success: true, path: result.filePath };
-    } catch (e) { return { success: false, error: String(e && e.message || e) }; }
-  });
-  ipcMain.handle('import-bookmarks', async event => {
-    if (!isMainSender(event)) return { success: false };
-    try {
-      const result = await dialog.showOpenDialog(mainWindow, {
-        title: '导入书签',
-        properties: ['openFile'],
-        filters: [{ name: 'HTML 书签', extensions: ['html', 'htm'] }]
-      });
-      if (result.canceled || !result.filePaths.length) return { success: false, canceled: true };
-      const raw = await fs.readFile(result.filePaths[0], 'utf-8');
-      const imported = bookmarkIO.parseNetscapeBookmarkHTML(raw);
-      let added = 0;
-      for (const item of imported) {
-        if (!isSafeUrl(item.url)) continue;
-        if (!bookmarks.some(b => b.url === item.url)) {
-          bookmarks.push({ url: item.url, title: item.title || item.url, addedAt: Date.now() });
-          added += 1;
-        }
-      }
-      if (added > 0) saveBookmarks();
-      return { success: true, added, total: bookmarks.length };
-    } catch (e) { return { success: false, error: String(e && e.message || e) }; }
-  });
-  ipcMain.handle('get-history', event => {
-    if (!isMainSender(event)) return [];
-    return history;
-  });
-  ipcMain.handle('clear-history', event => {
-    if (!isMainSender(event)) return { success: false };
-    history = [];
-    saveHistory();
-    return { success: true };
-  });
-  ipcMain.handle('remove-history-entry', (event, url) => {
-    if (!isMainSender(event)) return { success: false };
-    const before = history.length;
-    history = history.filter(h => h.url !== url);
-    if (history.length !== before) saveHistory();
-    return { success: true };
-  });
-}
-const DEFAULT_TILES = [
-  { name: '热土工作室', url: 'https://rtstu.com', color: '#ff7043' },
-  { name: 'BHA (PyPI)', url: 'https://pypi.org/project/bool-hybrid-array/', color: '#006dad' },
-  { name: 'BK · GitHub', url: 'https://github.com/BKsell', color: '#24292f' },
-  { name: 'BHA · Gitee', url: 'https://gitee.com/BKsell/bool-hybrid-array', color: '#c71d23' },
-  { name: 'BHA · GitCode', url: 'https://gitcode.com/BKsell/bool-hybrid-array', color: '#e34d3a' },
-  { name: 'BK · CSDN', url: 'https://blog.csdn.net/BKsell', color: '#fc5531' },
-  { name: 'BK · 知乎', url: 'https://www.zhihu.com/people/50-78-41-74', color: '#0066ff' },
-  { name: 'Bing', url: 'https://www.bing.com', color: '#00897b' },
-  { name: '百度', url: 'https://www.baidu.com', color: '#2932e1' },
-  { name: '哔哩哔哩', url: 'https://www.bilibili.com', color: '#00a1d6' },
-  { name: '维基百科', url: 'https://www.wikipedia.org', color: '#636c72' },
-  { name: 'YouTube', url: 'https://www.youtube.com', color: '#ff0000' },
-  { name: '淘宝', url: 'https://www.taobao.com', color: '#ff5000' },
-  { name: 'Gmail', url: 'https://mail.google.com', color: '#ea4335' },
-  { name: 'Outlook', url: 'https://outlook.live.com', color: '#0078d4' }
-];
-const tileStorePath = path.join(app.getPath('userData'), 'newtab-tiles.json');
-function loadTiles() {
-  try {
-    if (!fsSync.existsSync(tileStorePath)) return DEFAULT_TILES.map(t => ({ ...t }));
-    const data = JSON.parse(fsSync.readFileSync(tileStorePath, 'utf8'));
-    if (!Array.isArray(data)) return DEFAULT_TILES.map(t => ({ ...t }));
-    const out = [];
-    for (const t of data) {
-      if (!t || typeof t !== 'object') continue;
-      if (typeof t.url !== 'string' || !isSafeUrl(t.url)) continue;
-      out.push({
-        name: typeof t.name === 'string' ? t.name.slice(0, 60) : t.url,
-        url: t.url,
-        color: isValidColor(t.color) ? t.color : '#455a64'
-      });
-      if (out.length >= 48) break;
-    }
-    return out.length ? out : DEFAULT_TILES.map(t => ({ ...t }));
-  } catch { return DEFAULT_TILES.map(t => ({ ...t })); }
-}
-function saveTiles(tiles) {
-  const safe = [];
-  for (const t of Array.isArray(tiles) ? tiles : []) {
-    if (!t || typeof t !== 'object') continue;
-    if (typeof t.url !== 'string' || !isSafeUrl(t.url)) continue;
-    safe.push({
-      name: typeof t.name === 'string' ? t.name.slice(0, 60) : t.url,
-      url: t.url,
-      color: isValidColor(t.color) ? t.color : '#455a64'
-    });
-    if (safe.length >= 48) break;
-  }
-  try { fsSync.writeFileSync(tileStorePath, JSON.stringify(safe, null, 2), 'utf8'); } catch (e) { console.error('保存磁贴失败:', e); }
-  return safe;
-}
-function registerNewtabIpc() {
-  ipcMain.handle('get-tiles', event => { if (!isMainSender(event)) return []; return loadTiles(); });
-  ipcMain.handle('save-tiles', (event, tiles) => {
-    if (!isMainSender(event)) return { success: false };
-    const safe = saveTiles(tiles);
-    return { success: true, tiles: safe };
-  });
-}
-function formatBytes(n) {
-  if (!Number.isFinite(n) || n < 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let v = n, i = 0;
-  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
-  return `${v.toFixed(v >= 100 || i === 0 ? 0 : 1)} ${units[i]}`;
-}
-function getDownloadFilenameFromUrl(url) {
-  try {
-    const u = new URL(url);
-    const last = u.pathname.split('/').filter(Boolean).pop();
-    return last ? decodeURIComponent(last) : 'download';
-  } catch { return 'download'; }
-}
-function setupDownloadIpc() {
-  ipcMain.handle('choose-download-path', async (event, payload) => {
-    if (!isMainSender(event)) return { ok: false, reason: 'untrusted' };
-    const filename = typeof payload?.filename === 'string' && payload.filename
-      ? path.basename(payload.filename)
-      : 'download';
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: '选择保存位置',
-      defaultPath: path.join(app.getPath('downloads'), filename)
-    });
-    if (result.canceled || !result.filePath) return { ok: false, reason: 'canceled' };
-    return { ok: true, path: result.filePath };
-  });
-  ipcMain.handle('download-resume', (event, id) => {
-    if (!isMainSender(event)) return { ok: false };
-    const rec = downloads.find(d => String(d.id) === String(id));
-    if (!rec) return { ok: false, reason: 'not-found' };
-    if (rec.status === 'completed' && rec.savePath) shell.showItemInFolder(rec.savePath);
-    return { ok: true };
-  });
-  ipcMain.handle('download-cancel', (event, id) => {
-    if (!isMainSender(event)) return { ok: false };
-    const rec = downloads.find(d => String(d.id) === String(id));
-    if (!rec) return { ok: false, reason: 'not-found' };
-    if (rec.item && typeof rec.item.cancel === 'function') {
-      try { rec.item.cancel(); } catch {}
-    }
-    rec.status = 'canceled';
-    sendShelf();
-    return { ok: true };
-  });
-  ipcMain.handle('download-show', (event, id) => {
-    if (!isMainSender(event)) return { ok: false };
-    const rec = downloads.find(d => String(d.id) === String(id));
-    if (!rec || !rec.savePath) return { ok: false, reason: 'not-found' };
-    shell.showItemInFolder(rec.savePath);
-    return { ok: true };
-  });
-  ipcMain.handle('download-open', async (event, id) => {
-    if (!isMainSender(event)) return { ok: false };
-    const rec = downloads.find(d => String(d.id) === String(id));
-    if (!rec || rec.status !== 'completed' || !rec.savePath) return { ok: false, reason: 'not-ready' };
-    const dangerous = /\.(exe|msi|bat|cmd|com|scr|ps1|reg|jar|app|dmg|deb|rpm|apk)$/i.test(rec.filename || '');
-    if (dangerous) {
-      const choice = await dialog.showMessageBox(mainWindow, {
-        type: 'warning', buttons: ['打开', '取消'], defaultId: 1, cancelId: 1,
-        title: '打开可执行文件',
-        message: `文件 ${rec.filename} 是可执行文件，仍要打开吗？`
-      });
-      if (choice.response !== 0) return { ok: false, reason: 'user-cancel' };
-    }
-    const err = await shell.openPath(rec.savePath);
-    return err ? { ok: false, reason: err } : { ok: true };
-  });
-  ipcMain.handle('download-shelf-list', event => {
-    if (!isMainSender(event)) return [];
-    return shelfSnapshot();
-  });
-  ipcMain.handle('list-download-hashes', (event, limit) => {
-    if (!isMainSender(event)) return { success: false };
-    return { success: true, records: listDownloadHashes(limit) };
-  });
-  ipcMain.handle('remove-download-hash', (event, id) => {
-    if (!isMainSender(event)) return { success: false };
-    const removed = removeDownloadHashRecord(id);
-    return { success: true, removed };
-  });
-  ipcMain.handle('clear-download-hashes', event => {
-    if (!isMainSender(event)) return { success: false };
-    clearDownloadHashes();
-    return { success: true };
-  });
-  ipcMain.handle('verify-download-hash', (event, id, expected) => {
-    if (!isMainSender(event)) return { ok: false, reason: 'untrusted' };
-    return verifyDownloadHashById(id, expected);
-  });
-  ipcMain.handle('hash-local-file', event => {
-    if (!isMainSender(event)) return { ok: false, reason: 'untrusted' };
-    return hashLocalFileViaDialog();
-  });
-  ipcMain.handle('list-permission-decisions', event => {
-    if (!isMainSender(event)) return { success: false };
-    return { success: true, decisions: listPermissionDecisions() };
-  });
-  ipcMain.handle('forget-permission', (event, origin, permission) => {
-    if (!isMainSender(event)) return { success: false };
-    const ok = forgetPermission(String(origin || ''), String(permission || ''));
-    return { success: true, forgotten: ok };
-  });
-  ipcMain.handle('clear-permissions-for-origin', (event, origin) => {
-    if (!isMainSender(event)) return { success: false };
-    const n = clearPermissionDecisionsForOrigin(String(origin || ''));
-    return { success: true, removed: n };
-  });
-  ipcMain.handle('list-security-events', (event, type, limit) => {
-    if (!isMainSender(event)) return { success: false };
-    return { success: true, events: listSecurityEvents(type, limit) };
-  });
-  ipcMain.handle('clear-security-events', event => {
-    if (!isMainSender(event)) return { success: false };
-    clearSecurityEvents();
-    return { success: true };
-  });
-  ipcMain.handle('list-csp-reports', (event, limit) => {
-    if (!isMainSender(event)) return { success: false };
-    return { success: true, reports: listCspReports(limit) };
-  });
-  ipcMain.handle('clear-csp-reports', event => {
-    if (!isMainSender(event)) return { success: false };
-    clearCspReports();
-    return { success: true };
-  });
-}
-function beginTrackedDownload(event, item, webContents, downloadUrl) {
-  const downloadId = `dl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const downloadInfo = {
-    id: downloadId,
-    filename: item.getFilename(),
-    url: downloadUrl,
-    totalBytes: item.getTotalBytes(),
-    receivedBytes: 0,
-    progress: 0,
-    speed: '0 B/s',
-    status: 'progressing',
-    startTime: Date.now(), savePath: null, item,
-    lastUpdate: Date.now(), lastReceivedBytes: 0, isItemValid: true,
-        expectedHash: null
-      };
-      downloads.push(downloadInfo);
-  currentDownloadInfo = downloadInfo;
-  sendShelf();
-  item.on('updated', (e, state) => {
-    if (state === 'interrupted') downloadInfo.status = 'paused';
-    if (state === 'progressing') {
-      downloadInfo.status = item.isPaused() ? 'paused' : 'progressing';
-      downloadInfo.receivedBytes = item.getReceivedBytes();
-      downloadInfo.totalBytes = item.getTotalBytes();
-      downloadInfo.progress = downloadInfo.totalBytes > 0 ? (downloadInfo.receivedBytes / downloadInfo.totalBytes) : 0;
-      const now = Date.now();
-      const dt = (now - downloadInfo.lastUpdate) / 1000;
-      if (dt >= 0.5) {
-        const diff = downloadInfo.receivedBytes - downloadInfo.lastReceivedBytes;
-        downloadInfo.speed = `${formatBytes(diff / dt)}/s`;
-        downloadInfo.lastUpdate = now;
-        downloadInfo.lastReceivedBytes = downloadInfo.receivedBytes;
-      }
-      sendShelf();
-    }
-  });
-  item.once('done', (e, state) => {
-    downloadInfo.receivedBytes = item.getReceivedBytes();
-    downloadInfo.totalBytes = item.getTotalBytes();
-    downloadInfo.savePath = item.getSavePath();
-    if (state === 'completed') {
-      downloadInfo.status = 'completed';
-      downloadInfo.progress = 1;
-      downloadInfo.speed = '';
-      sendShelf();
-      if (downloadInfo.savePath) queueDownloadHashing(downloadInfo);
-    } else if (state === 'interrupted') {
-      downloadInfo.status = 'interrupted';
-      sendShelf();
-    } else {
-      downloadInfo.status = 'canceled';
-      sendShelf();
-    }
-  });
-}
-app.whenReady().then(() => {
-  loadHistory();
-  loadBookmarks();
-  applySpellcheckSettings();
-  protocol.registerSchemesAsPrivileged([
-    { scheme: 'cosy', privileges: { standard: true, secure: true, supportFetchAPI: true } }
-  ]);
-  protocol.handle('cosy', request => {
-    const url = new URL(request.url);
-    const map = {
-      '/newtab': path.join(__dirname, 'src/newtab.html'),
-      '/history': path.join(__dirname, 'src/history.html'),
-      '/bookmarks': path.join(__dirname, 'src/bookmarks.html'),
-      '/settings': path.join(__dirname, 'src/settings.html'),
-      '/permissions': path.join(__dirname, 'src/permissions.html'),
-      '/security': path.join(__dirname, 'src/security.html')
-    };
-    const file = map[url.pathname];
-    if (file) return new Response(fsSync.createReadStream(file)) ;
-    return new Response('Not found', { status: 404 });
-  });
-  ipcMain.handle('csp-violation', (event, payload) => {
-    if (!isMainSender(event)) return { accepted: false, reason: 'untrusted' };
-    return recordCspViolationFromRenderer(event.senderFrame, payload);
-  });
-  createWindow();
-});
-app.on('window-all-closed', () => {
-  globalShortcut.unregisterAll();
-  if (process.platform !== 'darwin') app.quit();
-});
-app.on('will-quit', () => { globalShortcut.unregisterAll(); });
-app.on('web-contents-created', (event, contents) => {
-  contents.on('will-attach-webview', (e, webPreferences, params) => {
-    e.preventDefault();
-  });
-});
-ipcMain.handle('get-current-tab-info', event => {
-  if (!isMainSender(event)) return null;
-  const tab = tabs[currentTabIndex];
-  return tab ? { id: tab.id, url: tab.url, title: tab.title, canGoBack: tab.canGoBack, canGoForward: tab.canGoForward } : null;
-});
-ipcMain.handle('find-in-page', (event, text, options = {}) => {
-  if (!isMainSender(event)) return { success: false };
-  const wc = getCurrentTabWebContents();
-  if (!wc || !text) return { success: false, matches: 0 };
-  const result = wc.findInPage(text, { forward: options.forward !== false, findNext: !!options.findNext });
-  return { success: true, matches: result.result, activeMatch: result.activeMatchOrdinal };
-});
-ipcMain.handle('stop-find-in-page', event => {
-  if (!isMainSender(event)) return { success: false };
-  const wc = getCurrentTabWebContents();
-  if (wc) wc.stopFindInPage('clearSelection');
-  return { success: true };
-});
-function fetchSearchSuggestions(query) {
-  return new Promise(resolve => {
-    try {
-      const url = `https://suggestionquay.com/suggestions?query=${encodeURIComponent(query)}`;
-      const request = net.request(url);
-      let body = '';
-      const timer = setTimeout(() => { try { request.abort(); } catch {} resolve([]); }, 4000);
-      request.on('response', response => {
-        if (response.statusCode !== 200) { clearTimeout(timer); resolve([]); return; }
-        response.on('data', chunk => { body += chunk.toString('utf8'); });
-        response.on('end', () => {
-          clearTimeout(timer);
-          try {
-            const data = JSON.parse(body);
-            const suggestions = Array.isArray(data.suggestions) ? data.suggestions.slice(0, 10).filter(s => typeof s === 'string') : [];
-            resolve(suggestions);
-          } catch { resolve([]); }
-        });
-      });
-      request.on('error', () => { clearTimeout(timer); resolve([]); });
-      request.end();
-    } catch { resolve([]); }
-  });
-}
-ipcMain.handle('get-search-suggestions', async (event, query) => {
-  if (!isMainSender(event)) return { success: false, suggestions: [] };
-  const q = String(query || '').trim();
-  if (!q) return { success: true, suggestions: [] };
-  const suggestions = await fetchSearchSuggestions(q);
-  return { success: true, suggestions };
-});
+__P2P3__
