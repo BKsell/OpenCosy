@@ -61,6 +61,17 @@
         body.dark-mode .spellcheck-langs label { color: #ccc; }
         .spellcheck-langs input[type="checkbox"] { margin: 0; cursor: pointer; }
         .spellcheck-langs label.spellcheck-unavailable { display: none; }
+        .protocol-decisions { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+        .protocol-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px; border: 1px solid rgba(0,0,0,0.1); border-radius: 8px; font-size: 13px; }
+        body.dark-mode .protocol-row { border-color: rgba(255,255,255,0.15); }
+        .protocol-row .protocol-site { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+        .protocol-row .protocol-origin { font-weight: 600; word-break: break-all; }
+        .protocol-row .protocol-meta { font-size: 12px; opacity: 0.7; }
+        .protocol-row .protocol-badge { padding: 1px 8px; border-radius: 10px; font-size: 12px; }
+        .protocol-badge.allow { background: rgba(76,175,80,0.15); color: #2e7d32; }
+        .protocol-badge.deny { background: rgba(244,67,54,0.15); color: #c62828; }
+        .protocol-row .protocol-clear { border: 1px solid currentColor; background: transparent; border-radius: 6px; padding: 3px 12px; font-size: 12px; cursor: pointer; opacity: 0.8; }
+        .protocol-row .protocol-clear:hover { opacity: 1; }
         @media (max-width: 600px) {
             .settings-container { padding: 20px 10px; }
             .settings-section { padding: 20px; }
@@ -230,6 +241,21 @@
                         <label><input type="checkbox" class="spellcheck-lang" value="ru-RU"> 俄语</label>
                         <label><input type="checkbox" class="spellcheck-lang" value="pt-BR"> 葡萄牙语（巴西）</label>
                         <label><input type="checkbox" class="spellcheck-lang" value="it-IT"> 意大利语</label>
+                    </div>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">外部应用唤起授权</label>
+                    <p class="setting-description">网页请求唤起 mailto: / tel: 等本机协议、且你勾选了“记住选择”时，会按网站记录在这里。其它协议（ms-*、smb、file 等）始终直接拦截，不会产生任何授权</p>
+                    <div id="protocolDecisions" class="protocol-decisions">
+                        <p class="setting-description protocol-empty">暂无已记住的选择</p>
                     </div>
                 </div>
             </div>
@@ -477,11 +503,62 @@
                 syncSpellcheckUi();
             }).catch(function() { /* preload 不可用时静默，保留默认勾选 */ });
             syncSpellcheckUi();
+            // 加载已记住的外部协议授权（mailto/tel 按站点决定）。
+            loadProtocolDecisions();
         });
 
         function syncSpellcheckUi() {
             const enabled = document.getElementById('spellcheckEnabled').checked;
             document.getElementById('spellcheckLangs').classList.toggle('spellcheck-off', !enabled);
+        }
+
+        // 外部协议授权列表：从主进程读“站点 -> mailto/tel 决定”，支持逐条撤销。
+        function escapeHtmlText(s) {
+            return String(s).replace(/[&<>"']/g, function(ch) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+            });
+        }
+
+        function formatDecisionTime(ts) {
+            const n = Number(ts);
+            if (!n) return '';
+            try { return new Date(n).toLocaleString(); } catch { return ''; }
+        }
+
+        function renderProtocolDecisions(items) {
+            const box = document.getElementById('protocolDecisions');
+            if (!box) return;
+            if (!Array.isArray(items) || items.length === 0) {
+                box.innerHTML = '<p class="setting-description protocol-empty">暂无已记住的选择</p>';
+                return;
+            }
+            box.innerHTML = items.map(function(it) {
+                const allowed = it.decision === 'allow';
+                return '<div class="protocol-row">'
+                    + '<span class="protocol-site">'
+                    +   '<span class="protocol-origin">' + escapeHtmlText(it.origin) + '</span>'
+                    +   '<span class="protocol-meta">' + escapeHtmlText(it.scheme) + (it.updatedAt ? ' · ' + escapeHtmlText(formatDecisionTime(it.updatedAt)) : '') + '</span>'
+                    + '</span>'
+                    + '<span style="display:flex;align-items:center;gap:10px;">'
+                    +   '<span class="protocol-badge ' + (allowed ? 'allow' : 'deny') + '">' + (allowed ? '允许' : '拒绝') + '</span>'
+                    +   '<button type="button" class="protocol-clear" data-origin="' + encodeURIComponent(it.origin) + '" data-scheme="' + encodeURIComponent(it.scheme) + '">撤销</button>'
+                    + '</span>'
+                    + '</div>';
+            }).join('');
+            box.querySelectorAll('.protocol-clear').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    const origin = decodeURIComponent(btn.getAttribute('data-origin'));
+                    const scheme = decodeURIComponent(btn.getAttribute('data-scheme'));
+                    window.electronAPI.invoke('clear-protocol-decision', { origin: origin, scheme: scheme }).then(loadProtocolDecisions);
+                });
+            });
+        }
+
+        function loadProtocolDecisions() {
+            if (!window.electronAPI || !window.electronAPI.invoke) return;
+            window.electronAPI.invoke('get-protocol-decisions').then(function(res) {
+                if (res && res.ok) renderProtocolDecisions(res.items || []);
+            }).catch(function() { /* 通道不可用时保留空态 */ });
         }
 
         function detectEngineVersion() {
