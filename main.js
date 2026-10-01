@@ -748,6 +748,128 @@ async function confirmAndOpenExternal(url) {
   }
 }
 
+// ===== 按站点记忆的敏感权限决定（permission-decisions.json）=====
+// 与 Chromium 自带的内容设置平行：用户在询问条上勾"始终允许/拒绝"后，按
+// origin+permission 持久化，下次同站点再请求时不再打扰。决定文件与缩放记忆
+// 一样放 userData，原子 rename 落盘，损坏静默丢弃，绝不拖垮启动。
+const REMEMBERED_PAGE_PERMISSIONS = new Set([
+  'media', 'geolocation', 'notifications', 'midi', 'midiSysex', 'clipboard-read',
+]);
+const permissionStorePath = path.join(app.getPath('userData'), 'permission-decisions.json');
+const MAX_PERMISSION_DECISIONS = 1000;
+// key 为 `${origin} ${permission}` -> { decision: 'allow'|'deny', updatedAt }
+const permissionDecisions = new Map();
+let permissionDecisionsLoaded = false;
+let permissionSaveTimer = null;
+
+function permissionStoreKey(origin, permission) {
+  return origin + ' ' + permission;
+}
+
+// 只记忆真实网页 origin：cosy:// 内部页、file://、data: 等不允许进入决定表，
+// 避免内部页名或本地文件路径被当成站点长期授权。
+function isRememberableOrigin(origin) {
+  if (typeof origin !== 'string' || origin.length === 0 || origin.length > 300) return false;
+  try {
+    const u = new URL(origin);
+    return (u.protocol === 'https:' || u.protocol === 'http:') && !!u.hostname;
+  } catch {
+    return false;
+  }
+}
+
+function loadPermissionDecisions() {
+  if (permissionDecisionsLoaded) return;
+  permissionDecisionsLoaded = true;
+  try {
+    const data = JSON.parse(fsSync.readFileSync(permissionStorePath, 'utf8'));
+    const entries = data && typeof data === 'object' ? data.decisions : null;
+    if (!entries || typeof entries !== 'object') return;
+    for (const [k, v] of Object.entries(entries)) {
+      if (typeof k !== 'string' || !v || typeof v !== 'object') continue;
+      const sp = k.indexOf(' ');
+      if (sp <= 0) continue;
+      const origin = k.slice(0, sp);
+      const permission = k.slice(sp + 1);
+      if (!isRememberableOrigin(origin)) continue;
+      if (!REMEMBERED_PAGE_PERMISSIONS.has(permission)) continue;
+      if (v.decision !== 'allow' && v.decision !== 'deny') continue;
+      if (permissionDecisions.size >= MAX_PERMISSION_DECISIONS) break;
+      permissionDecisions.set(k, { decision: v.decision, updatedAt: Number(v.updatedAt) || Date.now() });
+    }
+  } catch {}
+}
+
+function persistPermissionDecisions() {
+  if (permissionSaveTimer) clearTimeout(permissionSaveTimer);
+  permissionSaveTimer = setTimeout(() => {
+    try {
+      const decisions = {};
+      for (const [k, v] of permissionDecisions) decisions[k] = v;
+      const tmp = permissionStorePath + '.tmp';
+      fsSync.writeFileSync(tmp, JSON.stringify({ version: 1, decisions }), 'utf8');
+      fsSync.renameSync(tmp, permissionStorePath);
+    } catch {}
+  }, 300);
+}
+
+function getRememberedPermission(origin, permission) {
+  loadPermissionDecisions();
+  if (!isRememberableOrigin(origin) || !REMEMBERED_PAGE_PERMISSIONS.has(permission)) return null;
+  const v = permissionDecisions.get(permissionStoreKey(origin, permission));
+  return v ? v.decision : null;
+}
+
+function rememberPermission(origin, permission, decision) {
+  loadPermissionDecisions();
+  if (!isRememberableOrigin(origin)) return false;
+  if (!REMEMBERED_PAGE_PERMISSIONS.has(permission)) return false;
+  if (decision !== 'allow' && decision !== 'deny') return false;
+  const key = permissionStoreKey(origin, permission);
+  if (!permissionDecisions.has(key) && permissionDecisions.size >= MAX_PERMISSION_DECISIONS) return false;
+  permissionDecisions.set(key, { decision, updatedAt: Date.now() });
+  persistPermissionDecisions();
+  return true;
+}
+
+function forgetPermission(origin, permission) {
+  loadPermissionDecisions();
+  const deleted = permissionDecisions.delete(permissionStoreKey(origin, permission));
+  if (deleted) persistPermissionDecisions();
+  return deleted;
+}
+
+function listPermissionDecisions() {
+  loadPermissionDecisions();
+  const out = [];
+  for (const [k, v] of permissionDecisions) {
+    const sp = k.indexOf(' ');
+    out.push({
+      origin: k.slice(0, sp),
+      permission: k.slice(sp + 1),
+      decision: v.decision,
+      updatedAt: v.updatedAt,
+    });
+  }
+  out.sort((a, b) => a.origin.localeCompare(b.origin) || a.permission.localeCompare(b.permission));
+  return out;
+}
+
+function clearPermissionDecisionsForOrigin(origin) {
+  loadPermissionDecisions();
+  if (!isRememberableOrigin(origin)) return 0;
+  let n = 0;
+  const prefix = origin + ' ';
+  for (const k of Array.from(permissionDecisions.keys())) {
+    if (k.startsWith(prefix)) {
+      permissionDecisions.delete(k);
+      n++;
+    }
+  }
+  if (n) persistPermissionDecisions();
+  return n;
+}
+
 function setupPermissionHandlers() {
   // 敏感权限不能再静默放行：旧实现里 media/geolocation/notifications/midi 全部
   // callback(true)，任意网站都能不经询问打开摄像头、麦克风、定位、通知。
@@ -785,9 +907,17 @@ function setupPermissionHandlers() {
     }
 
     if (SENSITIVE_PAGE_PERMISSIONS.has(permission)) {
-      const requestId = String(++permissionSeq);
       let origin = '';
       try { origin = new URL(webContents.getURL()).origin; } catch { origin = ''; }
+
+      // 用户对该站点记忆过"始终允许/拒绝"：直接兑现决定，不再弹询问条。
+      const remembered = getRememberedPermission(origin, permission);
+      if (remembered === 'allow' || remembered === 'deny') {
+        callback(remembered === 'allow');
+        return;
+      }
+
+      const requestId = String(++permissionSeq);
       let settled = false;
       let timer = null;
       const cleanup = () => {
@@ -804,7 +934,7 @@ function setupPermissionHandlers() {
       const onDestroyed = () => finish(false);
       webContents.once('destroyed', onDestroyed);
       timer = setTimeout(() => finish(false), permissionDecisionTimeoutMs);
-      pendingPermissionRequests.set(requestId, finish);
+      pendingPermissionRequests.set(requestId, { finish, origin, permission });
 
       sendToRenderer('permission-request', {
         requestId,
@@ -821,19 +951,47 @@ function setupPermissionHandlers() {
   });
   session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
     if (permission === 'openExternal') return false;
-    // 敏感权限的“当前是否已授予”检查不自动承认，交给 Chromium 记录的决策。
-    if (SENSITIVE_PAGE_PERMISSIONS.has(permission)) return false;
+    // 敏感权限：记忆为"允许"才承认；记忆为"拒绝"或未记忆一律返回 false，
+    // 让站点真正调用时走 request handler（弹询问条或直接兑现拒绝）。
+    if (SENSITIVE_PAGE_PERMISSIONS.has(permission)) {
+      let origin = '';
+      try { origin = new URL(webContents.getURL()).origin; } catch { origin = ''; }
+      return getRememberedPermission(origin, permission) === 'allow';
+    }
     return ALLOWED_PERMISSIONS.has(permission);
   });
 
   // 渲染层询问条回传决策；找不到对应请求时忽略。
+  // payload.remember=true 表示用户勾了"始终…"，按 origin+permission 持久化。
   ipcMain.handle('permission-response', (event, payload = {}) => {
     if (!isMainSender(event)) return { success: false };
-    const { requestId, granted } = payload || {};
-    const finish = pendingPermissionRequests.get(String(requestId));
-    if (typeof finish !== 'function') return { success: false, reason: 'unknown request' };
-    finish(!!granted);
-    return { success: true };
+    const { requestId, granted, remember } = payload || {};
+    const entry = pendingPermissionRequests.get(String(requestId));
+    if (!entry || typeof entry.finish !== 'function') return { success: false, reason: 'unknown request' };
+    if (remember) rememberPermission(entry.origin, entry.permission, granted ? 'allow' : 'deny');
+    entry.finish(!!granted);
+    return { success: true, remembered: !!remember };
+  });
+
+  // ===== 站点权限管理页（cosy://permissions）专用 IPC，全部仅主框架可调 =====
+  ipcMain.handle('list-permission-decisions', (event) => {
+    if (!isMainSender(event)) return [];
+    return listPermissionDecisions();
+  });
+  ipcMain.handle('reset-permission-decision', (event, payload = {}) => {
+    if (!isMainSender(event)) return { success: false };
+    const origin = String(payload.origin || '');
+    const permission = String(payload.permission || '');
+    if (!isRememberableOrigin(origin) || !REMEMBERED_PAGE_PERMISSIONS.has(permission)) {
+      return { success: false, reason: 'invalid target' };
+    }
+    return { success: forgetPermission(origin, permission) };
+  });
+  ipcMain.handle('clear-permission-decisions', (event, payload = {}) => {
+    if (!isMainSender(event)) return { success: false };
+    const origin = String(payload.origin || '');
+    if (!isRememberableOrigin(origin)) return { success: false, reason: 'invalid origin' };
+    return { success: true, removed: clearPermissionDecisionsForOrigin(origin) };
   });
 }
 
@@ -1647,6 +1805,7 @@ function loadTabContent(tab) {
         'setting': 'src/settings.html', 'newtab': 'src/newtab.html',
         'extensions': 'src/extensions.html', 'version': 'src/version.html',
         'sitedata': 'src/sitedata.html',
+        'permissions': 'src/permissions.html',
         'download': 'src/download', 'downloadlist': 'src/downloadlist.html'
       };
       const filePath = pageMap[hostname];
@@ -1954,6 +2113,7 @@ app.whenReady().then(async () => {
         'extensions': path.join(__dirname, 'src', 'extensions.html'),
         'version': path.join(__dirname, 'src', 'version.html'),
         'sitedata': path.join(__dirname, 'src', 'sitedata.html'),
+        'permissions': path.join(__dirname, 'src', 'permissions.html'),
         'download': path.join(__dirname, 'src', 'download', 'index.html'),
         'downloadlist': path.join(__dirname, 'src', 'downloadlist.html')
       };
