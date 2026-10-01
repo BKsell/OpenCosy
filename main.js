@@ -1646,6 +1646,7 @@ function loadTabContent(tab) {
       const pageMap = {
         'setting': 'src/settings.html', 'newtab': 'src/newtab.html',
         'extensions': 'src/extensions.html', 'version': 'src/version.html',
+        'sitedata': 'src/sitedata.html',
         'download': 'src/download', 'downloadlist': 'src/downloadlist.html'
       };
       const filePath = pageMap[hostname];
@@ -1952,6 +1953,7 @@ app.whenReady().then(async () => {
         'newtab': path.join(__dirname, 'src', 'newtab.html'),
         'extensions': path.join(__dirname, 'src', 'extensions.html'),
         'version': path.join(__dirname, 'src', 'version.html'),
+        'sitedata': path.join(__dirname, 'src', 'sitedata.html'),
         'download': path.join(__dirname, 'src', 'download', 'index.html'),
         'downloadlist': path.join(__dirname, 'src', 'downloadlist.html')
       };
@@ -2909,6 +2911,166 @@ ipcMain.handle('clear-site-data', async (event, payload = {}) => {
     await session.defaultSession.clearStorageData({ origin, storages: SITE_DATA_STORAGES });
     await session.defaultSession.clearCache();
     return { success: true, origin };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+// ===== 站点数据 / Cookie 管理（cosy://sitedata）=====
+// Cookie 属于较敏感的隐私数据，所有通道仅对内置页（isMainSender）开放，
+// 返回字段做白名单裁剪，不把 expirationDate 之外的内部结构泄露给页面。
+const SITE_DATA_MAX_ROWS = 500;
+const SITE_DATA_MAX_NAMES = 10;
+const SITE_DATA_SEARCH_MAX = 200;
+
+function normalizeCookieDomain(domain) {
+  if (typeof domain !== 'string' || !domain) return '';
+  return domain.startsWith('.') ? domain.slice(1) : domain;
+}
+
+function cookieOriginSchemes(cookie) {
+  // secure cookie 只能在 https 下删除；非 secure 的在两种 scheme 都试一次。
+  return cookie.secure ? ['https'] : ['https', 'http'];
+}
+
+async function removeCookieEntry(cookie) {
+  const host = normalizeCookieDomain(cookie.domain);
+  const urlPath = cookie.path && cookie.path.startsWith('/') ? cookie.path : '/';
+  let lastError = null;
+  for (const scheme of cookieOriginSchemes(cookie)) {
+    try {
+      await session.defaultSession.cookies.remove(`${scheme}://${host}${urlPath}`, cookie.name);
+      return;
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  throw lastError || new Error('删除 Cookie 失败');
+}
+
+function pickCookieFields(c) {
+  return {
+    name: c.name,
+    value: c.value,
+    domain: c.domain,
+    path: c.path,
+    secure: !!c.secure,
+    httpOnly: !!c.httpOnly,
+    session: !!c.session,
+    hostOnly: !!c.hostOnly,
+    sameSite: c.sameSite || 'unspecified',
+    expirationDate: typeof c.expirationDate === 'number' ? c.expirationDate : null,
+  };
+}
+
+// 汇总每个域名下的 Cookie 数量与名称样本，供管理页列表使用。
+ipcMain.handle('list-site-data', async (event, payload = {}) => {
+  if (!isMainSender(event)) return { success: false, error: 'Unauthorized' };
+  const query = typeof payload.query === 'string'
+    ? payload.query.trim().toLowerCase().slice(0, SITE_DATA_SEARCH_MAX) : '';
+  try {
+    const cookies = await session.defaultSession.cookies.get({});
+    const groups = new Map();
+    for (const c of cookies) {
+      const domain = normalizeCookieDomain(c.domain);
+      if (!domain) continue;
+      if (query && !domain.toLowerCase().includes(query)) continue;
+      let row = groups.get(domain);
+      if (!row) {
+        row = { domain, count: 0, secureCount: 0, httpOnlyCount: 0, sessionCount: 0, names: [] };
+        groups.set(domain, row);
+      }
+      row.count++;
+      if (c.secure) row.secureCount++;
+      if (c.httpOnly) row.httpOnlyCount++;
+      if (c.session) row.sessionCount++;
+      if (row.names.length < SITE_DATA_MAX_NAMES && !row.names.includes(c.name)) {
+        row.names.push(c.name);
+      }
+    }
+    const rows = Array.from(groups.values())
+      .sort((a, b) => b.count - a.count || a.domain.localeCompare(b.domain))
+      .slice(0, SITE_DATA_MAX_ROWS);
+    return { success: true, rows, totalCookies: cookies.length, truncated: groups.size > rows.length };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+// 查看某个域名（含其子域）下的全部 Cookie。
+ipcMain.handle('get-site-cookies', async (event, payload = {}) => {
+  if (!isMainSender(event)) return { success: false, error: 'Unauthorized' };
+  const domain = normalizeCookieDomain(payload.domain);
+  if (!domain) return { success: false, error: 'Invalid domain' };
+  try {
+    const all = await session.defaultSession.cookies.get({});
+    const matched = all.filter(c => {
+      const d = normalizeCookieDomain(c.domain);
+      return d === domain || d.endsWith('.' + domain);
+    }).map(pickCookieFields);
+    return { success: true, domain, cookies: matched };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+// 删除单条 Cookie（按 name + domain + path 精确定位）。
+ipcMain.handle('delete-site-cookie', async (event, payload = {}) => {
+  if (!isMainSender(event)) return { success: false, error: 'Unauthorized' };
+  const name = payload.name;
+  const domain = normalizeCookieDomain(payload.domain);
+  if (typeof name !== 'string' || !name || !domain) {
+    return { success: false, error: 'Invalid cookie' };
+  }
+  try {
+    const all = await session.defaultSession.cookies.get({});
+    const target = all.find(c => c.name === name &&
+      normalizeCookieDomain(c.domain) === domain &&
+      (!payload.path || c.path === payload.path));
+    if (!target) return { success: false, error: 'Cookie 不存在或已过期' };
+    await removeCookieEntry(target);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+// 删除某个域名及其全部子域下的 Cookie。
+ipcMain.handle('delete-site-cookies', async (event, payload = {}) => {
+  if (!isMainSender(event)) return { success: false, error: 'Unauthorized' };
+  const domain = normalizeCookieDomain(payload.domain);
+  if (!domain) return { success: false, error: 'Invalid domain' };
+  try {
+    const all = await session.defaultSession.cookies.get({});
+    const targets = all.filter(c => {
+      const d = normalizeCookieDomain(c.domain);
+      return d === domain || d.endsWith('.' + domain);
+    });
+    let removed = 0;
+    for (const c of targets) {
+      try { await removeCookieEntry(c); removed++; } catch { /* 过期/httponly 删除失败的跳过 */ }
+    }
+    return { success: true, removed };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+// 清空某域名的本地存储（Cookie/LocalStorage/IndexedDB/ServiceWorker 等）。
+ipcMain.handle('clear-site-storage', async (event, payload = {}) => {
+  if (!isMainSender(event)) return { success: false, error: 'Unauthorized' };
+  const domain = normalizeCookieDomain(payload.domain);
+  if (!domain || !/^[a-z0-9.-]+$/i.test(domain)) {
+    return { success: false, error: 'Invalid domain' };
+  }
+  try {
+    for (const scheme of ['https', 'http']) {
+      await session.defaultSession.clearStorageData({
+        origin: `${scheme}://${domain}`,
+        storages: SITE_DATA_STORAGES,
+      });
+    }
+    return { success: true, domain };
   } catch (e) {
     return { success: false, error: e.message };
   }
