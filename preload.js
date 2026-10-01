@@ -104,6 +104,7 @@ const allowedOnChannels = new Set([
   'focus-address-bar',
   'show-history',
   'show-find-bar',
+  'found-in-page-result',
   'show-clear-data-dialog',
   'toggle-bookmarks-bar',
   'network-status-changed',
