@@ -119,6 +119,7 @@ const allowedOnChannels = new Set([
   'renderer-responsive',
   'gpu-process-gone',
   'trackers-blocked',
+  'spoof-warning',
 ]);
 
 // sanitizeArg 过滤掉 renderer 传入的可疑对象：只保留 JSON 可序列化的纯数据，
