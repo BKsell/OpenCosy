@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const os = require('os');
+const bookmarkIO = require('./bookmarkio');
 
 // 现代浏览器默认要求“用户与页面有过交互”才允许带声音自动播放，
 // 否则广告页一打开就能外放声音。必须在 app ready 之前设置。
@@ -1348,6 +1349,10 @@ function registerShortcuts() {
     } else if (ctrl && key === 'f') {
       mainWindow.webContents.send('show-find-bar');
       event.preventDefault();
+    } else if (input.key === 'F3' || (ctrl && key === 'g')) {
+      // F3 / Ctrl+G：继续查找下一个（Shift 反向），对齐 Chrome/Edge 惯例。
+      applyFind(!shift);
+      event.preventDefault();
     } else if (ctrl && key === 'j') {
       createNewTab('cosy://downloadlist');
       event.preventDefault();
@@ -1636,11 +1641,14 @@ ipcMain.handle('discard-background-tabs', (event) => {
   return { success: true, count: discardAllBackgroundTabs() };
 });
 
-ipcMain.handle('get-memory-saver', () => ({
+ipcMain.handle('get-memory-saver', (event) => {
+  if (!isMainSender(event)) return { enabled: false, idleMs: MEMORY_SAVER_IDLE_MS, discarded: [] };
+  return {
   enabled: !!memorySaverEnabled,
   idleMs: MEMORY_SAVER_IDLE_MS,
   discarded: tabs.filter(t => t.discarded).map(t => ({ id: t.id, url: t.url })),
-}));
+  };
+});
 
 function loadTabContent(tab) {
   if (!tab.view) {
@@ -1852,6 +1860,7 @@ function updateBrowserViewBounds() {
 
 function switchToTab(tabIndex) {
   if (tabIndex >= 0 && tabIndex < tabs.length) {
+    const prevContents = getCurrentTabWebContents();
     currentTabIndex = tabIndex;
     const tab = tabs[tabIndex];
     tab.lastActiveAt = Date.now();
@@ -1865,6 +1874,14 @@ function switchToTab(tabIndex) {
     }
     sendToRenderer('tab-switched', { id: tab.id, index: tabIndex });
     pushNavState(tab);
+
+    // 换标签时清掉旧标签上残留的查找高亮；若查找栏仍开着且有内容，
+    // 在新标签上从头自动重查，保持“查找跟随当前标签”的浏览器惯例。
+    const nextContents = getCurrentTabWebContents();
+    if (prevContents && prevContents !== nextContents) {
+      try { prevContents.stopFindInPage('clearSelection'); } catch (_) { /* 视图已销毁 */ }
+    }
+    if (findState.text && nextContents) applyFind(true);
   }
 }
 
@@ -2401,6 +2418,9 @@ ipcMain.on('navigate-to-url', (event, url) => {
 });
 
 ipcMain.on('get-download-info', (event) => {
+  // 只允许主界面查询当前下载信息，防止任何被攻陷的 webContents
+  // 通过该通道读取本地保存路径等环境信息。
+  if (!isMainSender(event)) return;
   if (currentDownloadInfo) {
     event.reply('download-info', {
       url: currentDownloadInfo.url,
@@ -2471,6 +2491,7 @@ ipcMain.on('show-save-dialog', (event, data) => {
 });
 
 ipcMain.on('get-downloads', (event) => {
+  if (!isMainSender(event)) return;
   const serializableDownloads = downloads.map(d => ({
     id: d.id, url: d.url, filename: d.filename, totalBytes: d.totalBytes,
     receivedBytes: d.receivedBytes, progress: d.progress, speed: d.speed,
@@ -2614,14 +2635,41 @@ ipcMain.on('close-current-tab', (event) => {
   if (tabs.length > 0) closeTab(currentTabIndex);
 });
 
-ipcMain.on('find-in-page', (event, { text, forward }) => {
-  if (!isMainSender(event)) return;
+// 页内查找当前状态。查找栏输入会实时更新这里，供 F3 / Ctrl+G 继续查找、
+// 以及切换标签后在新标签上自动重查使用。
+let findState = { text: '', matchCase: false, wholeWord: false };
+
+// applyFind 在当前活动标签上按 findState 执行一次查找。
+function applyFind(forward = true) {
   const wc = getCurrentTabWebContents();
-  if (wc && text) wc.findInPage(text, { forward, matchCase: false });
+  if (!wc || !findState.text) return;
+  wc.findInPage(findState.text, {
+    forward,
+    matchCase: !!findState.matchCase,
+    wholeWord: !!findState.wholeWord,
+  });
+}
+
+ipcMain.on('find-in-page', (event, payload) => {
+  if (!isMainSender(event)) return;
+  const { text, forward, matchCase, wholeWord } = payload || {};
+  if (typeof text !== 'string') return;
+  // 选项变化（区分大小写 / 整词）时重新开始查找，而不是沿用上一次的匹配位置。
+  const optionsChanged = findState.matchCase !== !!matchCase || findState.wholeWord !== !!wholeWord;
+  findState = { text, matchCase: !!matchCase, wholeWord: !!wholeWord };
+  const wc = getCurrentTabWebContents();
+  if (!wc || !text) return;
+  wc.findInPage(text, {
+    forward: forward !== false,
+    matchCase: !!matchCase,
+    wholeWord: !!wholeWord,
+    ...(optionsChanged ? { findNext: false } : {}),
+  });
 });
 
 ipcMain.on('stop-find', (event) => {
   if (!isMainSender(event)) return;
+  findState.text = '';
   const wc = getCurrentTabWebContents();
   if (wc) wc.stopFindInPage('clearSelection');
 });
@@ -2950,6 +2998,68 @@ ipcMain.on('export-config', async (event, content) => {
 ipcMain.handle('get-bookmarks', (event) => {
   if (!isMainSender(event)) return { success: false, bookmarks: [] };
   return { success: true, bookmarks };
+});
+
+// 导出书签：format=json 导 OpenCosy 自有 JSON，html 导 Netscape 格式
+// （可直接被 Chrome / Edge / Firefox 导入）。
+ipcMain.handle('export-bookmarks', async (event, format) => {
+  if (!isMainSender(event)) return { success: false, error: '无权操作' };
+  try {
+    const useHTML = format === 'html';
+    const stamp = new Date().toISOString().slice(0, 10);
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: '导出书签',
+      defaultPath: useHTML ? `opencosy-bookmarks-${stamp}.html` : `opencosy-bookmarks-${stamp}.json`,
+      filters: useHTML
+        ? [{ name: 'Netscape 书签 HTML', extensions: ['html'] }, { name: '所有文件', extensions: ['*'] }]
+        : [{ name: 'JSON 书签文件', extensions: ['json'] }, { name: '所有文件', extensions: ['*'] }],
+    });
+    if (result.canceled || !result.filePath) return { success: false, canceled: true };
+    const content = useHTML ? bookmarkIO.buildExportHTML(bookmarks) : bookmarkIO.buildExportJSON(bookmarks);
+    fsSync.writeFileSync(result.filePath, content, 'utf-8');
+    return { success: true, count: bookmarks.length, format: useHTML ? 'html' : 'json' };
+  } catch (e) {
+    console.error('导出书签失败:', e);
+    return { success: false, error: e.message };
+  }
+});
+
+// 导入书签：弹原生选择框，按内容自动识别 JSON / Netscape HTML，
+// 严格校验后合并去重落盘。整个解析发生在主进程，渲染层只拿到统计结果。
+ipcMain.handle('import-bookmarks', async (event) => {
+  if (!isMainSender(event)) return { success: false, error: '无权操作' };
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '导入书签',
+      properties: ['openFile'],
+      filters: [
+        { name: '书签文件', extensions: ['html', 'htm', 'json'] },
+        { name: '所有文件', extensions: ['*'] },
+      ],
+    });
+    if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+      return { success: false, canceled: true };
+    }
+    const filePath = result.filePaths[0];
+    const stat = fsSync.statSync(filePath);
+    if (stat.size > bookmarkIO.MAX_IMPORT_FILE_BYTES) {
+      return { success: false, error: '书签文件过大（上限 8MiB）' };
+    }
+    const buffer = fsSync.readFileSync(filePath);
+    const { format: detectedFormat, bookmarks: incoming } = bookmarkIO.parseBookmarkFile(buffer);
+    const before = bookmarks.length;
+    const { merged, added } = bookmarkIO.mergeBookmarks(bookmarks, incoming);
+    if (added === 0) {
+      return { success: true, added: 0, total: before, format: detectedFormat, duplicated: incoming.length };
+    }
+    bookmarks = merged;
+    saveBookmarks();
+    sendToRenderer('bookmarks-updated', bookmarks);
+    return { success: true, added, total: bookmarks.length, format: detectedFormat };
+  } catch (e) {
+    console.error('导入书签失败:', e);
+    return { success: false, error: e.message };
+  }
 });
 
 ipcMain.handle('get-history', (event) => {
