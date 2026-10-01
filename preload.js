@@ -80,6 +80,7 @@ const allowedInvokeChannels = new Set([
   'clear-security-events',
   'list-csp-reports',
   'clear-csp-reports',
+  'remove-csp-report',
   'list-download-hashes',
   'verify-download-hash',
   'remove-download-hash',
