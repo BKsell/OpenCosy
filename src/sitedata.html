@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>站点数据与 Cookie 管理 - OpenCosy</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #f3f3f3; color: #1f1f1f; min-height: 100vh;
+    transition: background 0.3s, color 0.3s;
+  }
+  body.dark-mode { background: #1a1a1a; color: #e0e0e0; }
+  .container { max-width: 980px; margin: 0 auto; padding: 32px 24px 60px; }
+  header { margin-bottom: 24px; }
+  h1 { font-size: 26px; font-weight: 600; color: #0078d4; margin-bottom: 6px; }
+  body.dark-mode h1 { color: #4da3ff; }
+  .subtitle { color: #666; font-size: 13px; line-height: 1.6; }
+  body.dark-mode .subtitle { color: #999; }
+
+  .toolbar {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    background: #fff; border-radius: 10px; padding: 14px 16px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08); margin-bottom: 16px;
+  }
+  body.dark-mode .toolbar { background: #2d2d2d; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+  .search-box {
+    flex: 1; min-width: 220px; padding: 9px 12px; border: 1px solid #d0d0d0;
+    border-radius: 6px; font-size: 14px; outline: none; background: #fafafa; color: inherit;
+  }
+  .search-box:focus { border-color: #0078d4; }
+  body.dark-mode .search-box { background: #3d3d3d; border-color: #555; }
+  button {
+    border: none; border-radius: 6px; padding: 8px 14px; font-size: 13px;
+    cursor: pointer; transition: background 0.15s, opacity 0.15s; font-family: inherit;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary { background: #0078d4; color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: #106ebe; }
+  .btn-ghost { background: transparent; color: #0078d4; border: 1px solid #0078d4; }
+  .btn-ghost:hover:not(:disabled) { background: rgba(0,120,212,0.08); }
+  body.dark-mode .btn-ghost { color: #4da3ff; border-color: #4da3ff; }
+  .btn-danger-ghost { background: transparent; color: #c42b1c; border: 1px solid #c42b1c; }
+  .btn-danger-ghost:hover:not(:disabled) { background: rgba(196,43,28,0.08); }
+  body.dark-mode .btn-danger-ghost { color: #ff6a5c; border-color: #ff6a5c; }
+  .btn-mini { padding: 4px 10px; font-size: 12px; }
+
+  .stats { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  .stat-card {
+    flex: 1; min-width: 150px; background: #fff; border-radius: 10px; padding: 14px 18px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+  }
+  body.dark-mode .stat-card { background: #2d2d2d; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+  .stat-num { font-size: 22px; font-weight: 600; color: #0078d4; }
+  body.dark-mode .stat-num { color: #4da3ff; }
+  .stat-label { font-size: 12px; color: #777; margin-top: 2px; }
+  body.dark-mode .stat-label { color: #999; }
+
+  .site-list { display: flex; flex-direction: column; gap: 10px; }
+  .site-row {
+    background: #fff; border-radius: 10px; padding: 14px 18px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    display: flex; align-items: center; gap: 14px;
+  }
+  body.dark-mode .site-row { background: #2d2d2d; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+  .site-main { flex: 1; min-width: 0; }
+  .site-domain { font-size: 15px; font-weight: 600; word-break: break-all; }
+  .site-meta { font-size: 12px; color: #777; margin-top: 3px; display: flex; gap: 8px; flex-wrap: wrap; }
+  body.dark-mode .site-meta { color: #999; }
+  .site-names {
+    font-size: 12px; color: #888; margin-top: 5px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  body.dark-mode .site-names { color: #8a8a8a; }
+  .badge {
+    display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px;
+    background: #eef4fb; color: #0078d4;
+  }
+  body.dark-mode .badge { background: #1f3a57; color: #79b8ff; }
+  .badge.warn { background: #fdf3e7; color: #b56a00; }
+  body.dark-mode .badge.warn { background: #4a3413; color: #e0a458; }
+  .site-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+  .count-pill {
+    min-width: 30px; text-align: center; background: #0078d4; color: #fff;
+    border-radius: 10px; padding: 2px 9px; font-size: 12px; font-weight: 600;
+  }
+
+  .empty {
+    text-align: center; padding: 70px 20px; color: #888; background: #fff;
+    border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+  }
+  body.dark-mode .empty { background: #2d2d2d; color: #999; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+  .empty .big { font-size: 40px; margin-bottom: 10px; }
+
+  .modal-mask {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+    align-items: center; justify-content: center; z-index: 100; padding: 20px;
+  }
+  .modal-mask.show { display: flex; }
+  .modal {
+    background: #fff; border-radius: 12px; width: 100%; max-width: 640px;
+    max-height: 82vh; display: flex; flex-direction: column; overflow: hidden;
+  }
+  body.dark-mode .modal { background: #2d2d2d; }
+  .modal-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 20px; border-bottom: 1px solid #eee;
+  }
+  body.dark-mode .modal-head { border-bottom-color: #444; }
+  .modal-title { font-size: 16px; font-weight: 600; word-break: break-all; }
+  .modal-close { background: none; font-size: 20px; color: #888; padding: 2px 8px; }
+  .modal-body { padding: 14px 20px; overflow-y: auto; }
+  .modal-foot { padding: 14px 20px; border-top: 1px solid #eee; display: flex; gap: 10px; justify-content: flex-end; }
+  body.dark-mode .modal-foot { border-top-color: #444; }
+
+  .cookie-item {
+    border: 1px solid #e8e8e8; border-radius: 8px; margin-bottom: 10px; overflow: hidden;
+  }
+  body.dark-mode .cookie-item { border-color: #444; }
+  .cookie-head {
+    display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+    background: #f8f8f8; cursor: pointer;
+  }
+  body.dark-mode .cookie-head { background: #363636; }
+  .cookie-name { font-weight: 600; font-size: 13px; flex: 1; word-break: break-all; }
+  .cookie-detail { display: none; padding: 12px 14px; font-size: 12px; }
+  .cookie-item.open .cookie-detail { display: block; }
+  .kv { display: flex; margin-bottom: 6px; gap: 10px; }
+  .kv .k { width: 86px; color: #888; flex-shrink: 0; }
+  body.dark-mode .kv .k { color: #999; }
+  .kv .v { word-break: break-all; user-select: text; }
+  .cookie-flags { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  #toast {
+    position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: #323232; color: #fff; padding: 10px 20px; border-radius: 8px;
+    font-size: 13px; opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; z-index: 200;
+    max-width: 80vw;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.error { background: #c42b1c; }
+  .back-link { display: inline-block; margin-bottom: 14px; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <a class="back-link btn-ghost" style="text-decoration:none;display:inline-block;" href="cosy://setting">&larr; 返回设置</a>
+  <header>
+    <h1>站点数据与 Cookie 管理</h1>
+    <p class="subtitle">
+      查看与清理各网站保存在本机的 Cookie。删除 Cookie 可能导致对应网站退出登录；
+      “清空站点数据”还会同时移除该站点的本地存储、IndexedDB、Service Worker 与缓存。
+    </p>
+  </header>
+
+  <div class="stats">
+    <div class="stat-card"><div class="stat-num" id="statDomains">-</div><div class="stat-label">站点（域名）数</div></div>
+    <div class="stat-card"><div class="stat-num" id="statCookies">-</div><div class="stat-label">Cookie 总数</div></div>
+    <div class="stat-card"><div class="stat-num" id="statShown">-</div><div class="stat-label">当前筛选结果</div></div>
+  </div>
+
+  <div class="toolbar">
+    <input class="search-box" id="searchInput" type="search" placeholder="按域名搜索，例如 example.com" autocomplete="off">
+    <button class="btn-primary" id="refreshBtn">刷新</button>
+  </div>
+
+  <div class="site-list" id="siteList"></div>
+  <div class="empty" id="emptyState" style="display:none;">
+    <div class="big">&#127872;</div>
+    <div id="emptyText">没有找到任何站点 Cookie</div>
+  </div>
+</div>
+
+<div class="modal-mask" id="cookieModal">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title" id="cookieModalTitle">Cookie 详情</div>
+      <button class="modal-close" id="cookieModalClose">&times;</button>
+    </div>
+    <div class="modal-body" id="cookieModalBody"></div>
+    <div class="modal-foot">
+      <button class="btn-danger-ghost" id="deleteAllCookiesBtn">删除该域名全部 Cookie</button>
+      <button class="btn-ghost" id="cookieModalDone">完成</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-mask" id="confirmModal">
+  <div class="modal" style="max-width:440px;">
+    <div class="modal-head"><div class="modal-title" id="confirmTitle">确认操作</div></div>
+    <div class="modal-body" id="confirmText" style="font-size:13px;line-height:1.7;"></div>
+    <div class="modal-foot">
+      <button class="btn-ghost" id="confirmCancel">取消</button>
+      <button class="btn-danger-ghost" id="confirmOk">确认删除</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+const api = window.electronAPI;
+const state = { rows: [], totalCookies: 0, currentDomain: null };
+
+const $ = id => document.getElementById(id);
+
+function applyDarkMode() {
+  let settings = {};
+  try { settings = JSON.parse(localStorage.getItem('cosySettings') || '{}'); } catch { settings = {}; }
+  if (settings.darkMode === true || settings.darkMode === 'true') {
+    document.body.classList.add('dark-mode');
+  }
+}
+
+function toast(message, isError = false) {
+  const el = $('toast');
+  el.textContent = message;
+  el.classList.toggle('error', isError);
+  el.classList.add('show');
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+function showConfirm(title, text) {
+  return new Promise(resolve => {
+    $('confirmTitle').textContent = title;
+    $('confirmText').textContent = text;
+    const modal = $('confirmModal');
+    modal.classList.add('show');
+    const done = ok => {
+      modal.classList.remove('show');
+      $('confirmOk').onclick = null;
+      $('confirmCancel').onclick = null;
+      resolve(ok);
+    };
+    $('confirmOk').onclick = () => done(true);
+    $('confirmCancel').onclick = () => done(false);
+  });
+}
+
+function escapeHtmlHint(s) { return s; } // 所有动态内容一律走 textContent，不拼 HTML
+
+function render() {
+  const query = $('searchInput').value.trim().toLowerCase();
+  const list = $('siteList');
+  list.textContent = '';
+  const filtered = state.rows.filter(r => !query || r.domain.toLowerCase().includes(query));
+  $('statDomains').textContent = state.rows.length;
+  $('statCookies').textContent = state.totalCookies;
+  $('statShown').textContent = filtered.length;
+  $('emptyState').style.display = filtered.length ? 'none' : 'block';
+  $('emptyText').textContent = query
+    ? `没有域名匹配 “${$('searchInput').value.trim()}”`
+    : '没有找到任何站点 Cookie';
+
+  for (const row of filtered) {
+    const el = document.createElement('div');
+    el.className = 'site-row';
+
+    const main = document.createElement('div');
+    main.className = 'site-main';
+
+    const domainLine = document.createElement('div');
+    domainLine.style.display = 'flex';
+    domainLine.style.alignItems = 'center';
+    domainLine.style.gap = '10px';
+    const domain = document.createElement('span');
+    domain.className = 'site-domain';
+    domain.textContent = row.domain;
+    const pill = document.createElement('span');
+    pill.className = 'count-pill';
+    pill.textContent = String(row.count);
+    domainLine.append(domain, pill);
+
+    const meta = document.createElement('div');
+    meta.className = 'site-meta';
+    if (row.secureCount) {
+      const b = document.createElement('span'); b.className = 'badge'; b.textContent = `Secure ${row.secureCount}`; meta.appendChild(b);
+    }
+    if (row.httpOnlyCount) {
+      const b = document.createElement('span'); b.className = 'badge'; b.textContent = `HttpOnly ${row.httpOnlyCount}`; meta.appendChild(b);
+    }
+    if (row.sessionCount) {
+      const b = document.createElement('span'); b.className = 'badge warn'; b.textContent = `会话 ${row.sessionCount}`; meta.appendChild(b);
+    }
+
+    const names = document.createElement('div');
+    names.className = 'site-names';
+    names.textContent = row.names.length ? row.names.join(', ') + (row.count > row.names.length ? ' …' : '') : '';
+
+    main.append(domainLine, meta, names);
+
+    const actions = document.createElement('div');
+    actions.className = 'site-actions';
+    const viewBtn = document.createElement('button');
+    viewBtn.className = 'btn-ghost btn-mini';
+    viewBtn.textContent = '查看 Cookie';
+    viewBtn.onclick = () => openCookieModal(row.domain);
+    const delCookieBtn = document.createElement('button');
+    delCookieBtn.className = 'btn-danger-ghost btn-mini';
+    delCookieBtn.textContent = '删除 Cookie';
+    delCookieBtn.onclick = async () => {
+      const ok = await showConfirm(
+        '删除站点 Cookie',
+        `确定删除 ${row.domain} 及其子域下的全部 ${row.count} 个 Cookie 吗？该站点可能会退出登录。`
+      );
+      if (!ok) return;
+      const r = await api.invoke('delete-site-cookies', { domain: row.domain });
+      if (r && r.success) { toast(`已删除 ${r.removed} 个 Cookie`); loadData(); }
+      else toast((r && r.error) || '删除失败', true);
+    };
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'btn-danger-ghost btn-mini';
+    clearBtn.textContent = '清空站点数据';
+    clearBtn.onclick = async () => {
+      const ok = await showConfirm(
+        '清空站点数据',
+        `将清除 ${row.domain} 的 Cookie、本地存储、IndexedDB、Service Worker 与缓存，且不可恢复。继续？`
+      );
+      if (!ok) return;
+      const r1 = await api.invoke('delete-site-cookies', { domain: row.domain });
+      const r2 = await api.invoke('clear-site-storage', { domain: row.domain });
+      if (r2 && r2.success) { toast('站点数据已清空'); loadData(); }
+      else toast((r2 && r2.error) || '清空失败', true);
+    };
+    actions.append(viewBtn, delCookieBtn, clearBtn);
+
+    el.append(main, actions);
+    list.appendChild(el);
+  }
+}
+
+async function loadData() {
+  $('refreshBtn').disabled = true;
+  try {
+    const r = await api.invoke('list-site-data', { query: '' });
+    if (!r || !r.success) { toast((r && r.error) || '加载失败', true); return; }
+    state.rows = r.rows || [];
+    state.totalCookies = r.totalCookies || 0;
+    render();
+  } finally {
+    $('refreshBtn').disabled = false;
+  }
+}
+
+function flagBadge(text, warn) {
+  const b = document.createElement('span');
+  b.className = 'badge' + (warn ? ' warn' : '');
+  b.textContent = text;
+  return b;
+}
+
+function kv(key, valueNode) {
+  const row = document.createElement('div');
+  row.className = 'kv';
+  const k = document.createElement('div'); k.className = 'k'; k.textContent = key;
+  const v = document.createElement('div'); v.className = 'v';
+  if (typeof valueNode === 'string') v.textContent = valueNode;
+  else v.appendChild(valueNode);
+  row.append(k, v);
+  return row;
+}
+
+async function openCookieModal(domain) {
+  state.currentDomain = domain;
+  $('cookieModalTitle').textContent = domain + ' 的 Cookie';
+  const body = $('cookieModalBody');
+  body.textContent = '加载中…';
+  $('cookieModal').classList.add('show');
+  const r = await api.invoke('get-site-cookies', { domain });
+  if (!r || !r.success) { body.textContent = (r && r.error) || '加载失败'; return; }
+  body.textContent = '';
+  if (!r.cookies.length) {
+    body.textContent = '该域名下暂无 Cookie（可能已被清除或仅为会话内存存储）。';
+    return;
+  }
+  for (const c of r.cookies) {
+    const item = document.createElement('div');
+    item.className = 'cookie-item';
+
+    const head = document.createElement('div');
+    head.className = 'cookie-head';
+    const name = document.createElement('div');
+    name.className = 'cookie-name';
+    name.textContent = c.name;
+    const delOne = document.createElement('button');
+    delOne.className = 'btn-danger-ghost btn-mini';
+    delOne.textContent = '删除';
+    delOne.onclick = async (e) => {
+      e.stopPropagation();
+      const ok = await showConfirm('删除 Cookie', `确定删除 Cookie “${c.name}” 吗？`);
+      if (!ok) return;
+      const res = await api.invoke('delete-site-cookie', { name: c.name, domain: c.domain, path: c.path });
+      if (res && res.success) { toast('已删除'); openCookieModal(state.currentDomain); loadData(); }
+      else toast((res && res.error) || '删除失败', true);
+    };
+    head.append(name, delOne);
+    head.onclick = () => item.classList.toggle('open');
+
+    const detail = document.createElement('div');
+    detail.className = 'cookie-detail';
+    detail.appendChild(kv('域名', c.domain));
+    detail.appendChild(kv('路径', c.path || '/'));
+    detail.appendChild(kv('值', c.value || '(空)'));
+    if (c.expirationDate) {
+      detail.appendChild(kv('过期时间', new Date(c.expirationDate * 1000).toLocaleString()));
+    } else {
+      detail.appendChild(kv('过期时间', '会话结束时'));
+    }
+    const flags = document.createElement('div');
+    flags.className = 'cookie-flags';
+    if (c.secure) flags.appendChild(flagBadge('Secure'));
+    if (c.httpOnly) flags.appendChild(flagBadge('HttpOnly'));
+    if (c.hostOnly) flags.appendChild(flagBadge('HostOnly'));
+    flags.appendChild(flagBadge('SameSite=' + c.sameSite));
+    detail.appendChild(kv('标记', flags));
+
+    item.append(head, detail);
+    body.appendChild(item);
+  }
+}
+
+$('refreshBtn').onclick = loadData;
+$('searchInput').addEventListener('input', render);
+$('cookieModalClose').onclick = () => $('cookieModal').classList.remove('show');
+$('cookieModalDone').onclick = () => $('cookieModal').classList.remove('show');
+$('deleteAllCookiesBtn').onclick = async () => {
+  if (!state.currentDomain) return;
+  const domain = state.currentDomain;
+  const ok = await showConfirm('删除站点 Cookie', `确定删除 ${domain} 及其子域下的全部 Cookie 吗？`);
+  if (!ok) return;
+  const r = await api.invoke('delete-site-cookies', { domain });
+  if (r && r.success) {
+    toast(`已删除 ${r.removed} 个 Cookie`);
+    $('cookieModal').classList.remove('show');
+    loadData();
+  } else toast((r && r.error) || '删除失败', true);
+};
+$('cookieModal').addEventListener('click', e => {
+  if (e.target === $('cookieModal')) $('cookieModal').classList.remove('show');
+});
+$('confirmModal').addEventListener('click', e => {
+  if (e.target === $('confirmModal')) $('confirmModal').classList.remove('show');
+});
+
+applyDarkMode();
+loadData();
+</script>
+</body>
+</html>
