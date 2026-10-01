@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>站点权限管理 - OpenCosy</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #f3f3f3; color: #1f1f1f; min-height: 100vh;
+    transition: background 0.3s, color 0.3s;
+  }
+  body.dark-mode { background: #1a1a1a; color: #e0e0e0; }
+  .container { max-width: 980px; margin: 0 auto; padding: 32px 24px 60px; }
+  header { margin-bottom: 24px; }
+  h1 { font-size: 26px; font-weight: 600; color: #0078d4; margin-bottom: 6px; }
+  body.dark-mode h1 { color: #4da3ff; }
+  .subtitle { color: #666; font-size: 13px; line-height: 1.6; }
+  body.dark-mode .subtitle { color: #999; }
+
+  .toolbar {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    background: #fff; border-radius: 10px; padding: 14px 16px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08); margin-bottom: 16px;
+  }
+  body.dark-mode .toolbar { background: #2d2d2d; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+  .search-box {
+    flex: 1; min-width: 220px; padding: 9px 12px; border: 1px solid #d0d0d0;
+    border-radius: 6px; font-size: 14px; outline: none; background: #fafafa; color: inherit;
+  }
+  .search-box:focus { border-color: #0078d4; }
+  body.dark-mode .search-box { background: #3d3d3d; border-color: #555; }
+  select {
+    padding: 9px 10px; border: 1px solid #d0d0d0; border-radius: 6px; font-size: 13px;
+    background: #fafafa; color: inherit; outline: none; font-family: inherit;
+  }
+  body.dark-mode select { background: #3d3d3d; border-color: #555; }
+  button {
+    border: none; border-radius: 6px; padding: 8px 14px; font-size: 13px;
+    cursor: pointer; transition: background 0.15s, opacity 0.15s; font-family: inherit;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary { background: #0078d4; color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: #106ebe; }
+  .btn-ghost { background: transparent; color: #0078d4; border: 1px solid #0078d4; }
+  .btn-ghost:hover:not(:disabled) { background: rgba(0,120,212,0.08); }
+  body.dark-mode .btn-ghost { color: #4da3ff; border-color: #4da3ff; }
+  .btn-danger-ghost { background: transparent; color: #c42b1c; border: 1px solid #c42b1c; }
+  .btn-danger-ghost:hover:not(:disabled) { background: rgba(196,43,28,0.08); }
+  body.dark-mode .btn-danger-ghost { color: #ff6a5c; border-color: #ff6a5c; }
+  .btn-mini { padding: 4px 10px; font-size: 12px; }
+
+  .stats { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  .stat-card {
+    flex: 1; min-width: 150px; background: #fff; border-radius: 10px; padding: 14px 18px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+  }
+  body.dark-mode .stat-card { background: #2d2d2d; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+  .stat-num { font-size: 22px; font-weight: 600; color: #0078d4; }
+  body.dark-mode .stat-num { color: #4da3ff; }
+  .stat-num.deny { color: #c42b1c; }
+  body.dark-mode .stat-num.deny { color: #ff6a5c; }
+  .stat-label { font-size: 12px; color: #777; margin-top: 2px; }
+  body.dark-mode .stat-label { color: #999; }
+
+  .site-list { display: flex; flex-direction: column; gap: 10px; }
+  .site-row {
+    background: #fff; border-radius: 10px; padding: 14px 18px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+  }
+  body.dark-mode .site-row { background: #2d2d2d; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+  .site-head { display: flex; align-items: center; gap: 12px; }
+  .site-domain { font-size: 15px; font-weight: 600; word-break: break-all; flex: 1; min-width: 0; }
+  .perm-grid { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+  .perm-item {
+    display: flex; align-items: center; gap: 10px;
+    border: 1px solid #e8e8e8; border-radius: 8px; padding: 9px 12px;
+  }
+  body.dark-mode .perm-item { border-color: #444; }
+  .perm-name { flex: 1; min-width: 0; font-size: 13px; }
+  .perm-desc { font-size: 11px; color: #999; margin-top: 2px; }
+  body.dark-mode .perm-desc { color: #8a8a8a; }
+  .perm-time { font-size: 11px; color: #999; margin-right: 4px; }
+  body.dark-mode .perm-time { color: #8a8a8a; }
+
+  .badge {
+    display: inline-block; padding: 2px 9px; border-radius: 10px; font-size: 11px; font-weight: 600;
+  }
+  .badge.allow { background: #e7f4e8; color: #1e7e34; }
+  body.dark-mode .badge.allow { background: #14361c; color: #5cc97a; }
+  .badge.deny { background: #fdeaea; color: #c42b1c; }
+  body.dark-mode .badge.deny { background: #431d1a; color: #ff6a5c; }
+
+  .empty {
+    text-align: center; padding: 70px 20px; color: #888; background: #fff;
+    border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+  }
+  body.dark-mode .empty { background: #2d2d2d; color: #999; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+  .empty .big { font-size: 40px; margin-bottom: 10px; }
+
+  .modal-mask {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+    align-items: center; justify-content: center; z-index: 100; padding: 20px;
+  }
+  .modal-mask.show { display: flex; }
+  .modal {
+    background: #fff; border-radius: 12px; width: 100%; max-width: 440px; overflow: hidden;
+  }
+  body.dark-mode .modal { background: #2d2d2d; }
+  .modal-head { padding: 16px 20px; border-bottom: 1px solid #eee; font-size: 16px; font-weight: 600; }
+  body.dark-mode .modal-head { border-bottom-color: #444; }
+  .modal-body { padding: 14px 20px; font-size: 13px; line-height: 1.7; }
+  .modal-foot { padding: 14px 20px; border-top: 1px solid #eee; display: flex; gap: 10px; justify-content: flex-end; }
+  body.dark-mode .modal-foot { border-top-color: #444; }
+
+  #toast {
+    position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: #323232; color: #fff; padding: 10px 20px; border-radius: 8px;
+    font-size: 13px; opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; z-index: 200;
+    max-width: 80vw;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.error { background: #c42b1c; }
+  .back-link { display: inline-block; margin-bottom: 14px; font-size: 13px; text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="container">
+  <a class="back-link btn-ghost" style="display:inline-block;" href="cosy://setting">&larr; 返回设置</a>
+  <header>
+    <h1>站点权限管理</h1>
+    <p class="subtitle">
+      这里列出你在权限询问条上选择“始终允许 / 始终拒绝”的网站。撤销后，该网站下次调用
+      摄像头、麦克风、定位、通知等能力时会重新询问。仅本次允许/拒绝的决定不会被记住。
+    </p>
+  </header>
+
+  <div class="stats">
+    <div class="stat-card"><div class="stat-num" id="statSites">-</div><div class="stat-label">站点数</div></div>
+    <div class="stat-card"><div class="stat-num" id="statAllow">-</div><div class="stat-label">始终允许</div></div>
+    <div class="stat-card"><div class="stat-num deny" id="statDeny">-</div><div class="stat-label">始终拒绝</div></div>
+  </div>
+
+  <div class="toolbar">
+    <input class="search-box" id="searchInput" type="search" placeholder="按站点搜索，例如 example.com" autocomplete="off">
+    <select id="filterSelect">
+      <option value="all">全部决定</option>
+      <option value="allow">仅始终允许</option>
+      <option value="deny">仅始终拒绝</option>
+    </select>
+    <button class="btn-primary" id="refreshBtn">刷新</button>
+  </div>
+
+  <div class="site-list" id="siteList"></div>
+  <div class="empty" id="emptyState" style="display:none;">
+    <div class="big">&#128274;</div>
+    <div id="emptyText">还没有记住任何站点权限决定</div>
+  </div>
+</div>
+
+<div class="modal-mask" id="confirmModal">
+  <div class="modal">
+    <div class="modal-head" id="confirmTitle">确认操作</div>
+    <div class="modal-body" id="confirmText"></div>
+    <div class="modal-foot">
+      <button class="btn-ghost" id="confirmCancel">取消</button>
+      <button class="btn-danger-ghost" id="confirmOk">确认</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+const api = window.electronAPI;
+const state = { rows: [] };
+
+const PERMISSION_LABELS = {
+  'media': { name: '摄像头与麦克风', desc: '网站可采集音视频' },
+  'geolocation': { name: '位置信息', desc: '网站可获取你的地理位置' },
+  'notifications': { name: '通知', desc: '网站可推送桌面通知' },
+  'midi': { name: 'MIDI 设备', desc: '网站可访问数字乐器' },
+  'midiSysex': { name: 'MIDI 独占（SysEx）', desc: '网站可对 MIDI 设备发送系统专用消息' },
+  'clipboard-read': { name: '读取剪贴板', desc: '网站可读取剪贴板中的文字/图片' },
+};
+
+const $ = id => document.getElementById(id);
+
+function applyDarkMode() {
+  let settings = {};
+  try { settings = JSON.parse(localStorage.getItem('cosySettings') || '{}'); } catch { settings = {}; }
+  if (settings.darkMode === true || settings.darkMode === 'true') {
+    document.body.classList.add('dark-mode');
+  }
+}
+
+function toast(message, isError = false) {
+  const el = $('toast');
+  el.textContent = message;
+  el.classList.toggle('error', isError);
+  el.classList.add('show');
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+function showConfirm(title, text) {
+  return new Promise(resolve => {
+    $('confirmTitle').textContent = title;
+    $('confirmText').textContent = text;
+    const modal = $('confirmModal');
+    modal.classList.add('show');
+    const done = ok => {
+      modal.classList.remove('show');
+      $('confirmOk').onclick = null;
+      $('confirmCancel').onclick = null;
+      resolve(ok);
+    };
+    $('confirmOk').onclick = () => done(true);
+    $('confirmCancel').onclick = () => done(false);
+  });
+}
+
+function formatTime(ts) {
+  const n = Number(ts);
+  if (!n) return '';
+  try { return new Date(n).toLocaleString(); } catch { return ''; }
+}
+
+function groupByOrigin(rows) {
+  const map = new Map();
+  for (const r of rows) {
+    if (!map.has(r.origin)) map.set(r.origin, []);
+    map.get(r.origin).push(r);
+  }
+  return map;
+}
+
+function render() {
+  const query = $('searchInput').value.trim().toLowerCase();
+  const filter = $('filterSelect').value;
+  const list = $('siteList');
+  list.textContent = '';
+
+  let rows = state.rows;
+  if (filter === 'allow') rows = rows.filter(r => r.decision === 'allow');
+  if (filter === 'deny') rows = rows.filter(r => r.decision === 'deny');
+
+  const grouped = groupByOrigin(rows);
+  const origins = Array.from(grouped.keys())
+    .filter(o => !query || o.toLowerCase().includes(query))
+    .sort();
+
+  let allowCount = 0, denyCount = 0;
+  for (const r of state.rows) {
+    if (r.decision === 'allow') allowCount++; else denyCount++;
+  }
+  $('statSites').textContent = grouped.size;
+  $('statAllow').textContent = allowCount;
+  $('statDeny').textContent = denyCount;
+
+  $('emptyState').style.display = origins.length ? 'none' : 'block';
+  $('emptyText').textContent = query ? '没有站点匹配当前搜索' : '还没有记住任何站点权限决定';
+
+  for (const origin of origins) {
+    const items = grouped.get(origin);
+    const row = document.createElement('div');
+    row.className = 'site-row';
+
+    const head = document.createElement('div');
+    head.className = 'site-head';
+    const domain = document.createElement('div');
+    domain.className = 'site-domain';
+    domain.textContent = origin;
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'btn-danger-ghost btn-mini';
+    clearBtn.textContent = '重置该站点全部';
+    clearBtn.onclick = async () => {
+      const ok = await showConfirm(
+        '重置站点权限',
+        `将撤销你对 ${origin} 记住的全部 ${items.length} 项权限决定，之后该网站会重新询问。继续？`
+      );
+      if (!ok) return;
+      const r = await api.invoke('clear-permission-decisions', { origin });
+      if (r && r.success) { toast(`已重置 ${r.removed} 项决定`); loadData(); }
+      else toast('重置失败', true);
+    };
+    head.append(domain, clearBtn);
+
+    const grid = document.createElement('div');
+    grid.className = 'perm-grid';
+    for (const it of items) {
+      const meta = PERMISSION_LABELS[it.permission] || { name: it.permission, desc: '' };
+      const cell = document.createElement('div');
+      cell.className = 'perm-item';
+
+      const nameWrap = document.createElement('div');
+      nameWrap.className = 'perm-name';
+      const pn = document.createElement('div');
+      pn.textContent = meta.name;
+      nameWrap.appendChild(pn);
+      if (meta.desc) {
+        const pd = document.createElement('div');
+        pd.className = 'perm-desc';
+        pd.textContent = meta.desc;
+        nameWrap.appendChild(pd);
+      }
+
+      const time = document.createElement('span');
+      time.className = 'perm-time';
+      time.textContent = formatTime(it.updatedAt);
+
+      const badge = document.createElement('span');
+      badge.className = 'badge ' + (it.decision === 'allow' ? 'allow' : 'deny');
+      badge.textContent = it.decision === 'allow' ? '始终允许' : '始终拒绝';
+
+      const resetBtn = document.createElement('button');
+      resetBtn.className = 'btn-ghost btn-mini';
+      resetBtn.textContent = '撤销';
+      resetBtn.onclick = async () => {
+        const ok = await showConfirm(
+          '撤销权限决定',
+          `撤销后，${origin} 下次请求「${meta.name}」时会重新询问。继续？`
+        );
+        if (!ok) return;
+        const r = await api.invoke('reset-permission-decision', { origin: it.origin, permission: it.permission });
+        if (r && r.success) { toast('已撤销'); loadData(); }
+        else toast('撤销失败', true);
+      };
+
+      cell.append(nameWrap, time, badge, resetBtn);
+      grid.appendChild(cell);
+    }
+
+    row.append(head, grid);
+    list.appendChild(row);
+  }
+}
+
+async function loadData() {
+  $('refreshBtn').disabled = true;
+  try {
+    const rows = await api.invoke('list-permission-decisions');
+    state.rows = Array.isArray(rows) ? rows : [];
+    render();
+  } catch (e) {
+    toast('加载失败：' + (e && e.message ? e.message : e), true);
+  } finally {
+    $('refreshBtn').disabled = false;
+  }
+}
+
+$('refreshBtn').onclick = loadData;
+$('searchInput').addEventListener('input', render);
+$('filterSelect').addEventListener('change', render);
+$('confirmModal').addEventListener('click', e => {
+  if (e.target === $('confirmModal')) $('confirmModal').classList.remove('show');
+});
+
+applyDarkMode();
+loadData();
+</script>
+</body>
+</html>
