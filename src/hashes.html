@@ -165,6 +165,7 @@
       <div id="localName"></div>
       <div id="localSize" class="badge size" style="margin-top:6px;"></div>
       <div class="digest" id="localDigest"></div>
+      <button class="btn-ghost" id="copyLocalBtn" style="margin-top:8px;">复制校验和</button>
     </div>
   </div>
 
@@ -176,6 +177,7 @@
 
   <div class="toolbar">
     <input class="search-box" id="searchInput" type="search" placeholder="按文件名或来源主机搜索" autocomplete="off">
+    <button class="btn-ghost" id="copyAllBtn">复制全部校验和</button>
     <button class="btn-primary" id="refreshBtn">刷新</button>
     <button class="btn-danger-ghost" id="clearBtn">清空记录</button>
   </div>
@@ -285,6 +287,31 @@ async function removeRow(rowId) {
   if (r && r.success) { toast('已删除该条记录'); loadData(); }
 }
 
+// copyText 优先走异步剪贴板 API；在未获 clipboard-write 权限的环境下退回
+// 隐藏 textarea + execCommand，保证校验和总能一键复制。
+async function copyText(text, label) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      toast('已复制' + (label ? '：' + label : ''));
+      return true;
+    }
+  } catch {}
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    if (ok) { toast('已复制' + (label ? '：' + label : '')); return true; }
+  } catch {}
+  toast('复制失败，请手动选择文本复制', true);
+  return false;
+}
+
 function render() {
   const query = $('searchInput').value.trim().toLowerCase();
   const list = $('hashList');
@@ -358,10 +385,14 @@ function render() {
     const del = document.createElement('button');
     del.className = 'btn-danger-ghost';
     del.textContent = '删除';
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'btn-ghost';
+    copyBtn.textContent = '复制 SHA';
     btn.onclick = () => verifyRow(r.id, input, result);
     input.addEventListener('keydown', e => { if (e.key === 'Enter') verifyRow(r.id, input, result); });
     del.onclick = () => removeRow(r.id);
-    verifyBox.append(input, btn, result, del);
+    copyBtn.onclick = () => copyText(r.sha256, r.filename);
+    verifyBox.append(input, btn, result, copyBtn, del);
 
     row.append(head, digest, verifyBox);
     list.appendChild(row);
@@ -392,6 +423,7 @@ $('pickLocalBtn').onclick = async () => {
       $('localName').textContent = r.filename;
       $('localSize').textContent = formatSize(r.size);
       $('localDigest').textContent = 'SHA-256  ' + r.sha256;
+      $('localDigest').dataset.sha = r.sha256;
       toast('已计算：' + r.filename);
     } else if (r && r.reason !== 'canceled') {
       toast('计算失败：' + r.reason, true);
@@ -402,6 +434,19 @@ $('pickLocalBtn').onclick = async () => {
     btn.disabled = false;
     btn.textContent = '选择文件计算 SHA-256';
   }
+};
+
+$('copyLocalBtn').onclick = () => {
+  const sha = $('localDigest').dataset.sha || '';
+  if (sha) copyText(sha, $('localName').textContent);
+};
+
+$('copyAllBtn').onclick = () => {
+  if (!state.rows.length) { toast('暂无校验和可复制', true); return; }
+  // 导出 coreutils 兼容的 sha256 侧车清单："<sha256>  <filename>" 每行一条，
+  // 可直接保存为 SHA256SUMS 用 `sha256sum -c` 批量核对。
+  const lines = state.rows.slice().reverse().map(r => r.sha256 + '  ' + (r.filename || 'download'));
+  copyText(lines.join('\n'), '全部 ' + state.rows.length + ' 条');
 };
 
 $('refreshBtn').onclick = loadData;
