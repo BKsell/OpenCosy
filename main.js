@@ -175,6 +175,128 @@ function topBlockedHosts() {
     .map(([host, n]) => ({ host, n }));
 }
 
+// ===== 导航 URL 追踪参数剥离（privacy hygiene）=====
+// stripTrackingParams：地址栏直接打开 / 跳转的顶层页面，去掉 utm_*、fbclid、gclid 等
+// 只用于归因、对页面内容无意义的查询参数。只作用于 http(s) 顶层导航，绝不碰 POST、
+// fragment（# 后可能是前端路由）或子资源，避免破坏登录回调与应用状态。
+let stripTrackingParams = true;
+
+// 完整匹配的追踪参数名（小写）。
+const TRACKING_QUERY_KEYS = new Set([
+  'fbclid', 'gclid', 'gbraid', 'wbraid', 'dclid', 'gclsrc', 'msclkid',
+  'yclid', 'mc_cid', 'mc_eid', 'igshid', 'ttclid', 'twclid', 'li_fat_id',
+  'vero_id', 'wickedid', 'hsCtaTracking', '_hsenc', '_hsmi', 'mkt_tok',
+  'oly_anon_id', 'oly_enc_id', 'vero_conv', 'soc_src', 'soc_trk',
+  'spm', 'scm', 'sourceFrom', 'fromSource',
+]);
+// 按前缀匹配的追踪参数名（小写），覆盖 utm_source / utm_medium / utm_campaign 等整族。
+const TRACKING_QUERY_PREFIXES = ['utm_', 'pk_', 'piwik_', 'matomo_', 'ga_', 'oasid_'];
+
+function isTrackingQueryKey(rawKey) {
+  const key = String(rawKey || '').toLowerCase();
+  if (!key) return false;
+  if (TRACKING_QUERY_KEYS.has(key)) return true;
+  return TRACKING_QUERY_PREFIXES.some(p => key.startsWith(p));
+}
+
+// 返回剥离追踪参数后的 URL；没有可删参数时返回 null（调用方据此避免无谓重定向）。
+function stripTrackingFromUrl(rawUrl) {
+  if (!stripTrackingParams) return null;
+  if (!(rawUrl.startsWith('http://') || rawUrl.startsWith('https://'))) return null;
+  let u;
+  try { u = new URL(rawUrl); } catch { return null; }
+  if (!u.search) return null;
+  const params = u.searchParams;
+  let removed = false;
+  // 先收集再删，避免边遍历边改。
+  const keys = [];
+  for (const key of params.keys()) keys.push(key);
+  for (const key of keys) {
+    if (isTrackingQueryKey(key)) { params.delete(key); removed = true; }
+  }
+  if (!removed) return null;
+  const query = u.searchParams.toString();
+  const rebuilt = u.origin + u.pathname + (query ? '?' + query : '') + u.hash;
+  return rebuilt === rawUrl ? null : rebuilt;
+}
+
+// ===== 同形异义（homograph / IDN）反钓鱼提示 =====
+// 只“提示”不拦截：对包含非 ASCII（含西里尔/希腊等与拉丁形近的字符）或易混拉丁字符、
+// 且非用户常用站点的主机，发横幅让用户留意，地址栏仍照常显示，避免误伤合法国际化域名。
+const SKEW_LATIN_HOSTS = new Set([
+  'google', 'youtube', 'facebook', 'amazon', 'apple', 'microsoft', 'github',
+  'twitter', 'x', 'instagram', 'netflix', 'paypal', 'alibaba', 'taobao',
+  'baidu', 'bing', 'office', 'live', 'steam', 'epicgames',
+]);
+
+// 主机里只要出现这些码位就视为“可能在冒充拉丁字母”。
+function hostnameHasSuspiciousChars(hostname) {
+  // 非 ASCII：IDN（punycode 解码后的 unicode 主机），本身不是错，但组合常见品牌词要提醒。
+  // eslint-disable-next-line no-control-regex
+  if (/[^\x00-\x7F]/.test(hostname)) return 'nonascii';
+  // 纯拉丁里的易混对：数字/特殊形替字母（如 0 替 o、1 替 l、rn 替 m 由调用方另判）。
+  if (/\d/.test(hostname)) {
+    const label = hostname.split('.')[0].toLowerCase();
+    if (SKEW_LATIN_HOSTS.has(label.replace(/[0-9]/g, ''))) return 'digit-lookalike';
+  }
+  return null;
+}
+
+function analyzeHostForSpoof(hostname) {
+  if (!hostname) return null;
+  const h = hostname.toLowerCase().replace(/\.$/, '');
+  const labels = h.split('.');
+  const registrable = labels.length >= 2 ? labels[labels.length - 2] : labels[0];
+  // 含非 ASCII，且品牌主体与已知拉丁品牌高度重合（去掉非拉丁后等于某品牌）→ 高危提示。
+  // eslint-disable-next-line no-control-regex
+  if (/[^\x00-\x7F]/.test(registrable)) {
+    const asciiOnly = registrable.replace(/[^\x21-\x7e]/g, '');
+    // 混合脚本：同一主体里既有拉丁又有非拉丁，是 homograph 攻击最典型特征。
+    // eslint-disable-next-line no-control-regex
+    const hasLatin = /[a-z]/.test(registrable);
+    const hasNonLatin = /[^\x00-\x7fa-z0-9.-]/.test(registrable);
+    if (hasLatin && hasNonLatin) {
+      return { reason: 'mixed-script', hostname: h, hint: asciiOnly };
+    }
+  }
+  const suspicious = hostnameHasSuspiciousChars(h);
+  if (suspicious === 'digit-lookalike') {
+    return { reason: 'digit-lookalike', hostname: h, hint: registrable };
+  }
+  return null;
+}
+
+// ===== Referrer 收敛（默认 strict-origin-when-cross-origin 语义）=====
+// 网页自己的 <meta name=referrer> / 页面策略由 Chromium 处理；这里兜底修正 Electron
+// 可能仍带“完整来路 URL（含查询/路径）”的情况，避免把上个页面的敏感路径、搜索词、
+// token 经 Referer 头泄露给第三方：
+//   - 同源：保留完整 Referer；
+//   - 跨源且安全等级不降低：收敛为源（origin/）；
+//   - https → http 降级：直接去除 Referer。
+function originOf(u) {
+  try { return new URL(u).origin; } catch { return null; }
+}
+
+function trimReferrerHeader(details, headers) {
+  const referrer = headers['Referer'] || headers['referer'];
+  if (!referrer) return;
+  const fromOrigin = originOf(referrer);
+  const toOrigin = originOf(details.url);
+  if (!fromOrigin || !toOrigin) return;
+  if (fromOrigin === toOrigin) return; // 同源不裁剪
+  const fromHttps = referrer.startsWith('https://');
+  const toHttp = details.url.startsWith('http://');
+  if (fromHttps && toHttp) {
+    delete headers['Referer'];
+    delete headers['referer'];
+    return;
+  }
+  // 跨源：只暴露源，不暴露路径与查询串。
+  const trimmed = fromOrigin === 'null' ? '' : fromOrigin + '/';
+  headers['Referer'] = trimmed;
+  delete headers['referer'];
+}
+
 // clearOnExit：退出时自动清空缓存 / Cookie / 站点存储 / 历史 / 下载记录（隐私模式）。
 // confirmCloseMultiple：仍有多个标签页时点 × 先二次确认，防止误关整窗。
 let clearOnExit = false;
@@ -538,19 +660,35 @@ function setupSecurityHeaders() {
     headers['DNT'] = '1';
     headers['Sec-GPC'] = '1';
     headers['Upgrade-Insecure-Requests'] = '1';
+    trimReferrerHeader(details, headers);
     callback({ requestHeaders: headers });
   });
 
   session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+    const isHttpUrl = details.url.startsWith('http://') || details.url.startsWith('https://');
     // 第三方追踪 / 广告子资源：直接取消（不动顶层导航）。
-    if ((details.url.startsWith('http://') || details.url.startsWith('https://')) &&
-        isTrackerRequest(details)) {
+    if (isHttpUrl && isTrackerRequest(details)) {
       recordBlockedTracker(details.url);
       return callback({ cancel: true });
     }
+
+    // 顶层导航：剥离 utm_* 等追踪参数（只重定向一次，不动 fragment / 子资源）。
+    let workingUrl = details.url;
+    if (isHttpUrl && details.resourceType === 'mainFrame') {
+      const stripped = stripTrackingFromUrl(details.url);
+      if (stripped && stripped !== details.url) {
+        return callback({ redirectURL: stripped });
+      }
+      // 同形异义 / IDN 反钓鱼提示（只提示，不阻断导航）。
+      try {
+        const spoof = analyzeHostForSpoof(new URL(details.url).hostname);
+        if (spoof) sendToRenderer('spoof-warning', spoof);
+      } catch { /* 无效主机名忽略 */ }
+    }
+
     // HTTPS-only 模式：用户可在设置里关掉；私网/回环主机永远保留 http://
-    if (httpsOnlyEnabled && details.url.startsWith('http://') && !isPrivateNetworkHost(details.url)) {
-      callback({ redirectURL: 'https://' + details.url.slice(7) });
+    if (httpsOnlyEnabled && workingUrl.startsWith('http://') && !isPrivateNetworkHost(workingUrl)) {
+      callback({ redirectURL: 'https://' + workingUrl.slice(7) });
     } else {
       callback({});
     }
@@ -1797,6 +1935,7 @@ app.whenReady().then(async () => {
   httpsOnlyEnabled = stored.httpsOnly !== false;
   blockTrackers = stored.blockTrackers !== false;
   crashRecoveryEnabled = stored.crashRecovery !== false;
+  stripTrackingParams = stored.stripTrackingParams !== false;
   if ('memorySaver' in stored) memorySaverEnabled = !!stored.memorySaver;
   if ('clearOnExit' in stored) clearOnExit = !!stored.clearOnExit;
   if ('confirmCloseMultiple' in stored) confirmCloseMultiple = !!stored.confirmCloseMultiple;
@@ -2562,6 +2701,7 @@ const ALLOWED_SETTING_KEYS = {
   httpsOnly: v => typeof v === 'boolean',
   blockTrackers: v => typeof v === 'boolean',
   crashRecovery: v => typeof v === 'boolean',
+  stripTrackingParams: v => typeof v === 'boolean',
   themeColor: v => isValidColor(v),
   defaultTab: v => ['bing', 'custom', 'newtab'].includes(v),
   customUrl: v => typeof v === 'string' && isSafeUrl(v),
@@ -2594,6 +2734,7 @@ ipcMain.on('save-settings', (event, settings) => {
     httpsOnlyEnabled = clean.httpsOnly !== false;
     blockTrackers = clean.blockTrackers !== false;
     crashRecoveryEnabled = clean.crashRecovery !== false;
+    stripTrackingParams = clean.stripTrackingParams !== false;
     if ('memorySaver' in clean) memorySaverEnabled = !!clean.memorySaver;
     if ('clearOnExit' in clean) clearOnExit = !!clean.clearOnExit;
     if ('confirmCloseMultiple' in clean) confirmCloseMultiple = !!clean.confirmCloseMultiple;
