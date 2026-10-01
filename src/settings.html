@@ -184,6 +184,22 @@
             <div class="setting-item">
                 <div class="setting-icon">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M10 13a5 5 0 0 0 7.07.54l2.12-2.12a5 5 0 0 0-7.07-7.07L10.7 5.76" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                        <path d="M14 11a5 5 0 0 0-7.07-.54l-2.12 2.12a5 5 0 0 0 7.07 7.07l1.42-1.41" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">剥离链接中的追踪参数</label>
+                    <p class="setting-description">直接打开网页或跳转时，自动去除 utm_source、fbclid、gclid 等仅用于广告归因、对页面内容无意义的参数；不影响网址锚点（#）与登录回调</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="stripTrackingParams" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path d="M19 12H5M19 12C20.1046 12 21 11.1046 21 10V6C21 4.89543 20.1046 4 19 4H5C3.89543 4 3 4.89543 3 6V10C3 11.1046 3.89543 12 5 12M19 12V18C19 19.1046 18.1046 20 17 20H7C5.89543 20 5 19.1046 5 18V12M9 16H15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
                     </svg>
                 </div>
@@ -319,7 +335,7 @@
         <button class="save-button" onclick="saveSettings()">保存设置</button>
     </div>
     <script>
-        const ALLOWED_SETTING_KEYS = new Set(['defaultTab', 'tabLayout', 'searchEngine', 'backgroundType', 'customUrl', 'customBackgroundUrl', 'themeColor', 'darkMode', 'memorySaver', 'clearOnExit', 'confirmCloseMultiple', 'blockTrackers', 'crashRecovery']);
+        const ALLOWED_SETTING_KEYS = new Set(['defaultTab', 'tabLayout', 'searchEngine', 'backgroundType', 'customUrl', 'customBackgroundUrl', 'themeColor', 'darkMode', 'memorySaver', 'clearOnExit', 'confirmCloseMultiple', 'blockTrackers', 'crashRecovery', 'stripTrackingParams']);
         const ALLOWED_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'cosy:']);
         const COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
 
@@ -424,6 +440,7 @@
             // 追踪拦截与崩溃恢复默认开启，仅在明确存 false 时关闭。
             document.getElementById('blockTrackers').checked = settings.blockTrackers !== false;
             document.getElementById('crashRecovery').checked = settings.crashRecovery !== false;
+            document.getElementById('stripTrackingParams').checked = settings.stripTrackingParams !== false;
             applyThemeColor(settings.themeColor || '#0078d4');
         }
 
@@ -446,6 +463,7 @@
             const confirmCloseMultiple = document.getElementById('confirmCloseMultiple').checked;
             const blockTrackers = document.getElementById('blockTrackers').checked;
             const crashRecovery = document.getElementById('crashRecovery').checked;
+            const stripTrackingParams = document.getElementById('stripTrackingParams').checked;
 
             if (customUrl && !isSafeUrl(customUrl)) {
                 alert('自定义网址必须是 http/https/file/cosy 协议');
@@ -470,7 +488,8 @@
                 clearOnExit,
                 confirmCloseMultiple,
                 blockTrackers,
-                crashRecovery
+                crashRecovery,
+                stripTrackingParams
             };
 
             localStorage.setItem('cosySettings', JSON.stringify(settings));
