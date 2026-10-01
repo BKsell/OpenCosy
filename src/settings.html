@@ -445,6 +445,17 @@
                 applyDarkMode(this.checked);
             });
             document.getElementById('spellcheckEnabled').addEventListener('change', syncSpellcheckUi);
+            // 勾选时即时限制语言数量：超过 5 种直接取消本次勾选，
+            // 避免用户勾了一大堆之后点保存才被弹窗打回。
+            document.querySelectorAll('.spellcheck-lang').forEach(cb => {
+                cb.addEventListener('change', function() {
+                    const checked = document.querySelectorAll('.spellcheck-lang:checked');
+                    if (checked.length > 5) {
+                        this.checked = false;
+                        alert('拼写检查语言最多选择 5 种');
+                    }
+                });
+            });
             // 向主进程查询平台实际安装了词典的语言；没有词典的选项直接隐藏，
             // 勾了也不生效的语言不展示给用户。
             window.electronAPI.invoke('get-spellcheck-info').then(function(info) {
@@ -559,7 +570,20 @@
             const crashRecovery = document.getElementById('crashRecovery').checked;
             const stripTrackingParams = document.getElementById('stripTrackingParams').checked;
             const spellcheckEnabled = document.getElementById('spellcheckEnabled').checked;
-            const spellcheckLanguages = [...document.querySelectorAll('.spellcheck-lang:checked')].map(cb => cb.value);
+            const spellcheckLanguages = [...document.querySelectorAll('.spellcheck-lang:checked')]
+                .filter(cb => !cb.parentElement.classList.contains('spellcheck-unavailable'))
+                .map(cb => cb.value);
+            // 语言选择要与主进程限制保持一致：
+            // 开启拼写检查却一种语言都不选没有意义，且 Hunspell 同时加载过多
+            // 词典会明显拖慢输入，因此限制 1~5 种；主进程仍会再截断一次。
+            if (spellcheckEnabled && spellcheckLanguages.length === 0) {
+                alert('开启拼写检查时至少要选择一种语言');
+                return;
+            }
+            if (spellcheckLanguages.length > 5) {
+                alert('拼写检查语言最多选择 5 种，请取消部分勾选后再保存');
+                return;
+            }
 
             if (customUrl && !isSafeUrl(customUrl)) {
                 alert('自定义网址必须是 http/https/file/cosy 协议');
