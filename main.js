@@ -1110,6 +1110,148 @@ function clearSecurityEvents() {
   return true;
 }
 
+// ===== CSP 违规报告中心（csp-reports.json / cosy://security 面板）=====
+// Chromium 的内容安全策略只负责"拦"，拦完之后在 Electron 里没有像 DevTools
+// 那样统一的主进程出口：内部页面（cosy:// 系列）一旦出现注入尝试或资源
+// 误引用，console 里的 Refused to load/exec 一闪而过，发布版根本看不到。
+//
+// 这里实现一条只服务于"我们自己内部页面"的上报链：
+//   1. 内部页面监听 document 的 securitypolicyviolation（捕获阶段），
+//      通过 preload 白名单通道 report-csp-violation 上报结构化字段；
+//   2. 主进程不信任 renderer 自报的 documentURI / origin——一律以
+//      event.senderFrame.url 为准重新判定，非 cosy:// 帧直接丢弃，
+//      这样公网页面即使拿到 preload 桥也无法伪造或灌爆台账；
+//   3. 每窗 10 秒最多 20 条，超出只记一条安全事件（防止恶意内部页面
+//      死循环上报制造磁盘 / 渲染压力）；
+//   4. 落 csp-reports.json（原子 rename，最近 500 条），字段全部控制
+//      字符清洗 + 限长，UI 一律 textContent 渲染。
+const cspReportStorePath = path.join(app.getPath('userData'), 'csp-reports.json');
+const MAX_CSP_REPORTS = 500;
+const CSP_RATE_WINDOW_MS = 10_000;
+const CSP_RATE_MAX_PER_WINDOW = 20;
+const CSP_FIELD_MAX = 300;
+
+const cspReports = [];
+let cspReportsLoaded = false;
+let cspReportSaveTimer = null;
+const cspRateBuckets = new Map(); // senderFrame.id -> { start, count }
+
+function isInternalFrameSender(senderFrame) {
+  if (!senderFrame || typeof senderFrame.url !== 'string') return false;
+  let u = '';
+  try { u = new URL(senderFrame.url); } catch { return false; }
+  return u.protocol === 'cosy:';
+}
+
+function loadCspReports() {
+  if (cspReportsLoaded) return;
+  cspReportsLoaded = true;
+  try {
+    const data = JSON.parse(fsSync.readFileSync(cspReportStorePath, 'utf8'));
+    const entries = Array.isArray(data && data.reports) ? data.reports : null;
+    if (!entries) return;
+    for (const r of entries) {
+      if (!r || typeof r !== 'object') continue;
+      if (typeof r.documentUri !== 'string' || !r.documentUri.startsWith('cosy:')) continue;
+      if (typeof r.directive !== 'string' || !r.directive) continue;
+      cspReports.push({
+        id: String(r.id || ''),
+        time: Number(r.time) || Date.now(),
+        documentUri: r.documentUri.slice(0, CSP_FIELD_MAX),
+        directive: r.directive.slice(0, CSP_FIELD_MAX),
+        blockedUri: typeof r.blockedUri === 'string' ? r.blockedUri.slice(0, CSP_FIELD_MAX) : '',
+        sourceFile: typeof r.sourceFile === 'string' ? r.sourceFile.slice(0, CSP_FIELD_MAX) : '',
+        lineNumber: Number.isFinite(Number(r.lineNumber)) ? Number(r.lineNumber) : 0,
+        columnNumber: Number.isFinite(Number(r.columnNumber)) ? Number(r.columnNumber) : 0,
+        disposition: r.disposition === 'report' ? 'report' : 'enforce',
+      });
+      if (cspReports.length >= MAX_CSP_REPORTS) break;
+    }
+  } catch {}
+}
+
+function persistCspReports() {
+  if (cspReportSaveTimer) clearTimeout(cspReportSaveTimer);
+  cspReportSaveTimer = setTimeout(() => {
+    try {
+      const tmp = cspReportStorePath + '.tmp';
+      fsSync.writeFileSync(tmp, JSON.stringify({ version: 1, reports: cspReports }), 'utf8');
+      fsSync.renameSync(tmp, cspReportStorePath);
+    } catch {}
+  }, 300);
+}
+
+function sanitizeCspField(v) {
+  let s = String(v == null ? '' : v);
+  s = s.replace(/[\x00-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim();
+  return s.length > CSP_FIELD_MAX ? s.slice(0, CSP_FIELD_MAX) + '…' : s;
+}
+
+// cspRateLimitAllowed 判断该帧当前窗口内是否还能再上报一条。
+// 帧关闭后 bucket 不会立刻清理，但 Map 体积受存活内部页数量限制，
+// 下一轮窗口自然过期复用，无需额外生命周期钩子。
+function cspRateLimitAllowed(frame) {
+  const now = Date.now();
+  const key = frame && frame.frameTreeNodeId != null ? frame.frameTreeNodeId : 0;
+  let bucket = cspRateBuckets.get(key);
+  if (!bucket || now - bucket.start >= CSP_RATE_WINDOW_MS) {
+    bucket = { start: now, count: 0 };
+    cspRateBuckets.set(key, bucket);
+  }
+  bucket.count += 1;
+  return bucket.count <= CSP_RATE_MAX_PER_WINDOW;
+}
+
+// recordCspViolationFromRenderer 处理 renderer 上报。返回 { accepted }；
+// 拒绝不抛错（上报通道本身不能影响页面运行）。
+function recordCspViolationFromRenderer(senderFrame, payload) {
+  if (!isInternalFrameSender(senderFrame)) {
+    return { accepted: false, reason: 'non-internal frame' };
+  }
+  if (!cspRateLimitAllowed(senderFrame)) {
+    recordSecurityEvent('permission-blocked', 'warn',
+      '内部页面 CSP 上报过于频繁，已丢弃后续报告', senderFrame.url);
+    return { accepted: false, reason: 'rate limited' };
+  }
+  loadCspReports();
+  let frameUrl = '';
+  try { frameUrl = new URL(senderFrame.url).href; } catch { frameUrl = senderFrame.url; }
+  const directive = sanitizeCspField(payload && payload.directive);
+  if (!directive) return { accepted: false, reason: 'missing directive' };
+  const report = {
+    id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    time: Date.now(),
+    documentUri: sanitizeCspField(frameUrl),
+    directive,
+    blockedUri: sanitizeCspField(payload && payload.blockedUri),
+    sourceFile: sanitizeCspField(payload && payload.sourceFile),
+    lineNumber: Math.max(0, Number(payload && payload.lineNumber) || 0),
+    columnNumber: Math.max(0, Number(payload && payload.columnNumber) || 0),
+    disposition: payload && payload.disposition === 'report' ? 'report' : 'enforce',
+  };
+  cspReports.push(report);
+  if (cspReports.length > MAX_CSP_REPORTS) {
+    cspReports.splice(0, cspReports.length - MAX_CSP_REPORTS);
+  }
+  persistCspReports();
+  sendToRenderer('csp-report-added', { ...report });
+  return { accepted: true };
+}
+
+function listCspReports(limit = 200) {
+  loadCspReports();
+  const n = Math.max(1, Math.min(Number(limit) || 200, MAX_CSP_REPORTS));
+  return cspReports.slice(-n).reverse().map(r => ({ ...r }));
+}
+
+function clearCspReports() {
+  loadCspReports();
+  cspReports.length = 0;
+  try { fsSync.unlinkSync(cspReportStorePath); } catch {}
+  persistCspReports();
+  return true;
+}
+
 // ===== 下载完整性校验（download-hashes.json / cosy://hashes）=====
 // Electron 的下载项只保证"字节传完了"，不保证字节没被中间人 / 镜像污染。
 // 现代浏览器在"显示下载文件的校验和"这件事上普遍缺位：用户从第三方站下了
@@ -1573,6 +1715,21 @@ function setupPermissionHandlers() {
   ipcMain.handle('clear-security-events', (event) => {
     if (!isMainSender(event)) return { success: false };
     return { success: true, cleared: clearSecurityEvents() };
+  });
+
+  // ===== CSP 违规上报（renderer send）/ 面板读取清空（invoke），仅内部帧 =====
+  // 上报用 send 而不是 invoke：违规是"通知"语义，页面不该等待也不该拿到
+  // 是否被记录的回执之外的信息；这里也不回包，避免成为时序探测面。
+  ipcMain.on('report-csp-violation', (event, payload) => {
+    recordCspViolationFromRenderer(event.senderFrame, payload);
+  });
+  ipcMain.handle('list-csp-reports', (event, payload = {}) => {
+    if (!isMainSender(event)) return [];
+    return listCspReports(Number(payload.limit) || 200);
+  });
+  ipcMain.handle('clear-csp-reports', (event) => {
+    if (!isMainSender(event)) return { success: false };
+    return { success: true, cleared: clearCspReports() };
   });
 
   // ===== 下载完整性校验（cosy://hashes）IPC，仅主框架可调 =====
