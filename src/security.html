@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>安全事件中心 - OpenCosy</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #f3f3f3; color: #1f1f1f; min-height: 100vh;
+    transition: background 0.3s, color 0.3s;
+  }
+  body.dark-mode { background: #1a1a1a; color: #e0e0e0; }
+  .container { max-width: 980px; margin: 0 auto; padding: 32px 24px 60px; }
+  header { margin-bottom: 24px; }
+  h1 { font-size: 26px; font-weight: 600; color: #0078d4; margin-bottom: 6px; }
+  body.dark-mode h1 { color: #4da3ff; }
+  .subtitle { color: #666; font-size: 13px; line-height: 1.6; }
+  body.dark-mode .subtitle { color: #999; }
+
+  .toolbar {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    background: #fff; border-radius: 10px; padding: 14px 16px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08); margin-bottom: 16px;
+  }
+  body.dark-mode .toolbar { background: #2d2d2d; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+  .search-box {
+    flex: 1; min-width: 220px; padding: 9px 12px; border: 1px solid #d0d0d0;
+    border-radius: 6px; font-size: 14px; outline: none; background: #fafafa; color: inherit;
+  }
+  .search-box:focus { border-color: #0078d4; }
+  body.dark-mode .search-box { background: #3d3d3d; border-color: #555; }
+  select {
+    padding: 9px 10px; border: 1px solid #d0d0d0; border-radius: 6px; font-size: 13px;
+    background: #fafafa; color: inherit; outline: none; font-family: inherit;
+  }
+  body.dark-mode select { background: #3d3d3d; border-color: #555; }
+  button {
+    border: none; border-radius: 6px; padding: 8px 14px; font-size: 13px;
+    cursor: pointer; transition: background 0.15s, opacity 0.15s; font-family: inherit;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary { background: #0078d4; color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: #106ebe; }
+  .btn-ghost { background: transparent; color: #0078d4; border: 1px solid #0078d4; }
+  .btn-ghost:hover:not(:disabled) { background: rgba(0,120,212,0.08); }
+  body.dark-mode .btn-ghost { color: #4da3ff; border-color: #4da3ff; }
+  .btn-danger-ghost { background: transparent; color: #c42b1c; border: 1px solid #c42b1c; }
+  .btn-danger-ghost:hover:not(:disabled) { background: rgba(196,43,28,0.08); }
+  body.dark-mode .btn-danger-ghost { color: #ff6a5c; border-color: #ff6a5c; }
+
+  .stats { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  .stat-card {
+    flex: 1; min-width: 150px; background: #fff; border-radius: 10px; padding: 14px 18px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+  }
+  body.dark-mode .stat-card { background: #2d2d2d; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+  .stat-num { font-size: 22px; font-weight: 600; color: #0078d4; }
+  body.dark-mode .stat-num { color: #4da3ff; }
+  .stat-num.critical { color: #c42b1c; }
+  body.dark-mode .stat-num.critical { color: #ff6a5c; }
+  .stat-label { font-size: 12px; color: #777; margin-top: 2px; }
+  body.dark-mode .stat-label { color: #999; }
+
+  .event-list { display: flex; flex-direction: column; gap: 10px; }
+  .event-row {
+    background: #fff; border-radius: 10px; padding: 13px 18px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    border-left: 4px solid #0078d4;
+  }
+  body.dark-mode .event-row { background: #2d2d2d; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+  .event-row.severity-warn { border-left-color: #f0a020; }
+  .event-row.severity-critical { border-left-color: #c42b1c; }
+  .event-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .event-type { font-size: 14px; font-weight: 600; flex: 1; min-width: 0; }
+  .event-origin {
+    font-size: 12px; color: #555; background: #eef3f8; border-radius: 5px;
+    padding: 2px 8px; max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  body.dark-mode .event-origin { color: #c7d3e0; background: #34404d; }
+  .event-time { font-size: 11px; color: #999; }
+  body.dark-mode .event-time { color: #8a8a8a; }
+  .event-detail {
+    margin-top: 8px; font-size: 13px; line-height: 1.6; color: #444;
+    word-break: break-all;
+  }
+  body.dark-mode .event-detail { color: #c4c4c4; }
+
+  .badge {
+    display: inline-block; padding: 2px 9px; border-radius: 10px; font-size: 11px; font-weight: 600;
+  }
+  .badge.info { background: #e8f1fb; color: #0f5a9e; }
+  body.dark-mode .badge.info { background: #16314d; color: #6cb0f0; }
+  .badge.warn { background: #fdf3e0; color: #9a6200; }
+  body.dark-mode .badge.warn { background: #4d3810; color: #f0b450; }
+  .badge.critical { background: #fdeaea; color: #c42b1c; }
+  body.dark-mode .badge.critical { background: #431d1a; color: #ff6a5c; }
+
+  .empty {
+    text-align: center; padding: 70px 20px; color: #888; background: #fff;
+    border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+  }
+  body.dark-mode .empty { background: #2d2d2d; color: #999; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+  .empty .big { font-size: 40px; margin-bottom: 10px; }
+
+  .modal-mask {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+    align-items: center; justify-content: center; z-index: 100; padding: 20px;
+  }
+  .modal-mask.show { display: flex; }
+  .modal { background: #fff; border-radius: 12px; width: 100%; max-width: 440px; overflow: hidden; }
+  body.dark-mode .modal { background: #2d2d2d; }
+  .modal-head { padding: 16px 20px; border-bottom: 1px solid #eee; font-size: 16px; font-weight: 600; }
+  body.dark-mode .modal-head { border-bottom-color: #444; }
+  .modal-body { padding: 14px 20px; font-size: 13px; line-height: 1.7; }
+  .modal-foot { padding: 14px 20px; border-top: 1px solid #eee; display: flex; gap: 10px; justify-content: flex-end; }
+  body.dark-mode .modal-foot { border-top-color: #444; }
+
+  #toast {
+    position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: #323232; color: #fff; padding: 10px 20px; border-radius: 8px;
+    font-size: 13px; opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; z-index: 200;
+    max-width: 80vw;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.error { background: #c42b1c; }
+  .back-link { display: inline-block; margin-bottom: 14px; font-size: 13px; text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="container">
+  <a class="back-link btn-ghost" style="display:inline-block;" href="cosy://setting">&larr; 返回设置</a>
+  <header>
+    <h1>安全事件中心</h1>
+    <p class="subtitle">
+      这里记录浏览器替你拦下的安全动作：危险的外部协议唤起、被取消的可执行文件下载、
+      网站对 HID / 串口 / 蓝牙等设备权限的请求、扩展的危险权限申请等。事件只保存在本机，
+      最多保留最近 1000 条，可随时清空。
+    </p>
+  </header>
+
+  <div class="stats">
+    <div class="stat-card"><div class="stat-num" id="statTotal">-</div><div class="stat-label">事件总数</div></div>
+    <div class="stat-card"><div class="stat-num" id="statWarn">-</div><div class="stat-label">警告</div></div>
+    <div class="stat-card"><div class="stat-num critical" id="statCritical">-</div><div class="stat-label">高危拦截</div></div>
+  </div>
+
+  <div class="toolbar">
+    <input class="search-box" id="searchInput" type="search" placeholder="按来源或内容搜索" autocomplete="off">
+    <select id="filterSelect">
+      <option value="">全部类型</option>
+      <option value="protocol-blocked">外部协议拦截</option>
+      <option value="protocol-denied">外部协议拒绝</option>
+      <option value="download-blocked">下载拦截</option>
+      <option value="download-rejected">危险下载取消</option>
+      <option value="permission-blocked">浏览器权限拒绝</option>
+      <option value="device-permission-blocked">设备权限拒绝</option>
+      <option value="extension-blocked">扩展拦截</option>
+    </select>
+    <select id="severitySelect">
+      <option value="">全部级别</option>
+      <option value="critical">仅高危</option>
+      <option value="warn">仅警告</option>
+      <option value="info">仅提示</option>
+    </select>
+    <button class="btn-primary" id="refreshBtn">刷新</button>
+    <button class="btn-danger-ghost" id="clearBtn">清空记录</button>
+  </div>
+
+  <div class="event-list" id="eventList"></div>
+  <div class="empty" id="emptyState" style="display:none;">
+    <div class="big">&#128737;&#65039;</div>
+    <div id="emptyText">近期没有安全拦截事件</div>
+  </div>
+</div>
+
+<div class="modal-mask" id="confirmModal">
+  <div class="modal">
+    <div class="modal-head">确认操作</div>
+    <div class="modal-body">将清空全部安全事件记录，且无法恢复。继续？</div>
+    <div class="modal-foot">
+      <button class="btn-ghost" id="confirmCancel">取消</button>
+      <button class="btn-danger-ghost" id="confirmOk">确认清空</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+const api = window.electronAPI;
+const state = { rows: [] };
+
+const TYPE_LABELS = {
+  'protocol-blocked': '外部协议拦截',
+  'protocol-denied': '外部协议拒绝',
+  'download-blocked': '下载拦截',
+  'download-rejected': '危险下载取消',
+  'permission-blocked': '浏览器权限拒绝',
+  'device-permission-blocked': '设备权限拒绝',
+  'extension-blocked': '扩展拦截',
+};
+const SEVERITY_LABELS = { info: '提示', warn: '警告', critical: '高危' };
+
+const $ = id => document.getElementById(id);
+
+function applyDarkMode() {
+  let settings = {};
+  try { settings = JSON.parse(localStorage.getItem('cosySettings') || '{}'); } catch { settings = {}; }
+  if (settings.darkMode === true || settings.darkMode === 'true') {
+    document.body.classList.add('dark-mode');
+  }
+}
+
+function toast(message, isError = false) {
+  const el = $('toast');
+  el.textContent = message;
+  el.classList.toggle('error', isError);
+  el.classList.add('show');
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+function showConfirm() {
+  return new Promise(resolve => {
+    const modal = $('confirmModal');
+    modal.classList.add('show');
+    const done = ok => {
+      modal.classList.remove('show');
+      $('confirmOk').onclick = null;
+      $('confirmCancel').onclick = null;
+      resolve(ok);
+    };
+    $('confirmOk').onclick = () => done(true);
+    $('confirmCancel').onclick = () => done(false);
+  });
+}
+
+function formatTime(ts) {
+  const n = Number(ts);
+  if (!n) return '';
+  try { return new Date(n).toLocaleString(); } catch { return ''; }
+}
+
+function render() {
+  const query = $('searchInput').value.trim().toLowerCase();
+  const type = $('filterSelect').value;
+  const severity = $('severitySelect').value;
+  const list = $('eventList');
+  list.textContent = '';
+
+  let warnCount = 0, criticalCount = 0;
+  for (const e of state.rows) {
+    if (e.severity === 'warn') warnCount++;
+    if (e.severity === 'critical') criticalCount++;
+  }
+  $('statTotal').textContent = state.rows.length;
+  $('statWarn').textContent = warnCount;
+  $('statCritical').textContent = criticalCount;
+
+  const rows = state.rows.filter(e => {
+    if (type && e.type !== type) return false;
+    if (severity && e.severity !== severity) return false;
+    if (query) {
+      const hay = ((e.origin || '') + ' ' + (e.detail || '') + ' ' + (TYPE_LABELS[e.type] || '')).toLowerCase();
+      if (!hay.includes(query)) return false;
+    }
+    return true;
+  });
+
+  $('emptyState').style.display = rows.length ? 'none' : 'block';
+  $('emptyText').textContent = query || type || severity ? '没有事件匹配当前筛选' : '近期没有安全拦截事件';
+
+  // 所有内容一律走 textContent，事件明细来自 URL / 文件名等不可信数据。
+  for (const e of rows) {
+    const row = document.createElement('div');
+    row.className = 'event-row severity-' + (e.severity || 'info');
+
+    const head = document.createElement('div');
+    head.className = 'event-head';
+
+    const typeLabel = document.createElement('span');
+    typeLabel.className = 'event-type';
+    typeLabel.textContent = TYPE_LABELS[e.type] || e.type;
+
+    const badge = document.createElement('span');
+    badge.className = 'badge ' + (e.severity || 'info');
+    badge.textContent = SEVERITY_LABELS[e.severity] || e.severity || 'info';
+
+    const origin = document.createElement('span');
+    origin.className = 'event-origin';
+    origin.textContent = e.origin || '未知来源';
+    origin.title = e.origin || '';
+
+    const time = document.createElement('span');
+    time.className = 'event-time';
+    time.textContent = formatTime(e.time);
+
+    head.append(typeLabel, badge);
+    if (e.origin) head.appendChild(origin);
+    head.appendChild(time);
+
+    const detail = document.createElement('div');
+    detail.className = 'event-detail';
+    detail.textContent = e.detail || '';
+
+    row.append(head, detail);
+    list.appendChild(row);
+  }
+}
+
+async function loadData() {
+  $('refreshBtn').disabled = true;
+  try {
+    const rows = await api.invoke('list-security-events', { type: '', limit: 1000 });
+    state.rows = Array.isArray(rows) ? rows : [];
+    render();
+  } catch (e) {
+    toast('加载失败：' + (e && e.message ? e.message : e), true);
+  } finally {
+    $('refreshBtn').disabled = false;
+  }
+}
+
+$('refreshBtn').onclick = loadData;
+$('clearBtn').onclick = async () => {
+  const ok = await showConfirm();
+  if (!ok) return;
+  const r = await api.invoke('clear-security-events');
+  if (r && r.success) { toast('已清空安全事件记录'); loadData(); }
+  else toast('清空失败', true);
+};
+$('searchInput').addEventListener('input', render);
+$('filterSelect').addEventListener('change', render);
+$('severitySelect').addEventListener('change', render);
+$('confirmModal').addEventListener('click', e => {
+  if (e.target === $('confirmModal')) $('confirmModal').classList.remove('show');
+});
+
+applyDarkMode();
+loadData();
+</script>
+</body>
+</html>
