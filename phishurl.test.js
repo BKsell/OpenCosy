@@ -199,3 +199,69 @@ test('registrableLabel / leftLabels 处理多级后缀', () => {
   assert.equal(pu.registrableLabel('login.apple.com'), 'apple');
   assert.deepEqual(pu.leftLabels('login.apple.com'), ['login']);
 });
+
+// ---- 原始主机提取（WHATWG 会规范化，必须自己切）----
+
+test('extractRawHost 去掉协议/userinfo/端口/路径', () => {
+  assert.equal(pu.extractRawHost('http://paypal.com@evil.com:8080/a?b=1'), 'evil.com');
+  assert.equal(pu.extractRawHost('https://0x7f.0.0.1/login'), '0x7f.0.0.1');
+  assert.equal(pu.extractRawHost('http://0177.0.0.1/'), '0177.0.0.1');
+  assert.equal(pu.extractRawHost('https://example.com/'), 'example.com');
+  assert.equal(pu.extractRawHost('not-a-url'), '');
+});
+
+test('扁平整数/十六进制 IP 由主流程识别为高危', () => {
+  assert.ok(pu.analyze('http://2130706433/'));
+  assert.equal(pu.analyze('http://2130706433/').level, 'high');
+  assert.ok(pu.analyze('http://0x7f000001/'));
+});
+
+// ---- 多信号与分数 ----
+
+test('多个信号时按权重降序排列，且分数为权重之和', () => {
+  const r = pu.analyze('http://paypal.com@paypal-secure.xyz:8099/x');
+  assert.ok(r);
+  const ws = r.signals.map(s => s.weight);
+  const sorted = [...ws].sort((x, y) => y - x);
+  assert.deepEqual(ws, sorted);
+  const sum = r.signals.reduce((t, s) => t + s.weight, 0);
+  assert.equal(r.score, sum);
+});
+
+test('每条信号都带 code 与非空 detail', () => {
+  const r = pu.analyze('http://10.0.0.1/');
+  for (const s of r.signals) {
+    assert.equal(typeof s.detail, 'string');
+    assert.ok(s.detail.length > 0);
+  }
+});
+
+test('纯凭据 userinfo 但无品牌词仍高危（userinfo 本身即强信号）', () => {
+  const r = pu.analyze('http://admin:hunter2@example.com/');
+  assert.ok(r);
+  assert.equal(r.level, 'high');
+  assert.ok(signalsOf(r).has('userinfo'));
+});
+
+// ---- 主流托管判定 ----
+
+test('isLikelyMainstreamHost 识别 CDN/托管后缀', () => {
+  assert.ok(pu.isLikelyMainstreamHost('d111111.cloudfront.net'));
+  assert.ok(pu.isLikelyMainstreamHost('my-site.vercel.app'));
+  assert.ok(pu.isLikelyMainstreamHost('bucket.s3.amazonaws.com'));
+  assert.equal(pu.isLikelyMainstreamHost('notamazonaws.com.evil.xyz'), false);
+  assert.equal(pu.isLikelyMainstreamHost('example.org'), false);
+});
+
+// ---- 大小写与缺省 ----
+
+test('大写协议/主机被归一化处理', () => {
+  const r = pu.analyze('HTTP://192.168.0.1/');
+  assert.ok(r);
+  assert.equal(r.hostname, '192.168.0.1');
+});
+
+test('非 HTTP(S) 协议里的 userinfo 不分析（交给外部协议模块）', () => {
+  assert.equal(pu.analyze('ssh://root@10.0.0.1/'), null);
+});
+
