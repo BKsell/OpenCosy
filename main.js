@@ -10,6 +10,7 @@ const brandGuard = require('./brandguard');
 const phishUrl = require('./phishurl');
 const certGuard = require('./certguard');
 const mixedGuard = require('./mixedguard');
+const netAuthGuard = require('./netauthguard');
 
 // 现代浏览器默认要求“用户与页面有过交互”才允许带声音自动播放，
 // 否则广告页一打开就能外放声音。必须在 app ready 之前设置。
@@ -1085,6 +1086,9 @@ const SECURITY_EVENT_TYPES = new Set([
   'device-permission-blocked', // HID/串口/USB/蓝牙等设备选择被拒绝
   'extension-blocked',       // 扩展请求危险权限 / 校验未过
   'mixed-content-blocked',   // HTTPS 页面主动混合内容（HTTP 脚本/XHR 等）被阻止
+  'auth-blocked',            // 子框架/未知方案 401/407 凭据探测被静默取消
+  'auth-rate-limited',       // 同一主机认证弹框过频，进入冷却
+  'client-cert-blocked',     // 无明确选择时默认不发送客户端证书
 ]);
 
 const securityEvents = [];
@@ -1906,6 +1910,274 @@ ipcMain.handle('clear-cert-exceptions', () => {
 });
 
 ipcMain.handle('get-cert-exception-stats', () => getCertExceptionStats());
+
+// ===== 网络身份认证治理（login / select-client-certificate）=====
+// Electron 缺省会对任何框架的 HTTP 401 弹原生登录框，且可能静默复用当前
+// Windows/域凭据；select-client-certificate 在多证书时也可能自动选一张发走，
+// 把客户端证书身份泄露给任意站点。判定内核在 netauthguard.js，这里只负责
+// 接系统事件、做限流、把挑战交给我们自己的渲染层弹框，并落“记住的证书”台账。
+const netAuthCrypto = require('crypto');
+const clientCertStorePath = path.join(app.getPath('userData'), 'client-cert-choices.json');
+const MAX_CLIENT_CERT_PICK_CHARS = 64;
+
+const clientCertStore = new netAuthGuard.RememberedClientCertStore();
+const authLimiter = new netAuthGuard.AuthPromptRateLimiter();
+const authStats = new netAuthGuard.AuthPromptStats();
+let clientCertStoreLoaded = false;
+let clientCertSaveTimer = null;
+
+// nonce -> { callback, kind, timer, key }。认证 / 证书选择都是“可挂起的回调”，
+// 等待渲染层返回；统一放 Map 里，超时或窗口关闭时统一取消，绝不遗留悬挂回调。
+const pendingAuthChallenges = new Map();
+
+function netAuthNonce() {
+  return 'na-' + netAuthCrypto.randomBytes(12).toString('hex');
+}
+
+function loadClientCertChoices() {
+  if (clientCertStoreLoaded) return;
+  clientCertStoreLoaded = true;
+  try {
+    const raw = fsSync.readFileSync(clientCertStorePath, 'utf8');
+    clientCertStore.loadJSON(raw);
+  } catch {}
+}
+
+function persistClientCertChoices() {
+  if (clientCertSaveTimer) clearTimeout(clientCertSaveTimer);
+  clientCertSaveTimer = setTimeout(() => {
+    try {
+      const tmp = clientCertStorePath + '.tmp';
+      fsSync.writeFileSync(tmp, JSON.stringify(clientCertStore.toJSON()), 'utf8');
+      fsSync.renameSync(tmp, clientCertStorePath);
+    } catch {}
+  }, 300);
+}
+
+// failAuthCallback 在“不弹框 / 超时 / 窗口关闭”等路径上安全地兑现一个空凭据，
+// 让请求以未认证失败，而不是卡住或回退到系统默认行为。
+function failAuthCallback(callback) {
+  try { callback(); } catch {}
+}
+
+function rejectAuthChallenge(nonce) {
+  const c = pendingAuthChallenges.get(nonce);
+  if (!c) return false;
+  clearTimeout(c.timer);
+  pendingAuthChallenges.delete(nonce);
+  failAuthCallback(c.callback);
+  return true;
+}
+
+function authEventOrigin(webContents) {
+  try {
+    return new URL(webContents.getURL()).origin;
+  } catch {
+    return '';
+  }
+}
+
+// sanitizeCertPickList 只把证书的非敏感摘要给渲染层，绝不传证书对象本体。
+function sanitizeCertPickList(certificateList) {
+  const out = [];
+  const list = Array.isArray(certificateList) ? certificateList : [];
+  for (let i = 0; i < list.length && i < MAX_CLIENT_CERT_PICK_CHARS; i++) {
+    const s = netAuthGuard.summarizeClientCert(list[i]);
+    out.push({
+      index: i,
+      fingerprint: s.fingerprint,
+      issuer: s.issuer,
+      subject: s.subject,
+      serialNumber: s.serialNumber,
+    });
+  }
+  return out;
+}
+
+function setupNetworkAuth() {
+  loadClientCertChoices();
+
+  // HTTP/代理身份认证。isProxy 时走 407 判定，否则按 401 主/子框架判定。
+  app.on('login', (loginEvent, webContents, request, authInfo, callback) => {
+    loginEvent.preventDefault();
+    const info = authInfo || {};
+    const isProxy = info.isProxy === true;
+    const verdict = isProxy
+      ? netAuthGuard.classifyProxyAuth({ url: request && request.url, authInfo: info })
+      : netAuthGuard.classifyServerAuth({
+          url: request && request.url,
+          // Electron 41 在 response details 里给 resourceType；缺省时按子框架
+          // fail-closed，不允许在无法确认顶层的情况下弹框（可能泄露凭据）。
+          isMainFrame: request && request.resourceType === 'mainFrame',
+          authInfo: info,
+        });
+    authStats.recordEvent({ decision: verdict.decision, reason: verdict.reason, scheme: verdict.scheme });
+
+    if (verdict.decision !== 'prompt') {
+      failAuthCallback(callback);
+      recordSecurityEvent('auth-blocked', 'warn',
+        `${isProxy ? '代理' : '服务器'}认证被拦截：${verdict.reason}（${verdict.scheme || '未知方案'}）`,
+        isProxy ? (verdict.host || 'proxy') : verdict.key);
+      return;
+    }
+
+    const gate = authLimiter.request(verdict.key, Date.now());
+    if (!gate.allow) {
+      authStats.recordRateLimited();
+      failAuthCallback(callback);
+      recordSecurityEvent('auth-rate-limited', 'warn',
+        `认证弹框过频已临时冷却：${verdict.key}（${gate.reason}）`, verdict.key);
+      return;
+    }
+
+    // 有界待处理队列：超过上限直接取消最旧的同类挑战，防止 401 风暴堆积。
+    if (pendingAuthChallenges.size >= netAuthGuard.MAX_PENDING_PROMPTS) {
+      const oldest = pendingAuthChallenges.keys().next().value;
+      rejectAuthChallenge(oldest);
+    }
+
+    const nonce = netAuthNonce();
+    const timer = setTimeout(() => {
+      if (!pendingAuthChallenges.has(nonce)) return;
+      pendingAuthChallenges.delete(nonce);
+      failAuthCallback(callback);
+    }, netAuthGuard.AUTH_PROMPT_TIMEOUT_MS);
+    pendingAuthChallenges.set(nonce, { callback, timer, key: verdict.key, kind: 'login' });
+
+    sendToRenderer('network-auth-required', {
+      nonce,
+      isProxy,
+      host: verdict.host || '',
+      key: verdict.key,
+      scheme: verdict.scheme,
+      schemeLabel: netAuthGuard.describeAuthScheme(verdict.scheme),
+      realm: verdict.realm || '',
+      origin: authEventOrigin(webContents),
+    });
+  });
+
+  // TLS 客户端证书：默认不发送，除非用户为该主机明确记住过一张证书的指纹。
+  session.defaultSession.on('select-client-certificate', (certEvent, webContents, url, certificateList, callback) => {
+    certEvent.preventDefault();
+    let hostname = '';
+    try { hostname = new URL(url).hostname; } catch {}
+    const remembered = hostname ? clientCertStore.get(hostname) : null;
+    const pick = netAuthGuard.chooseClientCertificate({
+      certificateList,
+      rememberedFingerprint: remembered ? remembered.fingerprint : '',
+    });
+    if (pick.index >= 0 && certificateList[pick.index]) {
+      try { callback(certificateList[pick.index]); } catch { try { callback(); } catch {} }
+      return;
+    }
+    authStats.recordCertSuppressed();
+    recordSecurityEvent('client-cert-blocked', 'info',
+      `未自动发送客户端证书：${hostname || '未知主机'}（${pick.reason}）`, url);
+
+    if (pendingAuthChallenges.size >= netAuthGuard.MAX_PENDING_PROMPTS) {
+      try { callback(); } catch {}
+      return;
+    }
+    const nonce = netAuthNonce();
+    const timer = setTimeout(() => {
+      if (!pendingAuthChallenges.has(nonce)) return;
+      pendingAuthChallenges.delete(nonce);
+      try { callback(); } catch {}
+    }, netAuthGuard.AUTH_PROMPT_TIMEOUT_MS);
+    pendingAuthChallenges.set(nonce, { callback, timer, key: url, kind: 'cert', certificateList, hostname });
+    sendToRenderer('client-cert-required', {
+      nonce,
+      host: hostname,
+      origin: authEventOrigin(webContents),
+      certificates: sanitizeCertPickList(certificateList),
+    });
+  });
+}
+
+// 渲染层提交账号口令。只接受主界面，且 nonce 必须仍在待处理表里。
+ipcMain.handle('submit-network-auth', (event, payload = {}) => {
+  if (!isMainSender(event)) return { ok: false, error: 'denied' };
+  const challenge = pendingAuthChallenges.get(payload.nonce);
+  if (!challenge || challenge.kind !== 'login') return { ok: false, error: '挑战已过期或无效' };
+  const clean = netAuthGuard.sanitizeAuthSubmit({ username: payload.username, password: payload.password });
+  if (!clean.ok) return { ok: false, error: '账号或口令不合法' };
+  clearTimeout(challenge.timer);
+  pendingAuthChallenges.delete(payload.nonce);
+  try { challenge.callback(clean.username, clean.password); } catch {}
+  authLimiter.reset(challenge.key);
+  authStats.recordSuccess();
+  return { ok: true };
+});
+
+ipcMain.handle('cancel-network-auth', (event, payload = {}) => {
+  if (!isMainSender(event)) return { ok: false, error: 'denied' };
+  return { ok: rejectAuthChallenge(payload.nonce) };
+});
+
+// 渲染层选择客户端证书；remember=true 时把该主机->指纹记入台账。
+ipcMain.handle('choose-client-cert', (event, payload = {}) => {
+  if (!isMainSender(event)) return { ok: false, error: 'denied' };
+  const challenge = pendingAuthChallenges.get(payload.nonce);
+  if (!challenge || challenge.kind !== 'cert') return { ok: false, error: '挑战已过期或无效' };
+  const idx = Number(payload.index);
+  const list = Array.isArray(challenge.certificateList) ? challenge.certificateList : [];
+  if (!Number.isInteger(idx) || idx < 0 || idx >= list.length) {
+    return { ok: false, error: '证书序号无效' };
+  }
+  clearTimeout(challenge.timer);
+  pendingAuthChallenges.delete(payload.nonce);
+  try { challenge.callback(list[idx]); } catch {}
+  if (payload.remember === true && challenge.hostname) {
+    if (clientCertStore.remember(challenge.hostname, list[idx], Date.now())) persistClientCertChoices();
+  }
+  sendToRenderer('client-cert-choices-updated', getClientCertChoiceStats());
+  return { ok: true };
+});
+
+ipcMain.handle('cancel-client-cert', (event, payload = {}) => {
+  if (!isMainSender(event)) return { ok: false, error: 'denied' };
+  const challenge = pendingAuthChallenges.get(payload.nonce);
+  if (!challenge || challenge.kind !== 'cert') return { ok: false, error: '挑战已过期或无效' };
+  clearTimeout(challenge.timer);
+  pendingAuthChallenges.delete(payload.nonce);
+  try { challenge.callback(); } catch {}
+  return { ok: true };
+});
+
+ipcMain.handle('list-remembered-certs', (event, payload = {}) => {
+  if (!isMainSender(event)) return { ok: false, error: 'denied' };
+  loadClientCertChoices();
+  const limit = Math.min(Number(payload.limit) || netAuthGuard.MAX_REMEMBERED_CERT_HOSTS, netAuthGuard.MAX_REMEMBERED_CERT_HOSTS);
+  return { ok: true, entries: clientCertStore.list().slice(0, limit), stats: getClientCertChoiceStats() };
+});
+
+ipcMain.handle('forget-remembered-cert', (event, payload = {}) => {
+  if (!isMainSender(event)) return { ok: false, error: 'denied' };
+  if (typeof payload.host !== 'string') return { ok: false, error: 'bad-host' };
+  clientCertStore.forget(payload.host);
+  persistClientCertChoices();
+  sendToRenderer('client-cert-choices-updated', getClientCertChoiceStats());
+  return { ok: true };
+});
+
+ipcMain.handle('clear-remembered-certs', (event) => {
+  if (!isMainSender(event)) return { ok: false, error: 'denied' };
+  clientCertStore.clear();
+  persistClientCertChoices();
+  sendToRenderer('client-cert-choices-updated', getClientCertChoiceStats());
+  return { ok: true };
+});
+
+ipcMain.handle('get-auth-stats', (event) => {
+  if (!isMainSender(event)) return { ok: false, error: 'denied' };
+  return { ok: true, stats: authStats.toJSON() };
+});
+
+function getClientCertChoiceStats() {
+  const entries = clientCertStore.list();
+  return { count: entries.length, max: netAuthGuard.MAX_REMEMBERED_CERT_HOSTS };
+}
+
 
 // ===== 下载完整性校验（download-hashes.json / cosy://hashes）=====
 // Electron 的下载项只保证"字节传完了"，不保证字节没被中间人 / 镜像污染。
@@ -3714,6 +3986,7 @@ app.whenReady().then(async () => {
   setupSecurityHeaders();
   setupDownloadManager();
   setupGlobalWebContentsHooks();
+  setupNetworkAuth();
   setupNetworkStatus();
   // 拼写检查开关与语言在首个页面加载前就按持久化设置生效。
   const persisted = readPersistedSettings();
