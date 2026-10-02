@@ -781,3 +781,103 @@ body {
     max-width: 300px;
     z-index: 100002;
 }
+
+/* ===== 网络认证弹框（401/407 登录 + 客户端证书，r22）===== */
+.net-auth-dialog {
+    width: 380px;
+    max-width: calc(100vw - 32px);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.net-auth-title {
+    margin: 0 0 2px 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.net-auth-host { color: var(--text-primary); font-size: 14px; word-break: break-all; }
+.net-auth-scheme,
+.net-auth-realm { color: var(--text-secondary); font-size: 12px; word-break: break-all; }
+
+.net-auth-warn {
+    margin: 2px 0;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.net-auth-label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.net-auth-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 13px;
+}
+
+.net-auth-input:focus {
+    outline: none;
+    border-color: var(--theme-color);
+}
+
+.net-auth-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 4px;
+}
+
+.net-auth-actions .cosy-btn[disabled],
+.net-auth-actions .cosy-btn-primary[disabled] {
+    opacity: 0.5;
+    cursor: not-allowed;
+    filter: none;
+}
+
+.net-cert-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+.net-cert-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+
+.net-cert-row.selected { border-color: var(--theme-color); }
+
+.net-cert-info { min-width: 0; }
+.net-cert-subject { font-size: 13px; color: var(--text-primary); word-break: break-all; }
+.net-cert-meta { font-size: 11px; color: var(--text-secondary); word-break: break-all; }
+.net-cert-empty { font-size: 13px; color: var(--text-secondary); padding: 8px 0; }
+
+.net-auth-remember {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
