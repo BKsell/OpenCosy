@@ -210,6 +210,7 @@
     <button class="tab" id="tabBrand" type="button">品牌仿冒 <span id="brandCountBadge" style="display:none;"></span></button>
 <button class="tab" id="tabCert" type="button">证书例外 <span id="certCountBadge" style="display:none;"></span></button>
 <button class="tab" id="tabNetAuth" type="button">网络认证 <span id="netAuthCountBadge" style="display:none;"></span></button>
+<button class="tab" id="tabCookie" type="button">Cookie 加固 <span id="cookieCountBadge" style="display:none;"></span></button>
   </div>
 
   <div class="view active" id="viewEvents">
@@ -410,6 +411,35 @@
       <div>还没有记住任何客户端证书。删除后，该主机再次请求证书时需要你重新手动选择。</div>
     </div>
   </div><!-- /viewNetAuth -->
+
+  <div class="view" id="viewCookie">
+    <div class="stats">
+      <div class="stat-card"><div class="stat-num critical" id="cookieStatBlocked">-</div><div class="stat-label">剥离的 Cookie 数</div></div>
+      <div class="stat-card"><div class="stat-num" id="cookieStatRewritten">-</div><div class="stat-label">补 SameSite=Lax 数</div></div>
+      <div class="stat-card"><div class="stat-num" id="cookieStatHosts">-</div><div class="stat-label">涉及主机数</div></div>
+      <div class="stat-card"><div class="stat-num" id="cookieStatEntries">-</div><div class="stat-label">台账条目数</div></div>
+    </div>
+    <p class="subtitle">
+      跨站（第三方）上下文试图种下的 Cookie 会被<strong>直接剥离</strong>，掐断跨站追踪与 CSRF；
+      第一方 Cookie 若没写 SameSite 会自动补 <strong>SameSite=Lax</strong>，
+      SameSite=None 却缺 Secure 时降级为 Lax。<br>
+      另外 <strong>__Host- / __Secure-</strong> 名前缀是浏览器的来源完整性承诺，
+      不满足 Secure / Path=/ / 无 Domain 约束时本就会被浏览器丢弃，这里同样剥离并登记；
+      http:// 页面种的 Secure Cookie 也会被丢弃。全部处理只在本机进行，不上报任何站点。
+    </p>
+
+    <div class="toolbar" style="margin:12px 0;">
+      <input type="text" id="cookieSearchInput" placeholder="按主机或 Cookie 名筛选…"
+        style="flex:1;min-width:180px;padding:8px 10px;border-radius:8px;border:1px solid var(--border-color,#dadce0);background:var(--input-bg,#fff);color:inherit;">
+      <button class="btn-primary" id="cookieRefreshBtn" type="button">刷新</button>
+      <button class="btn-danger-ghost" id="cookieClearBtn" type="button">清空台账</button>
+    </div>
+    <div class="event-list" id="cookieList"></div>
+    <div class="empty" id="cookieEmptyState" style="display:none;">
+      <div class="big">&#127850;</div>
+      <div>还没有处理过不安全的 Set-Cookie。开启第三方 Cookie 拦截后，跨站追踪 Cookie 会在这里记录。</div>
+    </div>
+  </div><!-- /viewCookie -->
 </div>
 
 <div class="modal-mask" id="confirmModal">
@@ -588,6 +618,7 @@ function switchView(which) {
     brand: ['tabBrand', 'viewBrand'],
     cert: ['tabCert', 'viewCert'],
     netauth: ['tabNetAuth', 'viewNetAuth'],
+    cookie: ['tabCookie', 'viewCookie'],
   };
   for (const [key, [tabId, viewId]] of Object.entries(map)) {
     $(tabId).classList.toggle('active', key === which);
@@ -599,6 +630,7 @@ function switchView(which) {
   if (which === 'brand') loadBrandSpoofData();
   if (which === 'cert') loadCertExceptionsData();
   if (which === 'netauth') loadNetAuthData();
+  if (which === 'cookie') loadCookieData();
 }
 $('tabEvents').onclick = () => switchView('events');
 $('tabCsp').onclick = () => switchView('csp');
@@ -607,6 +639,7 @@ $('tabRequests').onclick = () => switchView('requests');
 $('tabBrand').onclick = () => switchView('brand');
 $('tabCert').onclick = () => switchView('cert');
 $('tabNetAuth').onclick = () => switchView('netauth');
+$('tabCookie').onclick = () => switchView('cookie');
 
 function updateCspBadge() {
   const badge = $('cspCountBadge');
@@ -1327,6 +1360,109 @@ api.on('client-cert-choices-updated', () => {
   if ($('viewNetAuth').classList.contains('active')) loadNetAuthData();
 });
 
+// ===== Cookie 加固面板 =====
+const cookieState = { rows: [] };
+const COOKIE_REASON_TEXT = {
+  'cross-site-set-cookie': '跨站第三方 Cookie',
+  'secure-on-insecure-origin': 'http 页面带 Secure',
+  'host-prefix-not-secure': '__Host- 前缀缺 Secure',
+  'host-prefix-domain': '__Host- 前缀带 Domain',
+  'host-prefix-path': '__Host- 前缀 Path 不是 /',
+  'secure-prefix-not-secure': '__Secure- 前缀缺 Secure',
+  'samesite-none-without-secure': 'SameSite=None 缺 Secure',
+  'samesite-missing-default-lax': '未声明 SameSite，补 Lax',
+};
+
+function cookieReasonText(r) {
+  return COOKIE_REASON_TEXT[r.reason] || r.reason || '未知';
+}
+
+function applyCookieStats(stats) {
+  if (!stats) return;
+  $('cookieStatBlocked').textContent = String(stats.blocked || 0);
+  $('cookieStatRewritten').textContent = String(stats.rewritten || 0);
+  $('cookieStatHosts').textContent = String(stats.hosts || 0);
+  $('cookieStatEntries').textContent = String(stats.entries || 0);
+  const n = stats.totalHits || 0;
+  const badge = $('cookieCountBadge');
+  badge.style.display = n ? 'inline-block' : 'none';
+  badge.textContent = n > 99 ? '99+' : String(n);
+}
+
+function renderCookieRows() {
+  const query = ($('cookieSearchInput').value || '').trim().toLowerCase();
+  const list = $('cookieList');
+  list.textContent = '';
+  const rows = cookieState.rows.filter(r => {
+    if (!query) return true;
+    return String(r.host || '').toLowerCase().includes(query) ||
+      String(r.name || '').toLowerCase().includes(query);
+  });
+  $('cookieEmptyState').style.display = rows.length ? 'none' : 'block';
+
+  for (const r of rows) {
+    const row = document.createElement('div');
+    row.className = 'event-row severity-warn';
+    if (r.action === 'samesite-default-lax') row.style.borderLeftColor = '#1a73e8';
+
+    const head = document.createElement('div');
+    head.className = 'event-head';
+    const host = document.createElement('span');
+    host.textContent = r.host || '';
+    const time = document.createElement('span');
+    time.className = 'event-time';
+    time.textContent = r.lastTime ? formatTime(r.lastTime) : '';
+    head.appendChild(host);
+    head.appendChild(time);
+    row.appendChild(head);
+
+    const meta = document.createElement('div');
+    meta.style.cssText = 'margin-top:4px;font-size:12px;color:#9aa0a6;word-break:break-all;';
+    const tag = document.createElement('span');
+    tag.textContent = `${r.name || '(无名)'}　·　${cookieReasonText(r)}`;
+    meta.appendChild(tag);
+    row.appendChild(meta);
+
+    const foot = document.createElement('div');
+    foot.style.cssText = 'margin-top:4px;font-size:12px;color:#9aa0a6;';
+    foot.textContent = `命中 ${r.hits || 1} 次${r.crossSite ? '　·　跨站' : ''}`;
+    row.appendChild(foot);
+
+    list.appendChild(row);
+  }
+}
+
+async function loadCookieData() {
+  $('cookieRefreshBtn').disabled = true;
+  try {
+    const [listRes, statsRes] = await Promise.all([
+      api.invoke('list-cookie-hardening'),
+      api.invoke('get-cookie-hardening-stats'),
+    ]);
+    cookieState.rows = (listRes && Array.isArray(listRes.entries)) ? listRes.entries : [];
+    renderCookieRows();
+    if (statsRes && statsRes.ok) applyCookieStats(statsRes.stats);
+  } catch (e) {
+    toast('Cookie 加固台账加载失败：' + (e && e.message ? e.message : e), true);
+  } finally {
+    $('cookieRefreshBtn').disabled = false;
+  }
+}
+
+$('cookieRefreshBtn').onclick = loadCookieData;
+$('cookieClearBtn').onclick = async () => {
+  const ok = await showConfirm('将清空 Cookie 加固台账，已记录的剥离与改写统计会归零。继续？');
+  if (!ok) return;
+  const res = await api.invoke('clear-cookie-hardening');
+  if (res && res.ok) { toast('已清空 Cookie 台账'); loadCookieData(); }
+  else toast('清空失败', true);
+};
+$('cookieSearchInput').addEventListener('input', renderCookieRows);
+api.on('cookie-hardening-updated', (stats) => {
+  applyCookieStats(stats);
+  if ($('viewCookie').classList.contains('active')) loadCookieData();
+});
+
 $('searchInput').addEventListener('input', render);
 $('filterSelect').addEventListener('change', render);
 $('severitySelect').addEventListener('change', render);
@@ -1353,6 +1489,7 @@ api.invoke('list-remembered-certs', { limit: 100 }).then(res => {
   applyRememberedCertBadge(n);
 }).catch(() => {});
 api.invoke('get-auth-stats').then(res => { if (res && res.ok) applyAuthStats(res.stats); }).catch(() => {});
+api.invoke('get-cookie-hardening-stats').then(res => { if (res && res.ok) applyCookieStats(res.stats); }).catch(() => {});
 </script>
 </body>
 </html>
