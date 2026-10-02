@@ -6,6 +6,7 @@ const os = require('os');
 const bookmarkIO = require('./bookmarkio');
 const headerGrade = require('./headergrade');
 const requestLog = require('./requestlog');
+const brandGuard = require('./brandguard');
 
 // 现代浏览器默认要求“用户与页面有过交互”才允许带声音自动播放，
 // 否则广告页一打开就能外放声音。必须在 app ready 之前设置。
@@ -761,8 +762,16 @@ function setupSecurityHeaders() {
       }
       // 同形异义 / IDN 反钓鱼提示（只提示，不阻断导航）。
       try {
-        const spoof = analyzeHostForSpoof(new URL(details.url).hostname);
+        const navHost = new URL(details.url).hostname;
+        const spoof = analyzeHostForSpoof(navHost);
         if (spoof) sendToRenderer('spoof-warning', spoof);
+        // 品牌仿冒 / 拼写劫持（纯拉丁拼写编辑距离、子域碰瓷、品牌词+诱导词），
+        // 与上面的 homograph 检测互补；命中后发横幅并登记到安全中心台账。
+        const brandHit = brandGuard.analyzeBrand(navHost);
+        if (brandHit) {
+          recordBrandSpoof(brandHit);
+          sendToRenderer('brand-spoof-warning', brandHit);
+        }
       } catch { /* 无效主机名忽略 */ }
     }
 
@@ -1514,6 +1523,130 @@ function clearRequestLog() {
   return true;
 }
 
+// ===== 品牌仿冒 / 拼写劫持命中台账（brand-spoofs.json / cosy://security）=====
+// 顶层导航命中 brandguard 后，把“主机 + 被仿冒品牌 + 命中原因”按主机聚合落盘，
+// 让用户在安全中心看到最近有哪些疑似钓鱼域名被提示过、分别在冒充谁。
+// 隐私约束与 requestlog 一致：只存主机名与品牌名，不存路径/查询/Cookie；
+// 上限 300 主机，超出淘汰最久未活动的；写盘走临时文件 + 原子 rename。
+const brandSpoofStorePath = path.join(app.getPath('userData'), 'brand-spoofs.json');
+const MAX_BRAND_SPOOF_HOSTS = 300;
+const BRAND_SPOOF_REASONS = new Set([
+  'typo-domain', 'brand-in-subdomain', 'brand-keyword-impersonation',
+]);
+let brandSpoofs = [];
+let brandSpoofsLoaded = false;
+let brandSpoofSaveTimer = null;
+let brandSpoofNotifyTimer = null;
+
+function loadBrandSpoofs() {
+  if (brandSpoofsLoaded) return;
+  brandSpoofsLoaded = true;
+  try {
+    const data = JSON.parse(fsSync.readFileSync(brandSpoofStorePath, 'utf8'));
+    if (data && Array.isArray(data.hosts)) {
+      const now = Date.now();
+      for (const h of data.hosts) {
+        if (!h || typeof h !== 'object') continue;
+        if (typeof h.host !== 'string' || !h.host) continue;
+        if (!BRAND_SPOOF_REASONS.has(h.reason)) continue;
+        brandSpoofs.push({
+          host: String(h.host).slice(0, 253),
+          brand: String(h.brand || '').slice(0, 40),
+          reason: h.reason,
+          hint: String(h.hint || '').slice(0, 120),
+          firstTime: Number(h.firstTime) || now,
+          lastTime: Number(h.lastTime) || now,
+          count: Math.max(1, Number(h.count) || 1),
+        });
+      }
+      if (brandSpoofs.length > MAX_BRAND_SPOOF_HOSTS) {
+        brandSpoofs = brandSpoofs.slice(-MAX_BRAND_SPOOF_HOSTS);
+      }
+    }
+  } catch {}
+}
+
+function persistBrandSpoofs() {
+  if (brandSpoofSaveTimer) clearTimeout(brandSpoofSaveTimer);
+  brandSpoofSaveTimer = setTimeout(() => {
+    try {
+      const tmp = brandSpoofStorePath + '.tmp';
+      fsSync.writeFileSync(tmp, JSON.stringify({ version: 1, savedAt: Date.now(), hosts: brandSpoofs }), 'utf8');
+      fsSync.renameSync(tmp, brandSpoofStorePath);
+    } catch {}
+  }, 5000);
+}
+
+// recordBrandSpoof 由 onBeforeRequest 顶层导航调用；入参来自纯模块，仍重新白名单化，
+// 防止脏数据写盘。任何异常都不影响浏览。
+function recordBrandSpoof(hit) {
+  try {
+    if (!hit || typeof hit !== 'object') return;
+    const host = String(hit.hostname || '').toLowerCase().replace(/\.$/, '').slice(0, 253);
+    if (!host || !BRAND_SPOOF_REASONS.has(hit.reason)) return;
+    const now = Date.now();
+    loadBrandSpoofs();
+    const idx = brandSpoofs.findIndex(h => h.host === host);
+    if (idx >= 0) {
+      const rec = brandSpoofs[idx];
+      rec.lastTime = now;
+      rec.count = Math.min(Number.MAX_SAFE_INTEGER, (Number(rec.count) || 1) + 1);
+      // 最近一次的原因/品牌更可信（同一主机可能命中多条规则）。
+      rec.reason = hit.reason;
+      rec.brand = String(hit.brand || rec.brand || '').slice(0, 40);
+      rec.hint = String(hit.hint || rec.hint || '').slice(0, 120);
+      brandSpoofs.splice(idx, 1);
+      brandSpoofs.push(rec);
+    } else {
+      brandSpoofs.push({
+        host,
+        brand: String(hit.brand || '').slice(0, 40),
+        reason: hit.reason,
+        hint: String(hit.hint || '').slice(0, 120),
+        firstTime: now,
+        lastTime: now,
+        count: 1,
+      });
+    }
+    if (brandSpoofs.length > MAX_BRAND_SPOOF_HOSTS) {
+      brandSpoofs.splice(0, brandSpoofs.length - MAX_BRAND_SPOOF_HOSTS);
+    }
+    persistBrandSpoofs();
+    if (brandSpoofNotifyTimer) return;
+    brandSpoofNotifyTimer = setTimeout(() => {
+      brandSpoofNotifyTimer = null;
+      sendToRenderer('brand-spoof-updated', getBrandSpoofStats());
+    }, 2000);
+    brandSpoofNotifyTimer.unref?.();
+  } catch {}
+}
+
+function listBrandSpoofEntries(limit = 200) {
+  loadBrandSpoofs();
+  const n = Math.max(1, Math.min(Number(limit) || 200, MAX_BRAND_SPOOF_HOSTS));
+  return brandSpoofs.slice(-n).reverse().map(h => ({ ...h }));
+}
+
+function getBrandSpoofStats() {
+  loadBrandSpoofs();
+  const byReason = { 'typo-domain': 0, 'brand-in-subdomain': 0, 'brand-keyword-impersonation': 0 };
+  const brands = new Set();
+  for (const h of brandSpoofs) {
+    if (byReason[h.reason] === undefined) byReason[h.reason] = 0;
+    byReason[h.reason] += 1;
+    if (h.brand) brands.add(h.brand);
+  }
+  return { hosts: brandSpoofs.length, byReason, distinctBrands: brands.size };
+}
+
+function clearBrandSpoofs() {
+  loadBrandSpoofs();
+  brandSpoofs = [];
+  try { fsSync.unlinkSync(brandSpoofStorePath); } catch {}
+  persistBrandSpoofs();
+  return true;
+}
+
 // ===== 下载完整性校验（download-hashes.json / cosy://hashes）=====
 // Electron 的下载项只保证"字节传完了"，不保证字节没被中间人 / 镜像污染。
 // 现代浏览器在"显示下载文件的校验和"这件事上普遍缺位：用户从第三方站下了
@@ -2028,6 +2161,22 @@ function setupPermissionHandlers() {
       return { hosts: 0, requests: 0, blocked: 0, backgroundHosts: 0, insecureHosts: 0 };
     }
     return getRequestLogStats();
+  });
+
+  // ===== 品牌仿冒 / 拼写劫持命中台账（cosy://security）IPC，仅主框架可调 =====
+  ipcMain.handle('list-brand-spoofs', (event, payload = {}) => {
+    if (!isMainSender(event)) return [];
+    return listBrandSpoofEntries(Number(payload.limit) || 200);
+  });
+  ipcMain.handle('clear-brand-spoofs', (event) => {
+    if (!isMainSender(event)) return { success: false };
+    return { success: true, cleared: clearBrandSpoofs() };
+  });
+  ipcMain.handle('get-brand-spoof-stats', (event) => {
+    if (!isMainSender(event)) {
+      return { hosts: 0, byReason: {}, distinctBrands: 0 };
+    }
+    return getBrandSpoofStats();
   });
 
   // ===== 下载完整性校验（cosy://hashes）IPC，仅主框架可调 =====
