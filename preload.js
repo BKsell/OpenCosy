@@ -122,6 +122,11 @@ const allowedInvokeChannels = new Set([
   'list-pna-blocks',
   'get-pna-block-stats',
   'clear-pna-blocks',
+  'list-fingerprint-entries',
+  'get-fingerprint-stats',
+  'clear-fingerprint-entries',
+  'get-doh-status',
+  'clear-doh-events',
 ]);
 
 // 接收方向白名单：main -> renderer
@@ -187,6 +192,7 @@ const allowedOnChannels = new Set([
   'client-cert-choices-updated',
   'cookie-hardening-updated',
   'pna-blocked-updated',
+  'fingerprint-blocked-updated',
 ]);
 
 // sanitizeArg 过滤掉 renderer 传入的可疑对象：只保留 JSON 可序列化的纯数据，
