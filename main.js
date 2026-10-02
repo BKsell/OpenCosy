@@ -7,6 +7,7 @@ const bookmarkIO = require('./bookmarkio');
 const headerGrade = require('./headergrade');
 const requestLog = require('./requestlog');
 const brandGuard = require('./brandguard');
+const phishUrl = require('./phishurl');
 
 // 现代浏览器默认要求“用户与页面有过交互”才允许带声音自动播放，
 // 否则广告页一打开就能外放声音。必须在 app ready 之前设置。
@@ -771,6 +772,19 @@ function setupSecurityHeaders() {
         if (brandHit) {
           recordBrandSpoof(brandHit);
           sendToRenderer('brand-spoof-warning', brandHit);
+        }
+        // URL 结构特征钓鱼：userinfo 偷渡、裸/十六进制 IP、编码主机、
+        // punycode+品牌、可疑后缀/端口/深层子域叠加等。只对 high 级提示，
+        // 中低风险不打扰，把普通网站误伤降到最低。
+        const phishHit = phishUrl.analyze(details.url);
+        if (phishHit && phishHit.level === 'high') {
+          sendToRenderer('phish-url-warning', {
+            hostname: phishHit.hostname,
+            url: phishHit.url,
+            score: phishHit.score,
+            brand: phishHit.brand,
+            signals: phishHit.signals,
+          });
         }
       } catch { /* 无效主机名忽略 */ }
     }
