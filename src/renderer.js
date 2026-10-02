@@ -277,6 +277,13 @@ class TabManager {
     window.electronAPI.on('cert-exception-updated', () => {
       if (typeof refreshCertExceptions === 'function') refreshCertExceptions();
     });
+    // 网络身份认证：401/407 登录框与客户端证书选择，默认由主进程静默拦截，
+    // 只有顶层主框架 / 用户明确需要时才推到这里弹我们自己的（非原生）弹框。
+    window.electronAPI.on('network-auth-required', (data) => showNetworkAuthDialog(data || {}));
+    window.electronAPI.on('client-cert-required', (data) => showClientCertDialog(data || {}));
+    window.electronAPI.on('client-cert-choices-updated', () => {
+      if (typeof refreshRememberedCerts === 'function') refreshRememberedCerts();
+    });
     // 内存节省：标签被休眠时变灰并提示，唤醒（切回重载）后恢复。
     window.electronAPI.on('tab-discarded', (data) => this.markTabDiscarded(data && data.id, true));
     window.electronAPI.on('tab-reloaded', (data) => this.markTabDiscarded(data && data.id, false));
@@ -2872,4 +2879,217 @@ document.addEventListener('keydown', (e) => {
     show(payload.percent);
   });
 })();
+
+// ===== 网络身份认证弹框（HTTP 401/407 与客户端证书）=====
+// 主进程默认静默拦截子框架/可疑认证；只有该交互被允许时才会收到事件。
+// 所有来自网络的字段（host/realm/方案名/证书主题）一律 textContent 注入，
+// 绝不用 innerHTML 拼接，避免恶意 realm 把脚本带进我们的内部 UI。
+function buildAuthOverlay(id) {
+  const existing = document.getElementById(id);
+  if (existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.id = id;
+  overlay.className = 'cosy-overlay net-auth-overlay';
+  const dialog = document.createElement('div');
+  dialog.className = 'cosy-dialog net-auth-dialog';
+  overlay.appendChild(dialog);
+  document.body.appendChild(overlay);
+  return { overlay, dialog };
+}
+
+function escText(el, text) {
+  el.textContent = (text === undefined || text === null) ? '' : String(text);
+  return el;
+}
+
+function showNetworkAuthDialog(data) {
+  if (!data || !data.nonce) return;
+  const { overlay, dialog } = buildAuthOverlay('net-auth-' + data.nonce);
+
+  const title = document.createElement('h3');
+  title.className = 'net-auth-title';
+  title.textContent = data.isProxy ? '代理服务器要求身份认证' : '网站要求登录';
+
+  const hostLine = document.createElement('div');
+  hostLine.className = 'net-auth-host';
+  const hostStrong = document.createElement('strong');
+  escText(hostStrong, data.host || data.key || '未知主机');
+  hostLine.appendChild(hostStrong);
+
+  const schemeLine = document.createElement('div');
+  schemeLine.className = 'net-auth-scheme';
+  escText(schemeLine, data.schemeLabel || ('认证方案：' + (data.scheme || '未知')));
+
+  const realmLine = document.createElement('div');
+  realmLine.className = 'net-auth-realm';
+  if (data.realm) escText(realmLine, '区域：' + data.realm);
+
+  const warn = document.createElement('p');
+  warn.className = 'net-auth-warn';
+  warn.textContent = data.isProxy
+    ? '请确认该代理是你正在使用的代理。提交后账号口令将发送给代理服务器。'
+    : '仅在你确认要登录该站点时输入。子框架/跨源的登录请求已被浏览器静默拦截。';
+
+  const userLabel = document.createElement('label');
+  userLabel.className = 'net-auth-label';
+  userLabel.textContent = '用户名';
+  const userInput = document.createElement('input');
+  userInput.type = 'text';
+  userInput.autocomplete = 'off';
+  userInput.spellcheck = false;
+  userInput.className = 'net-auth-input';
+  userInput.maxLength = 512;
+
+  const passLabel = document.createElement('label');
+  passLabel.className = 'net-auth-label';
+  passLabel.textContent = '密码';
+  const passInput = document.createElement('input');
+  passInput.type = 'password';
+  passInput.autocomplete = 'off';
+  passInput.className = 'net-auth-input';
+  passInput.maxLength = 4096;
+
+  const actions = document.createElement('div');
+  actions.className = 'net-auth-actions';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'cosy-btn';
+  cancelBtn.textContent = '取消';
+  const okBtn = document.createElement('button');
+  okBtn.className = 'cosy-btn-primary';
+  okBtn.textContent = '登录';
+  actions.appendChild(cancelBtn);
+  actions.appendChild(okBtn);
+
+  dialog.append(title, hostLine, schemeLine, realmLine, warn, userLabel, userInput,
+    passLabel, passInput, actions);
+
+  let settled = false;
+  const close = () => { if (!settled) { settled = true; overlay.remove(); } };
+  const submit = async () => {
+    const username = userInput.value;
+    if (!username.trim()) { userInput.focus(); return; }
+    okBtn.disabled = true;
+    try {
+      const r = await window.electronAPI.invoke('submit-network-auth', {
+        nonce: data.nonce,
+        username,
+        password: passInput.value,
+      });
+      if (r && r.ok) { close(); return; }
+      okBtn.disabled = false;
+    } catch {
+      okBtn.disabled = false;
+    }
+  };
+
+  okBtn.addEventListener('click', submit);
+  cancelBtn.addEventListener('click', async () => {
+    try { await window.electronAPI.invoke('cancel-network-auth', { nonce: data.nonce }); } catch {}
+    close();
+  });
+  userInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') passInput.focus(); });
+  passInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+  setTimeout(() => userInput.focus(), 0);
+}
+
+function showClientCertDialog(data) {
+  if (!data || !data.nonce) return;
+  const certs = Array.isArray(data.certificates) ? data.certificates : [];
+  const { overlay, dialog } = buildAuthOverlay('client-cert-' + data.nonce);
+
+  const title = document.createElement('h3');
+  title.className = 'net-auth-title';
+  title.textContent = '选择客户端证书';
+
+  const hostLine = document.createElement('div');
+  hostLine.className = 'net-auth-host';
+  escText(hostLine.appendChild(document.createElement('strong')), data.host || '未知主机');
+
+  const warn = document.createElement('p');
+  warn.className = 'net-auth-warn';
+  warn.textContent = '该网站请求客户端证书以确认你的身份。浏览器不会自动选择证书，请手动选择要发送的证书，或取消。';
+
+  const rememberLabel = document.createElement('label');
+  rememberLabel.className = 'net-auth-remember';
+  const rememberCb = document.createElement('input');
+  rememberCb.type = 'checkbox';
+  rememberCb.disabled = certs.length === 0;
+  rememberLabel.appendChild(rememberCb);
+  rememberLabel.appendChild(document.createTextNode(' 以后访问该主机时自动使用所选证书'));
+
+  const certList = document.createElement('div');
+  certList.className = 'net-cert-list';
+  let selectedIndex = -1;
+
+  if (certs.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'net-cert-empty';
+    empty.textContent = '没有可用的客户端证书。';
+    certList.appendChild(empty);
+  }
+
+  certs.forEach((cert, index) => {
+    const row = document.createElement('label');
+    row.className = 'net-cert-row';
+    const radio = document.createElement('input');
+    radio.type = 'radio';
+    radio.name = 'cert-' + data.nonce;
+    radio.addEventListener('change', () => {
+      selectedIndex = index;
+      okBtn.disabled = false;
+      certList.querySelectorAll('.net-cert-row').forEach(r => r.classList.remove('selected'));
+      row.classList.add('selected');
+    });
+
+    const info = document.createElement('div');
+    info.className = 'net-cert-info';
+    const subject = document.createElement('div');
+    subject.className = 'net-cert-subject';
+    escText(subject, cert.subject || ('证书 #' + (index + 1)));
+    const meta = document.createElement('div');
+    meta.className = 'net-cert-meta';
+    escText(meta, [cert.issuer ? '签发者：' + cert.issuer : '', cert.serialNumber ? '序列号：' + cert.serialNumber : '']
+      .filter(Boolean).join('　'));
+    info.append(subject, meta);
+    row.append(radio, info);
+    certList.appendChild(row);
+  });
+
+  const actions = document.createElement('div');
+  actions.className = 'net-auth-actions';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'cosy-btn';
+  cancelBtn.textContent = '不发送';
+  const okBtn = document.createElement('button');
+  okBtn.className = 'cosy-btn-primary';
+  okBtn.textContent = '发送所选证书';
+  okBtn.disabled = certs.length === 0;
+  actions.appendChild(cancelBtn);
+  actions.appendChild(okBtn);
+
+  dialog.append(title, hostLine, warn, certList, rememberLabel, actions);
+
+  let settled = false;
+  const close = () => { if (!settled) { settled = true; overlay.remove(); } };
+  okBtn.addEventListener('click', async () => {
+    if (selectedIndex < 0) return;
+    okBtn.disabled = true;
+    try {
+      const r = await window.electronAPI.invoke('choose-client-cert', {
+        nonce: data.nonce,
+        index: selectedIndex,
+        remember: rememberCb.checked,
+      });
+      if (r && r.ok) { close(); return; }
+      okBtn.disabled = false;
+    } catch {
+      okBtn.disabled = false;
+    }
+  });
+  cancelBtn.addEventListener('click', async () => {
+    try { await window.electronAPI.invoke('cancel-client-cert', { nonce: data.nonce }); } catch {}
+    close();
+  });
+}
+
 
