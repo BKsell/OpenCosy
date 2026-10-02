@@ -234,6 +234,117 @@
             <div class="setting-item">
                 <div class="setting-icon">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="3" y="4" width="18" height="13" rx="2" stroke="currentColor" stroke-width="2" />
+                        <path d="M7 21h10M9 8h6M9 11h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">收敛高熵 Client Hints</label>
+                    <p class="setting-description">自动剥离完整浏览器版本、操作系统小版本、CPU 架构/位数、设备型号等高熵 Sec-CH-UA-* 请求头，只保留兼容性所需的低熵基础头，降低被跨站指纹识别的概率（不影响页面渲染与兼容性）</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="reduceClientHints" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" />
+                        <path d="M12 7v5l3 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">剥离广告归因与兴趣主题信号</label>
+                    <p class="setting-description">移除 Sec-Browsing-Topics（兴趣主题）与 Attribution-Reporting-*（广告归因）等请求头，阻止广告商跨站追踪你的浏览主题与转化链</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="blockAdSignals" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M9 11l3-3 3 3M12 8v9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        <path d="M5 4h14v16H5z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">拦截超链接审计打点</label>
+                    <p class="setting-description">阻止页面用 &lt;a ping&gt; 或带 Ping-To 的请求在你点击链接时静默向第三方上报点击；仅取消打点请求，不影响正常跳转</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="blockHyperlinkPing" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M4 6h16M4 12h10M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">清理站点的 Accept-CH / Critical-CH 订阅</label>
+                    <p class="setting-description">移除响应头里的 Accept-CH 与会触发带新头重试的 Critical-CH，阻止站点“订阅”高熵客户端提示并放大指纹采集</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="stripAcceptCh" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M3 12a9 9 0 0 1 18 0M6 12a6 6 0 0 1 12 0M9 12a3 3 0 0 1 6 0" stroke="currentColor" stroke-width="2" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">WebRTC IP 暴露策略</label>
+                    <p class="setting-description">严格：WebRTC 只走默认公网接口，不暴露内网/真实公网 IP（防穿透 VPN，推荐）；均衡：允许 mDNS 混淆的内网候选，兼容部分 P2P；不干预：保持浏览器默认行为</p>
+                    <select id="webrtcMode"
+                        style="padding:8px 10px;border-radius:8px;border:1px solid var(--border-color,#dadce0);background:var(--input-bg,#fff);color:inherit;">
+                        <option value="strict">严格（不暴露内网 IP）</option>
+                        <option value="balanced">均衡（mDNS 混淆）</option>
+                        <option value="legacy">不干预（兼容旧 P2P）</option>
+                    </select>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+                        <circle cx="12" cy="9" r="2.5" stroke="currentColor" stroke-width="2" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">安全 DNS（DNS-over-HTTPS）</label>
+                    <p class="setting-description">把域名解析经 HTTPS 发往可信解析器，防止同一网络里的人明文窃听你访问的域名或用污染应答把你引向钓鱼站。自动：能加密则加密；强制：全部走加密解析。仅允许 https 且拒绝指向本机/内网/元数据地址的服务器</p>
+                    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+                        <select id="dohMode"
+                            style="padding:8px 10px;border-radius:8px;border:1px solid var(--border-color,#dadce0);background:var(--input-bg,#fff);color:inherit;">
+                            <option value="automatic">自动（能加密则加密，推荐）</option>
+                            <option value="secure">强制（始终加密解析）</option>
+                            <option value="off">关闭</option>
+                        </select>
+                        <select id="dohProvider"
+                            style="padding:8px 10px;border-radius:8px;border:1px solid var(--border-color,#dadce0);background:var(--input-bg,#fff);color:inherit;">
+                            <option value="cloudflare">Cloudflare (1.1.1.1)</option>
+                            <option value="google">Google Public DNS</option>
+                            <option value="quad9">Quad9 (9.9.9.9)</option>
+                            <option value="alidns">阿里公共 DNS</option>
+                            <option value="dnspod">腾讯 DNSPod</option>
+                            <option value="custom">自定义服务器…</option>
+                        </select>
+                    </div>
+                    <input type="url" id="dohCustomUrl" placeholder="自定义 DoH 模板，例如 https://dns.example.com/dns-query"
+                        style="margin-top:8px;width:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid var(--border-color,#dadce0);background:var(--input-bg,#fff);color:inherit;">
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path d="M12 3L4 5V11C4 15.4 7 19.3 12 21C17 19.3 20 15.4 20 11V5L12 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
                         <path d="M9.5 12L11.2 13.7L15 9.8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
                     </svg>
@@ -486,13 +597,34 @@
         <button class="save-button" onclick="saveSettings()">保存设置</button>
     </div>
     <script>
-        const ALLOWED_SETTING_KEYS = new Set(['defaultTab', 'tabLayout', 'searchEngine', 'backgroundType', 'customUrl', 'customBackgroundUrl', 'themeColor', 'darkMode', 'memorySaver', 'clearOnExit', 'confirmCloseMultiple', 'blockTrackers', 'blockThirdPartyCookies', 'hardenCookies', 'blockLocalNetworkAccess', 'crashRecovery', 'stripTrackingParams', 'spellcheckEnabled', 'spellcheckLanguages']);
+        const ALLOWED_SETTING_KEYS = new Set(['defaultTab', 'tabLayout', 'searchEngine', 'backgroundType', 'customUrl', 'customBackgroundUrl', 'themeColor', 'darkMode', 'memorySaver', 'clearOnExit', 'confirmCloseMultiple', 'blockTrackers', 'blockThirdPartyCookies', 'hardenCookies', 'blockLocalNetworkAccess', 'reduceClientHints', 'blockAdSignals', 'blockHyperlinkPing', 'stripAcceptCh', 'webrtcMode', 'dohMode', 'dohProvider', 'dohCustomUrl', 'crashRecovery', 'stripTrackingParams', 'spellcheckEnabled', 'spellcheckLanguages']);
         const ALLOWED_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'cosy:']);
         const COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
         const DEFAULT_SPELLCHECK_LANGS = ['en-US', 'zh-CN'];
         // 这些键在 .inf 配置里保存为 true/false，导入时必须还原成布尔值，
         // 否则字符串 'false' 会被当成真值，导致"关闭"类设置永远关不掉。
-        const BOOLEAN_SETTING_KEYS = new Set(['darkMode', 'memorySaver', 'clearOnExit', 'confirmCloseMultiple', 'blockTrackers', 'blockThirdPartyCookies', 'hardenCookies', 'blockLocalNetworkAccess', 'crashRecovery', 'stripTrackingParams', 'spellcheckEnabled']);
+        const BOOLEAN_SETTING_KEYS = new Set(['darkMode', 'memorySaver', 'clearOnExit', 'confirmCloseMultiple', 'blockTrackers', 'blockThirdPartyCookies', 'hardenCookies', 'blockLocalNetworkAccess', 'reduceClientHints', 'blockAdSignals', 'blockHyperlinkPing', 'stripAcceptCh', 'crashRecovery', 'stripTrackingParams', 'spellcheckEnabled']);
+
+        // 安全 DNS 控件联动：关闭模式下禁用解析器选择；仅 custom 时启用自定义 URL。
+        (function syncDohControls() {
+            const modeEl = document.getElementById('dohMode');
+            const providerEl = document.getElementById('dohProvider');
+            const customEl = document.getElementById('dohCustomUrl');
+            if (!modeEl || !providerEl || !customEl) return;
+            function apply() {
+                const off = modeEl.value === 'off';
+                providerEl.disabled = off;
+                customEl.disabled = off || providerEl.value !== 'custom';
+                customEl.placeholder = off
+                    ? '安全 DNS 已关闭'
+                    : (providerEl.value === 'custom'
+                        ? '自定义 DoH 模板，例如 https://dns.example.com/dns-query'
+                        : '选择「自定义服务器…」后填写 https DoH 模板');
+            }
+            modeEl.addEventListener('change', apply);
+            providerEl.addEventListener('change', apply);
+            apply();
+        })();
 
         function isSafeUrl(url) {
             try {
@@ -686,6 +818,18 @@
             document.getElementById('blockThirdPartyCookies').checked = settings.blockThirdPartyCookies !== false;
             document.getElementById('hardenCookies').checked = settings.hardenCookies !== false;
             document.getElementById('blockLocalNetworkAccess').checked = settings.blockLocalNetworkAccess !== false;
+document.getElementById('reduceClientHints').checked = settings.reduceClientHints !== false;
+document.getElementById('blockAdSignals').checked = settings.blockAdSignals !== false;
+document.getElementById('blockHyperlinkPing').checked = settings.blockHyperlinkPing !== false;
+document.getElementById('stripAcceptCh').checked = settings.stripAcceptCh !== false;
+const allowedWebrtcModes = ['strict', 'balanced', 'legacy'];
+document.getElementById('webrtcMode').value = allowedWebrtcModes.includes(settings.webrtcMode) ? settings.webrtcMode : 'strict';
+const allowedDohModes = ['automatic', 'secure', 'off'];
+document.getElementById('dohMode').value = allowedDohModes.includes(settings.dohMode) ? settings.dohMode : 'automatic';
+const allowedDohProviders = ['cloudflare', 'google', 'quad9', 'alidns', 'dnspod', 'custom'];
+document.getElementById('dohProvider').value = allowedDohProviders.includes(settings.dohProvider) ? settings.dohProvider : 'cloudflare';
+document.getElementById('dohCustomUrl').value = typeof settings.dohCustomUrl === 'string' ? settings.dohCustomUrl : '';
+document.getElementById('dohMode').dispatchEvent(new Event('change'));
             document.getElementById('crashRecovery').checked = settings.crashRecovery !== false;
             document.getElementById('stripTrackingParams').checked = settings.stripTrackingParams !== false;
             document.getElementById('spellcheckEnabled').checked = settings.spellcheckEnabled !== false;
@@ -719,6 +863,29 @@
             const blockThirdPartyCookies = document.getElementById('blockThirdPartyCookies').checked;
             const hardenCookies = document.getElementById('hardenCookies').checked;
             const blockLocalNetworkAccess = document.getElementById('blockLocalNetworkAccess').checked;
+            const reduceClientHints = document.getElementById('reduceClientHints').checked;
+            const blockAdSignals = document.getElementById('blockAdSignals').checked;
+            const blockHyperlinkPing = document.getElementById('blockHyperlinkPing').checked;
+            const stripAcceptCh = document.getElementById('stripAcceptCh').checked;
+            const webrtcModeValue = document.getElementById('webrtcMode').value;
+            const webrtcMode = ['strict', 'balanced', 'legacy'].includes(webrtcModeValue) ? webrtcModeValue : 'strict';
+            const dohModeValue = document.getElementById('dohMode').value;
+            const dohMode = ['automatic', 'secure', 'off'].includes(dohModeValue) ? dohModeValue : 'automatic';
+            const dohProviderValue = document.getElementById('dohProvider').value;
+            const dohProvider = ['cloudflare', 'google', 'quad9', 'alidns', 'dnspod', 'custom'].includes(dohProviderValue) ? dohProviderValue : 'cloudflare';
+            const dohCustomUrl = document.getElementById('dohCustomUrl').value.trim();
+            if (dohProvider === 'custom' && dohMode !== 'off') {
+              let badCustom = !dohCustomUrl;
+              try {
+                const du = new URL(dohCustomUrl || 'x://');
+                if (du.protocol !== 'https:' || !du.hostname) badCustom = true;
+                if (/^(localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/i.test(du.hostname)) badCustom = true;
+              } catch { badCustom = true; }
+              if (badCustom) {
+                alert('自定义安全 DNS 必须是 https、指向公网服务器且非本机/内网地址。');
+                return;
+              }
+            }
             const crashRecovery = document.getElementById('crashRecovery').checked;
             const stripTrackingParams = document.getElementById('stripTrackingParams').checked;
             const spellcheckEnabled = document.getElementById('spellcheckEnabled').checked;
@@ -763,6 +930,14 @@
                 blockThirdPartyCookies,
                 hardenCookies,
                 blockLocalNetworkAccess,
+                reduceClientHints,
+                blockAdSignals,
+                blockHyperlinkPing,
+                stripAcceptCh,
+                webrtcMode,
+                dohMode,
+                dohProvider,
+                dohCustomUrl,
                 crashRecovery,
                 stripTrackingParams,
                 spellcheckEnabled,
