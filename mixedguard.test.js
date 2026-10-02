@@ -100,7 +100,51 @@ test('集合分类边界稳定', () => {
   assert.ok(mg.PASSIVE_TYPES.has('image'));
   assert.ok(mg.TOPLEVEL_TYPES.has('mainFrame'));
   assert.equal(mg.pageIsSecure('wss://x/'), true);
+  assert.equal(mg.pageIsSecure('file:///C:/tmp/a.html'), true);
   assert.equal(mg.pageIsSecure('http://x/'), false);
   assert.equal(mg.isInsecureSubresourceScheme('ws://x/'), true);
   assert.equal(mg.isInsecureSubresourceScheme('https://x/'), false);
+});
+
+test('file:// 页面同样阻止明文主动混合内容', () => {
+  const page = 'file:///C:/Users/me/local.html';
+  const blocked = mg.classifyMixedContent('http://cdn.example.com/track.js', page, 'script');
+  assert.equal(blocked.action, 'block');
+  // file 页面引本地回环开发服务器仍豁免。
+  const local = mg.classifyMixedContent('http://localhost:5173/app.js', page, 'script');
+  assert.equal(local.action, 'allow');
+  assert.equal(local.reason, 'loopback-exempt');
+});
+
+test('被动升级保留端口、路径与查询串', () => {
+  const page = 'https://app.example.com/';
+  const r = mg.classifyMixedContent('http://img.example.com:8443/a/b.png?v=2#x', page, 'image');
+  assert.equal(r.action, 'upgrade');
+  const u = new URL(r.upgrade);
+  assert.equal(u.protocol, 'https:');
+  assert.equal(u.host, 'img.example.com:8443');
+  assert.equal(u.pathname, '/a/b.png');
+  assert.equal(u.search, '?v=2');
+  assert.equal(u.hash, '#x');
+});
+
+test('wss 页面里的 ws 子资源作为主动混合内容被阻止', () => {
+  const r = mg.classifyMixedContent('ws://socket.example.com/live', 'wss://app.example.com/', 'webSocket');
+  assert.equal(r.action, 'block');
+  assert.equal(r.reason, 'active-websocket');
+});
+
+test('about:/data: 等无继承信息的顶层文档不武断拦截', () => {
+  // 这些上下文的真实安全性继承自创建者，webRequest 拿不到创建者，
+  // 交给 Chromium 自身判定，避免误伤。
+  for (const page of ['about:blank', 'data:text/html,<h1>x', 'blob:https://e.com/abc']) {
+    const r = mg.classifyMixedContent('http://cdn.example.com/a.js', page, 'script');
+    assert.equal(r.action, 'allow', `${page} 不应由本层拦截`);
+  }
+});
+
+test('data:/blob: 子资源本身不是明文，直接放行', () => {
+  const page = 'https://example.com/';
+  assert.equal(mg.classifyMixedContent('data:image/png;base64,AAAA', page, 'image').action, 'allow');
+  assert.equal(mg.classifyMixedContent('blob:https://example.com/uuid', page, 'media').action, 'allow');
 });

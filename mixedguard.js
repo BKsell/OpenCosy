@@ -47,10 +47,12 @@ function isInsecureSubresourceScheme(url) {
   return s === 'http:' || s === 'ws:';
 }
 
-// pageIsSecure 报告承载该子资源的页面是不是安全上下文（https / wss）。
+// pageIsSecure 报告承载该子资源的页面是不是安全上下文（https / wss / file）。
+// file:// 本地页面在规范上属于 potentially trustworthy，Chrome 同样会拦它
+// 加载的明文主动混合内容，因此这里一并视为需要保护。
 function pageIsSecure(pageUrl) {
   const s = lowerScheme(pageUrl);
-  return s === 'https:' || s === 'wss:';
+  return s === 'https:' || s === 'wss:' || s === 'file:';
 }
 
 // upgradedURL 把 http 被动资源升级成 https。返回空串表示无法安全升级
