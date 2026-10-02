@@ -778,6 +778,15 @@ function setupSecurityHeaders() {
         // 中低风险不打扰，把普通网站误伤降到最低。
         const phishHit = phishUrl.analyze(details.url);
         if (phishHit && phishHit.level === 'high') {
+          const topSignal = Array.isArray(phishHit.signals) && phishHit.signals.length
+            ? phishHit.signals[0] : null;
+          // 登记进安全中心品牌/钓鱼台账，复用同一按主机聚合的落盘通道。
+          recordBrandSpoof({
+            hostname: phishHit.hostname,
+            brand: phishHit.brand,
+            reason: 'url-structural',
+            hint: topSignal ? topSignal.detail : 'URL 结构高度可疑',
+          });
           sendToRenderer('phish-url-warning', {
             hostname: phishHit.hostname,
             url: phishHit.url,
@@ -1546,6 +1555,8 @@ const brandSpoofStorePath = path.join(app.getPath('userData'), 'brand-spoofs.jso
 const MAX_BRAND_SPOOF_HOSTS = 300;
 const BRAND_SPOOF_REASONS = new Set([
   'typo-domain', 'brand-in-subdomain', 'brand-keyword-impersonation',
+  // URL 结构钓鱼（userinfo 偷渡 / 裸或十六进制 IP / 编码主机 / punycode 等强信号）。
+  'url-structural',
 ]);
 let brandSpoofs = [];
 let brandSpoofsLoaded = false;
@@ -1643,7 +1654,12 @@ function listBrandSpoofEntries(limit = 200) {
 
 function getBrandSpoofStats() {
   loadBrandSpoofs();
-  const byReason = { 'typo-domain': 0, 'brand-in-subdomain': 0, 'brand-keyword-impersonation': 0 };
+  const byReason = {
+    'typo-domain': 0,
+    'brand-in-subdomain': 0,
+    'brand-keyword-impersonation': 0,
+    'url-structural': 0,
+  };
   const brands = new Set();
   for (const h of brandSpoofs) {
     if (byReason[h.reason] === undefined) byReason[h.reason] = 0;
