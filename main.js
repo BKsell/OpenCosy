@@ -5,6 +5,7 @@ const fsSync = require('fs');
 const os = require('os');
 const bookmarkIO = require('./bookmarkio');
 const headerGrade = require('./headergrade');
+const requestLog = require('./requestlog');
 
 // 现代浏览器默认要求“用户与页面有过交互”才允许带声音自动播放，
 // 否则广告页一打开就能外放声音。必须在 app ready 之前设置。
@@ -747,6 +748,7 @@ function setupSecurityHeaders() {
     // 第三方追踪 / 广告子资源：直接取消（不动顶层导航）。
     if (isHttpUrl && isTrackerRequest(details)) {
       recordBlockedTracker(details.url);
+      recordRequestAttempt(details, true);
       return callback({ cancel: true });
     }
 
@@ -768,6 +770,9 @@ function setupSecurityHeaders() {
     if (httpsOnlyEnabled && workingUrl.startsWith('http://') && !isPrivateNetworkHost(workingUrl)) {
       callback({ redirectURL: 'https://' + workingUrl.slice(7) });
     } else {
+      // 走到“放行”这一最终决策才记一次；上面的 redirect 会带着新 URL 再进本回调，
+      // 不在中途记录，避免同一条请求被重复计数。
+      recordRequestAttempt(details, false);
       callback({});
     }
   });
@@ -1432,6 +1437,83 @@ function getHeaderGradeStats() {
   return { hosts: headerGrades.length, byGrade, insecureHosts: insecure };
 }
 
+// ===== 后台跨主机连接台账（request-log.json / cosy://security）=====
+// onBeforeRequest 对每条 http(s) 请求只抽取“主机/资源类型/是否被拦/是否顶层
+// 打开过”交给纯模块 requestlog 聚合，让用户在安全中心看见一个网站后台到底连了
+// 哪些第三方主机、连了多少次、多少被我们拦下。刻意只存主机、永不存路径与查询，
+// 上限 400 主机，原子 rename 落盘。
+const requestLogStorePath = path.join(app.getPath('userData'), 'request-log.json');
+const MAX_REQUEST_LOG_HOSTS = 400;
+let requestLogStore = requestLog.createStore(MAX_REQUEST_LOG_HOSTS);
+let requestLogLoaded = false;
+let requestLogSaveTimer = null;
+let requestLogNotifyTimer = null;
+
+function loadRequestLog() {
+  if (requestLogLoaded) return;
+  requestLogLoaded = true;
+  try {
+    const data = JSON.parse(fsSync.readFileSync(requestLogStorePath, 'utf8'));
+    if (data && Array.isArray(data.entries)) {
+      requestLogStore = requestLog.hydrate(data.entries, MAX_REQUEST_LOG_HOSTS);
+    }
+  } catch {}
+}
+
+function persistRequestLog() {
+  if (requestLogSaveTimer) clearTimeout(requestLogSaveTimer);
+  requestLogSaveTimer = setTimeout(() => {
+    try {
+      const tmp = requestLogStorePath + '.tmp';
+      const entries = requestLog.toList(requestLogStore);
+      fsSync.writeFileSync(tmp, JSON.stringify({ version: 1, savedAt: Date.now(), entries }), 'utf8');
+      fsSync.renameSync(tmp, requestLogStorePath);
+    } catch {}
+  }, 5000);
+}
+
+// recordRequestAttempt 由 onBeforeRequest 调用；任何异常都不影响浏览。
+function recordRequestAttempt(details, blocked) {
+  try {
+    if (!details || typeof details.url !== 'string') return;
+    if (!/^https?:/i.test(details.url)) return;
+    loadRequestLog();
+    requestLog.ingest(requestLogStore, {
+      url: details.url,
+      resourceType: details.resourceType,
+      blocked: !!blocked,
+      navigated: !blocked && details.resourceType === 'mainFrame',
+      time: Date.now(),
+    });
+    persistRequestLog();
+    if (requestLogNotifyTimer) return;
+    requestLogNotifyTimer = setTimeout(() => {
+      requestLogNotifyTimer = null;
+      sendToRenderer('request-log-updated', requestLog.stats(requestLogStore));
+    }, 2000);
+    requestLogNotifyTimer.unref?.();
+  } catch {}
+}
+
+function listRequestLogEntries(limit = 200) {
+  loadRequestLog();
+  const n = Math.max(1, Math.min(Number(limit) || 200, MAX_REQUEST_LOG_HOSTS));
+  return requestLog.toList(requestLogStore).slice(0, n);
+}
+
+function getRequestLogStats() {
+  loadRequestLog();
+  return requestLog.stats(requestLogStore);
+}
+
+function clearRequestLog() {
+  loadRequestLog();
+  requestLog.clear(requestLogStore);
+  try { fsSync.unlinkSync(requestLogStorePath); } catch {}
+  persistRequestLog();
+  return true;
+}
+
 // ===== 下载完整性校验（download-hashes.json / cosy://hashes）=====
 // Electron 的下载项只保证"字节传完了"，不保证字节没被中间人 / 镜像污染。
 // 现代浏览器在"显示下载文件的校验和"这件事上普遍缺位：用户从第三方站下了
@@ -1930,6 +2012,22 @@ function setupPermissionHandlers() {
   ipcMain.handle('get-header-grade-stats', (event) => {
     if (!isMainSender(event)) return { hosts: 0, byGrade: {}, insecureHosts: 0 };
     return getHeaderGradeStats();
+  });
+
+  // ===== 后台跨主机连接台账（cosy://security）IPC，仅主框架可调 =====
+  ipcMain.handle('list-request-log', (event, payload = {}) => {
+    if (!isMainSender(event)) return [];
+    return listRequestLogEntries(Number(payload.limit) || 200);
+  });
+  ipcMain.handle('clear-request-log', (event) => {
+    if (!isMainSender(event)) return { success: false };
+    return { success: true, cleared: clearRequestLog() };
+  });
+  ipcMain.handle('get-request-log-stats', (event) => {
+    if (!isMainSender(event)) {
+      return { hosts: 0, requests: 0, blocked: 0, backgroundHosts: 0, insecureHosts: 0 };
+    }
+    return getRequestLogStats();
   });
 
   // ===== 下载完整性校验（cosy://hashes）IPC，仅主框架可调 =====
