@@ -116,6 +116,9 @@ const allowedInvokeChannels = new Set([
   'forget-remembered-cert',
   'clear-remembered-certs',
   'get-auth-stats',
+  'list-cookie-hardening',
+  'get-cookie-hardening-stats',
+  'clear-cookie-hardening',
 ]);
 
 // 接收方向白名单：main -> renderer
@@ -179,6 +182,7 @@ const allowedOnChannels = new Set([
   'network-auth-required',
   'client-cert-required',
   'client-cert-choices-updated',
+  'cookie-hardening-updated',
 ]);
 
 // sanitizeArg 过滤掉 renderer 传入的可疑对象：只保留 JSON 可序列化的纯数据，
