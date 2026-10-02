@@ -74,6 +74,7 @@
   body.dark-mode .event-row { background: #2d2d2d; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
   .event-row.severity-warn { border-left-color: #f0a020; }
   .event-row.severity-critical { border-left-color: #c42b1c; }
+  .event-row.severity-info { border-left-color: #4a8cf7; }
   .event-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .event-type { font-size: 14px; font-weight: 600; flex: 1; min-width: 0; }
   .event-origin {
@@ -212,6 +213,8 @@
 <button class="tab" id="tabNetAuth" type="button">网络认证 <span id="netAuthCountBadge" style="display:none;"></span></button>
 <button class="tab" id="tabCookie" type="button">Cookie 加固 <span id="cookieCountBadge" style="display:none;"></span></button>
 <button class="tab" id="tabPna" type="button">内网访问防护 <span id="pnaCountBadge" style="display:none;"></span></button>
+<button class="tab" id="tabFp" type="button">指纹追踪收敛 <span id="fpCountBadge" style="display:none;"></span></button>
+<button class="tab" id="tabDoh" type="button">安全 DNS</button>
   </div>
 
   <div class="view active" id="viewEvents">
@@ -467,6 +470,67 @@
       <div>还没有公网网页尝试访问内网或本机。开启后，可疑的私有网络请求会在这里记录。</div>
     </div>
   </div><!-- /viewPna -->
+
+  <div class="view" id="viewFp">
+    <div class="stats">
+      <div class="stat-card"><div class="stat-num critical" id="fpStatHits">-</div><div class="stat-label">收敛的追踪信号次数</div></div>
+      <div class="stat-card"><div class="stat-num" id="fpStatHosts">-</div><div class="stat-label">涉及主机数</div></div>
+      <div class="stat-card"><div class="stat-num" id="fpStatPing">-</div><div class="stat-label">拦截的超链接打点</div></div>
+    </div>
+    <p class="subtitle">
+      现代浏览器会向站点暴露一批高熵特征：完整浏览器版本、操作系统小版本、CPU 架构与位数等
+      <strong>Client Hints</strong>，以及广告兴趣主题 / 归因（Topics、Attribution Reporting）请求头；
+      <strong>&lt;a ping&gt;</strong> 还能在你点击链接时静默向第三方打点。此面板记录被自动剥离的
+      高熵提示、广告信号、超链接打点与站点下发的 <strong>Accept-CH / Critical-CH</strong> 订阅。
+      另在设置里可把 <strong>WebRTC</strong> IP 处理设为严格模式，避免内网 / 真实公网 IP 穿透 VPN 泄漏。
+    </p>
+    <div class="toolbar" style="margin:12px 0;">
+      <input type="text" id="fpSearchInput" placeholder="按主机筛选…"
+        style="flex:1;min-width:180px;padding:8px 10px;border-radius:8px;border:1px solid var(--border-color,#dadce0);background:var(--input-bg,#fff);color:inherit;">
+      <button class="btn-primary" id="fpRefreshBtn" type="button">刷新</button>
+      <button class="btn-danger-ghost" id="fpClearBtn" type="button">清空台账</button>
+    </div>
+    <div class="event-list" id="fpList"></div>
+    <div class="empty" id="fpEmptyState" style="display:none;">
+      <div class="big">&#128065;</div>
+      <div>还没有收敛到指纹 / 广告追踪信号。开启后，高熵 Client Hints、归因头与超链接打点会在这里记录。</div>
+    </div>
+  </div><!-- /viewFp -->
+
+  <div class="view" id="viewDoh">
+    <div class="stats">
+      <div class="stat-card"><div class="stat-num" id="dohStatSupported">-</div><div class="stat-label">宿主是否支持安全 DNS</div></div>
+      <div class="stat-card"><div class="stat-num" id="dohStatActive">-</div><div class="stat-label">当前是否已加密解析</div></div>
+      <div class="stat-card"><div class="stat-num" id="dohStatEvents">-</div><div class="stat-label">状态 / 降级记录</div></div>
+    </div>
+    <p class="subtitle">
+      系统默认的 DNS 多为明文：同网段的人能看到你解析的全部域名，也能用污染应答把你引到钓鱼站。
+      <strong>安全 DNS（DNS-over-HTTPS）</strong>把解析请求经 HTTPS 发往可信解析器。
+      仅允许 <strong>https</strong> 服务器，并拒绝指向本机 / 内网 / 云元数据地址（避免把全部域名泄露给本地攻击者或形成 SSRF）；
+      当自定义服务器非法时会回退到自动模式并记录告警，<strong>绝不静默退回明文</strong>。可在「设置 → 隐私与安全」调整模式与解析器。
+    </p>
+    <div class="toolbar" style="margin:12px 0;">
+      <button class="btn-primary" id="dohRefreshBtn" type="button">刷新状态</button>
+      <button class="btn-danger-ghost" id="dohClearBtn" type="button">清空记录</button>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 14px;">
+      <span style="font-size:13px;color:var(--text-secondary,#5f6368);align-self:center;">当前模式：</span>
+      <span class="chip" id="dohModeChip">-</span>
+      <span style="font-size:13px;color:var(--text-secondary,#5f6368);align-self:center;">解析器：</span>
+      <span class="chip" id="dohProviderChip">-</span>
+    </div>
+    <div class="event-list" id="dohList"></div>
+    <div class="empty" id="dohEmptyState" style="display:none;">
+      <div class="big">&#128274;</div>
+      <div>暂无安全 DNS 状态记录。切换模式或解析器后会在这里显示应用 / 降级结果。</div>
+    </div>
+    <h3 style="margin:20px 0 8px;font-size:15px;">响应头强制关闭的浏览器能力</h3>
+    <p class="subtitle">
+      下列广告 / 跨站追踪特性由 Permissions-Policy 内核强制下发 <code>()</code>，
+      任何站点都无法重新开启；特性名做白名单校验，防止响应头注入。
+    </p>
+    <div id="permForcedList" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;"></div>
+  </div><!-- /viewDoh -->
 </div>
 
 <div class="modal-mask" id="confirmModal">
@@ -647,6 +711,8 @@ function switchView(which) {
     netauth: ['tabNetAuth', 'viewNetAuth'],
     cookie: ['tabCookie', 'viewCookie'],
     pna: ['tabPna', 'viewPna'],
+    fp: ['tabFp', 'viewFp'],
+    doh: ['tabDoh', 'viewDoh'],
   };
   for (const [key, [tabId, viewId]] of Object.entries(map)) {
     $(tabId).classList.toggle('active', key === which);
@@ -660,6 +726,8 @@ function switchView(which) {
   if (which === 'netauth') loadNetAuthData();
   if (which === 'cookie') loadCookieData();
   if (which === 'pna') loadPnaData();
+  if (which === 'fp') loadFpData();
+  if (which === 'doh') loadDohData();
 }
 $('tabEvents').onclick = () => switchView('events');
 $('tabCsp').onclick = () => switchView('csp');
@@ -670,6 +738,8 @@ $('tabCert').onclick = () => switchView('cert');
 $('tabNetAuth').onclick = () => switchView('netauth');
 $('tabCookie').onclick = () => switchView('cookie');
 $('tabPna').onclick = () => switchView('pna');
+$('tabFp').onclick = () => switchView('fp');
+$('tabDoh').onclick = () => switchView('doh');
 
 function updateCspBadge() {
   const badge = $('cspCountBadge');
@@ -1575,6 +1645,190 @@ api.on('pna-blocked-updated', (stats) => {
   if ($('viewPna').classList.contains('active')) loadPnaData();
 });
 
+// ===== 指纹 / 跨站追踪收敛面板 =====
+const fpState = { rows: [] };
+const FP_CATEGORY_TEXT = {
+  'client-hints': '高熵 Client Hints',
+  'ad-signals': '广告归因 / Topics',
+  'ping': '超链接打点',
+  'accept-ch': 'Accept-CH 订阅',
+};
+
+function applyFpStats(stats) {
+  if (!stats) return;
+  const byCat = stats.byCategory || {};
+  $('fpStatHits').textContent = String(stats.hits || 0);
+  $('fpStatHosts').textContent = String(stats.hosts || 0);
+  $('fpStatPing').textContent = String(byCat.ping || 0);
+  const n = stats.hits || 0;
+  const badge = $('fpCountBadge');
+  badge.style.display = n ? 'inline-block' : 'none';
+  badge.textContent = n > 99 ? '99+' : String(n);
+}
+
+function renderFpRows() {
+  const query = ($('fpSearchInput').value || '').trim().toLowerCase();
+  const list = $('fpList');
+  list.textContent = '';
+  const rows = fpState.rows.filter(r => {
+    if (!query) return true;
+    return String(r.host || '').toLowerCase().includes(query) ||
+      (r.signals || []).some(s => String(s).toLowerCase().includes(query));
+  });
+  $('fpEmptyState').style.display = rows.length ? 'none' : 'block';
+
+  for (const r of rows) {
+    const row = document.createElement('div');
+    row.className = 'event-row severity-info';
+
+    const head = document.createElement('div');
+    head.className = 'event-head';
+    const host = document.createElement('span');
+    host.textContent = r.host || '';
+    const time = document.createElement('span');
+    time.className = 'event-time';
+    time.textContent = r.lastTime ? formatTime(r.lastTime) : '';
+    head.appendChild(host);
+    head.appendChild(time);
+    row.appendChild(head);
+
+    const meta = document.createElement('div');
+    meta.style.cssText = 'margin-top:4px;font-size:12px;color:#9aa0a6;word-break:break-all;';
+    meta.textContent = `${FP_CATEGORY_TEXT[r.category] || r.category || '追踪信号'}　·　收敛 ${r.hits || 1} 次`;
+    row.appendChild(meta);
+
+    if (Array.isArray(r.signals) && r.signals.length) {
+      const sig = document.createElement('div');
+      sig.style.cssText = 'margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;';
+      for (const s of r.signals.slice(0, 12)) {
+        const chip = document.createElement('span');
+        chip.textContent = s;
+        chip.style.cssText = 'font-size:11px;padding:1px 7px;border-radius:10px;background:rgba(138,180,248,.15);color:#8ab0f8;word-break:break-all;';
+        sig.appendChild(chip);
+      }
+      row.appendChild(sig);
+    }
+
+    list.appendChild(row);
+  }
+}
+
+async function loadFpData() {
+  $('fpRefreshBtn').disabled = true;
+  try {
+    const [listRes, statsRes] = await Promise.all([
+      api.invoke('list-fingerprint-entries'),
+      api.invoke('get-fingerprint-stats'),
+    ]);
+    fpState.rows = (listRes && Array.isArray(listRes.entries)) ? listRes.entries : [];
+    renderFpRows();
+    if (statsRes && statsRes.ok) applyFpStats(statsRes.stats);
+  } catch (e) {
+    toast('指纹追踪台账加载失败：' + (e && e.message ? e.message : e), true);
+  } finally {
+    $('fpRefreshBtn').disabled = false;
+  }
+}
+
+$('fpRefreshBtn').onclick = loadFpData;
+$('fpClearBtn').onclick = async () => {
+  const ok = await showConfirm('将清空指纹 / 追踪收敛台账，统计会归零。继续？');
+  if (!ok) return;
+  const res = await api.invoke('clear-fingerprint-entries');
+  if (res && res.ok) { toast('已清空指纹追踪台账'); loadFpData(); }
+  else toast('清空失败', true);
+};
+$('fpSearchInput').addEventListener('input', renderFpRows);
+api.on('fingerprint-blocked-updated', (stats) => {
+  applyFpStats(stats);
+  if ($('viewFp').classList.contains('active')) loadFpData();
+});
+
+const dohState = { events: [] };
+const DOH_MODE_TEXT = { off: '关闭', automatic: '自动（能加密则加密）', secure: '强制加密' };
+const DOH_EVENT_TEXT = {
+  applied: '已应用',
+  fallback: '已回退（配置非法）',
+  unsupported: '宿主不支持',
+  error: '应用出错',
+};
+
+function escText(v) {
+  return String(v == null ? '' : v);
+}
+
+function renderDohEvents() {
+  const list = $('dohList');
+  list.textContent = '';
+  const rows = dohState.events || [];
+  $('dohEmptyState').style.display = rows.length ? 'none' : 'block';
+  for (const ev of rows) {
+    const row = document.createElement('div');
+    row.className = 'event-row ' + (ev.event === 'error' || ev.event === 'fallback' ? 'severity-warn' : 'severity-info');
+    const time = document.createElement('div');
+    time.className = 'event-time';
+    time.textContent = ev.time ? new Date(ev.time).toLocaleString() : '';
+    const title = document.createElement('div');
+    title.className = 'event-title';
+    title.textContent = (DOH_EVENT_TEXT[ev.event] || ev.event || '事件') +
+      (ev.mode ? ' · 模式 ' + (DOH_MODE_TEXT[ev.mode] || ev.mode) : '');
+    const detail = document.createElement('div');
+    detail.className = 'event-detail';
+    detail.textContent = escText(ev.detail);
+    row.appendChild(time);
+    row.appendChild(title);
+    row.appendChild(detail);
+    list.appendChild(row);
+  }
+  $('dohStatEvents').textContent = String(rows.length);
+}
+
+function renderPermForced(features) {
+  const box = $('permForcedList');
+  box.textContent = '';
+  for (const f of (Array.isArray(features) ? features : [])) {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.textContent = f + ' = ()';
+    box.appendChild(chip);
+  }
+}
+
+async function loadDohData() {
+  $('dohRefreshBtn').disabled = true;
+  try {
+    const res = await api.invoke('get-doh-status');
+    if (res && res.ok) {
+      $('dohStatSupported').textContent = res.supported ? '支持' : '不支持';
+      const st = res.status || {};
+      $('dohStatActive').textContent = res.supported && st.active ? '已启用' : (st.mode === 'off' ? '已关闭' : '未生效');
+      $('dohModeChip').textContent = DOH_MODE_TEXT[st.mode] || st.mode || '-';
+      const providers = Array.isArray(res.providers) ? res.providers : [];
+      const providerName = st.provider === 'custom'
+        ? '自定义'
+        : ((providers.find(p => p.id === st.provider) || {}).name || st.provider || '-');
+      $('dohProviderChip').textContent = providerName;
+      dohState.events = Array.isArray(st.events) ? st.events : [];
+      renderDohEvents();
+      renderPermForced(res.forcedFeatures);
+    } else {
+      toast('安全 DNS 状态加载失败', true);
+    }
+  } catch (e) {
+    toast('安全 DNS 状态加载失败：' + (e && e.message ? e.message : e), true);
+  } finally {
+    $('dohRefreshBtn').disabled = false;
+  }
+}
+$('dohRefreshBtn').onclick = loadDohData;
+$('dohClearBtn').onclick = async () => {
+  const ok = await showConfirm('将清空安全 DNS 状态记录（不改变当前设置）。继续？');
+  if (!ok) return;
+  const res = await api.invoke('clear-doh-events');
+  if (res && res.ok) { toast('已清空安全 DNS 记录'); loadDohData(); }
+  else toast('清空失败', true);
+};
+
 $('searchInput').addEventListener('input', render);
 $('filterSelect').addEventListener('change', render);
 $('severitySelect').addEventListener('change', render);
@@ -1603,6 +1857,7 @@ api.invoke('list-remembered-certs', { limit: 100 }).then(res => {
 api.invoke('get-auth-stats').then(res => { if (res && res.ok) applyAuthStats(res.stats); }).catch(() => {});
 api.invoke('get-cookie-hardening-stats').then(res => { if (res && res.ok) applyCookieStats(res.stats); }).catch(() => {});
 api.invoke('get-pna-block-stats').then(res => { if (res && res.ok) applyPnaStats(res.stats); }).catch(() => {});
+api.invoke('get-fingerprint-stats').then(res => { if (res && res.ok) applyFpStats(res.stats); }).catch(() => {});
 </script>
 </body>
 </html>
