@@ -155,6 +155,35 @@
   }
   .row-remove:hover:not(:disabled) { color: #c42b1c; border-color: #c42b1c; }
   body.dark-mode .row-remove { border-color: #555; color: #aaa; }
+  .grade-letter {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; border-radius: 8px; font-size: 17px; font-weight: 700;
+    background: #ececec; color: #555; flex: none;
+  }
+  body.dark-mode .grade-letter { background: #3a3a3a; color: #ccc; }
+  .grade-letter.gA { background: #dff6e4; color: #1a7f37; }
+  .grade-letter.gB { background: #e6f4d7; color: #4d7c0f; }
+  .grade-letter.gC { background: #fdf3e0; color: #9a6200; }
+  .grade-letter.gD { background: #fbe6d4; color: #b25000; }
+  .grade-letter.gF { background: #fdeaea; color: #c42b1c; }
+  body.dark-mode .grade-letter.gA { background: #14351f; color: #57d17c; }
+  body.dark-mode .grade-letter.gB { background: #26390f; color: #a9d35f; }
+  body.dark-mode .grade-letter.gC { background: #4d3810; color: #f0b450; }
+  body.dark-mode .grade-letter.gD { background: #4a2a12; color: #ff9a4d; }
+  body.dark-mode .grade-letter.gF { background: #431d1a; color: #ff6a5c; }
+  .grade-host { font-size: 14px; font-weight: 600; word-break: break-all; flex: 1; min-width: 0; }
+  .grade-bar-wrap { height: 6px; border-radius: 3px; background: #e6e6e6; margin-top: 8px; overflow: hidden; }
+  body.dark-mode .grade-bar-wrap { background: #444; }
+  .grade-bar { height: 100%; border-radius: 3px; background: #0078d4; }
+  .check-chip {
+    display: inline-block; margin: 3px 4px 0 0; padding: 2px 8px; border-radius: 10px;
+    font-size: 11px; background: #f0f0f0; color: #666;
+  }
+  body.dark-mode .check-chip { background: #3a3a3a; color: #bbb; }
+  .check-chip.pass { background: #dff6e4; color: #1a7f37; }
+  body.dark-mode .check-chip.pass { background: #14351f; color: #57d17c; }
+  .check-chip.missing { background: #fdeaea; color: #c42b1c; }
+  body.dark-mode .check-chip.missing { background: #431d1a; color: #ff6a5c; }
 </style>
 </head>
 <body>
@@ -172,6 +201,7 @@
   <div class="tabs">
     <button class="tab active" id="tabEvents" type="button">安全拦截事件</button>
     <button class="tab" id="tabCsp" type="button">CSP 违规报告 <span id="cspCountBadge" style="display:none;"></span></button>
+    <button class="tab" id="tabHeaders" type="button">站点安全头 <span id="headerCountBadge" style="display:none;"></span></button>
   </div>
 
   <div class="view active" id="viewEvents">
@@ -227,6 +257,38 @@
       按帧地址重新校验，页面自报的来源一律不采信。
     </p>
   </div><!-- /viewCsp -->
+
+  <div class="view" id="viewHeaders">
+    <div class="stats">
+      <div class="stat-card"><div class="stat-num" id="hgStatHosts">-</div><div class="stat-label">已评级站点</div></div>
+      <div class="stat-card"><div class="stat-num" id="hgStatWeak">-</div><div class="stat-label">评级 D / F</div></div>
+      <div class="stat-card"><div class="stat-num critical" id="hgStatInsecure">-</div><div class="stat-label">仍用明文 HTTP</div></div>
+    </div>
+    <div class="toolbar">
+      <input class="search-box" id="hgSearchInput" type="search" placeholder="按主机名搜索" autocomplete="off">
+      <select id="hgGradeSelect">
+        <option value="">全部评级</option>
+        <option value="A">仅 A</option>
+        <option value="B">仅 B</option>
+        <option value="C">仅 C</option>
+        <option value="D">仅 D</option>
+        <option value="F">仅 F</option>
+        <option value="weak">仅薄弱（D/F）</option>
+      </select>
+      <button class="btn-primary" id="hgRefreshBtn" type="button">刷新</button>
+      <button class="btn-danger-ghost" id="hgClearBtn" type="button">清空评级</button>
+    </div>
+    <div class="event-list" id="hgList"></div>
+    <div class="empty" id="hgEmptyState" style="display:none;">
+      <div class="big">&#128274;</div>
+      <div id="hgEmptyText">还没有站点安全头评级，浏览几个网站后这里会自动汇总</div>
+    </div>
+    <p class="subtitle" style="margin-top:14px;">
+      评级只依据网站服务器<strong>自己下发</strong>的响应头（HSTS、CSP、nosniff、框架隔离、
+      Referrer-Policy、Permissions-Policy、COOP/CORP/COEP），在浏览器补头<strong>之前</strong>采样，
+      反映站点本身的真实安全姿态；仅统计顶层页面、按主机去重，不含第三方子资源，也不记录完整网址。
+    </p>
+  </div><!-- /viewHeaders -->
 </div>
 
 <div class="modal-mask" id="confirmModal">
@@ -393,15 +455,21 @@ $('clearBtn').onclick = async () => {
 const cspState = { rows: [] };
 
 function switchView(which) {
-  const isCsp = which === 'csp';
-  $('tabEvents').classList.toggle('active', !isCsp);
-  $('tabCsp').classList.toggle('active', isCsp);
-  $('viewEvents').classList.toggle('active', !isCsp);
-  $('viewCsp').classList.toggle('active', isCsp);
-  if (isCsp) loadCspData();
+  const map = {
+    events: ['tabEvents', 'viewEvents'],
+    csp: ['tabCsp', 'viewCsp'],
+    headers: ['tabHeaders', 'viewHeaders'],
+  };
+  for (const [key, [tabId, viewId]] of Object.entries(map)) {
+    $(tabId).classList.toggle('active', key === which);
+    $(viewId).classList.toggle('active', key === which);
+  }
+  if (which === 'csp') loadCspData();
+  if (which === 'headers') loadHeaderGradeData();
 }
 $('tabEvents').onclick = () => switchView('events');
 $('tabCsp').onclick = () => switchView('csp');
+$('tabHeaders').onclick = () => switchView('headers');
 
 function updateCspBadge() {
   const badge = $('cspCountBadge');
@@ -446,7 +514,8 @@ function renderCsp() {
 
     const time = document.createElement('span');
     time.className = 'event-time';
-    time.textContent = formatTime(r.time);
+    time.textContent = formatTime(r.lastTime || r.time);
+    time.title = r.hits > 1 ? '最近一次触发时间' : '';
 
     // event-type 自身 flex:1，会把后面的控件整体推到行尾。
     const removeBtn = document.createElement('button');
@@ -526,6 +595,145 @@ api.on('csp-report-added', () => {
     }).catch(() => {});
   }
 });
+// ===== 站点响应安全头评级面板 =====
+const hgState = { rows: [] };
+
+function updateHeaderBadge() {
+  const badge = $('headerCountBadge');
+  let weak = 0;
+  for (const h of hgState.rows) if (h.grade === 'D' || h.grade === 'F') weak++;
+  badge.style.display = weak ? 'inline-block' : 'none';
+  badge.textContent = weak > 99 ? '99+' : String(weak);
+}
+
+function renderHeaderGrades() {
+  const query = $('hgSearchInput').value.trim().toLowerCase();
+  const gradeFilter = $('hgGradeSelect').value;
+  const list = $('hgList');
+  list.textContent = '';
+
+  let weak = 0, insecure = 0;
+  for (const h of hgState.rows) {
+    if (h.grade === 'D' || h.grade === 'F') weak++;
+    if (h.insecureTransport) insecure++;
+  }
+  $('hgStatHosts').textContent = hgState.rows.length;
+  $('hgStatWeak').textContent = weak;
+  $('hgStatInsecure').textContent = insecure;
+
+  const rows = hgState.rows.filter(h => {
+    if (query && !(h.host || '').toLowerCase().includes(query)) return false;
+    if (gradeFilter === 'weak') return h.grade === 'D' || h.grade === 'F';
+    if (gradeFilter && h.grade !== gradeFilter) return false;
+    return true;
+  });
+
+  $('hgEmptyState').style.display = rows.length ? 'none' : 'block';
+  $('hgEmptyText').textContent = query || gradeFilter ? '没有站点匹配当前筛选' : '还没有站点安全头评级，浏览几个网站后这里会自动汇总';
+
+  for (const h of rows) {
+    const row = document.createElement('div');
+    row.className = 'event-row';
+
+    const head = document.createElement('div');
+    head.className = 'event-head';
+
+    const letter = document.createElement('span');
+    letter.className = 'grade-letter g' + (h.grade || 'F');
+    letter.textContent = h.grade || '?';
+    letter.title = (h.percent || 0) + ' / 100';
+
+    const hostWrap = document.createElement('div');
+    hostWrap.style.flex = '1';
+    hostWrap.style.minWidth = '0';
+    const host = document.createElement('div');
+    host.className = 'grade-host';
+    host.textContent = h.host || '未知主机';
+    if (h.insecureTransport) {
+      const httpTag = document.createElement('span');
+      httpTag.className = 'badge critical';
+      httpTag.textContent = 'HTTP 明文';
+      httpTag.style.marginLeft = '8px';
+      host.appendChild(httpTag);
+    }
+    const barWrap = document.createElement('div');
+    barWrap.className = 'grade-bar-wrap';
+    const bar = document.createElement('div');
+    bar.className = 'grade-bar';
+    bar.style.width = Math.max(0, Math.min(100, Number(h.percent) || 0)) + '%';
+    barWrap.appendChild(bar);
+    hostWrap.append(host, barWrap);
+
+    const time = document.createElement('span');
+    time.className = 'event-time';
+    time.textContent = formatTime(h.time);
+
+    head.append(letter, hostWrap, time);
+    row.appendChild(head);
+
+    const checks = Array.isArray(h.checks) ? h.checks : [];
+    if (checks.length) {
+      const chips = document.createElement('div');
+      for (const c of checks) {
+        if (c.status === 'pass') continue; // 只把缺失/半项铺出来，满项不刷屏
+        const chip = document.createElement('span');
+        chip.className = 'check-chip ' + (c.status === 'missing' ? 'missing' : '');
+        chip.textContent = (c.status === 'partial' ? '△ ' : '✕ ') + (c.name || c.id);
+        chip.title = c.note || '';
+        chips.appendChild(chip);
+      }
+      if (chips.children.length) row.appendChild(chips);
+    }
+
+    const warnings = Array.isArray(h.warnings) ? h.warnings : [];
+    for (const w of warnings.slice(0, 3)) {
+      const warn = document.createElement('div');
+      warn.className = 'csp-meta';
+      warn.textContent = '⚠ ' + w;
+      row.appendChild(warn);
+    }
+
+    list.appendChild(row);
+  }
+  updateHeaderBadge();
+}
+
+async function loadHeaderGradeData() {
+  $('hgRefreshBtn').disabled = true;
+  try {
+    const rows = await api.invoke('list-header-grades', { limit: 300 });
+    hgState.rows = Array.isArray(rows) ? rows : [];
+    renderHeaderGrades();
+  } catch (e) {
+    toast('站点评级加载失败：' + (e && e.message ? e.message : e), true);
+  } finally {
+    $('hgRefreshBtn').disabled = false;
+  }
+}
+
+$('hgRefreshBtn').onclick = loadHeaderGradeData;
+$('hgSearchInput').addEventListener('input', renderHeaderGrades);
+$('hgGradeSelect').addEventListener('change', renderHeaderGrades);
+$('hgClearBtn').onclick = async () => {
+  const ok = await showConfirm('将清空全部站点安全头评级，且无法恢复。继续？');
+  if (!ok) return;
+  const r = await api.invoke('clear-header-grades');
+  if (r && r.success) { toast('已清空站点评级'); loadHeaderGradeData(); }
+  else toast('清空失败', true);
+};
+
+// 浏览到新站点、评级落库后，角标与当前列表实时刷新。
+api.on('header-grade-updated', () => {
+  if ($('viewHeaders').classList.contains('active')) {
+    loadHeaderGradeData();
+  } else {
+    api.invoke('list-header-grades', { limit: 300 }).then(rows => {
+      hgState.rows = Array.isArray(rows) ? rows : [];
+      updateHeaderBadge();
+    }).catch(() => {});
+  }
+});
+
 $('searchInput').addEventListener('input', render);
 $('filterSelect').addEventListener('change', render);
 $('severitySelect').addEventListener('change', render);
@@ -539,6 +747,10 @@ loadData();
 api.invoke('list-csp-reports', { limit: 500 }).then(rows => {
   cspState.rows = Array.isArray(rows) ? rows : [];
   updateCspBadge();
+}).catch(() => {});
+api.invoke('list-header-grades', { limit: 300 }).then(rows => {
+  hgState.rows = Array.isArray(rows) ? rows : [];
+  updateHeaderBadge();
 }).catch(() => {});
 </script>
 </body>
