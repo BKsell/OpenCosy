@@ -11,6 +11,7 @@ const phishUrl = require('./phishurl');
 const certGuard = require('./certguard');
 const mixedGuard = require('./mixedguard');
 const netAuthGuard = require('./netauthguard');
+const cookieGuard = require('./cookieguard');
 
 // 现代浏览器默认要求“用户与页面有过交互”才允许带声音自动播放，
 // 否则广告页一打开就能外放声音。必须在 app ready 之前设置。
@@ -58,6 +59,12 @@ let httpsOnlyEnabled = true;
 // 只拦“子资源”请求（脚本/图片/xhr/ping 等），从不拦 mainFrame 顶层导航，
 // 所以即使域名误判，用户手动点开对应网站也不会被挡。
 let blockTrackers = true;
+// blockThirdPartyCookies：跨站（第三方）上下文写入的 Cookie 一律剥离，
+// 掐断跨站追踪与 CSRF 的主要载体；默认开启，可在设置里关闭。
+let blockThirdPartyCookies = true;
+// hardenCookies：对第一方 Set-Cookie 补 SameSite=Lax、修正 SameSite=None 缺
+// Secure、剥离非法 __Host-/__Secure- 前缀 Cookie 与 http 下的 Secure Cookie。
+let hardenCookies = true;
 // crashRecovery：渲染进程崩溃 / OOM 时自动重载一次并弹横幅；可在设置关闭。
 let crashRecoveryEnabled = true;
 // 每个 webContents 的崩溃次数，用于阻止“崩溃→重载→又崩溃”的无限循环。
@@ -682,6 +689,70 @@ function applyDarkMode(dark) {
   sendToRenderer('native-theme-changed', { dark: !!dark });
 }
 
+// ===== Set-Cookie 加固台账（cookie-hardening.json / cosy://security 面板）=====
+// 纯判定在 cookieguard.js；这里负责在 onHeadersReceived 里应用改写、聚合落盘，
+// 并把“被剥离的 Cookie”登记到安全事件。SameSite 补全这类静默改写只进台账、
+// 不刷安全事件列表，避免正常网站产生大量噪音。
+const cookieLedgerStorePath = path.join(app.getPath('userData'), 'cookie-hardening.json');
+const MAX_COOKIE_LEDGER = 500;
+const cookieLedger = cookieGuard.createCookieLedger(MAX_COOKIE_LEDGER);
+let cookieLedgerLoaded = false;
+let cookieLedgerSaveTimer = null;
+
+function loadCookieLedger() {
+  if (cookieLedgerLoaded) return;
+  cookieLedgerLoaded = true;
+  try {
+    const data = JSON.parse(fsSync.readFileSync(cookieLedgerStorePath, 'utf8'));
+    cookieLedger.load(data);
+  } catch {}
+}
+
+function persistCookieLedger() {
+  if (cookieLedgerSaveTimer) clearTimeout(cookieLedgerSaveTimer);
+  cookieLedgerSaveTimer = setTimeout(() => {
+    try {
+      const tmp = cookieLedgerStorePath + '.tmp';
+      fsSync.writeFileSync(tmp, JSON.stringify(cookieLedger.toJSON()), 'utf8');
+      fsSync.renameSync(tmp, cookieLedgerStorePath);
+    } catch {}
+  }, 300);
+}
+
+// applyCookieHardening 就地加固响应头里的 Set-Cookie，返回本次动作列表。
+// 任何异常都不阻断浏览：出错时保留原始响应头。
+function applyCookieHardening(headers, details) {
+  try {
+    const setCookieKey = Object.prototype.hasOwnProperty.call(headers, 'set-cookie')
+      ? 'set-cookie'
+      : (Object.prototype.hasOwnProperty.call(headers, 'Set-Cookie') ? 'Set-Cookie' : '');
+    if (!setCookieKey) return [];
+    const original = cookieGuard.extractSetCookieHeaders(headers);
+    if (!original.length) return [];
+
+    const result = cookieGuard.hardenSetCookieHeader(original, details, {
+      blockThirdParty: blockThirdPartyCookies,
+      hardenSameSite: hardenCookies,
+    });
+    headers[setCookieKey] = result.lines;
+    if (!result.actions.length) return [];
+
+    loadCookieLedger();
+    cookieLedger.addMany(result.actions);
+    persistCookieLedger();
+    for (const a of result.actions) {
+      // SameSite 补全是静默改写，只进台账不刷安全事件；剥离类才登记事件。
+      if (a.action === 'samesite-default-lax') continue;
+      recordSecurityEvent('cookie-blocked', 'warn',
+        `已剥离不安全的 Cookie「${a.name}」（${a.reason}）`, a.host);
+    }
+    sendToRenderer('cookie-hardening-updated', cookieLedger.stats());
+    return result.actions;
+  } catch {
+    return [];
+  }
+}
+
 function setupSecurityHeaders() {
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const headers = details.responseHeaders || {};
@@ -735,6 +806,12 @@ function setupSecurityHeaders() {
     if (details.url.startsWith('https://') &&
         !headers['Strict-Transport-Security'] && !headers['strict-transport-security']) {
       headers['Strict-Transport-Security'] = ['max-age=31536000; includeSubDomains'];
+    }
+    // Cookie 加固放在所有响应头处理之后、回写之前：剥离第三方 / 非法前缀 /
+    // http 下 Secure 的 Set-Cookie，并为第一方 Cookie 补 SameSite=Lax。
+    // 仅处理 http(s) 响应，内部 cosy:// 页面不种浏览器 Cookie。
+    if (/^https?:/i.test(details.url)) {
+      applyCookieHardening(headers, details);
     }
     callback({ responseHeaders: headers });
   });
@@ -1089,6 +1166,7 @@ const SECURITY_EVENT_TYPES = new Set([
   'auth-blocked',            // 子框架/未知方案 401/407 凭据探测被静默取消
   'auth-rate-limited',       // 同一主机认证弹框过频，进入冷却
   'client-cert-blocked',     // 无明确选择时默认不发送客户端证书
+  'cookie-blocked',          // 第三方 / 非法前缀 / 无效 Secure 的 Set-Cookie 被剥离
 ]);
 
 const securityEvents = [];
@@ -2171,6 +2249,27 @@ ipcMain.handle('clear-remembered-certs', (event) => {
 ipcMain.handle('get-auth-stats', (event) => {
   if (!isMainSender(event)) return { ok: false, error: 'denied' };
   return { ok: true, stats: authStats.toJSON() };
+});
+
+// ===== Cookie 加固台账（cosy://security 面板）=====
+ipcMain.handle('list-cookie-hardening', (event) => {
+  if (!isMainSender(event)) return { ok: false, error: 'denied', entries: [] };
+  loadCookieLedger();
+  return { ok: true, entries: cookieLedger.list() };
+});
+
+ipcMain.handle('get-cookie-hardening-stats', (event) => {
+  if (!isMainSender(event)) return { ok: false, error: 'denied' };
+  loadCookieLedger();
+  return { ok: true, stats: cookieLedger.stats() };
+});
+
+ipcMain.handle('clear-cookie-hardening', (event) => {
+  if (!isMainSender(event)) return { ok: false, error: 'denied' };
+  cookieLedger.clear();
+  persistCookieLedger();
+  sendToRenderer('cookie-hardening-updated', cookieLedger.stats());
+  return { ok: true, stats: cookieLedger.stats() };
 });
 
 function getClientCertChoiceStats() {
@@ -3934,6 +4033,8 @@ app.whenReady().then(async () => {
   applyDarkMode(!!stored.darkMode);
   httpsOnlyEnabled = stored.httpsOnly !== false;
   blockTrackers = stored.blockTrackers !== false;
+  blockThirdPartyCookies = stored.blockThirdPartyCookies !== false;
+  hardenCookies = stored.hardenCookies !== false;
   crashRecoveryEnabled = stored.crashRecovery !== false;
   stripTrackingParams = stored.stripTrackingParams !== false;
   if ('memorySaver' in stored) memorySaverEnabled = !!stored.memorySaver;
@@ -4777,6 +4878,8 @@ const ALLOWED_SETTING_KEYS = {
   darkMode: v => typeof v === 'boolean',
   httpsOnly: v => typeof v === 'boolean',
   blockTrackers: v => typeof v === 'boolean',
+  blockThirdPartyCookies: v => typeof v === 'boolean',
+  hardenCookies: v => typeof v === 'boolean',
   crashRecovery: v => typeof v === 'boolean',
   stripTrackingParams: v => typeof v === 'boolean',
   themeColor: v => isValidColor(v),
@@ -4814,6 +4917,8 @@ ipcMain.on('save-settings', (event, settings) => {
     applyDarkMode(clean.darkMode);
     httpsOnlyEnabled = clean.httpsOnly !== false;
     blockTrackers = clean.blockTrackers !== false;
+    blockThirdPartyCookies = clean.blockThirdPartyCookies !== false;
+    hardenCookies = clean.hardenCookies !== false;
     crashRecoveryEnabled = clean.crashRecovery !== false;
     stripTrackingParams = clean.stripTrackingParams !== false;
     if ('memorySaver' in clean) memorySaverEnabled = !!clean.memorySaver;
