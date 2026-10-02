@@ -85,6 +85,9 @@ const allowedInvokeChannels = new Set([
   'list-header-grades',
   'clear-header-grades',
   'get-header-grade-stats',
+  'list-request-log',
+  'clear-request-log',
+  'get-request-log-stats',
   'list-download-hashes',
   'verify-download-hash',
   'remove-download-hash',
@@ -151,6 +154,7 @@ const allowedOnChannels = new Set([
   'spoof-warning',
   'csp-report-added',
   'header-grade-updated',
+  'request-log-updated',
 ]);
 
 // sanitizeArg 过滤掉 renderer 传入的可疑对象：只保留 JSON 可序列化的纯数据，
