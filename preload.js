@@ -119,6 +119,9 @@ const allowedInvokeChannels = new Set([
   'list-cookie-hardening',
   'get-cookie-hardening-stats',
   'clear-cookie-hardening',
+  'list-pna-blocks',
+  'get-pna-block-stats',
+  'clear-pna-blocks',
 ]);
 
 // 接收方向白名单：main -> renderer
@@ -183,6 +186,7 @@ const allowedOnChannels = new Set([
   'client-cert-required',
   'client-cert-choices-updated',
   'cookie-hardening-updated',
+  'pna-blocked-updated',
 ]);
 
 // sanitizeArg 过滤掉 renderer 传入的可疑对象：只保留 JSON 可序列化的纯数据，
