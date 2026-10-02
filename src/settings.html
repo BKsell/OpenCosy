@@ -185,6 +185,38 @@
             <div class="setting-item">
                 <div class="setting-icon">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M21 8V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+                        <path d="M9 12h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">拦截第三方 Cookie</label>
+                    <p class="setting-description">网页在跨站（第三方）上下文试图种下的 Cookie 会被直接剥离，阻断广告商跨站追踪和部分 CSRF；不影响你直接登录的网站，可在“安全中心 → Cookie 加固”查看处理记录</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="blockThirdPartyCookies" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 3L4 5V11C4 15.4 7 19.3 12 21C17 19.3 20 15.4 20 11V5L12 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+                        <path d="M9.5 12L11.2 13.7L15 9.8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">加固 Cookie 的 SameSite 与前缀</label>
+                    <p class="setting-description">没有 SameSite 的 Cookie 自动补 SameSite=Lax（对齐现代 Chrome 默认）；SameSite=None 缺 Secure 时降级为 Lax；剥离 http 页面的 Secure Cookie 和不合法的 __Host-/__Secure- 前缀 Cookie</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="hardenCookies" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path d="M12 3L4 5V11C4 15.4 7 19.3 12 21C17 19.3 20 15.4 20 11V5L12 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
                         <path d="M9.5 12L11.2 13.7L15 9.8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
                     </svg>
@@ -437,13 +469,13 @@
         <button class="save-button" onclick="saveSettings()">保存设置</button>
     </div>
     <script>
-        const ALLOWED_SETTING_KEYS = new Set(['defaultTab', 'tabLayout', 'searchEngine', 'backgroundType', 'customUrl', 'customBackgroundUrl', 'themeColor', 'darkMode', 'memorySaver', 'clearOnExit', 'confirmCloseMultiple', 'blockTrackers', 'crashRecovery', 'stripTrackingParams', 'spellcheckEnabled', 'spellcheckLanguages']);
+        const ALLOWED_SETTING_KEYS = new Set(['defaultTab', 'tabLayout', 'searchEngine', 'backgroundType', 'customUrl', 'customBackgroundUrl', 'themeColor', 'darkMode', 'memorySaver', 'clearOnExit', 'confirmCloseMultiple', 'blockTrackers', 'blockThirdPartyCookies', 'hardenCookies', 'crashRecovery', 'stripTrackingParams', 'spellcheckEnabled', 'spellcheckLanguages']);
         const ALLOWED_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'cosy:']);
         const COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
         const DEFAULT_SPELLCHECK_LANGS = ['en-US', 'zh-CN'];
         // 这些键在 .inf 配置里保存为 true/false，导入时必须还原成布尔值，
         // 否则字符串 'false' 会被当成真值，导致"关闭"类设置永远关不掉。
-        const BOOLEAN_SETTING_KEYS = new Set(['darkMode', 'memorySaver', 'clearOnExit', 'confirmCloseMultiple', 'blockTrackers', 'crashRecovery', 'stripTrackingParams', 'spellcheckEnabled']);
+        const BOOLEAN_SETTING_KEYS = new Set(['darkMode', 'memorySaver', 'clearOnExit', 'confirmCloseMultiple', 'blockTrackers', 'blockThirdPartyCookies', 'hardenCookies', 'crashRecovery', 'stripTrackingParams', 'spellcheckEnabled']);
 
         function isSafeUrl(url) {
             try {
@@ -634,6 +666,8 @@
             document.getElementById('confirmCloseMultiple').checked = settings.confirmCloseMultiple === true;
             // 追踪拦截与崩溃恢复默认开启，仅在明确存 false 时关闭。
             document.getElementById('blockTrackers').checked = settings.blockTrackers !== false;
+            document.getElementById('blockThirdPartyCookies').checked = settings.blockThirdPartyCookies !== false;
+            document.getElementById('hardenCookies').checked = settings.hardenCookies !== false;
             document.getElementById('crashRecovery').checked = settings.crashRecovery !== false;
             document.getElementById('stripTrackingParams').checked = settings.stripTrackingParams !== false;
             document.getElementById('spellcheckEnabled').checked = settings.spellcheckEnabled !== false;
@@ -664,6 +698,8 @@
             const clearOnExit = document.getElementById('clearOnExit').checked;
             const confirmCloseMultiple = document.getElementById('confirmCloseMultiple').checked;
             const blockTrackers = document.getElementById('blockTrackers').checked;
+            const blockThirdPartyCookies = document.getElementById('blockThirdPartyCookies').checked;
+            const hardenCookies = document.getElementById('hardenCookies').checked;
             const crashRecovery = document.getElementById('crashRecovery').checked;
             const stripTrackingParams = document.getElementById('stripTrackingParams').checked;
             const spellcheckEnabled = document.getElementById('spellcheckEnabled').checked;
@@ -705,6 +741,8 @@
                 clearOnExit,
                 confirmCloseMultiple,
                 blockTrackers,
+                blockThirdPartyCookies,
+                hardenCookies,
                 crashRecovery,
                 stripTrackingParams,
                 spellcheckEnabled,
