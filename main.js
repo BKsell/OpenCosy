@@ -4,6 +4,7 @@ const fs = require('fs').promises;
 const fsSync = require('fs');
 const os = require('os');
 const bookmarkIO = require('./bookmarkio');
+const headerGrade = require('./headergrade');
 
 // 现代浏览器默认要求“用户与页面有过交互”才允许带声音自动播放，
 // 否则广告页一打开就能外放声音。必须在 app ready 之前设置。
@@ -678,6 +679,11 @@ function applyDarkMode(dark) {
 function setupSecurityHeaders() {
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const headers = details.responseHeaders || {};
+    // 安全头评级必须在下面任何 setIfMissing 之前完成，反映服务器原始姿态；
+    // 只评远端顶层文档，不评我们自己强制注入的 cosy:// 页面与第三方子资源。
+    if (details.resourceType === 'mainFrame' && /^https?:/i.test(details.url)) {
+      recordHeaderGrade(details.url, headers);
+    }
     const setIfMissing = (name, value) => {
       if (!headers[name] && !headers[name.toLowerCase()]) headers[name] = value;
     };
@@ -1164,6 +1170,10 @@ function loadCspReports() {
         lineNumber: Number.isFinite(Number(r.lineNumber)) ? Number(r.lineNumber) : 0,
         columnNumber: Number.isFinite(Number(r.columnNumber)) ? Number(r.columnNumber) : 0,
         disposition: r.disposition === 'report' ? 'report' : 'enforce',
+        // hits 是同一来源（documentUri+directive+blockedUri）的累计命中次数；
+        // 老台账没有该字段，按 1 次补默认值，避免旧数据展示成 NaN/空白。
+        hits: Math.max(1, Number(r.hits) || 1),
+        lastTime: Number(r.lastTime) || (Number(r.time) || Date.now()),
       });
       if (cspReports.length >= MAX_CSP_REPORTS) break;
     }
@@ -1218,16 +1228,46 @@ function recordCspViolationFromRenderer(senderFrame, payload) {
   try { frameUrl = new URL(senderFrame.url).href; } catch { frameUrl = senderFrame.url; }
   const directive = sanitizeCspField(payload && payload.directive);
   if (!directive) return { accepted: false, reason: 'missing directive' };
+  const documentUri = sanitizeCspField(frameUrl);
+  const blockedUri = sanitizeCspField(payload && payload.blockedUri);
+  const now = Date.now();
+
+  // 同一页面、同一指令、同一被拦资源反复触发时只保留一条聚合记录，
+  // 用 hits 记次数并把它移到队尾（等同“最近再次出现”），避免一个页面
+  // 的持续性违规把 500 条台账瞬间刷满、淹没其它来源。
+  const dedupeKey = `${documentUri}\u0000${directive}\u0000${blockedUri}`;
+  const existingIdx = cspReports.findIndex(r =>
+    `${r.documentUri}\u0000${r.directive}\u0000${r.blockedUri}` === dedupeKey);
+  if (existingIdx >= 0) {
+    const existing = cspReports[existingIdx];
+    existing.hits = Math.min(Number.MAX_SAFE_INTEGER, (Number(existing.hits) || 1) + 1);
+    existing.lastTime = now;
+    // 行/列等定位信息更新为最近一次，方便点进最新现场。
+    existing.sourceFile = sanitizeCspField(payload && payload.sourceFile);
+    existing.lineNumber = Math.max(0, Number(payload && payload.lineNumber) || 0);
+    existing.columnNumber = Math.max(0, Number(payload && payload.columnNumber) || 0);
+    cspReports.splice(existingIdx, 1);
+    cspReports.push(existing);
+    if (cspReports.length > MAX_CSP_REPORTS) {
+      cspReports.splice(0, cspReports.length - MAX_CSP_REPORTS);
+    }
+    persistCspReports();
+    sendToRenderer('csp-report-added', { ...existing });
+    return { accepted: true, aggregated: true };
+  }
+
   const report = {
-    id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-    time: Date.now(),
-    documentUri: sanitizeCspField(frameUrl),
+    id: `${now.toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    time: now,
+    documentUri,
     directive,
-    blockedUri: sanitizeCspField(payload && payload.blockedUri),
+    blockedUri,
     sourceFile: sanitizeCspField(payload && payload.sourceFile),
     lineNumber: Math.max(0, Number(payload && payload.lineNumber) || 0),
     columnNumber: Math.max(0, Number(payload && payload.columnNumber) || 0),
     disposition: payload && payload.disposition === 'report' ? 'report' : 'enforce',
+    hits: 1,
+    lastTime: now,
   };
   cspReports.push(report);
   if (cspReports.length > MAX_CSP_REPORTS) {
@@ -1250,6 +1290,146 @@ function clearCspReports() {
   try { fsSync.unlinkSync(cspReportStorePath); } catch {}
   persistCspReports();
   return true;
+}
+
+// removeCspReport 按 id 删除单条聚合记录（安全页面板“忽略/删除这一条”用）。
+// id 只接受字符串并做限长，命中才落盘；返回是否真的删掉了一条。
+function removeCspReport(id) {
+  loadCspReports();
+  if (typeof id !== 'string') return false;
+  const target = id.slice(0, 128);
+  const idx = cspReports.findIndex(r => r.id === target);
+  if (idx < 0) return false;
+  cspReports.splice(idx, 1);
+  persistCspReports();
+  return true;
+}
+
+// getCspReportStats 返回台账总量与命中总数，供安全页面板顶部徽标使用，
+// 不必把全部记录拉到 renderer 再做 reduce。
+function getCspReportStats() {
+  loadCspReports();
+  let totalHits = 0;
+  for (const r of cspReports) totalHits += Number(r.hits) || 1;
+  return { groups: cspReports.length, totalHits };
+}
+
+// ===== 远端站点响应安全头评级（security-headers.json / cosy://security）=====
+// onHeadersReceived 里对每个远端顶层文档，用“服务器原始下发”的响应头（在我们
+// 补头之前）跑一次纯函数评级，按 host 聚合最近一次结果，落本地台账并在安全中心
+// 展示。只看我们自己强制注入之前的原始头，才能反映站点本身的真实姿态。
+//
+// 隐私与体量约束：
+//  - 只跟 mainFrame，不跟图片/脚本等子资源，避免第三方 CDN 域名灌爆台账；
+//  - 按 host 去重（同一站只留最新评级），上限 300 个主机，原子 rename 落盘；
+//  - 不记录完整路径/查询，只存 host、评级、各检查项与时间。
+const headerGradeStorePath = path.join(app.getPath('userData'), 'security-headers.json');
+const MAX_HEADER_GRADE_HOSTS = 300;
+
+const headerGrades = [];
+let headerGradesLoaded = false;
+let headerGradeSaveTimer = null;
+
+function loadHeaderGrades() {
+  if (headerGradesLoaded) return;
+  headerGradesLoaded = true;
+  try {
+    const data = JSON.parse(fsSync.readFileSync(headerGradeStorePath, 'utf8'));
+    const entries = Array.isArray(data && data.hosts) ? data.hosts : null;
+    if (!entries) return;
+    for (const h of entries) {
+      if (!h || typeof h !== 'object' || typeof h.host !== 'string' || !h.host) continue;
+      if (typeof h.grade !== 'string' || !/^[A-F]$/.test(h.grade)) continue;
+      headerGrades.push({
+        host: h.host.slice(0, 253),
+        time: Number(h.time) || Date.now(),
+        visits: Math.max(1, Number(h.visits) || 1),
+        grade: h.grade,
+        percent: Math.max(0, Math.min(100, Number(h.percent) || 0)),
+        insecureTransport: !!h.insecureTransport,
+        checks: Array.isArray(h.checks) ? h.checks.slice(0, 16) : [],
+        warnings: Array.isArray(h.warnings) ? h.warnings.slice(0, 16) : [],
+      });
+      if (headerGrades.length >= MAX_HEADER_GRADE_HOSTS) break;
+    }
+  } catch {}
+}
+
+function persistHeaderGrades() {
+  if (headerGradeSaveTimer) clearTimeout(headerGradeSaveTimer);
+  headerGradeSaveTimer = setTimeout(() => {
+    try {
+      const tmp = headerGradeStorePath + '.tmp';
+      fsSync.writeFileSync(tmp, JSON.stringify({ version: 1, hosts: headerGrades }), 'utf8');
+      fsSync.renameSync(tmp, headerGradeStorePath);
+    } catch {}
+  }, 400);
+}
+
+// recordHeaderGrade 对一次顶层文档响应评级并按 host 聚合。纯计算，不抛错。
+function recordHeaderGrade(url, rawHeaders) {
+  if (typeof url !== 'string' || !/^https?:/i.test(url)) return;
+  let result;
+  try {
+    result = headerGrade.gradeSecurityHeaders(url, rawHeaders);
+  } catch {
+    return;
+  }
+  if (!result || !result.host) return;
+  loadHeaderGrades();
+  const now = Date.now();
+  const idx = headerGrades.findIndex(h => h.host === result.host);
+  const record = {
+    host: result.host,
+    time: now,
+    visits: 1,
+    grade: result.grade,
+    percent: result.percent,
+    insecureTransport: !!result.insecureTransport,
+    checks: result.checks.map(c => ({
+      id: String(c.id), name: String(c.name), weight: Number(c.weight) || 0,
+      score: Number(c.score) || 0, status: String(c.status),
+      value: String(c.value || '').slice(0, 300), note: String(c.note || '').slice(0, 300),
+    })),
+    warnings: result.warnings.map(w => String(w).slice(0, 200)).slice(0, 16),
+  };
+  if (idx >= 0) {
+    record.visits = Math.min(Number.MAX_SAFE_INTEGER, (Number(headerGrades[idx].visits) || 1) + 1);
+    headerGrades.splice(idx, 1);
+    headerGrades.push(record);
+  } else {
+    headerGrades.push(record);
+  }
+  if (headerGrades.length > MAX_HEADER_GRADE_HOSTS) {
+    headerGrades.splice(0, headerGrades.length - MAX_HEADER_GRADE_HOSTS);
+  }
+  persistHeaderGrades();
+  sendToRenderer('header-grade-updated', { host: record.host, grade: record.grade, percent: record.percent });
+}
+
+function listHeaderGrades(limit = 200) {
+  loadHeaderGrades();
+  const n = Math.max(1, Math.min(Number(limit) || 200, MAX_HEADER_GRADE_HOSTS));
+  return headerGrades.slice(-n).reverse().map(h => ({ ...h, checks: h.checks.map(c => ({ ...c })) }));
+}
+
+function clearHeaderGrades() {
+  loadHeaderGrades();
+  headerGrades.length = 0;
+  try { fsSync.unlinkSync(headerGradeStorePath); } catch {}
+  persistHeaderGrades();
+  return true;
+}
+
+function getHeaderGradeStats() {
+  loadHeaderGrades();
+  const byGrade = { A: 0, B: 0, C: 0, D: 0, F: 0 };
+  let insecure = 0;
+  for (const h of headerGrades) {
+    if (byGrade[h.grade] != null) byGrade[h.grade] += 1;
+    if (h.insecureTransport) insecure += 1;
+  }
+  return { hosts: headerGrades.length, byGrade, insecureHosts: insecure };
 }
 
 // ===== 下载完整性校验（download-hashes.json / cosy://hashes）=====
@@ -1730,6 +1910,26 @@ function setupPermissionHandlers() {
   ipcMain.handle('clear-csp-reports', (event) => {
     if (!isMainSender(event)) return { success: false };
     return { success: true, cleared: clearCspReports() };
+  });
+  ipcMain.handle('remove-csp-report', (event, payload = {}) => {
+    if (!isMainSender(event)) return { success: false };
+    return { success: true, removed: removeCspReport(payload && payload.id) };
+  });
+  ipcMain.handle('get-csp-report-stats', (event) => {
+    if (!isMainSender(event)) return { groups: 0, totalHits: 0 };
+    return getCspReportStats();
+  });
+  ipcMain.handle('list-header-grades', (event, payload = {}) => {
+    if (!isMainSender(event)) return [];
+    return listHeaderGrades(Number(payload.limit) || 200);
+  });
+  ipcMain.handle('clear-header-grades', (event) => {
+    if (!isMainSender(event)) return { success: false };
+    return { success: true, cleared: clearHeaderGrades() };
+  });
+  ipcMain.handle('get-header-grade-stats', (event) => {
+    if (!isMainSender(event)) return { hosts: 0, byGrade: {}, insecureHosts: 0 };
+    return getHeaderGradeStats();
   });
 
   // ===== 下载完整性校验（cosy://hashes）IPC，仅主框架可调 =====
