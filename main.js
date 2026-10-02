@@ -13,6 +13,9 @@ const mixedGuard = require('./mixedguard');
 const netAuthGuard = require('./netauthguard');
 const cookieGuard = require('./cookieguard');
 const pnaGuard = require('./pna');
+const fpGuard = require('./fpguard');
+const dohGuard = require('./dohguard');
+const permPolicy = require('./permpolicy');
 
 // 现代浏览器默认要求“用户与页面有过交互”才允许带声音自动播放，
 // 否则广告页一打开就能外放声音。必须在 app ready 之前设置。
@@ -70,6 +73,23 @@ let hardenCookies = true;
 // 169.254.169.254 云元数据等“更私有”地址（PNA 私有网络访问），默认开启。
 // 顶层导航和内网页面自己访问内网不受影响。
 let blockLocalNetworkAccess = true;
+// reduceClientHints：剥离 Sec-CH-UA-Arch/Bitness/Model/Full-Version 等高熵提示，
+// 只留兼容性所需的低熵 sec-ch-ua / platform，降低跨站可指纹度。
+let reduceClientHints = true;
+// blockAdSignals：剥离 Sec-Browsing-Topics、Attribution-Reporting-* 等广告归因头。
+let blockAdSignals = true;
+// blockHyperlinkPing：取消 <a ping> / 带 Ping-To 的超链接审计打点请求。
+let blockHyperlinkPing = true;
+// stripAcceptCh：移除站点下发的 Accept-CH / Critical-CH，阻止其订阅高熵提示
+// 并触发带新头的重试。
+let stripAcceptCh = true;
+// webrtcMode：strict(默认,不暴露内网 IP) / balanced(mDNS 混淆) / legacy(不干预)。
+let webrtcMode = fpGuard.DEFAULT_WEBRTC_POLICY;
+// 安全 DNS（DoH）：dohMode off/automatic(默认)/secure；dohProvider 为内置 id 或 custom。
+let dohMode = dohGuard.DEFAULT_MODE;
+let dohProvider = 'cloudflare';
+let dohCustomUrl = '';
+let dohActive = false; // 运行时实际是否成功启用了宿主解析器控件
 // crashRecovery：渲染进程崩溃 / OOM 时自动重载一次并弹横幅；可在设置关闭。
 let crashRecoveryEnabled = true;
 // 每个 webContents 的崩溃次数，用于阻止“崩溃→重载→又崩溃”的无限循环。
@@ -785,6 +805,41 @@ function recordPnaBlock(details, verdict) {
   sendToRenderer('pna-blocked-updated', pnaLedgerStats());
 }
 
+// ===== 指纹 / 跨站追踪收敛台账（fp-leaks.json / cosy://security 面板）=====
+const fpLedgerStorePath = path.join(app.getPath('userData'), 'fp-leaks.json');
+const MAX_FP_LEDGER = 500;
+const fpLedger = fpGuard.createFingerprintLedger(MAX_FP_LEDGER);
+let fpLedgerLoaded = false;
+let fpLedgerSaveTimer = null;
+
+function loadFpLedger() {
+  if (fpLedgerLoaded) return;
+  fpLedgerLoaded = true;
+  try {
+    fpLedger.load(JSON.parse(fsSync.readFileSync(fpLedgerStorePath, 'utf8')));
+  } catch {}
+}
+
+function persistFpLedger() {
+  if (fpLedgerSaveTimer) clearTimeout(fpLedgerSaveTimer);
+  fpLedgerSaveTimer = setTimeout(() => {
+    try {
+      const tmp = fpLedgerStorePath + '.tmp';
+      fsSync.writeFileSync(tmp, JSON.stringify(fpLedger.toJSON()), 'utf8');
+      fsSync.renameSync(tmp, fpLedgerStorePath);
+    } catch {}
+  }, 400);
+}
+
+// recordFpHit 按主机+类别登记一条被收敛的指纹/追踪信号。
+function recordFpHit(host, category, signals) {
+  if (!host) return;
+  loadFpLedger();
+  fpLedger.record(host, category, signals);
+  persistFpLedger();
+  sendToRenderer('fingerprint-blocked-updated', fpLedger.stats());
+}
+
 // applyCookieHardening 就地加固响应头里的 Set-Cookie，返回本次动作列表。
 // 任何异常都不阻断浏览：出错时保留原始响应头。
 function applyCookieHardening(headers, details) {
@@ -819,6 +874,86 @@ function applyCookieHardening(headers, details) {
   }
 }
 
+function applyWebRtcPolicy() {
+  // WebRTC ICE 候选默认可能暴露内网/真实公网 IP（可穿透 VPN）。
+  // strict 只用默认公网接口；balanced 允许 mDNS 混淆候选；legacy 不干预。
+  try {
+    session.defaultSession.setWebRTCIPHandlingPolicy(fpGuard.resolveWebRtcPolicy(webrtcMode));
+  } catch {}
+}
+
+// ===== 安全 DNS（DoH）状态与落盘 =====
+const dohStorePath = path.join(app.getPath('userData'), 'doh-status.json');
+const dohLedger = dohGuard.createDohLedger(200);
+let dohLedgerLoaded = false;
+let dohSaveTimer = null;
+
+function loadDohLedger() {
+  if (dohLedgerLoaded) return;
+  dohLedgerLoaded = true;
+  try {
+    dohLedger.load(JSON.parse(fsSync.readFileSync(dohStorePath, 'utf8')));
+  } catch {}
+}
+
+function persistDohLedger() {
+  if (dohSaveTimer) clearTimeout(dohSaveTimer);
+  dohSaveTimer = setTimeout(() => {
+    try {
+      const tmp = dohStorePath + '.tmp';
+      fsSync.writeFileSync(tmp, JSON.stringify(dohLedger.toJSON()), 'utf8');
+      fsSync.renameSync(tmp, dohStorePath);
+    } catch {}
+  }, 400);
+}
+
+function dohStatus() {
+  return {
+    mode: dohMode,
+    provider: dohProvider,
+    active: dohActive,
+    events: dohLedger.list().slice(0, 50),
+  };
+}
+
+// applySecureDns 在启动 / 设置变更时把安全 DNS 策略下发给宿主解析器。
+// 老版本 Electron 没有 setHostResolverControls 时静默降级为关闭，不阻断浏览。
+function applySecureDns() {
+  loadDohLedger();
+  const resolved = dohGuard.resolveControls({
+    mode: dohMode,
+    provider: dohProvider,
+    customUrl: dohCustomUrl,
+  });
+  const sess = session.defaultSession;
+  if (typeof sess.setHostResolverControls !== 'function') {
+    dohActive = false;
+    dohLedger.add({ mode: dohMode, event: 'unsupported', detail: 'no setHostResolverControls' });
+    persistDohLedger();
+    return;
+  }
+  try {
+    sess.setHostResolverControls(resolved.controls);
+    dohActive = resolved.mode !== dohGuard.SECURE_DNS_MODES.OFF;
+    if (resolved.warning) {
+      dohLedger.add({ mode: resolved.mode, event: 'fallback', detail: resolved.warning });
+      recordSecurityEvent('fingerprint-blocked', 'warn',
+        `安全 DNS 自定义服务器非法（${resolved.warning}），已回退到自动模式`, '');
+    } else {
+      dohLedger.add({
+        mode: resolved.mode,
+        event: 'applied',
+        detail: resolved.template || resolved.mode,
+      });
+    }
+    persistDohLedger();
+  } catch (e) {
+    dohActive = false;
+    dohLedger.add({ mode: dohMode, event: 'error', detail: String(e && e.message || e).slice(0, 200) });
+    persistDohLedger();
+  }
+}
+
 function setupSecurityHeaders() {
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const headers = details.responseHeaders || {};
@@ -827,18 +962,25 @@ function setupSecurityHeaders() {
     if (details.resourceType === 'mainFrame' && /^https?:/i.test(details.url)) {
       recordHeaderGrade(details.url, headers);
     }
+    // 移除站点下发的 Accept-CH / Critical-CH：阻止其订阅高熵 Client Hints，
+    // Critical-CH 还会触发带新头的重试，一并清掉以掐断放大通道。
+    try {
+      const removedCh = fpGuard.stripAcceptClientHints(headers, { stripAcceptCh });
+      if (removedCh.length) {
+        const chHost = fpGuard.hostOf(details.url);
+        recordFpHit(chHost, 'accept-ch', removedCh);
+      }
+    } catch {}
     const setIfMissing = (name, value) => {
       if (!headers[name] && !headers[name.toLowerCase()]) headers[name] = value;
     };
     setIfMissing('X-Content-Type-Options', ['nosniff']);
     setIfMissing('X-Frame-Options', ['SAMEORIGIN']);
     setIfMissing('Referrer-Policy', ['strict-origin-when-cross-origin']);
-    // 关闭 FLoC / 广告兴趣组 / 隐私令牌等现代浏览器默认放开但我们不需要的特性
-    setIfMissing('Permissions-Policy', [
-      'interest-cohort=()', 'run-ad-auction=()',
-      'private-state-token-issuance=()', 'private-state-token-redemption=()',
-      'join-ad-interest-group=()'
-    ]);
+    // 关闭 FLoC / 广告兴趣组 / Topics / 隐私令牌等追踪特性。
+    // 指令由 permpolicy 内核统一构建（强制关闭项不可被放开，白名单防头注入）；
+    // 站点未自行下发策略时注入默认值，尊重站点对其它能力的显式配置。
+    setIfMissing('Permissions-Policy', [permPolicy.defaultHeader()]);
     const isLocal = details.url.startsWith('cosy://') || details.url.startsWith('file://');
     if (isLocal && !headers['Content-Security-Policy'] && !headers['content-security-policy']) {
       // 自有 UI 页面的 CSP 比公网站点更严：
@@ -888,11 +1030,42 @@ function setupSecurityHeaders() {
     headers['Sec-GPC'] = '1';
     headers['Upgrade-Insecure-Requests'] = '1';
     trimReferrerHeader(details, headers);
+    // 指纹 / 广告信号收敛：剥离高熵 Client Hints 与归因 / Topics 请求头。
+    try {
+      const fpOptions = {
+        reduceClientHints,
+        blockAdSignals,
+        blockHyperlinkPing,
+        stripAcceptCh,
+        webrtcMode,
+      };
+      const removed = fpGuard.sanitizeOutboundHeaders(details, headers, fpOptions);
+      const host = fpGuard.hostOf(details.url);
+      if (host && removed.clientHints.length) {
+        recordFpHit(host, 'client-hints', removed.clientHints);
+      }
+      if (host && removed.adSignals.length) {
+        recordFpHit(host, 'ad-signals', removed.adSignals);
+      }
+    } catch {}
     callback({ requestHeaders: headers });
   });
 
   session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
     const isHttpUrl = details.url.startsWith('http://') || details.url.startsWith('https://');
+    // 超链接审计打点（<a ping> / sendBeacon 类 ping）：静默取消，顶层导航不受影响。
+    if (isHttpUrl) {
+      try {
+        if (fpGuard.isHyperlinkPing(details, { blockHyperlinkPing })) {
+          const host = fpGuard.hostOf(details.url);
+          recordFpHit(host, 'ping', ['hyperlink-ping']);
+          recordSecurityEvent('fingerprint-blocked', 'info',
+            `已阻止超链接打点请求（ping）：${details.url}`, host);
+          recordRequestAttempt(details, true);
+          return callback({ cancel: true });
+        }
+      } catch {}
+    }
     // 第三方追踪 / 广告子资源：直接取消（不动顶层导航）。
     if (isHttpUrl && isTrackerRequest(details)) {
       recordBlockedTracker(details.url);
@@ -1252,6 +1425,7 @@ const SECURITY_EVENT_TYPES = new Set([
   'client-cert-blocked',     // 无明确选择时默认不发送客户端证书
   'cookie-blocked',          // 第三方 / 非法前缀 / 无效 Secure 的 Set-Cookie 被剥离
   'pna-blocked',             // 公网页面访问本机/内网/链路本地被 PNA 拦截
+  'fingerprint-blocked',     // 高熵 Client Hints / 广告信号 / 超链接打点被收敛
 ]);
 
 const securityEvents = [];
@@ -2377,6 +2551,45 @@ ipcMain.handle('clear-pna-blocks', (event) => {
   persistPnaLedger();
   sendToRenderer('pna-blocked-updated', pnaLedgerStats());
   return { ok: true, stats: pnaLedgerStats() };
+});
+
+ipcMain.handle('list-fingerprint-entries', (event) => {
+  if (!isMainSender(event)) return { ok: false, error: 'denied', entries: [] };
+  loadFpLedger();
+  return { ok: true, entries: fpLedger.entries() };
+});
+
+ipcMain.handle('get-fingerprint-stats', (event) => {
+  if (!isMainSender(event)) return { ok: false, error: 'denied' };
+  loadFpLedger();
+  return { ok: true, stats: fpLedger.stats() };
+});
+
+ipcMain.handle('clear-fingerprint-entries', (event) => {
+  if (!isMainSender(event)) return { ok: false, error: 'denied' };
+  fpLedger.clear();
+  persistFpLedger();
+  sendToRenderer('fingerprint-blocked-updated', fpLedger.stats());
+  return { ok: true, stats: fpLedger.stats() };
+});
+
+ipcMain.handle('get-doh-status', (event) => {
+  if (!isMainSender(event)) return { ok: false, error: 'denied' };
+  loadDohLedger();
+  return {
+    ok: true,
+    supported: typeof session.defaultSession.setHostResolverControls === 'function',
+    status: dohStatus(),
+    providers: dohGuard.KNOWN_PROVIDERS,
+    forcedFeatures: permPolicy.FORCED_DISABLE,
+  };
+});
+
+ipcMain.handle('clear-doh-events', (event) => {
+  if (!isMainSender(event)) return { ok: false, error: 'denied' };
+  dohLedger.clear();
+  persistDohLedger();
+  return { ok: true };
 });
 
 function getClientCertChoiceStats() {
@@ -4143,6 +4356,14 @@ app.whenReady().then(async () => {
   blockThirdPartyCookies = stored.blockThirdPartyCookies !== false;
   hardenCookies = stored.hardenCookies !== false;
   blockLocalNetworkAccess = stored.blockLocalNetworkAccess !== false;
+  reduceClientHints = stored.reduceClientHints !== false;
+  blockAdSignals = stored.blockAdSignals !== false;
+  blockHyperlinkPing = stored.blockHyperlinkPing !== false;
+  stripAcceptCh = stored.stripAcceptCh !== false;
+  if ('webrtcMode' in stored) webrtcMode = fpGuard.normalizeWebRtcMode(stored.webrtcMode);
+  dohMode = dohGuard.normalizeMode(stored.dohMode);
+  if (typeof stored.dohProvider === 'string') dohProvider = stored.dohProvider;
+  if (typeof stored.dohCustomUrl === 'string') dohCustomUrl = stored.dohCustomUrl;
   crashRecoveryEnabled = stored.crashRecovery !== false;
   stripTrackingParams = stored.stripTrackingParams !== false;
   if ('memorySaver' in stored) memorySaverEnabled = !!stored.memorySaver;
@@ -4193,6 +4414,8 @@ app.whenReady().then(async () => {
 
   setupPermissionHandlers();
   setupSecurityHeaders();
+  applyWebRtcPolicy();
+  applySecureDns();
   setupDownloadManager();
   setupGlobalWebContentsHooks();
   setupNetworkAuth();
@@ -4989,6 +5212,18 @@ const ALLOWED_SETTING_KEYS = {
   blockThirdPartyCookies: v => typeof v === 'boolean',
   hardenCookies: v => typeof v === 'boolean',
   blockLocalNetworkAccess: v => typeof v === 'boolean',
+  reduceClientHints: v => typeof v === 'boolean',
+  blockAdSignals: v => typeof v === 'boolean',
+  blockHyperlinkPing: v => typeof v === 'boolean',
+  stripAcceptCh: v => typeof v === 'boolean',
+  webrtcMode: v => typeof v === 'string' &&
+    Object.prototype.hasOwnProperty.call(fpGuard.WEBRTC_POLICIES, v),
+  dohMode: v => typeof v === 'string' &&
+    Object.prototype.hasOwnProperty.call(dohGuard.SECURE_DNS_MODES, v),
+  dohProvider: v => typeof v === 'string' &&
+    (v === 'custom' || dohGuard.getProviderById(v) !== null),
+  dohCustomUrl: v => typeof v === 'string' && v.length <= 2048 &&
+    (v.trim() === '' || dohGuard.validateDohServer(v).ok),
   crashRecovery: v => typeof v === 'boolean',
   stripTrackingParams: v => typeof v === 'boolean',
   themeColor: v => isValidColor(v),
@@ -5028,7 +5263,17 @@ ipcMain.on('save-settings', (event, settings) => {
     blockTrackers = clean.blockTrackers !== false;
     blockThirdPartyCookies = clean.blockThirdPartyCookies !== false;
     hardenCookies = clean.hardenCookies !== false;
-  blockLocalNetworkAccess = clean.blockLocalNetworkAccess !== false;
+    blockLocalNetworkAccess = clean.blockLocalNetworkAccess !== false;
+    reduceClientHints = clean.reduceClientHints !== false;
+    blockAdSignals = clean.blockAdSignals !== false;
+    blockHyperlinkPing = clean.blockHyperlinkPing !== false;
+    stripAcceptCh = clean.stripAcceptCh !== false;
+    if ('webrtcMode' in clean) webrtcMode = fpGuard.normalizeWebRtcMode(clean.webrtcMode);
+    applyWebRtcPolicy();
+    if ('dohMode' in clean) dohMode = dohGuard.normalizeMode(clean.dohMode);
+    if ('dohProvider' in clean) dohProvider = clean.dohProvider;
+    if ('dohCustomUrl' in clean) dohCustomUrl = clean.dohCustomUrl;
+    applySecureDns();
     crashRecoveryEnabled = clean.crashRecovery !== false;
     stripTrackingParams = clean.stripTrackingParams !== false;
     if ('memorySaver' in clean) memorySaverEnabled = !!clean.memorySaver;
