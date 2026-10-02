@@ -1,4 +1,4 @@
-const { app, BrowserWindow, WebContentsView, ipcMain, session, protocol, Menu, MenuItem, dialog, shell, globalShortcut, clipboard, net, nativeTheme } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, session, protocol, Menu, MenuItem, dialog, shell, globalShortcut, clipboard, net, nativeTheme, webContents } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
@@ -8,6 +8,7 @@ const headerGrade = require('./headergrade');
 const requestLog = require('./requestlog');
 const brandGuard = require('./brandguard');
 const phishUrl = require('./phishurl');
+const certGuard = require('./certguard');
 
 // 现代浏览器默认要求“用户与页面有过交互”才允许带声音自动播放，
 // 否则广告页一打开就能外放声音。必须在 app ready 之前设置。
@@ -1676,6 +1677,213 @@ function clearBrandSpoofs() {
   persistBrandSpoofs();
   return true;
 }
+
+// ===== TLS 证书错误硬拦截 + 主机/指纹绑定例外（cert-exceptions.json）=====
+// Electron 默认在证书校验失败时“放行”，这对浏览器是致命的：中间人代理、
+// 自签名劫持都会无声通过。这里改为默认阻止，只有用户在看到红色拦截页后
+// 显式加入例外才放行；例外绑定“主机 + 该张证书 SHA-256 指纹”，同一主机
+// 换成另一张证书（典型劫持信号）会重新拦截。吊销 / 公钥固定等硬错误
+// 一律不提供继续入口（判定逻辑在 certguard.js）。
+const certExceptionStorePath = path.join(app.getPath('userData'), 'cert-exceptions.json');
+const MAX_CERT_EXCEPTIONS = 300;
+const CERT_CHALLENGE_TTL = 10 * 60 * 1000; // 待确认的拦截挑战保留 10 分钟
+let certExceptions = [];
+let certExceptionsLoaded = false;
+let certExceptionSaveTimer = null;
+const certChallenges = new Map(); // nonce -> 拦截上下文
+
+function loadCertExceptions() {
+  if (certExceptionsLoaded) return;
+  certExceptionsLoaded = true;
+  try {
+    const data = JSON.parse(fsSync.readFileSync(certExceptionStorePath, 'utf8'));
+    if (data && Array.isArray(data.exceptions)) {
+      for (const raw of data.exceptions) {
+        const rec = certGuard.sanitizeExceptionRecord(raw);
+        if (rec) certExceptions.push(rec);
+      }
+      if (certExceptions.length > MAX_CERT_EXCEPTIONS) {
+        certExceptions = certExceptions.slice(-MAX_CERT_EXCEPTIONS);
+      }
+    }
+  } catch {}
+}
+
+function persistCertExceptions() {
+  if (certExceptionSaveTimer) clearTimeout(certExceptionSaveTimer);
+  certExceptionSaveTimer = setTimeout(() => {
+    try {
+      const tmp = certExceptionStorePath + '.tmp';
+      fsSync.writeFileSync(tmp, JSON.stringify({ version: 1, savedAt: Date.now(), exceptions: certExceptions }), 'utf8');
+      fsSync.renameSync(tmp, certExceptionStorePath);
+    } catch {}
+  }, 1000);
+}
+
+// certExceptionAllowed 判断当前失败事件是否命中已批准的“主机+指纹”例外。
+function certExceptionAllowed(url, certificate) {
+  const verdict = certGuard.classifyCertError({ url, certificate });
+  if (!verdict.host || !verdict.cert || !verdict.cert.fingerprint) return false;
+  loadCertExceptions();
+  return certExceptions.some(e => certGuard.exceptionMatches(e, {
+    host: verdict.host,
+    fingerprint: verdict.cert.fingerprint,
+  }));
+}
+
+function addCertException(url, certificate, code) {
+  const entry = certGuard.createException({ host: url, certificate, code });
+  if (!entry) return false;
+  loadCertExceptions();
+  const idx = certExceptions.findIndex(e =>
+    e.host === entry.host && e.fingerprint === entry.fingerprint);
+  if (idx >= 0) {
+    certExceptions.splice(idx, 1);
+  } else if (certExceptions.length >= MAX_CERT_EXCEPTIONS) {
+    certExceptions.shift(); // 台账满了淘汰最旧的一条
+  }
+  certExceptions.push(entry);
+  persistCertExceptions();
+  return true;
+}
+
+function removeCertException(host, fingerprint) {
+  loadCertExceptions();
+  const h = certGuard.normalizeHost(host);
+  const fp = certGuard.normalizeFingerprint(fingerprint);
+  const before = certExceptions.length;
+  certExceptions = certExceptions.filter(e =>
+    !(e.host === h && (!fp || e.fingerprint === fp)));
+  if (certExceptions.length !== before) persistCertExceptions();
+  return true;
+}
+
+function clearCertExceptions() {
+  loadCertExceptions();
+  certExceptions = [];
+  try { fsSync.unlinkSync(certExceptionStorePath); } catch {}
+  persistCertExceptions();
+  return true;
+}
+
+function listCertExceptionEntries(limit = 200) {
+  loadCertExceptions();
+  const n = Math.max(1, Math.min(Number(limit) || 200, MAX_CERT_EXCEPTIONS));
+  return certExceptions.slice(-n).reverse().map(e => ({ ...e }));
+}
+
+function getCertExceptionStats() {
+  loadCertExceptions();
+  const hosts = new Set(certExceptions.map(e => e.host));
+  return { exceptions: certExceptions.length, hosts: hosts.size };
+}
+
+// makeCertChallenge 为一次拦截生成一次性 nonce，供渲染进程“仍要前往”回传。
+function makeCertChallenge(verdict, webContentsId) {
+  const nonce = require('crypto').randomBytes(16).toString('hex');
+  certChallenges.set(nonce, {
+    host: verdict.host,
+    code: verdict.code,
+    fingerprint: verdict.cert ? verdict.cert.fingerprint : '',
+    webContentsId,
+    createdAt: Date.now(),
+  });
+  setTimeout(() => certChallenges.delete(nonce), CERT_CHALLENGE_TTL).unref?.();
+  return nonce;
+}
+
+// consumeCertChallenge 取出并销毁一次挑战，返回 null 表示过期/伪造。
+function consumeCertChallenge(nonce) {
+  if (typeof nonce !== 'string' || nonce.length !== 32) return null;
+  const c = certChallenges.get(nonce);
+  if (!c) return null;
+  certChallenges.delete(nonce);
+  if (Date.now() - c.createdAt > CERT_CHALLENGE_TTL) return null;
+  return c;
+}
+
+// 证书校验失败：默认阻止。命中已批准例外才放行；否则向主界面推送全屏
+// 拦截页（仅主框架导航）。证书对象在送渲染进程前经 summarizeCertificate
+// 脱敏，只给展示所需字段。
+app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
+  try {
+    if (certExceptionAllowed(url, certificate)) {
+      event.preventDefault();
+      callback(true);
+      return;
+    }
+    event.preventDefault();
+    callback(false);
+
+    const verdict = certGuard.classifyCertError({ url, error, certificate });
+    if (!verdict.host) return;
+    // 只为主框架导航弹拦截页；子资源（图片/脚本等）证书错误静默阻止即可。
+    let isMainFrame = false;
+    try {
+      const cur = webContents.getURL ? webContents.getURL() : '';
+      isMainFrame = !cur || certGuard.normalizeHost(cur) === verdict.host;
+    } catch { isMainFrame = true; }
+    if (!isMainFrame) return;
+
+    const nonce = makeCertChallenge(verdict, webContents.id);
+    sendToRenderer('cert-error-blocked', {
+      nonce,
+      url: String(url).slice(0, 2048),
+      host: verdict.host,
+      code: verdict.code,
+      overridable: verdict.overridable,
+      title: verdict.title,
+      detail: verdict.detail,
+      cert: verdict.cert,
+      shortFingerprint: certGuard.shortFingerprint(verdict.cert ? verdict.cert.fingerprint : ''),
+    });
+  } catch {
+    // 任何意外都 fail-closed，绝不因异常而默认放行。
+    try { event.preventDefault(); } catch {}
+    try { callback(false); } catch {}
+  }
+});
+
+ipcMain.handle('approve-cert-exception', (event, payload = {}) => {
+  const challenge = consumeCertChallenge(payload.nonce);
+  if (!challenge) return { ok: false, error: '挑战已过期或无效，请重新访问' };
+  const verdict2 = certGuard.errorInfo(challenge.code);
+  if (!verdict2.overridable) return { ok: false, error: '该证书错误不可绕过' };
+  const ok = addCertException(challenge.host, {
+    fingerprint: challenge.fingerprint ? `sha256/${challenge.fingerprint}` : '',
+    subjectName: '',
+    issuerName: '',
+  }, challenge.code);
+  if (!ok) return { ok: false, error: '例外记录失败' };
+  // 放行后重新加载对应标签；找不到则只记录、不导航。
+  try {
+    const target = webContents.fromId(challenge.webContentsId);
+    if (target && !target.isDestroyed()) {
+      setImmediate(() => { try { target.reload(); } catch {} });
+    }
+  } catch {}
+  sendToRenderer('cert-exception-updated', getCertExceptionStats());
+  return { ok: true };
+});
+
+ipcMain.handle('list-cert-exceptions', (event, payload = {}) => ({
+  entries: listCertExceptionEntries(payload.limit),
+  stats: getCertExceptionStats(),
+}));
+
+ipcMain.handle('remove-cert-exception', (event, payload = {}) => {
+  removeCertException(payload.host, payload.fingerprint);
+  sendToRenderer('cert-exception-updated', getCertExceptionStats());
+  return { ok: true };
+});
+
+ipcMain.handle('clear-cert-exceptions', () => {
+  clearCertExceptions();
+  sendToRenderer('cert-exception-updated', getCertExceptionStats());
+  return { ok: true };
+});
+
+ipcMain.handle('get-cert-exception-stats', () => getCertExceptionStats());
 
 // ===== 下载完整性校验（download-hashes.json / cosy://hashes）=====
 // Electron 的下载项只保证"字节传完了"，不保证字节没被中间人 / 镜像污染。
