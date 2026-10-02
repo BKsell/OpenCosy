@@ -271,6 +271,7 @@ class TabManager {
     });
     window.electronAPI.on('trackers-blocked', (data) => updateTrackerShield(data || {}));
     window.electronAPI.on('spoof-warning', (data) => showSpoofWarning(data || {}));
+    window.electronAPI.on('brand-spoof-warning', (data) => showBrandSpoofWarning(data || {}));
     // 内存节省：标签被休眠时变灰并提示，唤醒（切回重载）后恢复。
     window.electronAPI.on('tab-discarded', (data) => this.markTabDiscarded(data && data.id, true));
     window.electronAPI.on('tab-reloaded', (data) => this.markTabDiscarded(data && data.id, false));
@@ -1273,6 +1274,44 @@ function showSpoofWarning(data) {
   const close = document.createElement('button');
   close.textContent = '知道了';
   close.style.cssText = 'border:1px solid #b08400;background:transparent;color:#5f4700;border-radius:4px;padding:4px 12px;font:12px/1.4 system-ui,sans-serif;cursor:pointer;';
+  close.addEventListener('click', () => bar.remove());
+  bar.appendChild(icon);
+  bar.appendChild(msg);
+  bar.appendChild(close);
+}
+
+// ===== 品牌仿冒 / 拼写劫持提示条（红色，比同形字提示更强）=====
+const BRAND_SPOOF_REASON_TEXT = {
+  'typo-domain': '该网址与知名品牌官网仅一个字符之差，疑似拼写劫持钓鱼网站',
+  'brand-in-subdomain': '该网址把品牌名塞进了子域，真正的注册域并不是品牌官方，疑似钓鱼',
+  'brand-keyword-impersonation': '该网址在域名里堆叠“登录/验证/安全”等字样并夹带品牌名，疑似假冒官网',
+};
+
+function showBrandSpoofWarning(data) {
+  if (!data || !data.hostname) return;
+  // 同一主机一次会话只提醒一次。
+  if (!showBrandSpoofWarning._seen) showBrandSpoofWarning._seen = new Set();
+  if (showBrandSpoofWarning._seen.has(data.hostname)) return;
+  showBrandSpoofWarning._seen.add(data.hostname);
+
+  let bar = document.getElementById('cosy-brand-spoof-bar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'cosy-brand-spoof-bar';
+    bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:10002;display:flex;align-items:center;gap:8px;padding:10px 16px;background:#c5221f;color:#fff;font:13px/1.5 system-ui,sans-serif;box-shadow:0 2px 6px rgba(0,0,0,.25);';
+    document.body.appendChild(bar);
+  }
+  bar.textContent = '';
+  const icon = document.createElement('span');
+  icon.textContent = '⛔';
+  const msg = document.createElement('span');
+  msg.style.flex = '1';
+  const reasonText = BRAND_SPOOF_REASON_TEXT[data.reason] || '该网址疑似在仿冒知名品牌官网';
+  const who = data.brand ? `（疑似冒充 ${data.brand}）` : '';
+  msg.textContent = `${reasonText}${who}：${data.hostname}。请立刻停止在此页输入账号、验证码或付款信息。`;
+  const close = document.createElement('button');
+  close.textContent = '我知道了';
+  close.style.cssText = 'border:1px solid #fff;background:transparent;color:#fff;border-radius:4px;padding:4px 12px;font:12px/1.4 system-ui,sans-serif;cursor:pointer;';
   close.addEventListener('click', () => bar.remove());
   bar.appendChild(icon);
   bar.appendChild(msg);
