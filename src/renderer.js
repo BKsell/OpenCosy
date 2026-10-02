@@ -272,6 +272,7 @@ class TabManager {
     window.electronAPI.on('trackers-blocked', (data) => updateTrackerShield(data || {}));
     window.electronAPI.on('spoof-warning', (data) => showSpoofWarning(data || {}));
     window.electronAPI.on('brand-spoof-warning', (data) => showBrandSpoofWarning(data || {}));
+    window.electronAPI.on('phish-url-warning', (data) => showPhishUrlWarning(data || {}));
     // 内存节省：标签被休眠时变灰并提示，唤醒（切回重载）后恢复。
     window.electronAPI.on('tab-discarded', (data) => this.markTabDiscarded(data && data.id, true));
     window.electronAPI.on('tab-reloaded', (data) => this.markTabDiscarded(data && data.id, false));
@@ -1318,7 +1319,71 @@ function showBrandSpoofWarning(data) {
   bar.appendChild(close);
 }
 
-// ===== 追踪拦截盾牌（右下角计数，点击查看 / 归零）=====
+// ===== 高危 URL 结构钓鱼提示条（红橙色：userinfo 偷渡 / 裸 IP / 编码主机等）=====
+const PHISH_SIGNAL_TEXT = {
+  userinfo: '地址用 @ 把内容伪装成可信站点，实际打开的是 @ 后面的主机',
+  encodedHost: '主机名含 % 编码字符，试图躲过地址栏检查',
+  bareIPv4: '用 IP 地址而非官网域名提供服务',
+  decimalHexIp: '十六进制/八进制写法的 IP，地址栏难以辨认',
+  brandInUserinfo: '品牌名被放在 @ 左侧做障眼法',
+  punycodeWithBrand: 'punycode 国际域名叠加品牌名',
+  suspiciousTldWithBrand: '高风险廉价后缀叠加品牌名',
+  unusualPortWithBrand: '使用非常规端口并夹带品牌名',
+  deepSubdomainWithBrand: '子域层级异常深并夹带品牌名',
+  hyphenStackWithBrand: '注册名堆叠连字符并夹带品牌名',
+  brandInPathOnForeignHost: '路径里出现品牌名但主机并非官方',
+};
+
+function showPhishUrlWarning(data) {
+  if (!data || !data.hostname) return;
+  if (!showPhishUrlWarning._seen) showPhishUrlWarning._seen = new Set();
+  const key = data.url || data.hostname;
+  if (showPhishUrlWarning._seen.has(key)) return;
+  showPhishUrlWarning._seen.add(key);
+
+  let bar = document.getElementById('cosy-phishurl-bar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'cosy-phishurl-bar';
+    bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:10003;display:flex;align-items:flex-start;gap:8px;padding:10px 16px;background:#a50e0e;color:#fff;font:13px/1.5 system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3);';
+    document.body.appendChild(bar);
+  }
+  bar.textContent = '';
+  const icon = document.createElement('span');
+  icon.textContent = '🚩';
+  const body = document.createElement('div');
+  body.style.flex = '1';
+
+  const title = document.createElement('div');
+  title.style.fontWeight = '600';
+  title.textContent = '该网址结构高度疑似钓鱼页面，请谨慎访问';
+  body.appendChild(title);
+
+  const hostLine = document.createElement('div');
+  hostLine.style.wordBreak = 'break-all';
+  hostLine.textContent = '主机：' + data.hostname +
+    (data.brand ? `（疑似冒充 ${data.brand}）` : '');
+  body.appendChild(hostLine);
+
+  const signals = Array.isArray(data.signals) ? data.signals : [];
+  for (const s of signals) {
+    const line = document.createElement('div');
+    line.textContent = '· ' + (PHISH_SIGNAL_TEXT[s.code] || s.detail || s.code || '可疑特征');
+    body.appendChild(line);
+  }
+
+  const tip = document.createElement('div');
+  tip.textContent = '如非本人明确知道在做什么，请关闭页面，切勿输入账号、验证码或付款信息。';
+  body.appendChild(tip);
+
+  const close = document.createElement('button');
+  close.textContent = '我知道了';
+  close.style.cssText = 'border:1px solid #fff;background:transparent;color:#fff;border-radius:4px;padding:4px 12px;font:12px/1.4 system-ui,sans-serif;cursor:pointer;';
+  close.addEventListener('click', () => bar.remove());
+  bar.appendChild(icon);
+  bar.appendChild(body);
+  bar.appendChild(close);
+}
 let trackerSnapshot = { enabled: true, count: 0, top: [] };
 
 function ensureTrackerShield() {
