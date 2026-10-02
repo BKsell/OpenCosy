@@ -108,6 +108,14 @@ const allowedInvokeChannels = new Set([
   'get-memory-saver',
   'get-trackers',
   'get-spellcheck-info',
+  'submit-network-auth',
+  'cancel-network-auth',
+  'choose-client-cert',
+  'cancel-client-cert',
+  'list-remembered-certs',
+  'forget-remembered-cert',
+  'clear-remembered-certs',
+  'get-auth-stats',
 ]);
 
 // 接收方向白名单：main -> renderer
@@ -168,6 +176,9 @@ const allowedOnChannels = new Set([
   'request-log-updated',
   'cert-error-blocked',
   'cert-exception-updated',
+  'network-auth-required',
+  'client-cert-required',
+  'client-cert-choices-updated',
 ]);
 
 // sanitizeArg 过滤掉 renderer 传入的可疑对象：只保留 JSON 可序列化的纯数据，
