@@ -157,6 +157,7 @@ const allowedOnChannels = new Set([
   'spoof-warning',
   'brand-spoof-warning',
   'brand-spoof-updated',
+  'phish-url-warning',
   'csp-report-added',
   'header-grade-updated',
   'request-log-updated',
