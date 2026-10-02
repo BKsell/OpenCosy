@@ -211,6 +211,7 @@
 <button class="tab" id="tabCert" type="button">证书例外 <span id="certCountBadge" style="display:none;"></span></button>
 <button class="tab" id="tabNetAuth" type="button">网络认证 <span id="netAuthCountBadge" style="display:none;"></span></button>
 <button class="tab" id="tabCookie" type="button">Cookie 加固 <span id="cookieCountBadge" style="display:none;"></span></button>
+<button class="tab" id="tabPna" type="button">内网访问防护 <span id="pnaCountBadge" style="display:none;"></span></button>
   </div>
 
   <div class="view active" id="viewEvents">
@@ -440,6 +441,32 @@
       <div>还没有处理过不安全的 Set-Cookie。开启第三方 Cookie 拦截后，跨站追踪 Cookie 会在这里记录。</div>
     </div>
   </div><!-- /viewCookie -->
+
+  <div class="view" id="viewPna">
+    <div class="stats">
+      <div class="stat-card"><div class="stat-num critical" id="pnaStatBlocked">-</div><div class="stat-label">拦截的内网访问次数</div></div>
+      <div class="stat-card"><div class="stat-num" id="pnaStatHosts">-</div><div class="stat-label">涉及内网主机数</div></div>
+    </div>
+    <p class="subtitle">
+      你在公网打开的网页，其脚本本不该能借你的浏览器去访问“更私有”的网络：
+      <strong>本机服务</strong>（127.0.0.1 / localhost）、<strong>内网与路由器后台</strong>
+      （10.x、172.16-31.x、192.168.x）以及<strong>链路本地 / 云主机元数据</strong>
+      （169.254.169.254）。命中即取消该子资源请求，防止 CSRF 打内网、DNS 重绑定和
+      云凭据窃取。<strong>你直接访问内网、或内网页面之间的调用不受影响</strong>；
+      域名形式（如 router.local）在解析前无法判定，会放行以避免误伤。
+    </p>
+    <div class="toolbar" style="margin:12px 0;">
+      <input type="text" id="pnaSearchInput" placeholder="按主机筛选…"
+        style="flex:1;min-width:180px;padding:8px 10px;border-radius:8px;border:1px solid var(--border-color,#dadce0);background:var(--input-bg,#fff);color:inherit;">
+      <button class="btn-primary" id="pnaRefreshBtn" type="button">刷新</button>
+      <button class="btn-danger-ghost" id="pnaClearBtn" type="button">清空台账</button>
+    </div>
+    <div class="event-list" id="pnaList"></div>
+    <div class="empty" id="pnaEmptyState" style="display:none;">
+      <div class="big">&#128274;</div>
+      <div>还没有公网网页尝试访问内网或本机。开启后，可疑的私有网络请求会在这里记录。</div>
+    </div>
+  </div><!-- /viewPna -->
 </div>
 
 <div class="modal-mask" id="confirmModal">
@@ -619,6 +646,7 @@ function switchView(which) {
     cert: ['tabCert', 'viewCert'],
     netauth: ['tabNetAuth', 'viewNetAuth'],
     cookie: ['tabCookie', 'viewCookie'],
+    pna: ['tabPna', 'viewPna'],
   };
   for (const [key, [tabId, viewId]] of Object.entries(map)) {
     $(tabId).classList.toggle('active', key === which);
@@ -631,6 +659,7 @@ function switchView(which) {
   if (which === 'cert') loadCertExceptionsData();
   if (which === 'netauth') loadNetAuthData();
   if (which === 'cookie') loadCookieData();
+  if (which === 'pna') loadPnaData();
 }
 $('tabEvents').onclick = () => switchView('events');
 $('tabCsp').onclick = () => switchView('csp');
@@ -640,6 +669,7 @@ $('tabBrand').onclick = () => switchView('brand');
 $('tabCert').onclick = () => switchView('cert');
 $('tabNetAuth').onclick = () => switchView('netauth');
 $('tabCookie').onclick = () => switchView('cookie');
+$('tabPna').onclick = () => switchView('pna');
 
 function updateCspBadge() {
   const badge = $('cspCountBadge');
@@ -1463,6 +1493,88 @@ api.on('cookie-hardening-updated', (stats) => {
   if ($('viewCookie').classList.contains('active')) loadCookieData();
 });
 
+// ===== 内网访问防护（PNA）面板 =====
+const pnaState = { rows: [] };
+const PNA_SPACE_TEXT = {
+  loopback: '本机环回',
+  private: '内网私有地址',
+  'link-local': '链路本地 / 云元数据',
+  public: '公网',
+  unknown: '未知',
+};
+
+function applyPnaStats(stats) {
+  if (!stats) return;
+  $('pnaStatBlocked').textContent = String(stats.blocked || 0);
+  $('pnaStatHosts').textContent = String(stats.hosts || 0);
+  const n = stats.blocked || 0;
+  const badge = $('pnaCountBadge');
+  badge.style.display = n ? 'inline-block' : 'none';
+  badge.textContent = n > 99 ? '99+' : String(n);
+}
+
+function renderPnaRows() {
+  const query = ($('pnaSearchInput').value || '').trim().toLowerCase();
+  const list = $('pnaList');
+  list.textContent = '';
+  const rows = pnaState.rows.filter(r => String(r.host || '').toLowerCase().includes(query));
+  $('pnaEmptyState').style.display = rows.length ? 'none' : 'block';
+
+  for (const r of rows) {
+    const row = document.createElement('div');
+    row.className = 'event-row severity-warn';
+
+    const head = document.createElement('div');
+    head.className = 'event-head';
+    const host = document.createElement('span');
+    host.textContent = r.host || '';
+    const time = document.createElement('span');
+    time.className = 'event-time';
+    time.textContent = r.lastTime ? formatTime(r.lastTime) : '';
+    head.appendChild(host);
+    head.appendChild(time);
+    row.appendChild(head);
+
+    const meta = document.createElement('div');
+    meta.style.cssText = 'margin-top:4px;font-size:12px;color:#9aa0a6;word-break:break-all;';
+    meta.textContent = `${PNA_SPACE_TEXT[r.space] || r.space || '私有地址'}　·　命中 ${r.hits || 1} 次`;
+    row.appendChild(meta);
+
+    list.appendChild(row);
+  }
+}
+
+async function loadPnaData() {
+  $('pnaRefreshBtn').disabled = true;
+  try {
+    const [listRes, statsRes] = await Promise.all([
+      api.invoke('list-pna-blocks'),
+      api.invoke('get-pna-block-stats'),
+    ]);
+    pnaState.rows = (listRes && Array.isArray(listRes.entries)) ? listRes.entries : [];
+    renderPnaRows();
+    if (statsRes && statsRes.ok) applyPnaStats(statsRes.stats);
+  } catch (e) {
+    toast('内网访问防护台账加载失败：' + (e && e.message ? e.message : e), true);
+  } finally {
+    $('pnaRefreshBtn').disabled = false;
+  }
+}
+
+$('pnaRefreshBtn').onclick = loadPnaData;
+$('pnaClearBtn').onclick = async () => {
+  const ok = await showConfirm('将清空内网访问防护台账，拦截统计会归零。继续？');
+  if (!ok) return;
+  const res = await api.invoke('clear-pna-blocks');
+  if (res && res.ok) { toast('已清空内网访问台账'); loadPnaData(); }
+  else toast('清空失败', true);
+};
+$('pnaSearchInput').addEventListener('input', renderPnaRows);
+api.on('pna-blocked-updated', (stats) => {
+  applyPnaStats(stats);
+  if ($('viewPna').classList.contains('active')) loadPnaData();
+});
+
 $('searchInput').addEventListener('input', render);
 $('filterSelect').addEventListener('change', render);
 $('severitySelect').addEventListener('change', render);
@@ -1490,6 +1602,7 @@ api.invoke('list-remembered-certs', { limit: 100 }).then(res => {
 }).catch(() => {});
 api.invoke('get-auth-stats').then(res => { if (res && res.ok) applyAuthStats(res.stats); }).catch(() => {});
 api.invoke('get-cookie-hardening-stats').then(res => { if (res && res.ok) applyCookieStats(res.stats); }).catch(() => {});
+api.invoke('get-pna-block-stats').then(res => { if (res && res.ok) applyPnaStats(res.stats); }).catch(() => {});
 </script>
 </body>
 </html>
