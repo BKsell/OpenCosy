@@ -273,6 +273,10 @@ class TabManager {
     window.electronAPI.on('spoof-warning', (data) => showSpoofWarning(data || {}));
     window.electronAPI.on('brand-spoof-warning', (data) => showBrandSpoofWarning(data || {}));
     window.electronAPI.on('phish-url-warning', (data) => showPhishUrlWarning(data || {}));
+    window.electronAPI.on('cert-error-blocked', (data) => showCertErrorPage(data || {}));
+    window.electronAPI.on('cert-exception-updated', () => {
+      if (typeof refreshCertExceptions === 'function') refreshCertExceptions();
+    });
     // 内存节省：标签被休眠时变灰并提示，唤醒（切回重载）后恢复。
     window.electronAPI.on('tab-discarded', (data) => this.markTabDiscarded(data && data.id, true));
     window.electronAPI.on('tab-reloaded', (data) => this.markTabDiscarded(data && data.id, false));
@@ -1384,6 +1388,139 @@ function showPhishUrlWarning(data) {
   bar.appendChild(body);
   bar.appendChild(close);
 }
+
+// ===== TLS 证书错误全屏硬拦截页（仿 Chrome interstitial）=====
+// main 进程在证书校验失败时默认阻止并发本事件；本页是用户唯一的决策入口。
+// 所有文案都走 textContent，绝不 innerHTML 拼接主机/证书字段。
+function showCertErrorPage(data) {
+  if (!data || !data.host) return;
+  const api = window.electronAPI;
+
+  document.getElementById('cosy-cert-interstitial')?.remove();
+
+  const ov = document.createElement('div');
+  ov.id = 'cosy-cert-interstitial';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:10006;display:flex;align-items:center;justify-content:center;background:#f7f8fa;font:14px/1.6 system-ui,sans-serif;';
+
+  const card = document.createElement('div');
+  card.style.cssText = 'width:600px;max-width:92vw;background:#fff;color:#202124;border:1px solid #dadce0;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.18);padding:30px 34px;';
+
+  const head = document.createElement('div');
+  head.style.cssText = 'display:flex;align-items:center;gap:14px;margin-bottom:14px;';
+  const icon = document.createElement('div');
+  icon.textContent = '🔒';
+  icon.style.cssText = 'font-size:34px;line-height:1;';
+  const h = document.createElement('h1');
+  h.textContent = '您的连接不是私密连接';
+  h.style.cssText = 'margin:0;font-size:21px;font-weight:600;';
+  head.appendChild(icon);
+  head.appendChild(h);
+  card.appendChild(head);
+
+  const lead = document.createElement('p');
+  lead.style.cssText = 'margin:0 0 10px;color:#3c4043;';
+  lead.textContent = `攻击者可能正在试图从 ${data.host} 窃取您的信息（例如密码、短信验证码或银行卡信息）。`;
+  card.appendChild(lead);
+
+  const title = document.createElement('p');
+  title.style.cssText = 'margin:0 0 4px;font-weight:600;color:#c5221f;';
+  title.textContent = data.title || '证书校验失败';
+  card.appendChild(title);
+
+  const detail = document.createElement('p');
+  detail.style.cssText = 'margin:0 0 14px;color:#5f6368;';
+  detail.textContent = data.detail || '浏览器无法确认该站点证书的可信度。';
+  card.appendChild(detail);
+
+  const meta = document.createElement('div');
+  meta.style.cssText = 'background:#f8f9fa;border:1px solid #e8eaed;border-radius:8px;padding:10px 12px;font-size:12px;color:#5f6368;margin-bottom:18px;word-break:break-all;';
+  const rows = [
+    ['主机', data.host],
+    ['错误代码', data.code || ''],
+    ['证书主体', data.cert && data.cert.subject] ,
+    ['颁发者', data.cert && data.cert.issuer],
+    ['证书指纹', data.shortFingerprint || (data.cert && data.cert.fingerprint) || ''],
+  ].filter(r => r[1]);
+  for (const [k, v] of rows) {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:8px;padding:2px 0;';
+    const kk = document.createElement('span');
+    kk.textContent = k + '：';
+    kk.style.cssText = 'flex:none;color:#80868b;min-width:64px;';
+    const vv = document.createElement('span');
+    vv.textContent = String(v);
+    row.appendChild(kk);
+    row.appendChild(vv);
+    meta.appendChild(row);
+  }
+  card.appendChild(meta);
+
+  const safeBtn = document.createElement('button');
+  safeBtn.textContent = '返回安全页面';
+  safeBtn.style.cssText = 'border:none;border-radius:6px;background:#1a73e8;color:#fff;padding:9px 20px;font:13px/1.4 system-ui,sans-serif;cursor:pointer;margin-right:10px;';
+  safeBtn.addEventListener('click', async () => {
+    ov.remove();
+    try { await api.invoke('navigate-back'); } catch {}
+  });
+  card.appendChild(safeBtn);
+
+  if (data.overridable) {
+    const advWrap = document.createElement('span');
+    const advBtn = document.createElement('button');
+    advBtn.textContent = '高级';
+    advBtn.style.cssText = 'border:1px solid #dadce0;background:#fff;color:#1a73e8;border-radius:6px;padding:9px 16px;font:13px/1.4 system-ui,sans-serif;cursor:pointer;';
+    const danger = document.createElement('div');
+    danger.style.cssText = 'display:none;margin-top:14px;border-top:1px solid #eee;padding-top:14px;';
+
+    const warn = document.createElement('p');
+    warn.style.cssText = 'margin:0 0 10px;color:#c5221f;';
+    warn.textContent = `仅当您明确知道 ${data.host} 使用了自签名证书（如内网设备、本地开发服务）时才继续。放行将只对“该主机 + 这一张证书”生效，证书被替换会重新拦截。`;
+    danger.appendChild(warn);
+
+    const proceedBtn = document.createElement('button');
+    proceedBtn.textContent = '仍要前往（不安全）';
+    proceedBtn.style.cssText = 'border:1px solid #c5221f;background:#fff;color:#c5221f;border-radius:6px;padding:9px 16px;font:13px/1.4 system-ui,sans-serif;cursor:pointer;';
+    let proceeding = false;
+    proceedBtn.addEventListener('click', async () => {
+      if (proceeding) return;
+      proceeding = true;
+      proceedBtn.disabled = true;
+      proceedBtn.textContent = '正在放行…';
+      try {
+        const r = await api.invoke('approve-cert-exception', { nonce: data.nonce });
+        if (r && r.ok) {
+          ov.remove(); // main 进程放行后会自动 reload 该标签
+        } else {
+          proceeding = false;
+          proceedBtn.disabled = false;
+          proceedBtn.textContent = '仍要前往（不安全）';
+          warn.textContent = (r && r.error) ? ('放行失败：' + r.error) : '放行失败，请重试';
+        }
+      } catch (e) {
+        proceeding = false;
+        proceedBtn.disabled = false;
+        proceedBtn.textContent = '仍要前往（不安全）';
+      }
+    });
+    danger.appendChild(proceedBtn);
+
+    advBtn.addEventListener('click', () => {
+      danger.style.display = danger.style.display === 'none' ? 'block' : 'none';
+    });
+    advWrap.appendChild(advBtn);
+    card.appendChild(advWrap);
+    card.appendChild(danger);
+  } else {
+    const note = document.createElement('span');
+    note.style.cssText = 'color:#80868b;font-size:12px;';
+    note.textContent = '此证书问题属于硬错误，没有可继续访问的安全例外。';
+    card.appendChild(note);
+  }
+
+  ov.appendChild(card);
+  document.body.appendChild(ov);
+}
+
 let trackerSnapshot = { enabled: true, count: 0, top: [] };
 
 function ensureTrackerShield() {
