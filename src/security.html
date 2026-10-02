@@ -207,6 +207,7 @@
     <button class="tab" id="tabCsp" type="button">CSP 违规报告 <span id="cspCountBadge" style="display:none;"></span></button>
     <button class="tab" id="tabHeaders" type="button">站点安全头 <span id="headerCountBadge" style="display:none;"></span></button>
     <button class="tab" id="tabRequests" type="button">后台连接 <span id="reqCountBadge" style="display:none;"></span></button>
+    <button class="tab" id="tabBrand" type="button">品牌仿冒 <span id="brandCountBadge" style="display:none;"></span></button>
   </div>
 
   <div class="view active" id="viewEvents">
@@ -324,6 +325,36 @@
       通常对应统计、广告、埋点、CDN 等第三方资源。
     </p>
   </div><!-- /viewRequests -->
+
+  <div class="view" id="viewBrand">
+    <div class="stats">
+      <div class="stat-card"><div class="stat-num critical" id="brandStatHosts">-</div><div class="stat-label">疑似仿冒主机</div></div>
+      <div class="stat-card"><div class="stat-num" id="brandStatTypo">-</div><div class="stat-label">拼写劫持</div></div>
+      <div class="stat-card"><div class="stat-num" id="brandStatSub">-</div><div class="stat-label">子域碰瓷</div></div>
+      <div class="stat-card"><div class="stat-num" id="brandStatBrand">-</div><div class="stat-label">涉及品牌数</div></div>
+    </div>
+    <div class="toolbar">
+      <input class="search-box" id="brandSearchInput" type="search" placeholder="按主机名或品牌搜索" autocomplete="off">
+      <select id="brandFilterSelect">
+        <option value="">全部类型</option>
+        <option value="typo-domain">拼写劫持</option>
+        <option value="brand-in-subdomain">子域碰瓷</option>
+        <option value="brand-keyword-impersonation">品牌词+诱导词</option>
+      </select>
+      <button class="btn-primary" id="brandRefreshBtn" type="button">刷新</button>
+      <button class="btn-danger-ghost" id="brandClearBtn" type="button">清空记录</button>
+    </div>
+    <div class="event-list" id="brandList"></div>
+    <div class="empty" id="brandEmptyState" style="display:none;">
+      <div class="big">&#128737;&#65039;</div>
+      <div id="brandEmptyText">还没有品牌仿冒提示，浏览时命中拼写劫持/子域碰瓷会自动汇总到这里</div>
+    </div>
+    <p class="subtitle" style="margin-top:14px;">
+      这里汇总<strong>纯拉丁域名</strong>里与知名品牌仅一个字符之差（拼写劫持）、把品牌名塞进子域、
+      或在注册名里同时堆叠品牌词与“登录/验证/安全”等诱导词的疑似钓鱼主机。检测只看主机名、不记录路径，
+      且品牌自己的官方域名（如 paypal.com、apple.com）永不入库；混用其他文字字符的同形异义钓鱼由地址栏红色横幅单独提示。
+    </p>
+  </div><!-- /viewBrand -->
 </div>
 
 <div class="modal-mask" id="confirmModal">
@@ -495,6 +526,7 @@ function switchView(which) {
     csp: ['tabCsp', 'viewCsp'],
     headers: ['tabHeaders', 'viewHeaders'],
     requests: ['tabRequests', 'viewRequests'],
+    brand: ['tabBrand', 'viewBrand'],
   };
   for (const [key, [tabId, viewId]] of Object.entries(map)) {
     $(tabId).classList.toggle('active', key === which);
@@ -503,11 +535,13 @@ function switchView(which) {
   if (which === 'csp') loadCspData();
   if (which === 'headers') loadHeaderGradeData();
   if (which === 'requests') loadRequestLogData();
+  if (which === 'brand') loadBrandSpoofData();
 }
 $('tabEvents').onclick = () => switchView('events');
 $('tabCsp').onclick = () => switchView('csp');
 $('tabHeaders').onclick = () => switchView('headers');
 $('tabRequests').onclick = () => switchView('requests');
+$('tabBrand').onclick = () => switchView('brand');
 
 function updateCspBadge() {
   const badge = $('cspCountBadge');
@@ -907,6 +941,117 @@ api.on('request-log-updated', s => {
   if ($('viewRequests').classList.contains('active')) loadRequestLogData();
 });
 
+// ===== 品牌仿冒 / 拼写劫持面板 =====
+const brandState = { rows: [] };
+const BRAND_REASON_LABELS = {
+  'typo-domain': '拼写劫持',
+  'brand-in-subdomain': '子域碰瓷',
+  'brand-keyword-impersonation': '品牌词+诱导词',
+};
+
+function updateBrandBadge(n) {
+  const badge = $('brandCountBadge');
+  badge.style.display = n ? 'inline-block' : 'none';
+  badge.textContent = n > 99 ? '99+' : String(n);
+}
+
+function renderBrandSpoof() {
+  const query = $('brandSearchInput').value.trim().toLowerCase();
+  const reason = $('brandFilterSelect').value;
+  const list = $('brandList');
+  list.textContent = '';
+  const rows = brandState.rows.filter(r => {
+    if (reason && r.reason !== reason) return false;
+    if (query) {
+      const hay = ((r.host || '') + ' ' + (r.brand || '') + ' ' + (r.hint || '')).toLowerCase();
+      if (!hay.includes(query)) return false;
+    }
+    return true;
+  });
+  $('brandEmptyState').style.display = rows.length ? 'none' : 'block';
+  $('brandEmptyText').textContent = query || reason ? '没有记录匹配当前筛选' : '还没有品牌仿冒提示';
+
+  for (const r of rows) {
+    const row = document.createElement('div');
+    row.className = 'event-row severity-critical';
+
+    const head = document.createElement('div');
+    head.className = 'event-head';
+
+    const typeLabel = document.createElement('span');
+    typeLabel.className = 'event-type';
+    typeLabel.textContent = BRAND_REASON_LABELS[r.reason] || r.reason;
+
+    const badge = document.createElement('span');
+    badge.className = 'badge critical';
+    badge.textContent = r.brand ? ('冒充 ' + r.brand) : '疑似钓鱼';
+
+    const host = document.createElement('span');
+    host.className = 'event-origin mono';
+    host.textContent = r.host || '';
+    host.title = r.host || '';
+
+    const time = document.createElement('span');
+    time.className = 'event-time';
+    time.textContent = formatTime(r.lastTime);
+
+    head.append(typeLabel, badge);
+    head.appendChild(host);
+    head.appendChild(time);
+
+    const detail = document.createElement('div');
+    detail.className = 'event-detail';
+    const hitCount = Number(r.count) || 1;
+    detail.textContent = '命中品牌拼写 “' + (r.hint || r.brand || '') + '”，共提示 ' + hitCount +
+      ' 次，首次 ' + formatTime(r.firstTime) + '。请勿在此站点输入账号或付款信息。';
+
+    row.append(head, detail);
+    list.appendChild(row);
+  }
+}
+
+function applyBrandStats(s) {
+  if (!s) return;
+  $('brandStatHosts').textContent = s.hosts || 0;
+  $('brandStatTypo').textContent = (s.byReason && s.byReason['typo-domain']) || 0;
+  $('brandStatSub').textContent = (s.byReason && s.byReason['brand-in-subdomain']) || 0;
+  $('brandStatBrand').textContent = s.distinctBrands || 0;
+  updateBrandBadge(s.hosts || 0);
+}
+
+async function loadBrandSpoofData() {
+  $('brandRefreshBtn').disabled = true;
+  try {
+    const [rows, s] = await Promise.all([
+      api.invoke('list-brand-spoofs', { limit: 300 }),
+      api.invoke('get-brand-spoof-stats'),
+    ]);
+    brandState.rows = Array.isArray(rows) ? rows : [];
+    applyBrandStats(s);
+    renderBrandSpoof();
+  } catch (e) {
+    toast('品牌仿冒台账加载失败：' + (e && e.message ? e.message : e), true);
+  } finally {
+    $('brandRefreshBtn').disabled = false;
+  }
+}
+
+$('brandRefreshBtn').onclick = loadBrandSpoofData;
+$('brandSearchInput').addEventListener('input', renderBrandSpoof);
+$('brandFilterSelect').addEventListener('change', renderBrandSpoof);
+$('brandClearBtn').onclick = async () => {
+  const ok = await showConfirm('将清空全部品牌仿冒记录，且无法恢复。继续？');
+  if (!ok) return;
+  const r = await api.invoke('clear-brand-spoofs');
+  if (r && r.success) { toast('已清空品牌仿冒记录'); loadBrandSpoofData(); }
+  else toast('清空失败', true);
+};
+
+api.on('brand-spoof-updated', s => {
+  applyBrandStats(s);
+  if ($('viewBrand').classList.contains('active')) loadBrandSpoofData();
+});
+
 $('searchInput').addEventListener('input', render);
 $('filterSelect').addEventListener('change', render);
 $('severitySelect').addEventListener('change', render);
@@ -926,6 +1071,7 @@ api.invoke('list-header-grades', { limit: 300 }).then(rows => {
   updateHeaderBadge();
 }).catch(() => {});
 api.invoke('get-request-log-stats').then(applyReqStats).catch(() => {});
+api.invoke('get-brand-spoof-stats').then(applyBrandStats).catch(() => {});
 </script>
 </body>
 </html>
