@@ -217,6 +217,23 @@
             <div class="setting-item">
                 <div class="setting-icon">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="3" y="4" width="18" height="12" rx="2" stroke="currentColor" stroke-width="2" />
+                        <path d="M7 20h10M12 16v4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                        <path d="M7 10l3 2-3 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">阻止公网网页访问内网/本机</label>
+                    <p class="setting-description">防止你打开的公网网页偷偷请求路由器后台、本机服务或云服务器元数据（169.254.169.254），阻断 CSRF 打内网与云凭据窃取；不影响你直接访问内网，也不影响内网页面之间的正常调用</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="blockLocalNetworkAccess" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path d="M12 3L4 5V11C4 15.4 7 19.3 12 21C17 19.3 20 15.4 20 11V5L12 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
                         <path d="M9.5 12L11.2 13.7L15 9.8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
                     </svg>
@@ -469,13 +486,13 @@
         <button class="save-button" onclick="saveSettings()">保存设置</button>
     </div>
     <script>
-        const ALLOWED_SETTING_KEYS = new Set(['defaultTab', 'tabLayout', 'searchEngine', 'backgroundType', 'customUrl', 'customBackgroundUrl', 'themeColor', 'darkMode', 'memorySaver', 'clearOnExit', 'confirmCloseMultiple', 'blockTrackers', 'blockThirdPartyCookies', 'hardenCookies', 'crashRecovery', 'stripTrackingParams', 'spellcheckEnabled', 'spellcheckLanguages']);
+        const ALLOWED_SETTING_KEYS = new Set(['defaultTab', 'tabLayout', 'searchEngine', 'backgroundType', 'customUrl', 'customBackgroundUrl', 'themeColor', 'darkMode', 'memorySaver', 'clearOnExit', 'confirmCloseMultiple', 'blockTrackers', 'blockThirdPartyCookies', 'hardenCookies', 'blockLocalNetworkAccess', 'crashRecovery', 'stripTrackingParams', 'spellcheckEnabled', 'spellcheckLanguages']);
         const ALLOWED_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'cosy:']);
         const COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
         const DEFAULT_SPELLCHECK_LANGS = ['en-US', 'zh-CN'];
         // 这些键在 .inf 配置里保存为 true/false，导入时必须还原成布尔值，
         // 否则字符串 'false' 会被当成真值，导致"关闭"类设置永远关不掉。
-        const BOOLEAN_SETTING_KEYS = new Set(['darkMode', 'memorySaver', 'clearOnExit', 'confirmCloseMultiple', 'blockTrackers', 'blockThirdPartyCookies', 'hardenCookies', 'crashRecovery', 'stripTrackingParams', 'spellcheckEnabled']);
+        const BOOLEAN_SETTING_KEYS = new Set(['darkMode', 'memorySaver', 'clearOnExit', 'confirmCloseMultiple', 'blockTrackers', 'blockThirdPartyCookies', 'hardenCookies', 'blockLocalNetworkAccess', 'crashRecovery', 'stripTrackingParams', 'spellcheckEnabled']);
 
         function isSafeUrl(url) {
             try {
@@ -668,6 +685,7 @@
             document.getElementById('blockTrackers').checked = settings.blockTrackers !== false;
             document.getElementById('blockThirdPartyCookies').checked = settings.blockThirdPartyCookies !== false;
             document.getElementById('hardenCookies').checked = settings.hardenCookies !== false;
+            document.getElementById('blockLocalNetworkAccess').checked = settings.blockLocalNetworkAccess !== false;
             document.getElementById('crashRecovery').checked = settings.crashRecovery !== false;
             document.getElementById('stripTrackingParams').checked = settings.stripTrackingParams !== false;
             document.getElementById('spellcheckEnabled').checked = settings.spellcheckEnabled !== false;
@@ -700,6 +718,7 @@
             const blockTrackers = document.getElementById('blockTrackers').checked;
             const blockThirdPartyCookies = document.getElementById('blockThirdPartyCookies').checked;
             const hardenCookies = document.getElementById('hardenCookies').checked;
+            const blockLocalNetworkAccess = document.getElementById('blockLocalNetworkAccess').checked;
             const crashRecovery = document.getElementById('crashRecovery').checked;
             const stripTrackingParams = document.getElementById('stripTrackingParams').checked;
             const spellcheckEnabled = document.getElementById('spellcheckEnabled').checked;
@@ -743,6 +762,7 @@
                 blockTrackers,
                 blockThirdPartyCookies,
                 hardenCookies,
+                blockLocalNetworkAccess,
                 crashRecovery,
                 stripTrackingParams,
                 spellcheckEnabled,
