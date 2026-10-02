@@ -12,6 +12,7 @@ const certGuard = require('./certguard');
 const mixedGuard = require('./mixedguard');
 const netAuthGuard = require('./netauthguard');
 const cookieGuard = require('./cookieguard');
+const pnaGuard = require('./pna');
 
 // 现代浏览器默认要求“用户与页面有过交互”才允许带声音自动播放，
 // 否则广告页一打开就能外放声音。必须在 app ready 之前设置。
@@ -65,6 +66,10 @@ let blockThirdPartyCookies = true;
 // hardenCookies：对第一方 Set-Cookie 补 SameSite=Lax、修正 SameSite=None 缺
 // Secure、剥离非法 __Host-/__Secure- 前缀 Cookie 与 http 下的 Secure Cookie。
 let hardenCookies = true;
+// blockLocalNetworkAccess：阻止公网页面通过子资源请求访问本机 / 内网 /
+// 169.254.169.254 云元数据等“更私有”地址（PNA 私有网络访问），默认开启。
+// 顶层导航和内网页面自己访问内网不受影响。
+let blockLocalNetworkAccess = true;
 // crashRecovery：渲染进程崩溃 / OOM 时自动重载一次并弹横幅；可在设置关闭。
 let crashRecoveryEnabled = true;
 // 每个 webContents 的崩溃次数，用于阻止“崩溃→重载→又崩溃”的无限循环。
@@ -719,6 +724,67 @@ function persistCookieLedger() {
   }, 300);
 }
 
+// ===== PNA 私有网络访问拦截台账（pna-access.json / cosy://security 面板）=====
+const pnaLedgerStorePath = path.join(app.getPath('userData'), 'pna-access.json');
+const MAX_PNA_LEDGER = 300;
+const pnaLedger = new Map(); // host -> { host, space, hits, lastTime, types:Set-as-map }
+let pnaLedgerLoaded = false;
+let pnaLedgerSaveTimer = null;
+
+function loadPnaLedger() {
+  if (pnaLedgerLoaded) return;
+  pnaLedgerLoaded = true;
+  try {
+    const data = JSON.parse(fsSync.readFileSync(pnaLedgerStorePath, 'utf8'));
+    const rows = Array.isArray(data && data.rows) ? data.rows : [];
+    for (const r of rows) {
+      if (!r || typeof r.host !== 'string') continue;
+      pnaLedger.set(r.host, {
+        host: String(r.host).slice(0, 255),
+        space: String(r.space || 'private').slice(0, 32),
+        hits: Number(r.hits) || 1,
+        lastTime: Number(r.lastTime) || Date.now(),
+      });
+    }
+  } catch {}
+}
+
+function persistPnaLedger() {
+  if (pnaLedgerSaveTimer) clearTimeout(pnaLedgerSaveTimer);
+  pnaLedgerSaveTimer = setTimeout(() => {
+    try {
+      const rows = [...pnaLedger.values()];
+      const tmp = pnaLedgerStorePath + '.tmp';
+      fsSync.writeFileSync(tmp, JSON.stringify({ version: 1, rows }), 'utf8');
+      fsSync.renameSync(tmp, pnaLedgerStorePath);
+    } catch {}
+  }, 400);
+}
+
+function pnaLedgerStats() {
+  let blocked = 0;
+  for (const v of pnaLedger.values()) blocked += v.hits;
+  return { hosts: pnaLedger.size, blocked };
+}
+
+function recordPnaBlock(details, verdict) {
+  loadPnaLedger();
+  const host = String(verdict.targetHost || '').slice(0, 255);
+  if (!host) return;
+  const cur = pnaLedger.get(host) || { host, space: verdict.targetSpace || 'private', hits: 0, lastTime: 0 };
+  cur.hits += 1;
+  cur.lastTime = Date.now();
+  cur.space = verdict.targetSpace || cur.space;
+  pnaLedger.set(host, cur);
+  if (pnaLedger.size > MAX_PNA_LEDGER) {
+    const oldest = [...pnaLedger.entries()]
+      .sort((a, b) => a[1].lastTime - b[1].lastTime)[0][0];
+    pnaLedger.delete(oldest);
+  }
+  persistPnaLedger();
+  sendToRenderer('pna-blocked-updated', pnaLedgerStats());
+}
+
 // applyCookieHardening 就地加固响应头里的 Set-Cookie，返回本次动作列表。
 // 任何异常都不阻断浏览：出错时保留原始响应头。
 function applyCookieHardening(headers, details) {
@@ -832,6 +898,24 @@ function setupSecurityHeaders() {
       recordBlockedTracker(details.url);
       recordRequestAttempt(details, true);
       return callback({ cancel: true });
+    }
+
+    // 私有网络访问（PNA）：公网页面不得借浏览器打本机 / 内网 / 云元数据。
+    if (isHttpUrl) {
+      try {
+        const verdict = pnaGuard.evaluatePnaRequest(details, {
+          enabled: blockLocalNetworkAccess,
+        });
+        if (verdict.block) {
+          recordPnaBlock(details, verdict);
+          recordSecurityEvent('pna-blocked', 'warn',
+            `已阻止公网页面访问${verdict.targetSpace === 'loopback' ? '本机' :
+              verdict.targetSpace === 'link-local' ? '链路本地/元数据' : '内网'}地址：${details.url}`,
+            verdict.targetHost || '');
+          recordRequestAttempt(details, true);
+          return callback({ cancel: true });
+        }
+      } catch { /* 判定异常不干预浏览 */ }
     }
 
     // 混合内容：HTTPS 页面却去加载 HTTP 子资源，会把整页保护拆掉。
@@ -1167,6 +1251,7 @@ const SECURITY_EVENT_TYPES = new Set([
   'auth-rate-limited',       // 同一主机认证弹框过频，进入冷却
   'client-cert-blocked',     // 无明确选择时默认不发送客户端证书
   'cookie-blocked',          // 第三方 / 非法前缀 / 无效 Secure 的 Set-Cookie 被剥离
+  'pna-blocked',             // 公网页面访问本机/内网/链路本地被 PNA 拦截
 ]);
 
 const securityEvents = [];
@@ -2270,6 +2355,28 @@ ipcMain.handle('clear-cookie-hardening', (event) => {
   persistCookieLedger();
   sendToRenderer('cookie-hardening-updated', cookieLedger.stats());
   return { ok: true, stats: cookieLedger.stats() };
+});
+
+// ===== PNA 私有网络访问台账 =====
+ipcMain.handle('list-pna-blocks', (event) => {
+  if (!isMainSender(event)) return { ok: false, error: 'denied', entries: [] };
+  loadPnaLedger();
+  const entries = [...pnaLedger.values()].sort((a, b) => b.lastTime - a.lastTime);
+  return { ok: true, entries };
+});
+
+ipcMain.handle('get-pna-block-stats', (event) => {
+  if (!isMainSender(event)) return { ok: false, error: 'denied' };
+  loadPnaLedger();
+  return { ok: true, stats: pnaLedgerStats() };
+});
+
+ipcMain.handle('clear-pna-blocks', (event) => {
+  if (!isMainSender(event)) return { ok: false, error: 'denied' };
+  pnaLedger.clear();
+  persistPnaLedger();
+  sendToRenderer('pna-blocked-updated', pnaLedgerStats());
+  return { ok: true, stats: pnaLedgerStats() };
 });
 
 function getClientCertChoiceStats() {
@@ -4035,6 +4142,7 @@ app.whenReady().then(async () => {
   blockTrackers = stored.blockTrackers !== false;
   blockThirdPartyCookies = stored.blockThirdPartyCookies !== false;
   hardenCookies = stored.hardenCookies !== false;
+  blockLocalNetworkAccess = stored.blockLocalNetworkAccess !== false;
   crashRecoveryEnabled = stored.crashRecovery !== false;
   stripTrackingParams = stored.stripTrackingParams !== false;
   if ('memorySaver' in stored) memorySaverEnabled = !!stored.memorySaver;
@@ -4880,6 +4988,7 @@ const ALLOWED_SETTING_KEYS = {
   blockTrackers: v => typeof v === 'boolean',
   blockThirdPartyCookies: v => typeof v === 'boolean',
   hardenCookies: v => typeof v === 'boolean',
+  blockLocalNetworkAccess: v => typeof v === 'boolean',
   crashRecovery: v => typeof v === 'boolean',
   stripTrackingParams: v => typeof v === 'boolean',
   themeColor: v => isValidColor(v),
@@ -4919,6 +5028,7 @@ ipcMain.on('save-settings', (event, settings) => {
     blockTrackers = clean.blockTrackers !== false;
     blockThirdPartyCookies = clean.blockThirdPartyCookies !== false;
     hardenCookies = clean.hardenCookies !== false;
+  blockLocalNetworkAccess = clean.blockLocalNetworkAccess !== false;
     crashRecoveryEnabled = clean.crashRecovery !== false;
     stripTrackingParams = clean.stripTrackingParams !== false;
     if ('memorySaver' in clean) memorySaverEnabled = !!clean.memorySaver;
