@@ -209,6 +209,7 @@
     <button class="tab" id="tabRequests" type="button">后台连接 <span id="reqCountBadge" style="display:none;"></span></button>
     <button class="tab" id="tabBrand" type="button">品牌仿冒 <span id="brandCountBadge" style="display:none;"></span></button>
 <button class="tab" id="tabCert" type="button">证书例外 <span id="certCountBadge" style="display:none;"></span></button>
+<button class="tab" id="tabNetAuth" type="button">网络认证 <span id="netAuthCountBadge" style="display:none;"></span></button>
   </div>
 
   <div class="view active" id="viewEvents">
@@ -230,6 +231,9 @@
       <option value="device-permission-blocked">设备权限拒绝</option>
       <option value="extension-blocked">扩展拦截</option>
 <option value="mixed-content-blocked">混合内容拦截</option>
+<option value="auth-blocked">凭据探测拦截</option>
+<option value="auth-rate-limited">认证弹框限流</option>
+<option value="client-cert-blocked">客户端证书保护</option>
     </select>
     <select id="severitySelect">
       <option value="">全部级别</option>
@@ -381,6 +385,31 @@
       会重新被拦截。吊销、公钥固定等硬错误不提供放行入口。不再需要的内网/自签名站点例外请及时在此删除。
     </p>
   </div><!-- /viewCert -->
+
+  <div class="view" id="viewNetAuth">
+    <div class="stats">
+      <div class="stat-card"><div class="stat-num critical" id="authStatBlocked">-</div><div class="stat-label">拦截/取消的认证</div></div>
+      <div class="stat-card"><div class="stat-num" id="authStatPrompted">-</div><div class="stat-label">允许的登录弹框</div></div>
+      <div class="stat-card"><div class="stat-num" id="authStatRateLimited">-</div><div class="stat-label">限流次数</div></div>
+      <div class="stat-card"><div class="stat-num" id="authStatCertSuppressed">-</div><div class="stat-label">证书自动发送阻止</div></div>
+    </div>
+    <p class="subtitle">
+      网页里子框架 / 跨源偷偷发起的 401、407 登录请求（常用于探测你是否已登录内网或复用系统凭据）
+      会被<strong>静默取消</strong>，只有顶层主框架的正常登录才会弹框；同一主机短时间内反复弹框会进入冷却。
+      网站请求 TLS 客户端证书时，浏览器<strong>默认一张都不发送</strong>，需你手动选择；勾选“记住”后才会在下表登记主机与指纹。
+    </p>
+
+    <h3 style="margin:18px 0 8px 0; font-size:15px;">已记住的客户端证书</h3>
+    <div class="toolbar">
+      <button class="btn-primary" id="netAuthRefreshBtn" type="button">刷新</button>
+      <button class="btn-danger-ghost" id="netAuthClearBtn" type="button">清空全部记住的证书</button>
+    </div>
+    <div class="event-list" id="rememberedCertList"></div>
+    <div class="empty" id="rememberedCertEmptyState" style="display:none;">
+      <div class="big">&#128389;</div>
+      <div>还没有记住任何客户端证书。删除后，该主机再次请求证书时需要你重新手动选择。</div>
+    </div>
+  </div><!-- /viewNetAuth -->
 </div>
 
 <div class="modal-mask" id="confirmModal">
@@ -411,6 +440,9 @@ const TYPE_LABELS = {
   'device-permission-blocked': '设备权限拒绝',
   'extension-blocked': '扩展拦截',
   'mixed-content-blocked': '混合内容拦截',
+  'auth-blocked': '凭据探测拦截',
+  'auth-rate-limited': '认证弹框限流',
+  'client-cert-blocked': '客户端证书保护',
 };
 const SEVERITY_LABELS = { info: '提示', warn: '警告', critical: '高危' };
 
@@ -555,6 +587,7 @@ function switchView(which) {
     requests: ['tabRequests', 'viewRequests'],
     brand: ['tabBrand', 'viewBrand'],
     cert: ['tabCert', 'viewCert'],
+    netauth: ['tabNetAuth', 'viewNetAuth'],
   };
   for (const [key, [tabId, viewId]] of Object.entries(map)) {
     $(tabId).classList.toggle('active', key === which);
@@ -565,6 +598,7 @@ function switchView(which) {
   if (which === 'requests') loadRequestLogData();
   if (which === 'brand') loadBrandSpoofData();
   if (which === 'cert') loadCertExceptionsData();
+  if (which === 'netauth') loadNetAuthData();
 }
 $('tabEvents').onclick = () => switchView('events');
 $('tabCsp').onclick = () => switchView('csp');
@@ -572,6 +606,7 @@ $('tabHeaders').onclick = () => switchView('headers');
 $('tabRequests').onclick = () => switchView('requests');
 $('tabBrand').onclick = () => switchView('brand');
 $('tabCert').onclick = () => switchView('cert');
+$('tabNetAuth').onclick = () => switchView('netauth');
 
 function updateCspBadge() {
   const badge = $('cspCountBadge');
@@ -1189,6 +1224,109 @@ api.on('cert-exception-updated', s => {
   if ($('viewCert').classList.contains('active')) loadCertExceptionsData();
 });
 
+// ===== 网络认证 & 客户端证书台账（r22）=====
+const netAuthState = { rows: [] };
+
+function applyAuthStats(s) {
+  s = s || {};
+  const blocked = (s.cancelled || 0);
+  $('authStatBlocked').textContent = blocked;
+  $('authStatPrompted').textContent = s.prompted || 0;
+  $('authStatRateLimited').textContent = s.rateLimited || 0;
+  $('authStatCertSuppressed').textContent = s.certSuppressed || 0;
+}
+
+function applyRememberedCertBadge(count) {
+  const badge = $('netAuthCountBadge');
+  badge.style.display = count ? 'inline-block' : 'none';
+  badge.textContent = count > 99 ? '99+' : String(count);
+}
+
+function renderRememberedCerts() {
+  const list = $('rememberedCertList');
+  list.textContent = '';
+  const rows = netAuthState.rows;
+  $('rememberedCertEmptyState').style.display = rows.length ? 'none' : 'block';
+
+  for (const r of rows) {
+    const row = document.createElement('div');
+    row.className = 'event-row severity-warn';
+
+    const head = document.createElement('div');
+    head.className = 'event-head';
+    const host = document.createElement('span');
+    host.textContent = r.host || '';
+    const time = document.createElement('span');
+    time.className = 'event-time';
+    time.textContent = r.updatedAt ? formatTime(r.updatedAt) : '';
+    head.appendChild(host);
+    head.appendChild(time);
+    row.appendChild(head);
+
+    const meta = document.createElement('div');
+    meta.style.cssText = 'margin-top:4px;font-size:12px;color:#9aa0a6;word-break:break-all;';
+    const bits = [
+      r.subject ? '主题 ' + r.subject : '',
+      r.issuer ? '签发者 ' + r.issuer : '',
+      r.fingerprint ? '指纹 ' + shortFp(r.fingerprint) : '',
+    ].filter(Boolean);
+    meta.textContent = bits.join('　·　');
+    row.appendChild(meta);
+
+    const actions = document.createElement('div');
+    actions.style.cssText = 'margin-top:8px;';
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'btn-danger-ghost';
+    del.textContent = '忘记该证书';
+    del.addEventListener('click', async () => {
+      const ok = await showConfirm(`将删除 ${r.host} 记住的客户端证书，下次需重新手动选择。继续？`);
+      if (!ok) return;
+      const res = await api.invoke('forget-remembered-cert', { host: r.host });
+      if (res && res.ok) { toast('已忘记该证书'); loadNetAuthData(); }
+      else toast('删除失败', true);
+    });
+    actions.appendChild(del);
+    row.appendChild(actions);
+
+    list.appendChild(row);
+  }
+}
+
+async function loadNetAuthData() {
+  $('netAuthRefreshBtn').disabled = true;
+  try {
+    const [certRes, statsRes] = await Promise.all([
+      api.invoke('list-remembered-certs', { limit: 100 }),
+      api.invoke('get-auth-stats'),
+    ]);
+    netAuthState.rows = (certRes && Array.isArray(certRes.entries)) ? certRes.entries : [];
+    applyRememberedCertBadge(netAuthState.rows.length);
+    renderRememberedCerts();
+    if (statsRes && statsRes.ok) applyAuthStats(statsRes.stats);
+  } catch (e) {
+    toast('网络认证台账加载失败：' + (e && e.message ? e.message : e), true);
+  } finally {
+    $('netAuthRefreshBtn').disabled = false;
+  }
+}
+
+function refreshRememberedCerts() {
+  if ($('viewNetAuth').classList.contains('active')) loadNetAuthData();
+}
+
+$('netAuthRefreshBtn').onclick = loadNetAuthData;
+$('netAuthClearBtn').onclick = async () => {
+  const ok = await showConfirm('将清空所有已记住的客户端证书，之后每个主机请求证书时都需重新手动选择。继续？');
+  if (!ok) return;
+  const res = await api.invoke('clear-remembered-certs');
+  if (res && res.ok) { toast('已清空记住的证书'); loadNetAuthData(); }
+  else toast('清空失败', true);
+};
+api.on('client-cert-choices-updated', () => {
+  if ($('viewNetAuth').classList.contains('active')) loadNetAuthData();
+});
+
 $('searchInput').addEventListener('input', render);
 $('filterSelect').addEventListener('change', render);
 $('severitySelect').addEventListener('change', render);
@@ -1210,6 +1348,11 @@ api.invoke('list-header-grades', { limit: 300 }).then(rows => {
 api.invoke('get-request-log-stats').then(applyReqStats).catch(() => {});
 api.invoke('get-brand-spoof-stats').then(applyBrandStats).catch(() => {});
 api.invoke('get-cert-exception-stats').then(applyCertStats).catch(() => {});
+api.invoke('list-remembered-certs', { limit: 100 }).then(res => {
+  const n = (res && Array.isArray(res.entries)) ? res.entries.length : 0;
+  applyRememberedCertBadge(n);
+}).catch(() => {});
+api.invoke('get-auth-stats').then(res => { if (res && res.ok) applyAuthStats(res.stats); }).catch(() => {});
 </script>
 </body>
 </html>
