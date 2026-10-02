@@ -226,6 +226,8 @@ function analyze(rawUrl) {
   }
 
   if (!signals.length) return null;
+  // 强信号排前面，渲染层直接按顺序展示即可。
+  signals.sort((x, y) => y.weight - x.weight);
   const score = signals.reduce((sum, s) => sum + s.weight, 0);
 
   return {
