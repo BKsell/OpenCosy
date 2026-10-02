@@ -9,6 +9,7 @@ const requestLog = require('./requestlog');
 const brandGuard = require('./brandguard');
 const phishUrl = require('./phishurl');
 const certGuard = require('./certguard');
+const mixedGuard = require('./mixedguard');
 
 // 现代浏览器默认要求“用户与页面有过交互”才允许带声音自动播放，
 // 否则广告页一打开就能外放声音。必须在 app ready 之前设置。
@@ -755,6 +756,26 @@ function setupSecurityHeaders() {
       return callback({ cancel: true });
     }
 
+    // 混合内容：HTTPS 页面却去加载 HTTP 子资源，会把整页保护拆掉。
+    // 主动内容（脚本 / XHR / 子框架 / WebSocket / 样式 / 插件对象）直接阻断；
+    // 被动内容（图片 / 媒体 / 字体 / ping）自动升级到 HTTPS，升级请求会
+    // 带着新 URL 再进本回调且判定为 secure-resource，不会形成重定向环。
+    // 顶层 mainFrame 导航由分类器判定为 allow，交给下面的 HTTPS-only 链路。
+    try {
+      const mixedPage = details.documentURL || details.originURL || '';
+      const mixed = mixedGuard.classifyMixedContent(details.url, mixedPage, details.resourceType);
+      if (mixed.action === 'block') {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `已阻止混合内容（${mixed.resourceType}）：${details.url}（页面 ${mixedPage}）`,
+          String(mixedPage).slice(0, 2048));
+        recordRequestAttempt(details, true);
+        return callback({ cancel: true });
+      }
+      if (mixed.action === 'upgrade' && mixed.upgrade) {
+        return callback({ redirectURL: mixed.upgrade });
+      }
+    } catch { /* 判定异常则不干预，退回 Chromium 默认策略 */ }
+
     // 顶层导航：剥离 utm_* 等追踪参数（只重定向一次，不动 fragment / 子资源）。
     let workingUrl = details.url;
     if (isHttpUrl && details.resourceType === 'mainFrame') {
@@ -1063,6 +1084,7 @@ const SECURITY_EVENT_TYPES = new Set([
   'permission-blocked',      // 未在白名单内的浏览器权限请求被拒绝
   'device-permission-blocked', // HID/串口/USB/蓝牙等设备选择被拒绝
   'extension-blocked',       // 扩展请求危险权限 / 校验未过
+  'mixed-content-blocked',   // HTTPS 页面主动混合内容（HTTP 脚本/XHR 等）被阻止
 ]);
 
 const securityEvents = [];
