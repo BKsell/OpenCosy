@@ -332,6 +332,7 @@
       <div class="stat-card"><div class="stat-num" id="brandStatTypo">-</div><div class="stat-label">拼写劫持</div></div>
       <div class="stat-card"><div class="stat-num" id="brandStatSub">-</div><div class="stat-label">子域碰瓷</div></div>
       <div class="stat-card"><div class="stat-num" id="brandStatBrand">-</div><div class="stat-label">涉及品牌数</div></div>
+      <div class="stat-card"><div class="stat-num critical" id="brandStatStruct">-</div><div class="stat-label">URL结构钓鱼</div></div>
     </div>
     <div class="toolbar">
       <input class="search-box" id="brandSearchInput" type="search" placeholder="按主机名或品牌搜索" autocomplete="off">
@@ -340,6 +341,7 @@
         <option value="typo-domain">拼写劫持</option>
         <option value="brand-in-subdomain">子域碰瓷</option>
         <option value="brand-keyword-impersonation">品牌词+诱导词</option>
+        <option value="url-structural">URL结构钓鱼</option>
       </select>
       <button class="btn-primary" id="brandRefreshBtn" type="button">刷新</button>
       <button class="btn-danger-ghost" id="brandClearBtn" type="button">清空记录</button>
@@ -947,6 +949,7 @@ const BRAND_REASON_LABELS = {
   'typo-domain': '拼写劫持',
   'brand-in-subdomain': '子域碰瓷',
   'brand-keyword-impersonation': '品牌词+诱导词',
+  'url-structural': 'URL结构钓鱼',
 };
 
 function updateBrandBadge(n) {
@@ -1015,6 +1018,7 @@ function applyBrandStats(s) {
   $('brandStatHosts').textContent = s.hosts || 0;
   $('brandStatTypo').textContent = (s.byReason && s.byReason['typo-domain']) || 0;
   $('brandStatSub').textContent = (s.byReason && s.byReason['brand-in-subdomain']) || 0;
+  $('brandStatStruct').textContent = (s.byReason && s.byReason['url-structural']) || 0;
   $('brandStatBrand').textContent = s.distinctBrands || 0;
   updateBrandBadge(s.hosts || 0);
 }
