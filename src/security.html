@@ -60,6 +60,8 @@
   body.dark-mode .stat-num { color: #4da3ff; }
   .stat-num.critical { color: #c42b1c; }
   body.dark-mode .stat-num.critical { color: #ff6a5c; }
+  .stat-num.warning { color: #9a6200; }
+  body.dark-mode .stat-num.warning { color: #f0b450; }
   .stat-label { font-size: 12px; color: #777; margin-top: 2px; }
   body.dark-mode .stat-label { color: #999; }
 
@@ -96,6 +98,8 @@
   body.dark-mode .badge.warn { background: #4d3810; color: #f0b450; }
   .badge.critical { background: #fdeaea; color: #c42b1c; }
   body.dark-mode .badge.critical { background: #431d1a; color: #ff6a5c; }
+  .badge.neutral { background: #ececec; color: #555; }
+  body.dark-mode .badge.neutral { background: #3a3a3a; color: #bbb; }
 
   .empty {
     text-align: center; padding: 70px 20px; color: #888; background: #fff;
@@ -202,6 +206,7 @@
     <button class="tab active" id="tabEvents" type="button">安全拦截事件</button>
     <button class="tab" id="tabCsp" type="button">CSP 违规报告 <span id="cspCountBadge" style="display:none;"></span></button>
     <button class="tab" id="tabHeaders" type="button">站点安全头 <span id="headerCountBadge" style="display:none;"></span></button>
+    <button class="tab" id="tabRequests" type="button">后台连接 <span id="reqCountBadge" style="display:none;"></span></button>
   </div>
 
   <div class="view active" id="viewEvents">
@@ -289,6 +294,36 @@
       反映站点本身的真实安全姿态；仅统计顶层页面、按主机去重，不含第三方子资源，也不记录完整网址。
     </p>
   </div><!-- /viewHeaders -->
+
+  <div class="view" id="viewRequests">
+    <div class="stats">
+      <div class="stat-card"><div class="stat-num" id="reqStatHosts">-</div><div class="stat-label">连接主机数</div></div>
+      <div class="stat-card"><div class="stat-num" id="reqStatRequests">-</div><div class="stat-label">请求总数</div></div>
+      <div class="stat-card"><div class="stat-num warning" id="reqStatBackground">-</div><div class="stat-label">仅后台连接</div></div>
+      <div class="stat-card"><div class="stat-num critical" id="reqStatBlocked">-</div><div class="stat-label">已拦截</div></div>
+    </div>
+    <div class="toolbar">
+      <input class="search-box" id="reqSearchInput" type="search" placeholder="按主机名搜索" autocomplete="off">
+      <select id="reqFilterSelect">
+        <option value="">全部主机</option>
+        <option value="background">仅后台连接</option>
+        <option value="blocked">仅被拦截过</option>
+        <option value="insecure">仅明文 HTTP</option>
+      </select>
+      <button class="btn-primary" id="reqRefreshBtn" type="button">刷新</button>
+      <button class="btn-danger-ghost" id="reqClearBtn" type="button">清空台账</button>
+    </div>
+    <div class="event-list" id="reqList"></div>
+    <div class="empty" id="reqEmptyState" style="display:none;">
+      <div class="big">&#128225;</div>
+      <div id="reqEmptyText">还没有连接记录，浏览几个网站后这里会按主机汇总后台请求</div>
+    </div>
+    <p class="subtitle" style="margin-top:14px;">
+      只统计 http(s) 请求并<strong>按主机名聚合</strong>，不记录路径、查询、Cookie 或请求内容；
+      最多保留 400 个最活跃主机。“仅后台连接”指该主机从未作为顶层页面打开、只在后台被请求，
+      通常对应统计、广告、埋点、CDN 等第三方资源。
+    </p>
+  </div><!-- /viewRequests -->
 </div>
 
 <div class="modal-mask" id="confirmModal">
@@ -459,6 +494,7 @@ function switchView(which) {
     events: ['tabEvents', 'viewEvents'],
     csp: ['tabCsp', 'viewCsp'],
     headers: ['tabHeaders', 'viewHeaders'],
+    requests: ['tabRequests', 'viewRequests'],
   };
   for (const [key, [tabId, viewId]] of Object.entries(map)) {
     $(tabId).classList.toggle('active', key === which);
@@ -466,10 +502,12 @@ function switchView(which) {
   }
   if (which === 'csp') loadCspData();
   if (which === 'headers') loadHeaderGradeData();
+  if (which === 'requests') loadRequestLogData();
 }
 $('tabEvents').onclick = () => switchView('events');
 $('tabCsp').onclick = () => switchView('csp');
 $('tabHeaders').onclick = () => switchView('headers');
+$('tabRequests').onclick = () => switchView('requests');
 
 function updateCspBadge() {
   const badge = $('cspCountBadge');
@@ -734,6 +772,141 @@ api.on('header-grade-updated', () => {
   }
 });
 
+// ===== 后台跨主机连接台账 =====
+const reqState = { rows: [] };
+
+function updateReqBadge(count) {
+  const badge = $('reqCountBadge');
+  const n = Number(count) || 0;
+  badge.style.display = n ? 'inline-block' : 'none';
+  badge.textContent = n > 99 ? '99+' : String(n);
+}
+
+function renderRequestLog() {
+  const query = $('reqSearchInput').value.trim().toLowerCase();
+  const filter = $('reqFilterSelect').value;
+  const list = $('reqList');
+  list.textContent = '';
+
+  const rows = reqState.rows.filter(r => {
+    if (query && !(r.host || '').toLowerCase().includes(query)) return false;
+    if (filter === 'background' && r.navigated) return false;
+    if (filter === 'blocked' && !(r.blocked > 0)) return false;
+    if (filter === 'insecure' && !(r.http > 0)) return false;
+    return true;
+  });
+
+  $('reqEmptyState').style.display = rows.length ? 'none' : 'block';
+  $('reqEmptyText').textContent = query || filter ? '没有主机匹配当前筛选' : '还没有连接记录，浏览几个网站后这里会按主机汇总后台请求';
+
+  for (const r of rows) {
+    const row = document.createElement('div');
+    row.className = 'event-row';
+
+    const head = document.createElement('div');
+    head.className = 'event-head';
+
+    const hostWrap = document.createElement('div');
+    hostWrap.style.flex = '1';
+    hostWrap.style.minWidth = '0';
+    const host = document.createElement('div');
+    host.className = 'grade-host';
+    host.textContent = r.host || '未知主机';
+    if (r.http > 0 && r.https === 0) {
+      const tag = document.createElement('span');
+      tag.className = 'badge critical';
+      tag.textContent = '仅 HTTP';
+      tag.style.marginLeft = '8px';
+      host.appendChild(tag);
+    }
+    if (!r.navigated) {
+      const tag = document.createElement('span');
+      tag.className = 'badge neutral';
+      tag.textContent = '后台';
+      tag.style.marginLeft = '8px';
+      host.appendChild(tag);
+    }
+    hostWrap.appendChild(host);
+
+    const nums = document.createElement('div');
+    nums.className = 'event-type';
+    const total = document.createElement('strong');
+    total.textContent = r.requests + ' 次';
+    nums.appendChild(total);
+    if (r.blocked > 0) {
+      const blk = document.createElement('span');
+      blk.className = 'csp-meta';
+      blk.style.color = '#c42b1c';
+      blk.textContent = '已拦 ' + r.blocked;
+      blk.style.marginLeft = '10px';
+      nums.appendChild(blk);
+    }
+    hostWrap.appendChild(nums);
+
+    const time = document.createElement('span');
+    time.className = 'event-time';
+    time.textContent = formatTime(r.lastTime);
+
+    head.append(hostWrap, time);
+    row.appendChild(head);
+
+    const types = Array.isArray(r.types) ? r.types : [];
+    if (types.length) {
+      const chips = document.createElement('div');
+      for (const t of types.slice(0, 8)) {
+        const chip = document.createElement('span');
+        chip.className = 'check-chip';
+        chip.textContent = (t.type || 'other') + ' ×' + t.count;
+        chips.appendChild(chip);
+      }
+      row.appendChild(chips);
+    }
+    list.appendChild(row);
+  }
+}
+
+function applyReqStats(s) {
+  if (!s) return;
+  $('reqStatHosts').textContent = s.hosts || 0;
+  $('reqStatRequests').textContent = s.requests || 0;
+  $('reqStatBackground').textContent = s.backgroundHosts || 0;
+  $('reqStatBlocked').textContent = s.blocked || 0;
+  updateReqBadge(s.backgroundHosts || 0);
+}
+
+async function loadRequestLogData() {
+  $('reqRefreshBtn').disabled = true;
+  try {
+    const [rows, s] = await Promise.all([
+      api.invoke('list-request-log', { limit: 400 }),
+      api.invoke('get-request-log-stats'),
+    ]);
+    reqState.rows = Array.isArray(rows) ? rows : [];
+    applyReqStats(s);
+    renderRequestLog();
+  } catch (e) {
+    toast('连接台账加载失败：' + (e && e.message ? e.message : e), true);
+  } finally {
+    $('reqRefreshBtn').disabled = false;
+  }
+}
+
+$('reqRefreshBtn').onclick = loadRequestLogData;
+$('reqSearchInput').addEventListener('input', renderRequestLog);
+$('reqFilterSelect').addEventListener('change', renderRequestLog);
+$('reqClearBtn').onclick = async () => {
+  const ok = await showConfirm('将清空全部后台连接台账，且无法恢复。继续？');
+  if (!ok) return;
+  const r = await api.invoke('clear-request-log');
+  if (r && r.success) { toast('已清空连接台账'); loadRequestLogData(); }
+  else toast('清空失败', true);
+};
+
+api.on('request-log-updated', s => {
+  applyReqStats(s);
+  if ($('viewRequests').classList.contains('active')) loadRequestLogData();
+});
+
 $('searchInput').addEventListener('input', render);
 $('filterSelect').addEventListener('change', render);
 $('severitySelect').addEventListener('change', render);
@@ -752,6 +925,7 @@ api.invoke('list-header-grades', { limit: 300 }).then(rows => {
   hgState.rows = Array.isArray(rows) ? rows : [];
   updateHeaderBadge();
 }).catch(() => {});
+api.invoke('get-request-log-stats').then(applyReqStats).catch(() => {});
 </script>
 </body>
 </html>
