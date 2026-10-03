@@ -61,6 +61,8 @@ const captureGuard = require('./captureguard');
 const devtoolsSwitchGuard = require('./devtoolswitchguard');
 const menuGuard = require('./menuguard');
 const inputGuard = require('./inputguard');
+const remoteGuard = require('./remoteguard');
+const ipcChannelGuard = require('./ipcchannelguard');
 const { pathToFileURL } = require('url');
 
 // 危险命令行开关 / ELECTRON_EXTRA_LAUNCH_ARGS 注入必须在 ready 之前就拦下：
@@ -198,6 +200,23 @@ const captureStates = new Map();
 const devtoolsSwitchStates = new Map();
 // 记录“被判定为隔离保留的意外原生子窗口”的 webContents，供 DevTools 开关事件识别基线。
 const isolatedChildContents = new WeakSet();
+// r33：@electron/remote 桥 / desktopCapturer 枚举、渲染层原始 IPC 通道的 per-contents 状态。
+const remoteStates = new Map();
+const ipcChannelStates = new Map();
+// 允许走“原始 ipcRenderer.send”的通道白名单（与 preload.js allowedSendChannels 保持一致）。
+// ipcRenderer.invoke 走内部 ipc-message-internal，不在此列；正常渲染层除此之外不应有
+// 任何原始 send，出现即意味着 contextIsolation 被绕过或 preload 残缺。
+const RAW_IPC_SEND_ALLOWED = new Set([
+  'window-control', 'toggle-tabbar-collapse', 'navigate-to-url', 'save-settings',
+  'update-theme-color', 'get-settings', 'export-config', 'show-context-menu',
+  'show-more-options-menu', 'get-download-info', 'start-download', 'show-save-dialog',
+  'get-downloads', 'pause-download', 'resume-download', 'cancel-download',
+  'retry-download', 'remove-download', 'open-file', 'open-folder', 'clear-downloads',
+  'shelf-show-all', 'close-current-tab', 'find-in-page', 'stop-find',
+  'reload-tab-by-id', 'reopen-tab-url', 'reset-trackers', 'report-csp-violation',
+]);
+// 原始 sendSync 白名单为空：本应用渲染层不使用任何同步 IPC。
+const RAW_IPC_SYNC_ALLOWED = new Set();
 
 // getContentsState 读取按需创建的 per-contents 小状态；destroyed 时统一清理。
 function getContentsState(map, id, create) {
@@ -1624,6 +1643,8 @@ const SECURITY_EVENT_TYPES = new Set([
   'devtools-switch',         // DevTools 在真实网页/隔离子窗被打开（隔离窗立即关闭）
   'context-menu-sanitized',  // 右键菜单参数（链接/选中文本/错词/建议）被净化或丢弃
   'ipc-input-rejected',      // 渲染侧 IPC 入参形状/长度/控制字符/体量畸形被拒绝
+  'remote-bridge-blocked',   // @electron/remote 反向通道 / desktopCapturer 枚举被阻断
+  'raw-ipc-blocked',         // 渲染层直发原始 IPC（绕过 contextBridge）/ 同步 IPC 被收口
   'ipc-denied',
 ]);
 
@@ -3479,6 +3500,8 @@ function setupGlobalWebContentsHooks() {
       frameStates.delete(contents.id);
       captureStates.delete(contents.id);
       devtoolsSwitchStates.delete(contents.id);
+      remoteStates.delete(contents.id);
+      ipcChannelStates.delete(contents.id);
     });
     redirectChainStates.set(contents.id, redirectState);
     // 顶层真正落地导航后，重定向链归零，开始统计下一条链。
@@ -3500,6 +3523,8 @@ function setupGlobalWebContentsHooks() {
       frameGuard.resetForNavigation(frameStates.get(contents.id), Date.now());
       captureGuard.resetForNavigation(captureStates.get(contents.id), Date.now());
       devtoolsSwitchGuard.resetForNavigation(devtoolsSwitchStates.get(contents.id), Date.now());
+      remoteGuard.resetForNavigation(remoteStates.get(contents.id));
+      ipcChannelGuard.resetForNavigation(ipcChannelStates.get(contents.id));
     });
 
     // handleRedirect 在 navguard 的来源矩阵之前先做“重定向专项”判定，返回 true
@@ -4126,6 +4151,78 @@ function setupGlobalWebContentsHooks() {
     contents.on('devtools-closed', () => {
       const st = devtoolsSwitchStates.get(contents.id);
       if (st) devtoolsSwitchGuard.evaluateDevtoolsToggle(st, 'closed', {}, Date.now());
+    });
+
+    // r33：@electron/remote 反向桥与 desktopCapturer 枚举深度防御。浏览器场景不启用
+    // remote，任何一个这些事件触发都意味着提权面被打开——统一 preventDefault 拒绝，
+    // 并把目标模块/全局名净化后按高危留痕；高频尝试折叠冷却。
+    const installRemoteBlocker = (channel, isNamed) => {
+      contents.on(channel, (event, target) => {
+        try {
+          const st = getContentsState(remoteStates, contents.id, remoteGuard.createRemoteState);
+          const v = remoteGuard.evaluateRemoteBridge(
+            { channel, target: isNamed ? target : undefined }, st, Date.now());
+          event.preventDefault();
+          const sev = v.reasons.includes('remote-bridge-flood') ? 'info' : 'warn';
+          const tail = isNamed && v.target ? `（目标: ${v.target}）` : '';
+          recordSecurityEvent('remote-bridge-blocked', sev,
+            `远程桥通道 ${v.channel} 已被浏览器策略阻止${tail}`, originOfContents(contents));
+        } catch (err) {
+          try { event.preventDefault(); } catch {}
+          recordSecurityEvent('remote-bridge-blocked', 'warn',
+            `远程桥守卫异常: ${String((err && err.message) || err)}`, originOfContents(contents));
+        }
+      });
+    };
+    installRemoteBlocker(remoteGuard.REMOTE_CHANNELS.REQUIRE, true);
+    installRemoteBlocker(remoteGuard.REMOTE_CHANNELS.GET_BUILTIN, true);
+    installRemoteBlocker(remoteGuard.REMOTE_CHANNELS.GET_GLOBAL, true);
+    installRemoteBlocker(remoteGuard.REMOTE_CHANNELS.GET_CURRENT_WINDOW, false);
+    installRemoteBlocker(remoteGuard.REMOTE_CHANNELS.GET_CURRENT_WEB_CONTENTS, false);
+    installRemoteBlocker(remoteGuard.REMOTE_CHANNELS.DESKTOP_CAPTURER, false);
+
+    // r33：渲染层“直发原始 IPC”收口。正常业务只走 contextBridge 白名单 API；若网页在
+    // contextIsolation 被绕过 / preload 残缺时直接 ipcRenderer.send 未授权通道，这里拦截。
+    // invoke 走内部通道不触发本事件，故白名单只列 send 通道。
+    contents.on('ipc-message', (event, channel, ...args) => {
+      try {
+        const st = getContentsState(
+          ipcChannelStates, contents.id, ipcChannelGuard.createIpcChannelState);
+        const v = ipcChannelGuard.evaluateIpcChannel(
+          { channel, kind: ipcChannelGuard.IPC_ASYNC, argsLength: args.length },
+          RAW_IPC_SEND_ALLOWED, st, Date.now());
+        if (v.action === ipcChannelGuard.IPC_BLOCK) {
+          event.preventDefault();
+          recordSecurityEvent('raw-ipc-blocked', 'warn',
+            `渲染层直发未授权/异常原始 IPC 通道 ${v.channel}（${v.reasons.join('；')}）`,
+            originOfContents(contents));
+        }
+      } catch (err) {
+        recordSecurityEvent('raw-ipc-blocked', 'info',
+          `原始 IPC 守卫异常: ${String((err && err.message) || err)}`, originOfContents(contents));
+      }
+    });
+    // sendSync 白名单为空，任何同步直发都阻止，并回一个安全值，避免网页拿到 undefined
+    // 后逻辑异常，同时杜绝同步消息阻塞主进程的拒绝服务。
+    contents.on('ipc-message-sync', (event, channel, ...args) => {
+      try {
+        const st = getContentsState(
+          ipcChannelStates, contents.id, ipcChannelGuard.createIpcChannelState);
+        const v = ipcChannelGuard.evaluateIpcChannel(
+          { channel, kind: ipcChannelGuard.IPC_SYNC, argsLength: args.length },
+          RAW_IPC_SYNC_ALLOWED, st, Date.now());
+        if (v.action === ipcChannelGuard.IPC_BLOCK) {
+          event.preventDefault();
+          try { event.returnValue = null; } catch {}
+          recordSecurityEvent('raw-ipc-blocked', 'warn',
+            `渲染层同步 IPC（sendSync）被禁止 ${v.channel}（${v.reasons.join('；')}）`,
+            originOfContents(contents));
+        }
+      } catch (err) {
+        try { event.preventDefault(); event.returnValue = null; } catch {}
+        recordSecurityEvent('raw-ipc-blocked', 'warn',
+          `同步 IPC 守卫异常: ${String((err && err.message) || err)}`, originOfContents(contents));
+      }
     });
   });
 }
