@@ -224,33 +224,49 @@ function sanitizeArg(value, depth = 0) {
   return undefined;
 }
 
-contextBridge.exposeInMainWorld('electronAPI', {
-  minimize: () => ipcRenderer.send('window-control', 'minimize'),
-  maximize: () => ipcRenderer.send('window-control', 'maximize'),
-  close: () => ipcRenderer.send('window-control', 'close'),
+// 渲染端暴露面收口（纵深第一层，主进程 ipcguard 是第二层）。
+// 这一份 preload 同时被两类上下文注入：主窗口外壳（file: 的 index.html）、标签
+// WebContentsView（既承载 cosy: 内置页，也承载任意远程 http(s) 网页）。历史上远程
+// 网页也拿到了下面整套 electronAPI（约 130 个 invoke/send 通道），任何被访问的恶意
+// 站点都能尝试调用“清除浏览数据 / 导出配置 / 放行证书例外”等特权方法。
+// 这里按文档协议在渲染端就不注入 API：只有浏览器自己的 file:/cosy: 文档拿得到，
+// 远程页与 data/blob/about 等不可信文档下 window.electronAPI 根本不存在。
+// 判定与 preloadpolicy.js 保持同一口径；preload 在 sandbox 内不能 require 本地模块，
+// 而 location.protocol 已由浏览器规范化为小写带冒号，直接比较即可，无需自己解析 URL。
+const docProtocol = (typeof location !== 'undefined' && location.protocol ? String(location.protocol) : '').toLowerCase();
+const isInternalDocument = docProtocol === 'file:' || docProtocol === 'cosy:';
 
-  send: (channel, data) => {
-    if (typeof channel !== 'string' || !allowedSendChannels.has(channel)) return;
-    ipcRenderer.send(channel, sanitizeArg(data));
-  },
+if (isInternalDocument) {
+  contextBridge.exposeInMainWorld('electronAPI', {
+    minimize: () => ipcRenderer.send('window-control', 'minimize'),
+    maximize: () => ipcRenderer.send('window-control', 'maximize'),
+    close: () => ipcRenderer.send('window-control', 'close'),
 
-  invoke: (channel, data) => {
-    if (typeof channel !== 'string' || !allowedInvokeChannels.has(channel)) {
-      return Promise.reject(new Error('Channel not allowed'));
-    }
-    return ipcRenderer.invoke(channel, sanitizeArg(data));
-  },
+    send: (channel, data) => {
+      if (typeof channel !== 'string' || !allowedSendChannels.has(channel)) return;
+      ipcRenderer.send(channel, sanitizeArg(data));
+    },
 
-  on: (channel, callback) => {
-    if (typeof channel !== 'string' || !allowedOnChannels.has(channel)) {
-      return () => {};
-    }
-    if (typeof callback !== 'function') return () => {};
-    const listener = (_event, ...args) => callback(...args.map(a => sanitizeArg(a)));
-    ipcRenderer.on(channel, listener);
-    return () => ipcRenderer.removeListener(channel, listener);
-  },
-});
+    invoke: (channel, data) => {
+      if (typeof channel !== 'string' || !allowedInvokeChannels.has(channel)) {
+        return Promise.reject(new Error('Channel not allowed'));
+      }
+      return ipcRenderer.invoke(channel, sanitizeArg(data));
+    },
+
+    on: (channel, callback) => {
+      if (typeof channel !== 'string' || !allowedOnChannels.has(channel)) {
+        return () => {};
+      }
+      if (typeof callback !== 'function') return () => {};
+      const listener = (_event, ...args) => callback(...args.map(a => sanitizeArg(a)));
+      ipcRenderer.on(channel, listener);
+      return () => ipcRenderer.removeListener(channel, listener);
+    },
+  });
+}
+// 非内部文档：显式不暴露 electronAPI。这里不抛错、不占位，避免网站靠探测
+// window.electronAPI 的存在与否判断浏览器指纹；主进程守卫仍会拒绝任何越权 IPC。
 
 // 所有内部页面共用的 CSP 违规上报。Chromium 在内容被 CSP 拦截时会向 document
 // 派发 securitypolicyviolation 事件；isolated world 里挂的捕获监听同样收得到。
