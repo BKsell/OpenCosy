@@ -215,6 +215,7 @@
 <button class="tab" id="tabPna" type="button">内网访问防护 <span id="pnaCountBadge" style="display:none;"></span></button>
 <button class="tab" id="tabFp" type="button">指纹追踪收敛 <span id="fpCountBadge" style="display:none;"></span></button>
 <button class="tab" id="tabDoh" type="button">安全 DNS</button>
+<button class="tab" id="tabDload" type="button">下载伪装防护 <span id="dloadCountBadge" style="display:none;"></span></button>
   </div>
 
   <div class="view active" id="viewEvents">
@@ -531,6 +532,46 @@
     </p>
     <div id="permForcedList" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;"></div>
   </div><!-- /viewDoh -->
+
+  <div class="view" id="viewDload">
+    <div class="stats">
+      <div class="stat-card"><div class="stat-num" id="dloadStatConfirm">-</div><div class="stat-label">需确认 / 已拦截的高风险下载</div></div>
+      <div class="stat-card"><div class="stat-num" id="dloadStatWarn">-</div><div class="stat-label">已保存但提示的风险</div></div>
+      <div class="stat-card"><div class="stat-num" id="dloadStatReject">-</div><div class="stat-label">文件名非法直接拒绝</div></div>
+    </div>
+    <p class="subtitle">
+      下载安全不能只看最后一个扩展名。这里记录每次下载的<strong>文件名伪装分析</strong>：
+      双扩展名伪装（<code>发票.exe.pdf</code>）、RTL 反转字符、结尾点空格、Windows 保留设备名、
+      MIME 内容类型与扩展名不符等；可执行 / 伪装文件会<strong>先弹原生确认</strong>，文件名无法净化的直接取消，
+      压缩 / 镜像容器（内部文件不继承网络来源标记）与本地 HTML 会保存但提示。
+    </p>
+    <div class="toolbar" style="margin:12px 0;">
+      <button class="btn-primary" id="dloadRefreshBtn" type="button">刷新记录</button>
+      <button class="btn-danger-ghost" id="dloadClearBtn" type="button">清空记录</button>
+    </div>
+    <div class="event-list" id="dloadRiskList"></div>
+    <div class="empty" id="dloadEmptyState" style="display:none;">
+      <div class="big">&#128229;</div>
+      <div>暂无下载风险记录。出现可执行 / 伪装 / 类型不符的下载时会在这里列出命中的具体原因。</div>
+    </div>
+
+    <h3 style="margin:22px 0 8px;font-size:15px;">链接净化（去追踪参数 / 解跳转包装）</h3>
+    <p class="subtitle">
+      粘贴一条分享链接，可剥离 <code>utm_*</code>、<code>fbclid</code>、<code>gclid</code> 等公认营销 / 跨站追踪参数，
+      并解出 Google / Facebook 等“跳转包装”链接里的真实目标。纯本地处理，不会发起网络请求。
+    </p>
+    <div style="display:flex;flex-direction:column;gap:8px;margin:10px 0;">
+      <input type="text" id="cleanUrlInput" placeholder="https://www.google.com/url?q=https%3A%2F%2Fexample.com%2Fp%3Futm_source%3Dx"
+        style="width:100%;padding:9px 11px;border-radius:8px;border:1px solid var(--border,#dadce0);background:var(--surface,#fff);color:inherit;box-sizing:border-box;" />
+      <div style="display:flex;gap:8px;">
+        <button class="btn-primary" id="cleanUrlBtn" type="button">净化链接</button>
+        <button class="btn-ghost" id="copyCleanUrlBtn" type="button">复制结果</button>
+      </div>
+      <div class="chip" id="cleanUrlMeta" style="display:none;align-self:flex-start;"></div>
+      <input type="text" id="cleanUrlOutput" readonly placeholder="净化后的链接会显示在这里"
+        style="width:100%;padding:9px 11px;border-radius:8px;border:1px solid var(--border,#dadce0);background:var(--surface,#fff);color:inherit;box-sizing:border-box;" />
+    </div>
+  </div><!-- /viewDload -->
 </div>
 
 <div class="modal-mask" id="confirmModal">
@@ -713,6 +754,7 @@ function switchView(which) {
     pna: ['tabPna', 'viewPna'],
     fp: ['tabFp', 'viewFp'],
     doh: ['tabDoh', 'viewDoh'],
+    dload: ['tabDload', 'viewDload'],
   };
   for (const [key, [tabId, viewId]] of Object.entries(map)) {
     $(tabId).classList.toggle('active', key === which);
@@ -728,6 +770,7 @@ function switchView(which) {
   if (which === 'pna') loadPnaData();
   if (which === 'fp') loadFpData();
   if (which === 'doh') loadDohData();
+  if (which === 'dload') loadDownloadRisksData();
 }
 $('tabEvents').onclick = () => switchView('events');
 $('tabCsp').onclick = () => switchView('csp');
@@ -740,6 +783,7 @@ $('tabCookie').onclick = () => switchView('cookie');
 $('tabPna').onclick = () => switchView('pna');
 $('tabFp').onclick = () => switchView('fp');
 $('tabDoh').onclick = () => switchView('doh');
+$('tabDload').onclick = () => switchView('dload');
 
 function updateCspBadge() {
   const badge = $('cspCountBadge');
@@ -1829,10 +1873,118 @@ $('dohClearBtn').onclick = async () => {
   else toast('清空失败', true);
 };
 
+// ===== 下载伪装防护面板 =====
+const dloadState = { rows: [] };
+
+const DLOAD_ACTION_TEXT = {
+  saved: '已保存', confirmed: '用户确认后保存', cancelled: '用户取消', rejected: '已拒绝',
+};
+const DLOAD_DECISION_TEXT = {
+  allow: '无风险', warn: '已提示', confirm: '需确认', reject: '已拒绝',
+};
+
+function dloadRowClass(rec) {
+  if (rec.decision === 'reject' || rec.action === 'rejected') return 'severity-critical';
+  if (rec.decision === 'confirm') return 'severity-warn';
+  return 'severity-info';
+}
+
+function renderDownloadRisks() {
+  const list = $('dloadRiskList');
+  list.textContent = '';
+  const rows = dloadState.rows;
+  $('dloadEmptyState').style.display = rows.length ? 'none' : 'block';
+
+  let confirmN = 0, warnN = 0, rejectN = 0;
+  for (const rec of rows) {
+    if (rec.decision === 'reject' || rec.action === 'rejected') rejectN++;
+    else if (rec.decision === 'confirm') confirmN++;
+    else if (rec.decision === 'warn') warnN++;
+
+    const row = document.createElement('div');
+    row.className = 'event-row ' + dloadRowClass(rec);
+    const time = document.createElement('div');
+    time.className = 'event-time';
+    time.textContent = rec.time ? new Date(rec.time).toLocaleString() : '';
+    const title = document.createElement('div');
+    title.className = 'event-title';
+    title.textContent = (rec.filename || '(未知文件)') +
+      (rec.ext ? '  ·  .' + rec.ext : '') +
+      '  ·  ' + (DLOAD_ACTION_TEXT[rec.action] || rec.action || '');
+    const detail = document.createElement('div');
+    detail.className = 'event-detail';
+    const reasons = Array.isArray(rec.risks) ? rec.risks.map(r => r.message).filter(Boolean) : [];
+    detail.textContent = (rec.host ? '来源 ' + rec.host + ' · ' : '') +
+      (DLOAD_DECISION_TEXT[rec.decision] || rec.decision) +
+      (reasons.length ? '：' + reasons.join('；') : '');
+    row.appendChild(time);
+    row.appendChild(title);
+    row.appendChild(detail);
+    list.appendChild(row);
+  }
+
+  $('dloadStatConfirm').textContent = String(confirmN);
+  $('dloadStatWarn').textContent = String(warnN);
+  $('dloadStatReject').textContent = String(rejectN);
+  const badge = $('dloadCountBadge');
+  const total = rows.length;
+  badge.style.display = total ? 'inline-block' : 'none';
+  badge.textContent = total > 99 ? '99+' : String(total);
+}
+
+async function loadDownloadRisksData() {
+  $('dloadRefreshBtn').disabled = true;
+  try {
+    const rows = await api.invoke('list-download-risks', { limit: 300 });
+    dloadState.rows = Array.isArray(rows) ? rows : [];
+    renderDownloadRisks();
+  } catch (e) {
+    toast('下载风险记录加载失败：' + (e && e.message ? e.message : e), true);
+  } finally {
+    $('dloadRefreshBtn').disabled = false;
+  }
+}
+$('dloadRefreshBtn').onclick = loadDownloadRisksData;
+$('dloadClearBtn').onclick = async () => {
+  const ok = await showConfirm('将清空下载风险记录。继续？');
+  if (!ok) return;
+  const res = await api.invoke('clear-download-risks');
+  if (res && res.success) { toast('已清空下载风险记录'); loadDownloadRisksData(); }
+  else toast('清空失败', true);
+};
+
+$('cleanUrlBtn').onclick = async () => {
+  const raw = $('cleanUrlInput').value.trim();
+  const meta = $('cleanUrlMeta');
+  if (!raw) { toast('请先粘贴链接', true); return; }
+  const res = await api.invoke('clean-share-url', { url: raw });
+  if (!res || !res.ok) { toast('链接无法净化（可能不是合法 http(s) 链接）', true); return; }
+  $('cleanUrlOutput').value = res.url || '';
+  const parts = [];
+  if (res.unwrapped) parts.push('已解出跳转包装');
+  if (Array.isArray(res.removedKeys) && res.removedKeys.length) {
+    parts.push('已移除 ' + res.removedKeys.length + ' 个追踪参数');
+  }
+  if (!parts.length) parts.push('未发现需要清理的追踪参数');
+  meta.style.display = 'inline-flex';
+  meta.textContent = parts.join(' · ');
+};
+$('copyCleanUrlBtn').onclick = async () => {
+  const out = $('cleanUrlOutput').value;
+  if (!out) { toast('没有可复制的结果', true); return; }
+  try {
+    await navigator.clipboard.writeText(out);
+    toast('已复制净化后的链接');
+  } catch {
+    $('cleanUrlOutput').select();
+    document.execCommand('copy');
+    toast('已复制净化后的链接');
+  }
+};
+
 $('searchInput').addEventListener('input', render);
 $('filterSelect').addEventListener('change', render);
-$('severitySelect').addEventListener('change', render);
-$('confirmModal').addEventListener('click', e => {
+$('severitySelect').addEventListener('change', render);$('confirmModal').addEventListener('click', e => {
   if (e.target === $('confirmModal')) $('confirmModal').classList.remove('show');
 });
 
