@@ -127,6 +127,9 @@ const allowedInvokeChannels = new Set([
   'clear-fingerprint-entries',
   'get-doh-status',
   'clear-doh-events',
+  'list-download-risks',
+  'clear-download-risks',
+  'clean-share-url',
 ]);
 
 // 接收方向白名单：main -> renderer
