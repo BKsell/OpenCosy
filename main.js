@@ -69,6 +69,7 @@ const revokeGuard = require('./revokeguard');
 const gpuAccessGuard = require('./gpuaccessguard');
 const sessionGuard = require('./sessionguard');
 const storageAccessGuard = require('./storageaccessguard');
+const historyGuard = require('./historyguard');
 const { pathToFileURL } = require('url');
 
 // 危险命令行开关 / ELECTRON_EXTRA_LAUNCH_ARGS 注入必须在 ready 之前就拦下：
@@ -764,10 +765,13 @@ async function showOpenFileDialog() {
 }
 
 function addToHistory(url, title) {
-  if (!isSafeUrl(url) || url.startsWith('cosy://')) return;
-  const existingIndex = history.findIndex(h => h.url === url);
-  if (existingIndex !== -1) history.splice(existingIndex, 1);
-  history.unshift({ url, title, timestamp: Date.now() });
+  // r34：历史写入统一走 historyguard 内核——只记录 http/https 导航，title 去控制
+  // 字符 / 压空白 / 截断上界，URL 长度有界，同 URL 合并窗内只刷新时间戳（抑制刷新
+  // 抖动与写放大）。内核用传入的 {items: history} 直接在历史数组上原地改写。
+  const verdict = historyGuard.decideHistoryWrite(
+    { items: history }, { url, title }, Date.now());
+  if (verdict.decision === historyGuard.DECISION_SKIP) return;
+  // 应用侧维持比内核安全上限（5000）更紧的展示上界 1000，超出淘汰最旧。
   if (history.length > MAX_HISTORY_ENTRIES) history = history.slice(0, MAX_HISTORY_ENTRIES);
   saveHistory();
 }
@@ -784,9 +788,36 @@ function saveHistory() {
 function loadHistory() {
   const historyPath = path.join(app.getPath('userData'), 'history.json');
   try {
-    if (fsSync.existsSync(historyPath)) {
-      history = JSON.parse(fsSync.readFileSync(historyPath, 'utf-8'));
+    if (!fsSync.existsSync(historyPath)) return;
+    // history.json 是本地文件、也可能被外部程序 / 旧版本写坏：解析结果必须是数组，
+    // 且每条都重新过内核净化（非 http/https、无法解析、标题含控制字符的一律丢弃 /
+    // 清洗），时间戳必须为有限非负数，否则该条丢弃。绝不信任磁盘上的结构。
+    let parsed;
+    try {
+      parsed = JSON.parse(fsSync.readFileSync(historyPath, 'utf-8'));
+    } catch {
+      history = [];
+      return;
     }
+    if (!Array.isArray(parsed)) {
+      history = [];
+      return;
+    }
+    const clean = [];
+    for (const item of parsed) {
+      if (!item || typeof item !== 'object') continue;
+      const su = historyGuard.sanitizeHistoryUrl(item.url);
+      if (!su.ok) continue;
+      if (typeof item.timestamp !== 'number' || !Number.isFinite(item.timestamp)
+          || item.timestamp < 0) continue;
+      clean.push({
+        url: su.url,
+        title: historyGuard.sanitizeHistoryTitle(item.title),
+        timestamp: item.timestamp,
+      });
+      if (clean.length >= MAX_HISTORY_ENTRIES) break;
+    }
+    history = clean;
   } catch (e) {
     console.error('读取历史记录失败:', e);
   }
