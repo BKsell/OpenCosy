@@ -22,6 +22,13 @@ const popupGuard = require('./popupguard');
 const quarantine = require('./quarantine');
 const navGuard = require('./navguard');
 const containerGuard = require('./container');
+const schemeOrigin = require('./schemeorigin');
+const webviewHarden = require('./webviewharden');
+const winPolicy = require('./winpolicy');
+const goneGuard = require('./goneguard');
+const shellGuard = require('./shellguard');
+const deeplinkGuard = require('./deeplinkguard');
+const { pathToFileURL } = require('url');
 
 // 现代浏览器默认要求“用户与页面有过交互”才允许带声音自动播放，
 // 否则广告页一打开就能外放声音。必须在 app ready 之前设置。
@@ -1332,6 +1339,16 @@ async function launchExternalWithPrompt(url, origin, remember) {
     sendToRenderer('show-toast', `已阻止打开外部协议: ${String(url).slice(0, 60)}`);
     return { ok: false, reason: 'blocked scheme' };
   }
+  // 内容消毒：即便协议在白名单内，仍要挡住控制字符 / CRLF 注入 / 畸形 mailto、tel。
+  // 交给系统的必须是 shellguard 放行后的规范化 URL（见 shellguard.js）。
+  const extReview = shellGuard.reviewExternalUrl(url, CONFIRMABLE_EXTERNAL_SCHEMES);
+  if (!extReview.ok) {
+    recordSecurityEvent('protocol-blocked', 'warn',
+      `外部唤起内容消毒未过（${shellGuard.describeReason(extReview.reason)}）: ${scheme}`, origin);
+    sendToRenderer('show-toast', `已阻止不安全的外部链接: ${shellGuard.describeReason(extReview.reason)}`);
+    return { ok: false, reason: extReview.reason };
+  }
+  const safeExternalUrl = extReview.url;
   if (isRememberableOrigin(origin)) {
     const known = getRememberedProtocolDecision(origin, scheme);
     if (known === 'deny') {
@@ -1342,7 +1359,7 @@ async function launchExternalWithPrompt(url, origin, remember) {
     }
     if (known === 'allow') {
       try {
-        await shell.openExternal(url, { activate: true });
+        await shell.openExternal(safeExternalUrl, { activate: true });
         return { ok: true, reason: 'remembered allow' };
       } catch (e) {
         return { ok: false, reason: String(e && e.message || e) };
@@ -1357,7 +1374,7 @@ async function launchExternalWithPrompt(url, origin, remember) {
     defaultId: 1,
     cancelId: 1,
     title: '网站想要打开外部应用',
-    message: `${siteLabel} 想要打开:\n${url}\n\n是否允许？`,
+    message: `${siteLabel} 想要打开:\n${safeExternalUrl}\n\n是否允许？`,
     checkboxLabel: '记住对此网站的选择（可在设置中撤销）',
     checkboxChecked: false
   });
@@ -1371,7 +1388,7 @@ async function launchExternalWithPrompt(url, origin, remember) {
     return { ok: false, reason: 'user denied' };
   }
   try {
-    await shell.openExternal(url, { activate: true });
+    await shell.openExternal(safeExternalUrl, { activate: true });
     return { ok: true };
   } catch (e) {
     return { ok: false, reason: String(e && e.message || e) };
@@ -1432,6 +1449,11 @@ const SECURITY_EVENT_TYPES = new Set([
   'cookie-blocked',          // 第三方 / 非法前缀 / 无效 Secure 的 Set-Cookie 被剥离
   'pna-blocked',             // 公网页面访问本机/内网/链路本地被 PNA 拦截
   'fingerprint-blocked',     // 高熵 Client Hints / 广告信号 / 超链接打点被收敛
+  'origin-boundary-blocked', // 不可信网页顶窗跳 file:/内部特权页被来源矩阵拦截
+  'webview-blocked',         // <webview> 挂载 src 非法或携带提权配置被阻止 / 收口
+  'window-policy',           // 窗口 webPreferences 出现越界/不安全配置被基线拒绝
+  'renderer-gone',           // 渲染/GPU 进程崩溃与无响应的恢复 / 熔断处置
+  'deeplink-blocked',        // 命令行/open-file/open-url 非法深链被入口消毒拦截
 ]);
 
 const securityEvents = [];
@@ -3279,20 +3301,42 @@ function setupGlobalWebContentsHooks() {
     // 若有页面尝试 attach webview，一律阻止：webview 默认能携带自己的
     // webPreferences（nodeIntegration/disablewebsecurity），是常见提权通道。
     contents.on('will-attach-webview', (attachEvent, webPreferences, params) => {
-      delete webPreferences.preload;
-      webPreferences.nodeIntegration = false;
-      webPreferences.contextIsolation = true;
-      webPreferences.sandbox = true;
-      webPreferences.webSecurity = true;
-      webPreferences.allowRunningInsecureContent = false;
-      if (!isSafeUrl(params.src)) {
-        attachEvent.preventDefault();
+      // 完整的 webview 挂载审计：src 仅允许远程 http(s)，guest 自带 preload /
+      // Node 集成 / 关闭安全开关 / 挂载主会话分区等一律收口（见 webviewharden.js）。
+      const verdict = webviewHarden.review(webPreferences, params);
+      if (verdict.reasons.length) {
+        recordSecurityEvent('webview-blocked', verdict.blocked ? 'warn' : 'info',
+          `webview 挂载审计: ${verdict.reasons.map(webviewHarden.describeReason).join('；')}`,
+          originOfContents(contents));
       }
+      if (verdict.blocked) {
+        attachEvent.preventDefault();
+        return;
+      }
+      // src 合法时也用安全基线整体覆盖 guest 配置，杜绝任何残留提权项。
+      for (const key of Object.keys(webPreferences)) delete webPreferences[key];
+      Object.assign(webPreferences, verdict.prefs);
     });
 
     // 主框架导航：http(s)/file/cosy 放行，mailto/tel 走按站点记忆的确认弹窗，
     // 其它外部协议（ms-*:/smb:/vbscript: 等）直接阻止。
     contents.on('will-navigate', (navEvent, url) => {
+      // 来源矩阵：远程网页 / data / blob 等不可信上下文不得把顶层框架顶到
+      // file:// 本地资源或 cosy: 特权内部页（地址栏 loadURL 不触发本事件，
+      // 故浏览器自身打开本地文件不受影响）。
+      let navInitiator = '';
+      try { navInitiator = contents.getURL(); } catch {}
+      try {
+        const boundary = schemeOrigin.evaluate(url, navInitiator);
+        if (boundary.action === 'block') {
+          recordSecurityEvent('origin-boundary-blocked', 'warn',
+            `${schemeOrigin.describeBlock(boundary.reason)}: ${String(url).slice(0, 200)}`,
+            navInitiator);
+          sendToRenderer('show-toast', '已阻止网页导航到本地文件或浏览器内部页面');
+          navEvent.preventDefault();
+          return;
+        }
+      } catch { /* 判定异常不干预，交后续链路 */ }
       // 导航安全：IDN 同形异义字钓鱼 / 混合脚本域名直接拦；整词同形 / Punycode
       // 与 HTTPS→HTTP 同站降级弹原生确认；跨主机 http 降级直接拦。
       if (handleUnsafeNavigation(contents, url)) {
@@ -3348,32 +3392,59 @@ function setupGlobalWebContentsHooks() {
     // 被系统杀死(killed)不自动重载；无响应时给横幅让用户选“等待 / 强制刷新”。
     contents.on('render-process-gone', (_goneEvent, details) => {
       const tab = tabs.find(t => t.view && t.view.webContents === contents);
+      let goneUrl = tab?.url || '';
+      if (!goneUrl) {
+        try { goneUrl = contents.getURL(); } catch {}
+      }
+      // 用 goneguard 做窗口内有界定速 + 冷却 + 熔断，并禁止自动重载 data:/blob:
+      // 等瞬时上下文（见 goneguard.js），替代旧的“只重载一次”裸计数。
+      const now = Date.now();
+      let goneState = crashReloadCounts.get(contents.id);
+      if (!goneState) {
+        goneState = goneGuard.createState(now);
+        crashReloadCounts.set(contents.id, goneState);
+      }
+      const decision = goneGuard.decideReload(goneState, goneUrl, now);
+      const recoverable = details.reason === 'crashed' || details.reason === 'oom';
       const payload = {
         tabId: contents.id,
         reason: details.reason || 'unknown',
         exitCode: typeof details.exitCode === 'number' ? details.exitCode : null,
-        url: tab?.url || '',
+        url: goneUrl,
         title: tab?.title || '',
         autoReloaded: false,
+        recovery: decision.reason,
       };
-      const count = (crashReloadCounts.get(contents.id) || 0) + 1;
-      crashReloadCounts.set(contents.id, count);
-      if (crashRecoveryEnabled &&
-          (details.reason === 'crashed' || details.reason === 'oom') &&
-          count === 1 && !contents.isDestroyed()) {
+      if (crashRecoveryEnabled && recoverable && decision.action === 'reload' &&
+          !contents.isDestroyed()) {
         payload.autoReloaded = true;
         setTimeout(() => {
           if (!contents.isDestroyed()) contents.reload();
         }, 400);
+      } else if (decision.action === 'error-page') {
+        // 熔断 / 限频 / 不可重载上下文：留痕，界面据此显示手动恢复横幅。
+        recordSecurityEvent('renderer-gone', 'info',
+          `${goneGuard.describeReason(decision.reason)}（${details.reason || 'unknown'}）`,
+          goneUrl);
       }
       sendToRenderer('renderer-gone', payload);
     });
 
-    // 页面恢复正常后，把该标签的崩溃计数清零，给下次真正的崩溃留出自动重载机会。
+    // 页面恢复正常后，把该标签的崩溃处置状态清零，给下次真正的崩溃留出恢复额度。
     contents.on('did-finish-load', () => crashReloadCounts.delete(contents.id));
 
     contents.on('unresponsive', () => {
-      sendToRenderer('renderer-unresponsive', { tabId: contents.id });
+      // 无响应事件在卡死期间会连续触发，用 goneguard 冷却去抖，避免横幅轰炸。
+      const now = Date.now();
+      let goneState = crashReloadCounts.get(contents.id);
+      if (!goneState) {
+        goneState = goneGuard.createState(now);
+        crashReloadCounts.set(contents.id, goneState);
+      }
+      const verdict = goneGuard.decideUnresponsive(goneState, now);
+      if (verdict.notify) {
+        sendToRenderer('renderer-unresponsive', { tabId: contents.id });
+      }
     });
     contents.on('responsive', () => {
       sendToRenderer('renderer-responsive', { tabId: contents.id });
@@ -3440,20 +3511,21 @@ function getDefaultTabUrl() {
 function createWindow() {
   if (mainWindow && !mainWindow.isDestroyed()) return;
 
+  // 主窗口 webPreferences 走统一安全基线（winpolicy）：强制关闭 Node 集成 /
+  // 开启上下文隔离与沙箱 / 开启同源策略，并校验 preload 必须在应用目录内。
+  const mainWinReview = winPolicy.harden({
+    preload: path.join(__dirname, 'preload.js'),
+    spellcheck: true,
+  }, { preloadRoots: __dirname, requirePreload: true });
+  if (winPolicy.hasCritical(mainWinReview.findings)) {
+    for (const f of mainWinReview.findings.filter(x => x.severity === 'critical')) {
+      try { recordSecurityEvent('window-policy', 'critical', `主窗口配置被拒绝: ${f.key}`, ''); } catch {}
+    }
+  }
   mainWindow = new BrowserWindow({
     width: DEFAULT_WINDOW_WIDTH, height: DEFAULT_WINDOW_HEIGHT,
     minWidth: MIN_WINDOW_WIDTH, minHeight: MIN_WINDOW_HEIGHT,
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: true,
-      webSecurity: true,
-      allowRunningInsecureContent: false,
-      enableRemoteModule: false,
-      preload: path.join(__dirname, 'preload.js'),
-      worldSafeExecuteJavaScript: true,
-      spellcheck: true,
-    },
+    webPreferences: mainWinReview.prefs,
     titleBarStyle: 'hidden', frame: false, show: false,
     icon: path.join(__dirname, 'ico.png')
   });
@@ -3935,18 +4007,18 @@ ipcMain.handle('get-memory-saver', (event) => {
 
 function loadTabContent(tab) {
   if (!tab.view) {
-    tab.view = new WebContentsView({
-      webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true,
-        sandbox: true,
-        webSecurity: true,
-        allowRunningInsecureContent: false,
-        enableRemoteModule: false,
-        preload: path.join(__dirname, 'preload.js'),
-        worldSafeExecuteJavaScript: true,
-        spellcheck: true,
+    // 标签视图与主窗口共用同一份 webPreferences 安全基线，杜绝两处配置漂移。
+    const tabWinReview = winPolicy.harden({
+      preload: path.join(__dirname, 'preload.js'),
+      spellcheck: true,
+    }, { preloadRoots: __dirname, requirePreload: true });
+    if (winPolicy.hasCritical(tabWinReview.findings)) {
+      for (const f of tabWinReview.findings.filter(x => x.severity === 'critical')) {
+        try { recordSecurityEvent('window-policy', 'critical', `标签视图配置被拒绝: ${f.key}`, ''); } catch {}
       }
+    }
+    tab.view = new WebContentsView({
+      webPreferences: tabWinReview.prefs
     });
 
     mainWindow.contentView.addChildView(tab.view);
@@ -4592,22 +4664,47 @@ function generateUserAgent() {
   return `Mozilla/5.0 (${osInfo}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} OpenCosyBrowser/1.0.0`;
 }
 
-if (process.argv.length > 1) {
-  const arg = process.argv[1];
-  if (arg && (arg.endsWith('.html') || arg.endsWith('.htm'))) fileToOpen = `file://${arg}`;
-  if (arg && (arg.startsWith('http://') || arg.startsWith('https://') || arg.startsWith('cosy://'))) fileToOpen = arg;
+// reviewToOpenUrl 把 deeplinkguard 的放行结论转成可打开 URL；本地文件需存在。
+function reviewToOpenUrl(review) {
+  if (!review || !review.ok) return null;
+  if (review.kind === 'local-html') {
+    if (!fsSync.existsSync(review.value)) return null;
+    return pathToFileURL(review.value).href;
+  }
+  return review.value; // web / internal 均已是规范化 href
 }
+
+// resolveStartupDeepLink 把一条不可信入口参数（argv / open-file / open-url）
+// 经 deeplinkguard 消毒后，统一转成可打开的目标 URL；不合法返回 null 并记审计。
+function resolveStartupDeepLink(rawArg, source) {
+  const review = deeplinkGuard.reviewStartupArg(rawArg);
+  if (!review.ok) {
+    recordSecurityEvent('deeplink-blocked', 'warn',
+      `启动深链被拦截（来源:${source}，${deeplinkGuard.describeReason(review.reason)}）`, '');
+    return null;
+  }
+  return reviewToOpenUrl(review);
+}
+
+// resolveStartupArgv 从整条命令行里找第一个合法深链（Windows 协议唤起位置不固定）。
+function resolveStartupArgv(argv) {
+  const review = deeplinkGuard.pickDeepLinkFromArgv(argv);
+  return review ? reviewToOpenUrl(review) : null;
+}
+
+const startupTarget = resolveStartupArgv(process.argv);
+if (startupTarget) fileToOpen = startupTarget;
 
 app.on('open-file', (event, filePath) => {
   event.preventDefault();
-  if (filePath && (filePath.endsWith('.html') || filePath.endsWith('.htm'))) {
-    const fileUrl = `file://${filePath}`;
-    if (mainWindow && mainWindow.isReady()) {
-      const newTab = createNewTab(fileUrl);
-      switchToTab(tabs.indexOf(newTab));
-    } else {
-      fileToOpen = fileUrl;
-    }
+  // 经 deeplinkguard 收口：只允许存在的本地 .html/.htm，挡 UNC / 穿越 / 开关样输入。
+  const fileUrl = resolveStartupDeepLink(filePath, 'open-file');
+  if (!fileUrl) return;
+  if (mainWindow && mainWindow.isReady()) {
+    const newTab = createNewTab(fileUrl);
+    switchToTab(tabs.indexOf(newTab));
+  } else {
+    fileToOpen = fileUrl;
   }
 });
 
@@ -4704,11 +4801,13 @@ app.whenReady().then(async () => {
 
 app.on('open-url', (event, url) => {
   event.preventDefault();
-  if (!isSafeUrl(url)) return;
+  // macOS 深链统一走 deeplinkguard：http(s) 严格解析，cosy: 主机必须白名单。
+  const target = resolveStartupDeepLink(url, 'open-url');
+  if (!target) return;
   if (!mainWindow || mainWindow.isDestroyed()) createWindow();
   setTimeout(() => {
-    if (url.startsWith('cosy://') || url.startsWith('http://') || url.startsWith('https://')) {
-      createNewTab(url);
+    if (target.startsWith('cosy://') || target.startsWith('http://') || target.startsWith('https://')) {
+      createNewTab(target);
     }
   }, 100);
 });
@@ -5159,13 +5258,29 @@ ipcMain.on('open-file', (event, filePath) => {
       return;
     }
   }
+  // 交给系统打开前再走一次路径消毒（控制字符 / UNC / 穿越）。可执行文件是否
+  // 允许运行已由上面的来源确认决定，这里只挡畸形与越界路径。
+  const launchReview = shellGuard.reviewLocalLaunchPath(resolved, true);
+  if (!launchReview.ok) {
+    recordSecurityEvent('download-blocked', 'warn',
+      `打开本地文件被路径消毒拦截（${shellGuard.describeReason(launchReview.reason)}）`, '');
+    sendToRenderer('show-toast', '已阻止打开：文件路径不安全');
+    return;
+  }
   shell.openPath(resolved);
 });
 
 ipcMain.on('open-folder', (event, filePath) => {
   if (!isMainSender(event)) return;
   const resolved = path.resolve(filePath);
-  if (isInSafeDirs(resolved) && fsSync.existsSync(resolved)) shell.showItemInFolder(resolved);
+  if (!isInSafeDirs(resolved) || !fsSync.existsSync(resolved)) return;
+  const revealReview = shellGuard.reviewLocalLaunchPath(resolved, true);
+  if (!revealReview.ok) {
+    recordSecurityEvent('download-blocked', 'warn',
+      `定位本地文件被路径消毒拦截（${shellGuard.describeReason(revealReview.reason)}）`, '');
+    return;
+  }
+  shell.showItemInFolder(resolved);
 });
 
 // open-external-url renderer 统一入口：点 mailto:/tel: 走这里，
