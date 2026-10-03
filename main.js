@@ -16,6 +16,8 @@ const pnaGuard = require('./pna');
 const fpGuard = require('./fpguard');
 const dohGuard = require('./dohguard');
 const permPolicy = require('./permpolicy');
+const dloadGuard = require('./dloadguard');
+const urlClean = require('./urlclean');
 
 // 现代浏览器默认要求“用户与页面有过交互”才允许带声音自动播放，
 // 否则广告页一打开就能外放声音。必须在 app ready 之前设置。
@@ -3151,6 +3153,33 @@ function setupPermissionHandlers() {
     if (!isMainSender(event)) return { ok: false, reason: 'denied' };
     return hashLocalFileViaDialog();
   });
+
+  // ===== 下载风险台账（cosy://security）IPC，仅主框架可调 =====
+  ipcMain.handle('list-download-risks', (event, payload = {}) => {
+    if (!isMainSender(event)) return [];
+    return listDownloadRisks(Number(payload.limit) || 200);
+  });
+  ipcMain.handle('clear-download-risks', (event) => {
+    if (!isMainSender(event)) return { success: false };
+    return { success: true, cleared: clearDownloadRisks() };
+  });
+
+  // ===== 链接净化（去追踪参数 / 解跳转包装），仅主框架可调 =====
+  // 纯字符串处理，不触网；供安全中心的“净化复制链接”工具调用。
+  ipcMain.handle('clean-share-url', (event, payload = {}) => {
+    if (!isMainSender(event)) return { ok: false, reason: 'denied' };
+    if (typeof payload.url !== 'string' || payload.url.length > 4096) {
+      return { ok: false, reason: 'invalid-url' };
+    }
+    const res = urlClean.cleanShareTarget(payload.url);
+    return {
+      ok: true,
+      url: res.url,
+      changed: !!res.changed,
+      unwrapped: !!res.unwrapped,
+      removedKeys: Array.isArray(res.removedKeys) ? res.removedKeys.slice(0, 50) : [],
+    };
+  });
 }
 
 // setupGlobalWebContentsHooks 给所有 webContents 兜底：
@@ -4130,15 +4159,16 @@ function closeTab(tabIndex) {
   }
 }
 
-// sanitizeDownloadFilename 防 Content-Disposition 路径穿越：
-// 服务端可能在 filename 里塞 "../../evil.exe"，直接拼到下载目录会写出目录。
-// 这里只取 basename，并剥掉 Windows/Unix 保留字符。
+// sanitizeDownloadFilename 防 Content-Disposition 路径穿越与视觉伪装：
+// 服务端可能在 filename 里塞 "../../evil.exe"、RTL 反转符、结尾点空格或
+// Windows 保留设备名。这里委托 dloadguard.sanitizeName：剥离目录组件与不可见
+// 字符、剥掉结尾点空格、给保留名加前缀，返回可安全落盘的纯文件名。
 function sanitizeDownloadFilename(name) {
   if (!name || typeof name !== 'string') return 'download';
-  let base = path.basename(name.replace(/\\/g, '/'));
-  base = base.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_');
-  base = base.replace(/^\.+$/, '');
-  return base || 'download';
+  const res = dloadGuard.sanitizeName(name);
+  if (res.rejected || !res.name) return 'download';
+  // 双保险：dloadguard 已剥目录，这里再清一遍 Windows/Unix 保留字符。
+  return res.name.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_') || 'download';
 }
 
 // resolveUniqueDownloadPath 如果目标已存在，自动追加 (1)/(2)/... 避免覆盖
@@ -4154,39 +4184,124 @@ function resolveUniqueDownloadPath(dir, filename) {
   return candidate;
 }
 
-// DANGEROUS_DOWNLOAD_EXTS 是 Windows / 跨平台下可直接执行或能启动程序的扩展名。
-// 现代浏览器对这类"可执行"下载会给出强提示；这里在自动保存前先弹原生确认，
-// 防止 drive-by download（页面静默触发）把木马 .exe 直接放进下载目录。
-const DANGEROUS_DOWNLOAD_EXTS = new Set([
-  '.exe', '.msi', '.msix', '.appx', '.appxbundle', '.msixbundle',
-  '.scr', '.bat', '.cmd', '.com', '.ps1', '.psm1', '.vbs', '.vbe',
-  '.jse', '.wsf', '.wsh', '.jar', '.hta', '.cpl',
-  '.dll', '.sys', '.drv', '.ocx', '.lnk', '.reg', '.inf',
-  '.iso', '.vhd', '.vhdx',
-]);
+// ===== 下载文件名伪装 / 危险类型台账（download-risk.json / cosy://security）=====
+// 旧实现只看 path.extname 的最后一个扩展名，挡不住双扩展伪装（发票.exe.pdf）、
+// RTL 反转、结尾点空格、MIME 与扩展名不符等手法。现在每次 will-download 都用
+// dloadguard 做一次完整分析：confirm 的弹原生确认、reject 的直接取消、warn 的
+// 保存但提示；全部命中写入本机台账供 cosy://security 审计。
+const downloadRiskStorePath = path.join(app.getPath('userData'), 'download-risk.json');
+const MAX_DOWNLOAD_RISK_RECORDS = 500;
 
-// 危险扩展名提示只按最终落盘文件名判断（URL 路径可能与 Content-Disposition 不一致）。
-// .tar.gz / .zip 这类压缩包不在此列：它们不会被系统直接执行。
-function isDangerousDownloadFilename(filename) {
-  const lower = String(filename || '').toLowerCase();
-  return DANGEROUS_DOWNLOAD_EXTS.has(path.extname(lower));
+const downloadRiskRecords = [];
+let downloadRiskLoaded = false;
+let downloadRiskSaveTimer = null;
+
+function loadDownloadRisks() {
+  if (downloadRiskLoaded) return;
+  downloadRiskLoaded = true;
+  try {
+    const data = JSON.parse(fsSync.readFileSync(downloadRiskStorePath, 'utf8'));
+    const entries = Array.isArray(data && data.records) ? data.records : null;
+    if (!entries) return;
+    for (const r of entries) {
+      if (!r || typeof r !== 'object') continue;
+      if (typeof r.filename !== 'string' || !r.filename) continue;
+      downloadRiskRecords.push({
+        time: Number(r.time) || Date.now(),
+        filename: String(r.filename).slice(0, 255),
+        host: typeof r.host === 'string' ? String(r.host).slice(0, 255) : '',
+        decision: ['allow', 'warn', 'confirm', 'reject'].includes(r.decision) ? r.decision : 'warn',
+        action: ['saved', 'confirmed', 'cancelled', 'rejected'].includes(r.action) ? r.action : 'saved',
+        ext: typeof r.ext === 'string' ? String(r.ext).slice(0, 32) : '',
+        risks: Array.isArray(r.risks) ? r.risks.slice(0, 20).map(x => ({
+          id: typeof x.id === 'string' ? x.id : 'unknown',
+          severity: ['allow', 'warn', 'confirm', 'reject'].includes(x.severity) ? x.severity : 'warn',
+          message: typeof x.message === 'string' ? x.message.slice(0, 300) : '',
+        })) : [],
+      });
+      if (downloadRiskRecords.length >= MAX_DOWNLOAD_RISK_RECORDS) break;
+    }
+  } catch {}
 }
 
-function confirmDangerousDownload(filename, originUrl) {
+function persistDownloadRisks() {
+  if (downloadRiskSaveTimer) clearTimeout(downloadRiskSaveTimer);
+  downloadRiskSaveTimer = setTimeout(() => {
+    try {
+      const tmp = downloadRiskStorePath + '.tmp';
+      fsSync.writeFileSync(tmp, JSON.stringify({ version: 1, records: downloadRiskRecords }), 'utf8');
+      fsSync.renameSync(tmp, downloadRiskStorePath);
+    } catch {}
+  }, 300);
+}
+
+function recordDownloadRisk(entry) {
+  loadDownloadRisks();
+  downloadRiskRecords.push({
+    time: Date.now(),
+    filename: String(entry.filename || '').slice(0, 255),
+    host: String(entry.host || '').slice(0, 255),
+    decision: entry.decision || 'warn',
+    action: entry.action || 'saved',
+    ext: String(entry.ext || '').slice(0, 32),
+    risks: Array.isArray(entry.risks) ? entry.risks.slice(0, 20) : [],
+  });
+  if (downloadRiskRecords.length > MAX_DOWNLOAD_RISK_RECORDS) {
+    downloadRiskRecords.splice(0, downloadRiskRecords.length - MAX_DOWNLOAD_RISK_RECORDS);
+  }
+  persistDownloadRisks();
+}
+
+// listDownloadRisks 返回最近的风险记录（倒序，新的在前），供安全中心只读展示。
+function listDownloadRisks(limit) {
+  loadDownloadRisks();
+  const max = Math.max(1, Math.min(500, Number(limit) || 200));
+  return downloadRiskRecords.slice(-max).reverse().map(r => ({ ...r, risks: r.risks || [] }));
+}
+
+function clearDownloadRisks() {
+  loadDownloadRisks();
+  const n = downloadRiskRecords.length;
+  downloadRiskRecords.length = 0;
+  persistDownloadRisks();
+  return n;
+}
+
+// 兼容旧调用名：现在基于 dloadguard 判断“是否需要用户确认/拒绝”。
+// 返回 dloadguard 的完整分析结果（含原因链），供确认对话框展示。
+function analyzeDownloadSafety(filename, mime) {
+  return dloadGuard.analyzeDownloadName(filename, mime);
+}
+
+// confirmDownloadDecision 针对需要确认的下载弹出原生对话框，列出具体命中原因。
+function confirmDownloadDecision(analysis, originUrl) {
   let host = '';
   try { host = new URL(originUrl).host; } catch { host = originUrl || '未知来源'; }
+  const lines = analysis.risks
+    .filter(r => r.severity === dloadGuard.DECISION.CONFIRM)
+    .map(r => `• ${r.message}`)
+    .slice(0, 6);
+  const detail = [
+    `文件：${analysis.displayName}`,
+    `来源：${host}`,
+    '',
+    ...lines,
+    '',
+    '此文件可能会运行程序、更改系统设置，或经过伪装诱导打开。请仅在确认来源可信时保存。',
+  ].join('\n');
   const choice = dialog.showMessageBoxSync(mainWindow, {
     type: 'warning',
     buttons: ['取消下载', '仍然保存'],
     defaultId: 0,
     cancelId: 0,
-    title: '安全提示：可执行文件',
-    message: `该文件可能会损害您的计算机，是否仍要保存？`,
-    detail: `文件：${filename}\n来源：${host}\n\n此类型文件可以在您的电脑上运行程序或更改设置，请确认来源可信后再保存。`,
+    title: '安全提示：存在风险的下载',
+    message: '该下载可能会损害您的计算机或经过类型伪装，是否仍要保存？',
+    detail,
     noLink: true,
   });
   return choice === 1;
 }
+
 
 function setupDownloadManager() {
   session.defaultSession.on('will-download', (event, item, webContents) => {
@@ -4198,26 +4313,63 @@ function setupDownloadManager() {
       return;
     }
 
-    // 关键修复：不信任服务端给的 filename，先净化
+    // 关键修复：不信任服务端给的 filename，先净化（路径穿越 + RTL/保留名/尾点）。
     const safeFilename = sanitizeDownloadFilename(item.getFilename());
 
-    // 可执行/脚本类文件在自动保存前必须让用户显式确认，阻断静默 drive-by 下载。
-    if (isDangerousDownloadFilename(safeFilename)) {
-      const allow = confirmDangerousDownload(safeFilename, url);
+    // 用 dloadguard 做完整伪装/类型分析，MIME 与文件名交叉比对。
+    let mimeType = '';
+    try { mimeType = typeof item.getMimeType === 'function' ? item.getMimeType() : ''; } catch { mimeType = ''; }
+    const riskAnalysis = analyzeDownloadSafety(item.getFilename(), mimeType);
+    // 净化后名字以分析内核给出的 displayName 为准（二者都已剥目录与不可见字符）。
+    const finalFilename = riskAnalysis.displayName ? sanitizeDownloadFilename(riskAnalysis.displayName) : safeFilename;
+    let dlHost = '';
+    try { dlHost = new URL(url).host; } catch { dlHost = ''; }
+
+    // reject：文件名无法净化成合法名字，直接取消。
+    if (riskAnalysis.decision === dloadGuard.DECISION.REJECT) {
+      try { item.cancel(); } catch {}
+      recordSecurityEvent('download-blocked', 'critical',
+        `拒绝保存文件名非法的下载: ${item.getFilename()}`, originOfContents(webContents));
+      recordDownloadRisk({
+        filename: item.getFilename(), host: dlHost, decision: 'reject', action: 'rejected',
+        ext: riskAnalysis.finalExt, risks: riskAnalysis.risks,
+      });
+      sendToRenderer('show-toast', '下载文件名非法，已取消');
+      return;
+    }
+
+    // confirm：可执行 / 伪装 / MIME 不符必须用户显式确认，阻断静默 drive-by 下载。
+    if (riskAnalysis.decision === dloadGuard.DECISION.CONFIRM) {
+      const allow = confirmDownloadDecision(riskAnalysis, url);
       if (!allow) {
         try { item.cancel(); } catch {}
-        recordSecurityEvent('download-rejected', 'info',
-          `用户取消了危险类型文件下载: ${safeFilename}`, originOfContents(webContents));
-        sendToRenderer('show-toast', `已取消下载可执行文件：${safeFilename}`);
+        recordSecurityEvent('download-rejected', 'warn',
+          `用户取消了存在风险的下载: ${finalFilename}`, originOfContents(webContents));
+        recordDownloadRisk({
+          filename: finalFilename, host: dlHost, decision: 'confirm', action: 'cancelled',
+          ext: riskAnalysis.finalExt, risks: riskAnalysis.risks,
+        });
+        sendToRenderer('show-toast', `已取消存在风险的下载：${finalFilename}`);
         return;
       }
+      recordSecurityEvent('download-confirmed', 'info',
+        `用户确认保存存在风险的下载: ${finalFilename}`, originOfContents(webContents));
+    }
+
+    // warn：容器（内部文件不继承 MOTW）/ 本地 HTML 等，保存并轻提示。
+    if (riskAnalysis.decision === dloadGuard.DECISION.WARN) {
+      recordDownloadRisk({
+        filename: finalFilename, host: dlHost, decision: 'warn',
+        action: riskAnalysis.decision === dloadGuard.DECISION.CONFIRM ? 'confirmed' : 'saved',
+        ext: riskAnalysis.finalExt, risks: riskAnalysis.risks,
+      });
     }
 
     const totalBytes = item.getTotalBytes();
     let downloadInfo = downloads.find(d => d.url === url && d.item === null && d.isItemValid === false);
     if (downloadInfo) {
       downloadInfo.item = item;
-      downloadInfo.filename = safeFilename;
+      downloadInfo.filename = finalFilename;
       downloadInfo.totalBytes = totalBytes;
       downloadInfo.isItemValid = true;
       downloadInfo.status = 'downloading';
@@ -4225,7 +4377,7 @@ function setupDownloadManager() {
       // 全新下载：不再 preventDefault + 新开下载页等用户确认，
       // 直接按现代浏览器行为自动保存到下载目录，由底部 shelf 展示进度。
       downloadInfo = {
-        id: Date.now().toString(), url, filename: safeFilename, totalBytes,
+        id: Date.now().toString(), url, filename: finalFilename, totalBytes,
         receivedBytes: 0, progress: 0, speed: '0 B/s', status: 'downloading',
         startTime: Date.now(), savePath: null, item,
         lastUpdate: Date.now(), lastReceivedBytes: 0, isItemValid: true,
@@ -4237,7 +4389,7 @@ function setupDownloadManager() {
     if (downloadInfo.savePath) {
       item.setSavePath(downloadInfo.savePath);
     } else {
-      const defaultSavePath = resolveUniqueDownloadPath(app.getPath('downloads'), safeFilename);
+      const defaultSavePath = resolveUniqueDownloadPath(app.getPath('downloads'), finalFilename);
       item.setSavePath(defaultSavePath);
       downloadInfo.savePath = defaultSavePath;
     }
