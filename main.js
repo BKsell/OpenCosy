@@ -40,6 +40,11 @@ const printGuard = require('./printguard');
 const zoomGuard = require('./zoomguard');
 const devtoolsGuard = require('./devtoolsguard');
 const preloadGuard = require('./preloadguard');
+const dialogGuard = require('./dialogguard');
+const findGuard = require('./findguard');
+const titleGuard = require('./titleguard');
+const unloadGuard = require('./unloadguard');
+const inpageGuard = require('./inpageguard');
 const { pathToFileURL } = require('url');
 
 // 危险命令行开关 / ELECTRON_EXTRA_LAUNCH_ARGS 注入必须在 ready 之前就拦下：
@@ -157,6 +162,21 @@ let crashRecoveryEnabled = true;
 const crashReloadCounts = new Map();
 // 每个页面 webContents 一条服务端重定向链状态（降级/环路/钓鱼），did-navigate 归零。
 const redirectChainStates = new Map();
+// r31：弹窗轰炸 / 强留页 / 标题图标洪泛 / 同文档导航洪泛，均按 webContents 独立计态。
+const dialogStates = new Map();
+const unloadStates = new Map();
+const titleStates = new Map();
+const inpageStates = new Map();
+
+// getContentsState 读取按需创建的 per-contents 小状态；destroyed 时统一清理。
+function getContentsState(map, id, create) {
+  let st = map.get(id);
+  if (!st) {
+    st = create(Date.now());
+    map.set(id, st);
+  }
+  return st;
+}
 // 本次会话累计拦截数与按域名计数，渲染层用来显示“已拦截 N 个追踪器”。
 let blockedTrackerCount = 0;
 const blockedTrackerByHost = new Map();
@@ -1555,6 +1575,11 @@ const SECURITY_EVENT_TYPES = new Set([
   'zoom-flood',              // ctrl+滚轮缩放事件洪泛，已合并广播并记录
   'devtools-url-blocked',    // DevTools 内危险/外部协议链接转跳被拦截
   'preload-error',           // preload 脚本加载/运行异常（IPC 安全桥可能残缺）
+  'dialog-blocked',          // alert/confirm/prompt 弹窗轰炸 / 同文案递归 / 冷却期被抑制
+  'find-rate-limited',       // 页内查找 IPC 超长/控制字符输入或高频洪泛被限流
+  'title-abuse',             // 标签标题/图标高频翻转、畸形输入或非法图标来源被收敛
+  'unload-bypass',           // beforeunload 强留页轰炸，越限后直接放行离开
+  'inpage-flood',            // pushState/replaceState 同文档导航洪泛 / 畸形 URL 被收敛
   'ipc-denied',
 ]);
 
@@ -3393,10 +3418,21 @@ function setupGlobalWebContentsHooks() {
 
     // 每个页面 contents 独立维护一条服务端重定向链状态（降级/环路/钓鱼判定）。
     const redirectState = redirectGuard.createRedirectState(Date.now());
-    contents.on('destroyed', () => { redirectChainStates.delete(contents.id); });
+    contents.on('destroyed', () => {
+      redirectChainStates.delete(contents.id);
+      dialogStates.delete(contents.id);
+      unloadStates.delete(contents.id);
+      titleStates.delete(contents.id);
+      inpageStates.delete(contents.id);
+    });
     redirectChainStates.set(contents.id, redirectState);
     // 顶层真正落地导航后，重定向链归零，开始统计下一条链。
-    contents.on('did-navigate', () => redirectGuard.resetState(redirectState, Date.now()));
+    contents.on('did-navigate', () => {
+      redirectGuard.resetState(redirectState, Date.now());
+      // 进入新的顶层文档：强留页配额与同文档导航洪泛计数都按页面生命周期重置。
+      unloadGuard.resetForNavigation(unloadStates.get(contents.id));
+      inpageGuard.resetForNavigation(inpageStates.get(contents.id));
+    });
 
     // handleRedirect 在 navguard 的来源矩阵之前先做“重定向专项”判定，返回 true
     // 表示已拦截（调用方应 preventDefault）。
@@ -3647,8 +3683,35 @@ function setupGlobalWebContentsHooks() {
       sendToRenderer('renderer-responsive', { tabId: contents.id });
     });
 
-    // 页面调 window.close() 之前触发的 beforeunload，弹原生确认
+    // JS 模态框（alert/confirm/prompt）轰炸收口：滑动窗口配额 + 同文案去抖 + 冷却。
+    // beforeunload 类型不在这里处理，交给下方 will-prevent-unload 的 unloadguard。
+    contents.on('dialog', (event, type, url, text) => {
+      if (dialogGuard.isBeforeUnload(type)) return;
+      const st = getContentsState(dialogStates, contents.id, dialogGuard.createDialogState);
+      const v = dialogGuard.decideDialog(
+        st,
+        { type, message: text, originUrl: url || originOfContents(contents) },
+        Date.now()
+      );
+      if (v.decision === dialogGuard.DIALOG_SUPPRESS) {
+        event.preventDefault();
+        const severity = v.reason === dialogGuard.SUPPRESS_DUPLICATE ? 'info' : 'warn';
+        recordSecurityEvent('dialog-blocked', severity,
+          dialogGuard.describeDialogReason(v.reason), v.origin || originOfContents(contents));
+      }
+    });
+
+    // 页面调 window.close() 之前触发的 beforeunload。unloadguard 给真实“未保存修改”
+    // 保留每页面几次确认额度；恶意页反复强留则越限后直接放行关闭/导航（不再弹模态）。
     contents.on('will-prevent-unload', (event) => {
+      const st = getContentsState(unloadStates, contents.id, unloadGuard.createUnloadState);
+      const v = unloadGuard.decideUnload(st, Date.now());
+      if (v.decision === unloadGuard.UNLOAD_LEAVE) {
+        // 不调用 preventDefault：尊重用户的关闭/导航意图，页面照常卸载。
+        recordSecurityEvent('unload-bypass', 'warn',
+          unloadGuard.describeUnloadReason(v.reason), originOfContents(contents));
+        return;
+      }
       event.preventDefault();
       const choice = dialog.showMessageBoxSync(mainWindow, {
         type: 'question',
@@ -4379,7 +4442,25 @@ function loadTabContent(tab) {
     });
 
     tab.view.webContents.on('did-navigate', () => { pushNavState(tab); applySavedZoom(tab); });
-    tab.view.webContents.on('did-navigate-in-page', () => { pushNavState(tab); applySavedZoom(tab); });
+    tab.view.webContents.on('did-navigate-in-page', (inEvent, inPageUrl) => {
+      // pushState/replaceState 洪泛与畸形 URL 收口：拒绝 / 冷却 / 重复地址时不压历史、
+      // 不更新地址栏，避免历史劫持与广播风暴；主导航 did-navigate 会清零配额。
+      const st = getContentsState(inpageStates, tab.view.webContents.id, inpageGuard.createInPageState);
+      const v = inpageGuard.decideInPageNav(st, inPageUrl || tab.url, Date.now());
+      if (v.decision === inpageGuard.INPAGE_REJECT) {
+        recordSecurityEvent('inpage-flood', 'warn',
+          inpageGuard.describeInPageReason(v.reason), tab.url);
+        return;
+      }
+      if (v.decision === inpageGuard.INPAGE_HOLD && v.reason === inpageGuard.HOLD_BURST) {
+        recordSecurityEvent('inpage-flood', 'warn',
+          inpageGuard.describeInPageReason(v.reason), tab.url);
+        return;
+      }
+      if (v.decision === inpageGuard.INPAGE_HOLD) return; // 重复地址/冷却：静默合并
+      pushNavState(tab);
+      applySavedZoom(tab);
+    });
     tab.view.webContents.on('dom-ready', () => applySavedZoom(tab));
 
     tab.view.webContents.on('did-redirect-navigation', (event, url) => {
@@ -4388,10 +4469,20 @@ function loadTabContent(tab) {
       sendToRenderer('tab-updated', { id: tab.id, url });
     });
 
-    tab.view.webContents.on('page-title-updated', (event, title) => {
+    tab.view.webContents.on('page-title-updated', (event, rawTitle) => {
+      // 标题由页面完全控制：净化控制字符 / 折叠空白 / 代码点安全截断，并对高频翻转与
+      // 极短重复上报做收敛，防止伪加载闪烁、标题注入以及 addToHistory+IPC 广播风暴。
+      const tst = getContentsState(titleStates, tab.view.webContents.id, titleGuard.createTitleState);
+      const tv = titleGuard.decideTitleUpdate(tst, rawTitle, Date.now());
+      if (tv.decision === titleGuard.TITLE_HOLD) return;
+      const title = tv.title;
       tab.title = title;
       addToHistory(tab.url, title);
       sendToRenderer('tab-updated', { id: tab.id, title });
+      if (tv.sanitized) {
+        recordSecurityEvent('title-abuse', 'info',
+          titleGuard.describeTitleReason(titleGuard.TITLE_SANITIZED), tab.url);
+      }
     });
 
     tab.view.webContents.on('did-start-loading', () => {
@@ -4437,18 +4528,18 @@ function loadTabContent(tab) {
     });
 
     tab.view.webContents.on('page-favicon-updated', (event, favicons) => {
-      if (favicons.length > 0) {
-        let faviconUrl = favicons[0];
-        if (faviconUrl.startsWith('/')) {
-          try {
-            const url = new URL(tab.url);
-            faviconUrl = url.origin + faviconUrl;
-          } catch { return; }
-        }
-        if (faviconUrl.startsWith('data:') || faviconUrl.startsWith('http')) {
-          tab.favicon = faviconUrl;
-          sendToRenderer('tab-updated', { id: tab.id, favicon: tab.favicon });
-        }
+      // 图标数组同样来自页面：限制数量与单个长度、只放行 http(s)/data，防止喂入超大
+      // data: URL 或 file:/blob:/javascript: 来源；取净化后的第一个作为标签图标。
+      const { favicons: safe, dropped } = titleGuard.sanitizeFavicons(favicons);
+      if (dropped > 0) {
+        recordSecurityEvent('title-abuse', 'info',
+          `网站图标包含 ${dropped} 个非法或超长条目，已过滤`, tab.url);
+      }
+      if (safe.length === 0) return;
+      const faviconUrl = titleGuard.resolveFaviconHref(safe[0], tab.url);
+      if (faviconUrl && titleGuard.isAllowedFaviconScheme(faviconUrl)) {
+        tab.favicon = faviconUrl;
+        sendToRenderer('tab-updated', { id: tab.id, favicon: tab.favicon });
       }
     });
 
@@ -5665,6 +5756,8 @@ ipcMain.on('close-current-tab', (event) => {
 // 页内查找当前状态。查找栏输入会实时更新这里，供 F3 / Ctrl+G 继续查找、
 // 以及切换标签后在新标签上自动重查使用。
 let findState = { text: '', matchCase: false, wholeWord: false };
+// 页内查找 IPC 的输入 / 频率守卫状态（查找栏全局唯一，用单实例即可）。
+let findRateState = findGuard.createFindState(Date.now());
 
 // applyFind 在当前活动标签上按 findState 执行一次查找。
 function applyFind(forward = true) {
@@ -5680,16 +5773,35 @@ function applyFind(forward = true) {
 ipcMain.on('find-in-page', (event, payload) => {
   if (!isMainSender(event)) return;
   const { text, forward, matchCase, wholeWord } = payload || {};
-  if (typeof text !== 'string') return;
-  // 选项变化（区分大小写 / 整词）时重新开始查找，而不是沿用上一次的匹配位置。
-  const optionsChanged = findState.matchCase !== !!matchCase || findState.wholeWord !== !!wholeWord;
-  findState = { text, matchCase: !!matchCase, wholeWord: !!wholeWord };
+  // 输入与频率全部过 findguard：拒非字符串 / 超长 / 控制字符，合并极短重复提交，
+  // 按键洪泛时进入短暂冷却，避免超长 query 匹配与 found-in-page 广播拖慢渲染进程。
+  const v = findGuard.decideFind(
+    findRateState,
+    { text, matchCase: !!matchCase, wholeWord: !!wholeWord },
+    Date.now()
+  );
+  if (v.decision === findGuard.FIND_REJECT) {
+    const severity = (v.reason === findGuard.HOLD_BURST || v.reason === findGuard.HOLD_COOLDOWN)
+      ? 'info' : 'warn';
+    recordSecurityEvent('find-rate-limited', severity, findGuard.describeFindReason(v.reason), '');
+    return;
+  }
   const wc = getCurrentTabWebContents();
-  if (!wc || !text) return;
-  wc.findInPage(text, {
+  if (v.decision === findGuard.FIND_SKIP_EMPTY) {
+    findState = { text: '', matchCase: !!matchCase, wholeWord: !!wholeWord };
+    if (wc) wc.stopFindInPage('clearSelection');
+    return;
+  }
+  if (v.decision === findGuard.FIND_COALESCE) return;
+
+  // 选项变化（区分大小写 / 整词）时重新开始查找，而不是沿用上一次的匹配位置。
+  const optionsChanged = findState.matchCase !== v.matchCase || findState.wholeWord !== v.wholeWord;
+  findState = { text: v.text, matchCase: v.matchCase, wholeWord: v.wholeWord };
+  if (!wc) return;
+  wc.findInPage(v.text, {
     forward: forward !== false,
-    matchCase: !!matchCase,
-    wholeWord: !!wholeWord,
+    matchCase: v.matchCase,
+    wholeWord: v.wholeWord,
     ...(optionsChanged ? { findNext: false } : {}),
   });
 });
@@ -5697,6 +5809,8 @@ ipcMain.on('find-in-page', (event, payload) => {
 ipcMain.on('stop-find', (event) => {
   if (!isMainSender(event)) return;
   findState.text = '';
+  // 结束查找时同时清掉去重指纹，允许用户重新打开查找栏查找同一个词。
+  findGuard.resetFind(findRateState);
   const wc = getCurrentTabWebContents();
   if (wc) wc.stopFindInPage('clearSelection');
 });
