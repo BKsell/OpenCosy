@@ -45,6 +45,14 @@ const findGuard = require('./findguard');
 const titleGuard = require('./titleguard');
 const unloadGuard = require('./unloadguard');
 const inpageGuard = require('./inpageguard');
+// r32：控制台 / 悬停状态栏 / 主题色 / 媒体状态 / 插件崩溃 / 光标 / 历史条目事件收口内核。
+const consoleGuard = require('./consoleguard');
+const hoverGuard = require('./hoverguard');
+const themeGuard = require('./themeguard');
+const mediaGuard = require('./mediaguard');
+const crashGuard = require('./crashguard');
+const cursorGuard = require('./cursorguard');
+const entryGuard = require('./entryguard');
 const { pathToFileURL } = require('url');
 
 // 危险命令行开关 / ELECTRON_EXTRA_LAUNCH_ARGS 注入必须在 ready 之前就拦下：
@@ -167,6 +175,14 @@ const dialogStates = new Map();
 const unloadStates = new Map();
 const titleStates = new Map();
 const inpageStates = new Map();
+// r32：各新增 webContents 事件通道的 per-contents 状态，did-navigate 归零、destroyed 清理。
+const consoleStates = new Map();
+const hoverStates = new Map();
+const themeStates = new Map();
+const mediaStates = new Map();
+const crashStates = new Map();
+const cursorStates = new Map();
+const entryStates = new Map();
 
 // getContentsState 读取按需创建的 per-contents 小状态；destroyed 时统一清理。
 function getContentsState(map, id, create) {
@@ -1580,6 +1596,13 @@ const SECURITY_EVENT_TYPES = new Set([
   'title-abuse',             // 标签标题/图标高频翻转、畸形输入或非法图标来源被收敛
   'unload-bypass',           // beforeunload 强留页轰炸，越限后直接放行离开
   'inpage-flood',            // pushState/replaceState 同文档导航洪泛 / 畸形 URL 被收敛
+  'console-flood',           // console-message 控制字符/超长或高频洪泛被收敛
+  'hover-flood',             // update-target-url 状态栏伪造/换行注入或洪泛被收敛
+  'theme-abuse',             // theme-color 非法配色/高频闪烁（伪装顶栏）被锁定
+  'media-flood',             // 媒体 play/pause 自动播放风暴/媒体键抖动被冻结指示
+  'plugin-crash',            // 插件崩溃字段非法或崩溃循环提示被折叠/丢弃
+  'cursor-abuse',            // cursor-changed 未知类型/超大位图/高频抖动回落默认光标
+  'entry-flood',             // navigation-entry-committed 脏地址/历史条目洪泛被收敛
   'ipc-denied',
 ]);
 
@@ -3424,6 +3447,13 @@ function setupGlobalWebContentsHooks() {
       unloadStates.delete(contents.id);
       titleStates.delete(contents.id);
       inpageStates.delete(contents.id);
+      consoleStates.delete(contents.id);
+      hoverStates.delete(contents.id);
+      themeStates.delete(contents.id);
+      mediaStates.delete(contents.id);
+      crashStates.delete(contents.id);
+      cursorStates.delete(contents.id);
+      entryStates.delete(contents.id);
     });
     redirectChainStates.set(contents.id, redirectState);
     // 顶层真正落地导航后，重定向链归零，开始统计下一条链。
@@ -3432,6 +3462,14 @@ function setupGlobalWebContentsHooks() {
       // 进入新的顶层文档：强留页配额与同文档导航洪泛计数都按页面生命周期重置。
       unloadGuard.resetForNavigation(unloadStates.get(contents.id));
       inpageGuard.resetForNavigation(inpageStates.get(contents.id));
+      // r32：各事件通道的洪泛/冷却配额随主导航重置（插件崩溃计数同样随文档生命周期清空）。
+      consoleGuard.resetForNavigation(consoleStates.get(contents.id));
+      hoverGuard.resetForNavigation(hoverStates.get(contents.id));
+      themeGuard.resetForNavigation(themeStates.get(contents.id));
+      mediaGuard.resetForNavigation(mediaStates.get(contents.id));
+      crashGuard.resetForNavigation(crashStates.get(contents.id));
+      cursorGuard.resetForNavigation(cursorStates.get(contents.id));
+      entryGuard.resetForNavigation(entryStates.get(contents.id));
     });
 
     // handleRedirect 在 navguard 的来源矩阵之前先做“重定向专项”判定，返回 true
@@ -3833,6 +3871,113 @@ function setupGlobalWebContentsHooks() {
       if (v.decision === preloadGuard.DECISION_REPORT) {
         recordSecurityEvent('preload-error', v.severity,
           preloadGuard.describePreloadError(v), v.origin || originOfContents(contents));
+      }
+    });
+
+    // ===== r32：控制台 / 悬停状态栏 / 主题色 / 媒体 / 插件崩溃 / 光标 / 历史条目收口 =====
+    // 说明：这些通道此前完全没有接线，页面可借其注入脏文本或打爆事件流。下列内核均为
+    // per-contents 纯函数裁决；为避免“限流处理器自己刷爆安全日志”，只在“洪泛阈值首次
+    // 越线”或“崩溃需要提示”这两个有界时刻 recordSecurityEvent，冷却期内的重复丢弃不记。
+
+    // console-message：净化换行/ANSI/零宽与超长行，突发/长窗口越限后冷却丢弃。
+    contents.on('console-message', (event, level, message, line, sourceId) => {
+      const st = getContentsState(consoleStates, contents.id, consoleGuard.createConsoleState);
+      const v = consoleGuard.decideConsole(
+        st, { level, message, line, sourceId }, Date.now());
+      if (v.action === consoleGuard.CONSOLE_DROP && v.reason === consoleGuard.CS_FLOOD) {
+        recordSecurityEvent('console-flood', 'info',
+          consoleGuard.describeConsoleReason(v.reason), originOfContents(contents));
+      }
+    });
+
+    // update-target-url：悬停链接状态栏预告。只在裁决 show 时把净化后的 URL 推给渲染层
+    // 显示；洪泛首次越线时清空状态栏（不残留伪造地址）并留痕，冷却期重复丢弃不再记。
+    contents.on('update-target-url', (event, url) => {
+      const st = getContentsState(hoverStates, contents.id, hoverGuard.createHoverState);
+      const v = hoverGuard.decideHoverUrl(st, url, Date.now());
+      if (v.action === hoverGuard.HOVER_SHOW) {
+        try { sendToRenderer('target-url-changed', { url: v.url }); } catch {}
+      } else if (v.action === hoverGuard.HOVER_DROP && v.reason === hoverGuard.DROP_FLOOD) {
+        try { sendToRenderer('target-url-changed', { url: '' }); } catch {}
+        recordSecurityEvent('hover-flood', 'warn',
+          hoverGuard.describeHoverReason(v.reason), originOfContents(contents));
+      }
+    });
+
+    // did-change-theme-color：只接受白名单颜色，高频闪烁（伪装浏览器顶栏）越限后锁定。
+    contents.on('did-change-theme-color', (event, color) => {
+      const st = getContentsState(themeStates, contents.id, themeGuard.createThemeState);
+      const v = themeGuard.decideThemeColor(st, color, Date.now());
+      if (v.action === themeGuard.THEME_DROP && v.reason === themeGuard.DROP_FLOOD) {
+        recordSecurityEvent('theme-abuse', 'warn',
+          themeGuard.describeThemeReason(v.reason), originOfContents(contents));
+      }
+    });
+
+    // media-started-playing / media-paused：自动播放风暴/媒体键抖动收敛，维护真实播放态。
+    contents.on('media-started-playing', () => {
+      const st = getContentsState(mediaStates, contents.id, mediaGuard.createMediaState);
+      const v = mediaGuard.decideMediaEvent(st, mediaGuard.MEDIA_STARTED, Date.now());
+      if (v.action === mediaGuard.MEDIA_DROP && v.reason === mediaGuard.DROP_FLOOD) {
+        recordSecurityEvent('media-flood', 'warn',
+          mediaGuard.describeMediaReason(v.reason), originOfContents(contents));
+      }
+    });
+    contents.on('media-paused', () => {
+      const st = getContentsState(mediaStates, contents.id, mediaGuard.createMediaState);
+      const v = mediaGuard.decideMediaEvent(st, mediaGuard.MEDIA_PAUSED, Date.now());
+      if (v.action === mediaGuard.MEDIA_DROP && v.reason === mediaGuard.DROP_FLOOD) {
+        recordSecurityEvent('media-flood', 'warn',
+          mediaGuard.describeMediaReason(v.reason), originOfContents(contents));
+      }
+    });
+
+    // plugin-crashed：净化插件名/版本（防日志注入），同一插件 30s 内的崩溃循环折叠为
+    // 一次提示，折叠达上限强制汇总，计数天然有界，不会逐次弹窗/逐行刷日志。
+    contents.on('plugin-crashed', (event, name, version) => {
+      const st = getContentsState(crashStates, contents.id, crashGuard.createCrashState);
+      const v = crashGuard.decidePluginCrash(st, name, version, Date.now());
+      if (v.action === crashGuard.CRASH_NOTIFY) {
+        const extra = v.suppressedSinceLastNotify > 0
+          ? `（已折叠此前 ${v.suppressedSinceLastNotify} 次重复崩溃）`
+          : '';
+        recordSecurityEvent('plugin-crash', 'warn',
+          `插件 ${v.name} ${v.version} 崩溃${extra}`, originOfContents(contents));
+      }
+    });
+
+    // cursor-changed：类型白名单 + 自定义光标位图边长/字节/缩放校验 + 抖动洪泛冷却；
+    // 任何非法/越限都回落 default 光标，避免超大位图 IPC 与高频切换 DoS。
+    contents.on('cursor-changed', (event, type, image, scale) => {
+      const st = getContentsState(cursorStates, contents.id, cursorGuard.createCursorState);
+      let imageInfo = null;
+      if (type === 'custom' && image && typeof image.getSize === 'function') {
+        try {
+          const size = image.getSize();
+          let bytes = 0;
+          try { const bmp = image.getBitmap(); bytes = Buffer.isBuffer(bmp) ? bmp.length : 0; } catch {}
+          imageInfo = { width: size && size.width, height: size && size.height, bytes };
+        } catch {
+          imageInfo = null;
+        }
+      }
+      const v = cursorGuard.decideCursorChange(st, type, imageInfo, scale, Date.now());
+      // 非法类型/位图/缩放或抖动越限统一回落 default：Electron 不暴露逐事件设置光标的
+      // 稳定 API，这里通过有界裁决丢弃异常事件流，仅在首次越线时留痕，避免处理器自身刷日志。
+      if (v.action === cursorGuard.CURSOR_DROP && v.reason === cursorGuard.DROP_FLOOD) {
+        recordSecurityEvent('cursor-abuse', 'warn',
+          cursorGuard.describeCursorReason(v.reason), originOfContents(contents));
+      }
+    });
+
+    // navigation-entry-committed：地址栏据此显示最终 URL，先净化脏文本，再对历史条目
+    // 提交频率（pushState 历史劫持/洪泛）做滑动窗口裁决，越限冷却并冻结地址栏刷新。
+    contents.on('navigation-entry-committed', (event, url) => {
+      const st = getContentsState(entryStates, contents.id, entryGuard.createEntryState);
+      const v = entryGuard.decideNavigationEntry(st, url, Date.now());
+      if (v.action === entryGuard.ENTRY_DROP && v.reason === entryGuard.DROP_FLOOD) {
+        recordSecurityEvent('entry-flood', 'warn',
+          entryGuard.describeEntryReason(v.reason), originOfContents(contents));
       }
     });
   });
