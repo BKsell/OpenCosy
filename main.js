@@ -30,7 +30,48 @@ const shellGuard = require('./shellguard');
 const deeplinkGuard = require('./deeplinkguard');
 const ipcGuard = require('./ipcguard');
 const channelPolicy = require('./channelpolicy');
+const displayGuard = require('./displayguard');
+const redirectGuard = require('./redirectguard');
+const switchGuard = require('./switchguard');
+const devicerGuard = require('./devicerguard');
+const cosyScheme = require('./cosyscheme');
 const { pathToFileURL } = require('url');
+
+// 危险命令行开关 / ELECTRON_EXTRA_LAUNCH_ARGS 注入必须在 ready 之前就拦下：
+// --disable-web-security / --remote-debugging-port / --proxy-server / --no-sandbox 等
+// 在进程启动极早期就击穿安全模型，上层权限/网络防线全部不生效。这里只读 process.argv
+// 快照与环境变量（app.commandLine.appendSwitch 自身追加的安全开关不会进 process.argv）。
+const launchSwitchAudit = switchGuard.auditSwitches(switchGuard.collectSources(process));
+if (launchSwitchAudit.hasCritical) {
+  for (const f of launchSwitchAudit.findings) {
+    if (f.severity === switchGuard.SEVERITY_CRITICAL) {
+      // 安全事件存储此刻可能尚未初始化，先走 stderr，再在错误框里呈现。
+      console.error(`[switchguard] 拒绝启动：危险开关 ${f.flag.raw}（来源 ${f.flag.source}）：${f.reason}`);
+    }
+  }
+  const criticalText = launchSwitchAudit.criticalFlags
+    .map(f => `${f.raw}${f.source === 'env:ELECTRON_EXTRA_LAUNCH_ARGS' ? '（环境变量注入）' : ''}`)
+    .join('\n');
+  // showErrorBox 可在 ready 前使用；给出原因后立即退出，阻止带毒浏览器继续运行。
+  try {
+    dialog.showErrorBox('检测到危险启动参数，OpenCosy 已拒绝启动',
+      `以下命令行开关会关闭浏览器安全防护，请检查快捷方式/启动器/环境变量后重试：\n\n${criticalText}`);
+  } catch {}
+  app.exit(78);
+}
+// 非致命的降硬开关（disable-popup-blocking / enable-logging 等）不阻断启动，ready 前
+// 事件存储未就绪，先写 stderr，待安全系统可用后由 ready 回调补登一条聚合记录。
+for (const f of launchSwitchAudit.warnFlags) {
+  console.warn(`[switchguard] 降硬开关 ${f.flag.raw}（来源 ${f.flag.source}）：${f.reason}`);
+}
+
+// 必须在 app ready 之前把 cosy: 登记为 standard + secure 特权协议，否则内置页（设置/安全/
+// 权限/下载）会被当成非标准、非安全上下文，host/同源/CSP 解析都不一致。bypassCSP 不开。
+try {
+  protocol.registerSchemesAsPrivileged(cosyScheme.privilegedSchemeOptions());
+} catch (e) {
+  console.error('[cosyscheme] registerSchemesAsPrivileged 失败:', e);
+}
 
 // 现代浏览器默认要求“用户与页面有过交互”才允许带声音自动播放，
 // 否则广告页一打开就能外放声音。必须在 app ready 之前设置。
@@ -109,6 +150,8 @@ let dohActive = false; // 运行时实际是否成功启用了宿主解析器控
 let crashRecoveryEnabled = true;
 // 每个 webContents 的崩溃次数，用于阻止“崩溃→重载→又崩溃”的无限循环。
 const crashReloadCounts = new Map();
+// 每个页面 webContents 一条服务端重定向链状态（降级/环路/钓鱼），did-navigate 归零。
+const redirectChainStates = new Map();
 // 本次会话累计拦截数与按域名计数，渲染层用来显示“已拦截 N 个追踪器”。
 let blockedTrackerCount = 0;
 const blockedTrackerByHost = new Map();
@@ -1480,6 +1523,14 @@ const SECURITY_EVENT_TYPES = new Set([
   'download-rejected',       // 用户在危险文件确认框中取消
   'permission-blocked',      // 未在白名单内的浏览器权限请求被拒绝
   'device-permission-blocked', // HID/串口/USB/蓝牙等设备选择被拒绝
+  'display-capture-blocked', // getDisplayMedia 屏幕/窗口/系统音频共享被拒绝
+  'bluetooth-blocked',       // select-bluetooth-device 自动选择被显式取消
+  'serial-blocked',          // select-serial-port 自动选择被显式取消
+  'hid-blocked',             // select-hid-device 自动选择被显式取消
+  'usb-blocked',             // select-usb-device 自动选择被显式取消
+  'file-remote-blocked',     // file: 协议指向远程/UNC host 被拒绝
+  'launch-switch-warn',      // 命令行/环境变量出现降硬（非致命）开关
+  'redirect-blocked',        // 服务端重定向降级/环路/钓鱼/危险协议被拦截
   'extension-blocked',       // 扩展请求危险权限 / 校验未过
   'mixed-content-blocked',   // HTTPS 页面主动混合内容（HTTP 脚本/XHR 等）被阻止
   'auth-blocked',            // 子框架/未知方案 401/407 凭据探测被静默取消
@@ -3088,6 +3139,20 @@ function setupPermissionHandlers() {
     });
   }
 
+  // 屏幕共享（getDisplayMedia）走独立回调，setPermissionRequestHandler 不覆盖它。
+  // 不设置时嵌入式视图在各 Electron 版本行为不一致，存在静默录屏风险；这里显式
+  // 一律拒绝（即便内部 cosy: 页面也不放行），并按画面/仅音频/畸形分类留痕。
+  if (displayGuard.isDisplayMediaHandlerAvailable(session.defaultSession)) {
+    session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+      const decision = displayGuard.decideDisplayMedia(request);
+      const mediaText = decision.mediaTypes.join(',') || 'unknown';
+      recordSecurityEvent('display-capture-blocked', 'warn',
+        `网站请求屏幕共享已拒绝（${decision.reason}；${mediaText}）`, decision.origin);
+      // callback 必须回一个 video：undefined 才表示拒绝；不回会导致 Promise 悬挂。
+      try { callback({ video: undefined, audio: undefined }); } catch {}
+    });
+  }
+
   // 渲染层询问条回传决策；找不到对应请求时忽略。
   // payload.remember=true 表示用户勾了"始终…"，按 origin+permission 持久化。
   ipcMain.handle('permission-response', (event, payload = {}) => {
@@ -3315,6 +3380,31 @@ function setupGlobalWebContentsHooks() {
     // 主窗口 UI 自己管 navigation，跳过；只给页面 tab 兜底
     if (contents === mainWindow?.webContents) return;
 
+    // 每个页面 contents 独立维护一条服务端重定向链状态（降级/环路/钓鱼判定）。
+    const redirectState = redirectGuard.createRedirectState(Date.now());
+    contents.on('destroyed', () => { redirectChainStates.delete(contents.id); });
+    redirectChainStates.set(contents.id, redirectState);
+    // 顶层真正落地导航后，重定向链归零，开始统计下一条链。
+    contents.on('did-navigate', () => redirectGuard.resetState(redirectState, Date.now()));
+
+    // handleRedirect 在 navguard 的来源矩阵之前先做“重定向专项”判定，返回 true
+    // 表示已拦截（调用方应 preventDefault）。
+    const handleRedirect = (fromUrl, toUrl) => {
+      let currentUrl = fromUrl || '';
+      if (!currentUrl) {
+        try { currentUrl = contents.getURL(); } catch {}
+      }
+      const verdict = redirectGuard.decideRedirect(
+        redirectState, { fromUrl: currentUrl, toUrl }, Date.now());
+      if (verdict.action === redirectGuard.REDIRECT_BLOCK) {
+        recordSecurityEvent('redirect-blocked', 'warn',
+          `危险重定向已拦截（${verdict.reasons.map(redirectGuard.describeReason).join('；')}）: ${toUrl}`,
+          originOfContents(contents));
+        return true;
+      }
+      return false;
+    };
+
     contents.setWindowOpenHandler(({ url }) => {
       // 兜底窗口：外部协议走确认流，不允许直接 openExternal。
       const extScheme = normalizeExternalScheme(url);
@@ -3337,11 +3427,58 @@ function setupGlobalWebContentsHooks() {
       return { action: 'deny' };
     });
 
+    // navigator.bluetooth.requestDevice 的设备选择事件。无人监听时部分平台会
+    // 自动选中枚举到的第一个蓝牙设备继续配对，等于把本机蓝牙设备暴露给网页；
+    // 这里显式 callback('') 取消选择并留痕。
+    contents.on('select-bluetooth-device', (btEvent, btDevices, btCallback) => {
+      try { btEvent.preventDefault(); } catch {}
+      const verdict = displayGuard.decideBluetoothSelection({
+        url: (() => { try { return contents.getURL(); } catch { return ''; } })(),
+        devices: btDevices,
+      });
+      recordSecurityEvent('bluetooth-blocked', 'warn',
+        `网站请求蓝牙设备已取消（枚举 ${verdict.deviceCount} 台）`, verdict.origin);
+      try { btCallback(''); } catch {}
+    });
+
+    // 串口 / HID / USB 的“设备选择”回调与蓝牙同理：不监听时部分平台会自动选中枚举到
+    // 的第一个设备。网页没有理由独占本机串口/HID/USB（U 盾、键盘、烧录器等），统一
+    // 显式取消选择（callback('')），绝不依赖默认行为。
+    const contentsOriginUrl = () => {
+      try { return contents.getURL(); } catch { return ''; }
+    };
+    contents.on('select-serial-port', (seEvent, portList, _seWc, seCallback) => {
+      try { seEvent.preventDefault(); } catch {}
+      const v = devicerGuard.decideDeviceChooser({
+        kind: devicerGuard.KIND_SERIAL, originUrl: contentsOriginUrl(), portList,
+      });
+      recordSecurityEvent('serial-blocked', 'warn',
+        `网站请求${devicerGuard.describeKind(v.kind)}设备已取消（枚举 ${v.deviceCount} 台）`, v.origin);
+      try { seCallback(''); } catch {}
+    });
+    contents.on('select-hid-device', (hidEvent, hidDetails, hidCallback) => {
+      try { hidEvent.preventDefault(); } catch {}
+      const v = devicerGuard.decideDeviceChooser({
+        kind: devicerGuard.KIND_HID, originUrl: contentsOriginUrl(), details: hidDetails,
+      });
+      recordSecurityEvent('hid-blocked', 'warn',
+        `网站请求${devicerGuard.describeKind(v.kind)}设备已取消（枚举 ${v.deviceCount} 台）`, v.origin);
+      try { hidCallback(''); } catch {}
+    });
+    contents.on('select-usb-device', (usbEvent, usbDetails, usbCallback) => {
+      try { usbEvent.preventDefault(); } catch {}
+      const v = devicerGuard.decideDeviceChooser({
+        kind: devicerGuard.KIND_USB, originUrl: contentsOriginUrl(), details: usbDetails,
+      });
+      recordSecurityEvent('usb-blocked', 'warn',
+        `网站请求${devicerGuard.describeKind(v.kind)}设备已取消（枚举 ${v.deviceCount} 台）`, v.origin);
+      try { usbCallback(''); } catch {}
+    });
+
     // 本浏览器用 WebContentsView 承载页面，从不使用 <webview> 标签。
     // 若有页面尝试 attach webview，一律阻止：webview 默认能携带自己的
     // webPreferences（nodeIntegration/disablewebsecurity），是常见提权通道。
-    contents.on('will-attach-webview', (attachEvent, webPreferences, params) => {
-      // 完整的 webview 挂载审计：src 仅允许远程 http(s)，guest 自带 preload /
+    contents.on('will-attach-webview', (attachEvent, webPreferences, params) => {      // 完整的 webview 挂载审计：src 仅允许远程 http(s)，guest 自带 preload /
       // Node 集成 / 关闭安全开关 / 挂载主会话分区等一律收口（见 webviewharden.js）。
       const verdict = webviewHarden.review(webPreferences, params);
       if (verdict.reasons.length) {
@@ -3413,7 +3550,12 @@ function setupGlobalWebContentsHooks() {
     // 服务端 302 也可能把框架重定向到外部协议（下载站常见手法）。
     // will-redirect 覆盖主框架；will-frame-redirect 覆盖子框架（旧 Electron
     // 没有该事件时监听器静默不生效，主框架面仍被兜住）。
-    contents.on('will-redirect', (redirectEvent, url) => {
+    // 先走重定向专项守卫（降级/环路/钓鱼/危险 scheme），再走 navguard 来源矩阵。
+    contents.on('will-redirect', (redirectEvent, url, isRedirect) => {
+      if (handleRedirect('', url)) {
+        redirectEvent.preventDefault();
+        return;
+      }
       if (handleFrameNavigationAttempt(contents, url, true)) {
         redirectEvent.preventDefault();
       }
@@ -3421,6 +3563,10 @@ function setupGlobalWebContentsHooks() {
 
     contents.on('will-frame-redirect', (redirectEvent, url, isMainFrame) => {
       if (isMainFrame) return;
+      if (handleRedirect('', url)) {
+        redirectEvent.preventDefault();
+        return;
+      }
       if (handleFrameNavigationAttempt(contents, url, false)) {
         redirectEvent.preventDefault();
       }
@@ -4780,22 +4926,9 @@ app.whenReady().then(async () => {
 
   protocol.registerFileProtocol('cosy', (request, callback) => {
     try {
-      const urlObj = new URL(request.url);
-      const hostname = urlObj.hostname;
-      const pageMap = {
-        'setting': path.join(__dirname, 'src', 'settings.html'),
-        'newtab': path.join(__dirname, 'src', 'newtab.html'),
-        'extensions': path.join(__dirname, 'src', 'extensions.html'),
-        'version': path.join(__dirname, 'src', 'version.html'),
-        'sitedata': path.join(__dirname, 'src', 'sitedata.html'),
-        'permissions': path.join(__dirname, 'src', 'permissions.html'),
-        'security': path.join(__dirname, 'src', 'security.html'),
-        'hashes': path.join(__dirname, 'src', 'hashes.html'),
-        'download': path.join(__dirname, 'src', 'download', 'index.html'),
-        'downloadlist': path.join(__dirname, 'src', 'downloadlist.html')
-      };
-      const filePath = pageMap[hostname] || path.join(__dirname, 'src', 'newtab.html');
-      callback({ path: filePath });
+      // host 白名单映射，path/query 一律不参与文件选择，杜绝 cosy: 路径穿越。
+      const r = cosyScheme.resolveCosyFilePath(request.url, path.join(__dirname, 'src'));
+      callback({ path: r.absolutePath });
     } catch (e) {
       console.error('注册cosy协议失败:', e);
       callback({ path: path.join(__dirname, 'src', 'newtab.html') });
@@ -4804,11 +4937,16 @@ app.whenReady().then(async () => {
 
   protocol.registerFileProtocol('file', (request, callback) => {
     try {
-      const requestedPath = decodeURIComponent(request.url.substr(7));
-      const resolvedPath = path.resolve(requestedPath);
-      if (getSafeDirs().some(dir => isPathInDir(resolvedPath, dir))) {
-        callback({ path: resolvedPath });
+      // 用 WHATWG URL + fileURLToPath 归一，拒绝 file://server/share 远程/UNC host，
+      // 并把可读路径严格收敛进 getSafeDirs() 允许目录。
+      const verdict = cosyScheme.resolveAllowedFileUrl(request.url, getSafeDirs());
+      if (verdict.ok) {
+        callback({ path: verdict.path });
       } else {
+        if (verdict.reason === 'remote-host') {
+          recordSecurityEvent('file-remote-blocked', 'warn',
+            '拒绝经 file: 协议访问远程/UNC 主机', request.url);
+        }
         callback({ error: -3 });
       }
     } catch (e) {
@@ -4819,6 +4957,16 @@ app.whenReady().then(async () => {
 
   setupPermissionHandlers();
   setupSecurityHeaders();
+
+  // 启动期解析到的降硬开关在 ready 前只能写 stderr；安全事件存储就绪后补登一条聚合
+  // 记录，方便在安全页面板排查被篡改的快捷方式/启动器（critical 的已直接退出，到不了这）。
+  if (launchSwitchAudit.warnFlags.length > 0) {
+    const desc = launchSwitchAudit.warnFlags
+      .map(f => `${f.flag.raw}(${f.source})`)
+      .join(', ');
+    recordSecurityEvent('launch-switch-warn', 'warn',
+      `检测到 ${launchSwitchAudit.warnFlags.length} 个降硬启动开关：${desc}`, '');
+  }
   applyWebRtcPolicy();
   applySecureDns();
   setupDownloadManager();
