@@ -63,6 +63,12 @@ const menuGuard = require('./menuguard');
 const inputGuard = require('./inputguard');
 const remoteGuard = require('./remoteguard');
 const ipcChannelGuard = require('./ipcchannelguard');
+// r34：设备授权撤销 / GPU 进程与无障碍系统事件 / 多分区会话加固 / 跨框架存储访问，
+// 四类此前 0 接线（会话策略只挂 defaultSession，分区/访客会话裸奔）的收口内核。
+const revokeGuard = require('./revokeguard');
+const gpuAccessGuard = require('./gpuaccessguard');
+const sessionGuard = require('./sessionguard');
+const storageAccessGuard = require('./storageaccessguard');
 const { pathToFileURL } = require('url');
 
 // 危险命令行开关 / ELECTRON_EXTRA_LAUNCH_ARGS 注入必须在 ready 之前就拦下：
@@ -203,6 +209,16 @@ const isolatedChildContents = new WeakSet();
 // r33：@electron/remote 桥 / desktopCapturer 枚举、渲染层原始 IPC 通道的 per-contents 状态。
 const remoteStates = new Map();
 const ipcChannelStates = new Map();
+// r34：设备授权撤销（hid/serial/bluetooth *-revoked）与跨框架存储/缓存访问观测的
+// per-contents 状态，随 contents 销毁丢弃、随主导航重置。
+const revokeStates = new Map();
+const storageAccessStates = new Map();
+// r34：GPU 信息更新 / GPU 进程崩溃是 app 级、与具体标签弱关联的系统事件，用进程级
+// 单份状态去重；会话分区加固去重也只需要进程级一份。
+const gpuCrashState = gpuAccessGuard.createCrashState();
+let gpuInfoLastReport = -1;
+const GPU_INFO_REPORT_COOLDOWN_MS = 30 * 1000;
+const sessionGuardState = sessionGuard.createSessionGuardState();
 // 允许走“原始 ipcRenderer.send”的通道白名单（与 preload.js allowedSendChannels 保持一致）。
 // ipcRenderer.invoke 走内部 ipc-message-internal，不在此列；正常渲染层除此之外不应有
 // 任何原始 send，出现即意味着 contextIsolation 被绕过或 preload 残缺。
@@ -1646,6 +1662,14 @@ const SECURITY_EVENT_TYPES = new Set([
   'remote-bridge-blocked',   // @electron/remote 反向通道 / desktopCapturer 枚举被阻断
   'raw-ipc-blocked',         // 渲染层直发原始 IPC（绕过 contextBridge）/ 同步 IPC 被收口
   'ipc-denied',
+  'device-authorization-revoked', // HID/串口/蓝牙设备授权被用户收回或设备掉线（去重留痕）
+  'gpu-info-update',         // GPU 被重新枚举（auxAttributes 白名单清洗，软件渲染回退告警）
+  'gpu-process-crashed',     // GPU 进程崩溃/被杀（崩溃风暴折叠，提示重载）
+  'accessibility-changed',   // 系统无障碍/读屏支持被打开（渲染路径变化留痕）
+  'session-hardened',        // 新建非默认会话已默认拒绝权限/设备并套用隐私头
+  'session-partition-rejected', // 会话分区串非法（仍强制默认拒绝，不留裸奔会话）
+  'storage-cross-access',    // 跨站子框架读写顶层会话存储/缓存（每桶首次留痕）
+  'storage-access-flood',    // 存储/缓存访问事件高频洪泛（窗内越限升级）
 ]);
 
 const securityEvents = [];
@@ -3502,6 +3526,8 @@ function setupGlobalWebContentsHooks() {
       devtoolsSwitchStates.delete(contents.id);
       remoteStates.delete(contents.id);
       ipcChannelStates.delete(contents.id);
+      revokeStates.delete(contents.id);
+      storageAccessStates.delete(contents.id);
     });
     redirectChainStates.set(contents.id, redirectState);
     // 顶层真正落地导航后，重定向链归零，开始统计下一条链。
@@ -3525,6 +3551,10 @@ function setupGlobalWebContentsHooks() {
       devtoolsSwitchGuard.resetForNavigation(devtoolsSwitchStates.get(contents.id), Date.now());
       remoteGuard.resetForNavigation(remoteStates.get(contents.id));
       ipcChannelGuard.resetForNavigation(ipcChannelStates.get(contents.id));
+      // r34：换顶层文档后，设备撤销去重与跨框架存储访问分桶按新源重新计，避免把
+      // 上一个文档的跨源桶/撤销冷却带到新页面。删除后下次事件经 getContentsState 重建。
+      revokeStates.delete(contents.id);
+      storageAccessStates.delete(contents.id);
     });
 
     // handleRedirect 在 navguard 的来源矩阵之前先做“重定向专项”判定，返回 true
@@ -4224,6 +4254,76 @@ function setupGlobalWebContentsHooks() {
           `同步 IPC 守卫异常: ${String((err && err.message) || err)}`, originOfContents(contents));
       }
     });
+
+    // ===== r34：设备授权撤销 + 跨框架存储/缓存访问收口 =====
+    // hid/serial/bluetooth 的 *-revoked 事件此前 0 监听：授权被用户收回 / 设备掉线
+    // 完全无留痕，且可被“申请—掉线—再申请”抖动刷成事件洪泛。统一走 revokeGuard
+    // 按 源+类别+设备 时间窗去重，仅在窗口外落一条审计。
+    const handleDeviceRevoked = (kind, device) => {
+      try {
+        const st = getContentsState(revokeStates, contents.id, revokeGuard.createRevokeState);
+        const v = revokeGuard.decideRevocation(
+          st, { kind, originUrl: currentContentsUrl(), device }, Date.now());
+        if (v.action === revokeGuard.ACTION_RECORD) {
+          recordSecurityEvent('device-authorization-revoked', 'info',
+            v.detail, v.origin || originOfContents(contents));
+        }
+      } catch (err) {
+        recordSecurityEvent('device-authorization-revoked', 'info',
+          `设备撤销守卫异常: ${String((err && err.message) || err)}`, originOfContents(contents));
+      }
+    };
+    contents.on('hid-device-revoked', (_e, device) => {
+      handleDeviceRevoked(revokeGuard.KIND_HID, device);
+    });
+    contents.on('serial-port-revoked', (_e, port) => {
+      // serial 撤销回调给的是端口对象，可能带 portName / usbVendorId / usbProductId。
+      handleDeviceRevoked(revokeGuard.KIND_SERIAL, port);
+    });
+    contents.on('bluetooth-device-revoked', (_e, deviceId) => {
+      // 蓝牙撤销给的是 deviceId 字符串，包一层成内核期望的 device 形状。
+      handleDeviceRevoked(revokeGuard.KIND_BLUETOOTH,
+        typeof deviceId === 'string' ? { deviceId } : {});
+    });
+
+    // seen-session-storage-data-access / seen-cache-storage-data-access 是观测型事件
+    // （不可 preventDefault）。价值在于发现“跨站子框架读写顶层存储”与高频存储事件洪泛。
+    // 只在“跨源桶首次”与“窗内越限”两个有界时刻留痕，避免观测处理器自己刷爆日志。
+    const handleStorageDataAccess = (kind, details) => {
+      try {
+        const st = getContentsState(
+          storageAccessStates, contents.id, storageAccessGuard.createStorageAccessState);
+        let frameUrl = '';
+        try { frameUrl = details && details.frame && details.frame.url ? details.frame.url : ''; } catch {}
+        const topUrl = currentContentsUrl();
+        const storageType = kind === storageAccessGuard.KIND_CACHE
+          ? (details && details.cacheType) : (details && details.storageType);
+        const v = storageAccessGuard.decideStorageAccess(
+          st,
+          { kind, frameUrl, topUrl, key: details && details.key, storageType },
+          Date.now());
+        if (v.action !== storageAccessGuard.ACTION_REPORT) return;
+        if (v.reason === 'cross-origin-storage-access') {
+          const label = kind === storageAccessGuard.KIND_CACHE ? '缓存分区' : '会话存储';
+          recordSecurityEvent('storage-cross-access', 'info',
+            `跨站子框架访问顶层${label}：${v.frameOrigin || '未知源'} -> ${v.topOrigin || '未知源'}`,
+            v.topOrigin || originOfContents(contents));
+        } else if (v.reason === 'storage-access-flood') {
+          recordSecurityEvent('storage-access-flood', 'warn',
+            `存储访问事件高频洪泛（${kind}，窗口内 ${v.windowHits} 次）`,
+            v.topOrigin || originOfContents(contents));
+        }
+      } catch (err) {
+        recordSecurityEvent('storage-access-flood', 'info',
+          `存储访问守卫异常: ${String((err && err.message) || err)}`, originOfContents(contents));
+      }
+    };
+    contents.on('seen-session-storage-data-access', (event, details) => {
+      handleStorageDataAccess(storageAccessGuard.KIND_SESSION, details);
+    });
+    contents.on('seen-cache-storage-data-access', (event, details) => {
+      handleStorageDataAccess(storageAccessGuard.KIND_CACHE, details);
+    });
   });
 }
 
@@ -4237,6 +4337,158 @@ function setupNetworkStatus() {
   app.on('offline', report);
   // 启动时先报一次当前状态
   setTimeout(report, 500);
+}
+
+// r34：GPU 进程崩溃 / GPU 信息更新 / 无障碍支持变化是 app 级系统事件，与具体标签弱
+// 关联，用进程级单份状态去重。崩溃风暴折叠为一条审计并提示重载；GPU 重枚举只保留
+// 白名单字段，软件渲染回退时留痕；系统读屏被打开（渲染路径变化）留痕。
+function setupSystemEventGuards() {
+  app.on('gpu-process-crashed', (_event, killed) => {
+    try {
+      const v = gpuAccessGuard.decideGPUCrash(gpuCrashState, { killed: !!killed }, Date.now());
+      if (v.action !== gpuAccessGuard.ACTION_RECORD) return;
+      recordSecurityEvent('gpu-process-crashed', 'warn', v.detail, '');
+      try {
+        sendToRenderer('gpu-process-gone', { reason: v.killed ? 'killed' : 'crashed' });
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          sendToRenderer('show-toast',
+            v.killed ? 'GPU 进程被系统终止，如画面异常请按 Ctrl+R 重载'
+                     : 'GPU 进程崩溃已自动恢复，如画面异常请按 Ctrl+R 重载');
+        }
+      } catch {}
+    } catch (err) {
+      recordSecurityEvent('gpu-process-crashed', 'info',
+        `GPU 崩溃守卫异常: ${String((err && err.message) || err)}`, '');
+    }
+  });
+
+  app.on('gpu-info-update', () => {
+    const now = Date.now();
+    if (gpuInfoLastReport >= 0 && now - gpuInfoLastReport < GPU_INFO_REPORT_COOLDOWN_MS) return;
+    // 用 basic 信息（含 auxAttributes），避免 'complete' 触发可能较慢的完整枚举。
+    Promise.resolve()
+      .then(() => (typeof app.getGPUInfo === 'function' ? app.getGPUInfo('basic') : null))
+      .then((info) => {
+        const clean = gpuAccessGuard.sanitizeGPUInfo(info && info.auxAttributes);
+        if (clean.kept === 0) return;
+        gpuInfoLastReport = Date.now();
+        if (clean.fields.softwareRendering === true) {
+          recordSecurityEvent('gpu-info-update', 'warn',
+            'GPU 被重新枚举且当前回退到软件渲染（硬件加速可能不可用）', '');
+        } else {
+          recordSecurityEvent('gpu-info-update', 'info',
+            'GPU 信息已更新（硬件加速生效）', '');
+        }
+      })
+      .catch(() => {});
+  });
+
+  app.on('accessibility-support-changed', (_event, enabled) => {
+    try {
+      const v = gpuAccessGuard.decideAccessibilityChange(enabled);
+      if (v.shouldRecord) {
+        recordSecurityEvent('accessibility-changed', 'info', v.detail, '');
+      }
+    } catch {}
+  });
+}
+
+// r34：补齐“只加固 defaultSession、漏了后续 fromPartition 会话”的纵深防御缺口。
+// app 'session-created' 对每个新会话触发（defaultSession 已在 setupPermissionHandlers /
+// setupSecurityHeaders 中单独加固，这里靠 sessionGuard 去重跳过）。任何非默认会话都
+// 套用最保守基线：权限 / 设备选择一律拒绝（访客 / 隔离会话不弹主标签询问条），并挂
+// 出向隐私头（DNT / GPC / Upgrade-Insecure / Referrer 收敛）。
+function setupExtraSessionHardening() {
+  const originOfPermissionRequest = (webContents) => {
+    try {
+      return webContents && typeof webContents.getURL === 'function'
+        ? new URL(webContents.getURL()).origin : '';
+    } catch {
+      return '';
+    }
+  };
+
+  const applyOutgoingPrivacyHeaders = (ses) => {
+    try {
+      ses.webRequest.onBeforeSendHeaders((details, callback) => {
+        const headers = details.requestHeaders || {};
+        headers['DNT'] = '1';
+        headers['Sec-GPC'] = '1';
+        headers['Upgrade-Insecure-Requests'] = '1';
+        try { trimReferrerHeader(details, headers); } catch {}
+        callback({ requestHeaders: headers });
+      });
+    } catch {}
+  };
+
+  app.on('session-created', (ses) => {
+    let partition = '';
+    try { partition = typeof ses.getStoragePath === 'function' ? '' : (ses.partition || ''); } catch {}
+    // session 对象未必直接暴露 partition；sessionGuard 只需要分区串。取不到时按空串，
+    // 但 defaultSession 已被单独加固并占位，真正落到这里的空串会话仍按最保守基线处理。
+    let decision;
+    try {
+      decision = sessionGuard.decideSessionHarden(sessionGuardState, { partition });
+    } catch {
+      decision = null;
+    }
+
+    // defaultSession 已加固，去重命中后不重复注册。
+    if (decision && decision.alreadyHardened) return;
+
+    if (decision && !decision.shouldHarden) {
+      // 分区串非法：不留裸奔会话，仍强制默认拒绝，并留一条独立事件提示分区异常。
+      try {
+        ses.setPermissionRequestHandler((wc, _permission, cb) => {
+          try { cb(false); } catch {}
+        });
+        if (typeof ses.setPermissionCheckHandler === 'function') {
+          ses.setPermissionCheckHandler(() => false);
+        }
+        if (typeof ses.setDevicePermissionHandler === 'function') {
+          ses.setDevicePermissionHandler(() => false);
+        }
+      } catch {}
+      applyOutgoingPrivacyHeaders(ses);
+      recordSecurityEvent('session-partition-rejected', 'warn',
+        `检测到非法会话分区（${decision.reason}），已对该会话强制默认拒绝`, '');
+      return;
+    }
+
+    // 合法的非默认会话：全套默认拒绝基线 + 出向隐私头。
+    try {
+      ses.setPermissionRequestHandler((webContents, permission, callback) => {
+        const origin = originOfPermissionRequest(webContents);
+        recordSecurityEvent('permission-blocked', 'info',
+          `隔离/访客会话中的权限请求已默认拒绝: ${permission}`, origin);
+        try { callback(false); } catch {}
+      });
+      if (typeof ses.setPermissionCheckHandler === 'function') {
+        ses.setPermissionCheckHandler(() => false);
+      }
+      if (typeof ses.setDevicePermissionHandler === 'function') {
+        ses.setDevicePermissionHandler((details) => {
+          let origin = '';
+          try { origin = new URL((details && details.origin) || '').origin; } catch {}
+          recordSecurityEvent('device-permission-blocked', 'info',
+            `隔离/访客会话中的设备选择已默认拒绝（${details && details.permissionType ? details.permissionType : '未知'}）`,
+            origin);
+          return false;
+        });
+      }
+    } catch {}
+    applyOutgoingPrivacyHeaders(ses);
+
+    const persist = decision && decision.classification && decision.classification.persist;
+    recordSecurityEvent('session-hardened', 'info',
+      `新建${persist ? '持久' : '临时'}会话已套用默认拒绝权限/设备策略与出向隐私头`, '');
+  });
+
+  // 先把 defaultSession 标记为“已加固”，真正的处理器由 setupPermissionHandlers /
+  // setupSecurityHeaders 注册；这样 session-created 即便为默认会话触发也会被去重跳过。
+  try {
+    sessionGuard.decideSessionHarden(sessionGuardState, { partition: '' });
+  } catch {}
 }
 
 function getTabLayout() {
@@ -5566,6 +5818,10 @@ app.whenReady().then(async () => {
 
   setupPermissionHandlers();
   setupSecurityHeaders();
+  // r34：注册 app 级 GPU/无障碍系统事件守卫，并为后续 fromPartition 新会话补齐默认
+  // 拒绝权限/设备策略与出向隐私头（须在 defaultSession 加固之后，靠去重跳过默认会话）。
+  setupSystemEventGuards();
+  setupExtraSessionHardening();
 
   // 启动期解析到的降硬开关在 ready 前只能写 stderr；安全事件存储就绪后补登一条聚合
   // 记录，方便在安全页面板排查被篡改的快捷方式/启动器（critical 的已直接退出，到不了这）。
