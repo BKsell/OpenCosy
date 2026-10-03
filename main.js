@@ -35,6 +35,11 @@ const redirectGuard = require('./redirectguard');
 const switchGuard = require('./switchguard');
 const devicerGuard = require('./devicerguard');
 const cosyScheme = require('./cosyscheme');
+const fullscreenGuard = require('./fullscreenguard');
+const printGuard = require('./printguard');
+const zoomGuard = require('./zoomguard');
+const devtoolsGuard = require('./devtoolsguard');
+const preloadGuard = require('./preloadguard');
 const { pathToFileURL } = require('url');
 
 // 危险命令行开关 / ELECTRON_EXTRA_LAUNCH_ARGS 注入必须在 ready 之前就拦下：
@@ -1544,6 +1549,12 @@ const SECURITY_EVENT_TYPES = new Set([
   'window-policy',           // 窗口 webPreferences 出现越界/不安全配置被基线拒绝
   'renderer-gone',           // 渲染/GPU 进程崩溃与无响应的恢复 / 熔断处置
   'deeplink-blocked',        // 命令行/open-file/open-url 非法深链被入口消毒拦截
+  'keyboard-lock-blocked',   // 网页在非全屏/高频请求键盘锁（Esc 劫持）被阻止
+  'fullscreen-abuse',        // 短时间高频进出全屏（疑似点击劫持）被记录
+  'print-blocked',           // window.print() 打印轰炸/冷却期请求被抑制
+  'zoom-flood',              // ctrl+滚轮缩放事件洪泛，已合并广播并记录
+  'devtools-url-blocked',    // DevTools 内危险/外部协议链接转跳被拦截
+  'preload-error',           // preload 脚本加载/运行异常（IPC 安全桥可能残缺）
   'ipc-denied',
 ]);
 
@@ -3649,6 +3660,116 @@ function setupGlobalWebContentsHooks() {
       });
       if (choice === 0) {
         contents.destroy();
+      }
+    });
+
+    // ===== 全屏 / 键盘锁 / 打印 / 缩放 / DevTools 链接收口（每 contents 独立状态）=====
+    const fsState = fullscreenGuard.createFullscreenState(Date.now());
+    const printState = printGuard.createPrintState(Date.now());
+    const zoomState = zoomGuard.createZoomState(Date.now());
+    const preloadErrState = preloadGuard.createPreloadErrorState(Date.now());
+    let zoomFlushTimer = null;
+
+    const currentContentsUrl = () => {
+      try { return contents.getURL(); } catch { return ''; }
+    };
+    const broadcastZoomLevel = (level) => {
+      try {
+        sendToRenderer('zoom-level-changed', {
+          percent: zoomGuard.zoomLevelToPercent(level),
+          factor: Math.pow(1.2, level),
+        });
+      } catch {}
+    };
+
+    contents.on('enter-html-full-screen', () => {
+      const r = fullscreenGuard.noteEnter(fsState, Date.now(), currentContentsUrl());
+      if (r.abusive) {
+        recordSecurityEvent('fullscreen-abuse', 'warn',
+          fullscreenGuard.describeAbuse(fullscreenGuard.ABUSE_FLICKER), originOfContents(contents));
+      }
+    });
+    contents.on('leave-html-full-screen', () => {
+      const r = fullscreenGuard.noteLeave(fsState, Date.now());
+      if (r.abusive) {
+        recordSecurityEvent('fullscreen-abuse', 'warn',
+          fullscreenGuard.describeAbuse(fullscreenGuard.ABUSE_FLICKER), originOfContents(contents));
+      }
+    });
+
+    // 键盘锁只在该内容确处全屏时放行；窗口态请求（Esc/快捷键劫持起手式）一律阻止。
+    contents.on('keyboard-lock', (event) => {
+      const v = fullscreenGuard.decideKeyboardLock(
+        fsState, { originUrl: currentContentsUrl() }, Date.now());
+      if (v.decision === fullscreenGuard.KEYBOARD_DENY) {
+        event.preventDefault();
+        recordSecurityEvent('keyboard-lock-blocked', 'warn',
+          fullscreenGuard.describeKeyboardReason(v.reason), v.origin || originOfContents(contents));
+      }
+    });
+
+    // window.print() 打印轰炸：滑动窗口配额 + 冷却，越限抑制内置打印流程。
+    contents.on('print', (event) => {
+      const v = printGuard.decidePrint(printState, { originUrl: currentContentsUrl() }, Date.now());
+      if (v.decision === printGuard.PRINT_SUPPRESS) {
+        event.preventDefault();
+        recordSecurityEvent('print-blocked', 'warn',
+          printGuard.describePrintReason(v.reason), v.origin || originOfContents(contents));
+      }
+    });
+
+    // ctrl+滚轮缩放：量化/钳制级别，合并滚轮抖动的 IPC 广播，洪泛时暂停并留痕，
+    // 平息后用一个 trailing 定时器补发最终级别（OSD 百分比不丢）。
+    contents.on('zoom-changed', () => {
+      let level = 0;
+      try { level = contents.getZoomLevel(); } catch { level = 0; }
+      const v = zoomGuard.applyZoomChange(zoomState, { level }, Date.now());
+      if (v.flooded) {
+        recordSecurityEvent('zoom-flood', 'info',
+          zoomGuard.describeHoldReason(zoomGuard.HOLD_FLOODED), originOfContents(contents));
+      }
+      if (v.action === zoomGuard.ACTION_BROADCAST) {
+        broadcastZoomLevel(v.level);
+        return;
+      }
+      if (zoomFlushTimer) return;
+      zoomFlushTimer = setTimeout(() => {
+        zoomFlushTimer = null;
+        const f = zoomGuard.flushPendingZoom(zoomState, Date.now());
+        if (f.action === zoomGuard.ACTION_BROADCAST) broadcastZoomLevel(f.level);
+      }, zoomGuard.ZOOM_BROADCAST_MIN_INTERVAL_MS + 5);
+    });
+
+    // DevTools 内点击链接：http/https/cosy 一律转应用内新标签页（绝不走系统外壳），
+    // file/data/javascript 及任意外部应用协议直接拦截。
+    contents.on('devtools-open-url', (event, url) => {
+      const v = devtoolsGuard.decideDevToolsUrl(url);
+      event.preventDefault();
+      if (v.action === devtoolsGuard.ACTION_OPEN_TAB) {
+        createNewTab(v.url);
+      } else {
+        recordSecurityEvent('devtools-url-blocked', 'warn',
+          devtoolsGuard.describeDevToolsReason(v.reason), originOfContents(contents));
+      }
+    });
+
+    contents.on('destroyed', () => {
+      if (zoomFlushTimer) {
+        clearTimeout(zoomFlushTimer);
+        zoomFlushTimer = null;
+      }
+    });
+
+    // preload 承载 IPC 白名单与 contextBridge 安全桥：加载/运行期抛错意味着安全包装
+    // 可能残缺，必须按严重度留痕，并对同指纹/同标签页错误去重限流，防止错误循环刷爆日志。
+    contents.on('preload-error', (event, preloadPath, error) => {
+      const v = preloadGuard.decidePreloadError(
+        preloadErrState,
+        { preloadPath: String(preloadPath || ''), error, originUrl: currentContentsUrl() },
+        Date.now());
+      if (v.decision === preloadGuard.DECISION_REPORT) {
+        recordSecurityEvent('preload-error', v.severity,
+          preloadGuard.describePreloadError(v), v.origin || originOfContents(contents));
       }
     });
   });
