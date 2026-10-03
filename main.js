@@ -18,6 +18,10 @@ const dohGuard = require('./dohguard');
 const permPolicy = require('./permpolicy');
 const dloadGuard = require('./dloadguard');
 const urlClean = require('./urlclean');
+const popupGuard = require('./popupguard');
+const quarantine = require('./quarantine');
+const navGuard = require('./navguard');
+const containerGuard = require('./container');
 
 // 现代浏览器默认要求“用户与页面有过交互”才允许带声音自动播放，
 // 否则广告页一打开就能外放声音。必须在 app ready 之前设置。
@@ -3196,6 +3200,55 @@ function setupGlobalWebContentsHooks() {
     }
   });
 
+  // handleUnsafeNavigation 对主框架导航做 IDN 同形异义字 / 降级检查。
+  // 返回 true 表示已拦截（调用方需 preventDefault）。block 直接挡；warn 弹原生
+  // 确认，用户放弃则同样挡掉。内部页（cosy://）不参与判定。
+  function handleUnsafeNavigation(targetContents, navUrl) {
+    try {
+      if (typeof navUrl !== 'string' || !navUrl) return false;
+      if (navUrl.startsWith('cosy://') || navUrl.startsWith('about:')) return false;
+      let currentUrl = '';
+      try { currentUrl = targetContents.getURL(); } catch { currentUrl = ''; }
+      const decision = navGuard.decideNavigation({ currentUrl, targetUrl: navUrl });
+      if (decision.action === navGuard.RISK_OK) return false;
+
+      const reasonText = [].concat(decision.reasons.host || [], decision.reasons.nav || []).join('; ');
+      if (decision.action === navGuard.RISK_BLOCK) {
+        recordSecurityEvent('nav-blocked', 'warn',
+          `已阻止可疑导航: ${navUrl} (${reasonText})`, originOfContents(targetContents));
+        sendToRenderer('show-toast', '已阻止一次可疑导航（仿冒域名或安全降级）');
+        return true;
+      }
+
+      // warn：让用户在原生对话框里明确选择。
+        const choice = dialog.showMessageBoxSync(mainWindow, {
+          type: 'warning',
+          buttons: ['返回安全页面', '仍然继续'],
+          defaultId: 0,
+          cancelId: 0,
+          title: '安全提示：可疑的网站地址',
+          message: '这个网址可能是仿冒网站或存在安全降级，是否仍要访问？',
+          detail: [
+            `地址：${navUrl}`,
+            `原因：${reasonText || '可疑域名特征'}`,
+            '',
+            '该地址可能使用了与正规网站极其相似的字符，或正从不安全的明文连接加载。',
+            '继续访问可能导致账号、密码等信息泄露。',
+          ].join('\n'),
+          noLink: true,
+        });
+        recordSecurityEvent('nav-warn', 'info',
+          `可疑导航提示 ${choice === 1 ? '用户继续' : '用户返回'}: ${navUrl} (${reasonText})`,
+          originOfContents(targetContents));
+        return choice !== 1;
+    } catch (guardErr) {
+      // 守卫自身异常绝不能阻断正常浏览：失败放行并留痕。
+      recordSecurityEvent('nav-guard-error', 'info',
+        `导航守卫异常放行: ${String(guardErr && guardErr.message || guardErr)}`, '');
+      return false;
+    }
+  }
+
   app.on('web-contents-created', (_event, contents) => {
     // 主窗口 UI 自己管 navigation，跳过；只给页面 tab 兜底
     if (contents === mainWindow?.webContents) return;
@@ -3205,6 +3258,15 @@ function setupGlobalWebContentsHooks() {
       const extScheme = normalizeExternalScheme(url);
       if (CONFIRMABLE_EXTERNAL_SCHEMES.has(extScheme)) {
         launchExternalWithPrompt(url, originOfContents(contents), true);
+        return { action: 'deny' };
+      }
+      // 兜底窗口同样禁止 javascript:/data:/file: 等危险协议弹窗。
+      const fallbackPopup = popupGuard.decidePopup({
+        currentUrl: (() => { try { return contents.getURL(); } catch { return ''; } })(),
+        targetUrl: url,
+      });
+      if (fallbackPopup.action === 'block') {
+        recordSecurityEvent('popup-blocked', 'warn', `拦截危险协议弹窗: ${url}`, originOfContents(contents));
         return { action: 'deny' };
       }
       if (!isSafeUrl(url)) return { action: 'deny' };
@@ -3231,6 +3293,12 @@ function setupGlobalWebContentsHooks() {
     // 主框架导航：http(s)/file/cosy 放行，mailto/tel 走按站点记忆的确认弹窗，
     // 其它外部协议（ms-*:/smb:/vbscript: 等）直接阻止。
     contents.on('will-navigate', (navEvent, url) => {
+      // 导航安全：IDN 同形异义字钓鱼 / 混合脚本域名直接拦；整词同形 / Punycode
+      // 与 HTTPS→HTTP 同站降级弹原生确认；跨主机 http 降级直接拦。
+      if (handleUnsafeNavigation(contents, url)) {
+        navEvent.preventDefault();
+        return;
+      }
       if (handleFrameNavigationAttempt(contents, url, true)) {
         navEvent.preventDefault();
       }
@@ -3892,6 +3960,17 @@ function loadTabContent(tab) {
         launchExternalWithPrompt(url, originOfContents(tab.view.webContents), true);
         return { action: 'deny' };
       }
+      // 弹窗上下文额外拦截 javascript:/data:/vbscript:/file: 目标——这些协议在
+      // 顶层地址栏另有处理，但绝不应在新浏览上下文里渲染/执行。
+      const popupDecision = popupGuard.decidePopup({
+        currentUrl: tab.url || '', targetUrl: url, disposition,
+      });
+      if (popupDecision.action === 'block') {
+        recordSecurityEvent('popup-blocked', 'warn',
+          `拦截危险协议弹窗: ${url}`, originOfContents(tab.view.webContents));
+        sendToRenderer('popup-blocked', { url });
+        return { action: 'deny' };
+      }
       if (!isSafeUrl(url)) return { action: 'deny' };
       if (disposition === 'new-window' || disposition === 'foreground-tab') {
         // 弹窗轰炸限流：短时间内同一标签狂开窗口时拦截，只放行正常节奏的新窗口。
@@ -4192,6 +4271,20 @@ function resolveUniqueDownloadPath(dir, filename) {
 const downloadRiskStorePath = path.join(app.getPath('userData'), 'download-risk.json');
 const MAX_DOWNLOAD_RISK_RECORDS = 500;
 
+// ===== 下载来源索引（内存）：savePath -> 来源 URL =====
+// 仅供“打开文件”时判断是否需要对来自互联网的可执行文件二次确认；不落盘、
+// 重启后清空（无来源信息的可执行文件同样会要求确认，宁严勿纵）。有界防膨胀。
+const MAX_DOWNLOAD_ORIGIN_ENTRIES = 1000;
+const downloadOriginByPath = new Map();
+function rememberDownloadOrigin(savePath, originUrl) {
+  if (!savePath || !originUrl) return;
+  if (downloadOriginByPath.size >= MAX_DOWNLOAD_ORIGIN_ENTRIES) {
+    const oldest = downloadOriginByPath.keys().next().value;
+    downloadOriginByPath.delete(oldest);
+  }
+  downloadOriginByPath.set(savePath, originUrl);
+}
+
 const downloadRiskRecords = [];
 let downloadRiskLoaded = false;
 let downloadRiskSaveTimer = null;
@@ -4421,14 +4514,37 @@ function setupDownloadManager() {
         downloadInfo.status = 'complete';
         downloadInfo.savePath = item.getSavePath();
         sendToRenderer('download-complete', { id: downloadInfo.id, savePath: downloadInfo.savePath });
+        // 登记来源，供“打开文件”时判断互联网可执行文件是否需要二次确认。
+        const completedUrl = downloadInfo.url || url;
+        rememberDownloadOrigin(downloadInfo.savePath, completedUrl);
         // 下载完成后排进串行摘要队列，异步算 SHA-256 并登记到 cosy://hashes；
         // 用净化后的文件名与来源 URL，不落完整本地路径。
         queueDownloadHashing({
           id: downloadInfo.id,
           savePath: downloadInfo.savePath,
-          url: downloadInfo.url || url,
+          url: completedUrl,
           filename: downloadInfo.filename || safeFilename,
         });
+        // 显式补写 Windows Mark-of-the-Web（Zone.Identifier ADS）。Chromium
+        // 自定义落盘/跨盘移动/从压缩包解出都可能丢失 MOTW；best-effort，失败
+        // （非 NTFS/权限）只审计，不影响已完成的下载。
+        try {
+          const motw = quarantine.applyMarkOfTheWeb(
+            { platform: process.platform, appendFileSync: fsSync.appendFileSync },
+            downloadInfo.savePath,
+            { hostUrl: completedUrl, lastWriteTime: new Date().toISOString() }
+          );
+          if (motw.wrote === false && motw.reason !== 'not-internet' &&
+              motw.reason !== 'unsupported-platform') {
+            recordSecurityEvent('download-motw', 'info',
+              `MOTW 标记未写入 (${motw.reason}): ${downloadInfo.filename || ''}`,
+              originOfContents(webContents));
+          }
+        } catch (motwErr) {
+          recordSecurityEvent('download-motw', 'info',
+            `MOTW 标记异常: ${String(motwErr && motwErr.message || motwErr)}`,
+            originOfContents(webContents));
+        }
       } else {
         downloadInfo.status = 'error';
         sendToRenderer('download-error', { id: downloadInfo.id });
@@ -4996,7 +5112,54 @@ ipcMain.on('remove-download', (event, id) => {
 ipcMain.on('open-file', (event, filePath) => {
   if (!isMainSender(event)) return;
   const resolved = path.resolve(filePath);
-  if (isInSafeDirs(resolved) && fsSync.existsSync(resolved)) shell.openPath(resolved);
+  if (!isInSafeDirs(resolved) || !fsSync.existsSync(resolved)) return;
+
+  // 打开“来自互联网（或来源未知）的可执行 / 脚本 / 安装包”前必须二次确认，
+  // 防止用户在下载列表里误点直接运行 drive-by 下载的程序。
+  const originUrl = downloadOriginByPath.has(resolved)
+    ? downloadOriginByPath.get(resolved)
+    : null;
+  const exeDecision = quarantine.openDecision({ filePath: resolved, hostUrl: originUrl });
+  // 容器类（压缩包 / 宏 Office / 磁盘镜像）：MOTW 不会随解压继承，来自互联网
+  // （或来源未知）的容器打开前同样确认。
+  const fromWeb = originUrl ? quarantine.isWebDownload(originUrl) : false;
+  const baseName = path.basename(resolved);
+  const containerClass = containerGuard.classifyContainer(baseName);
+  const containerDecision = originUrl == null
+    ? (containerClass.kind === containerGuard.KIND_NONE ? containerGuard.RISK_ALLOW : containerGuard.RISK_CONFIRM)
+    : containerGuard.openContainerDecision({ filename: baseName, fromWeb });
+  const needConfirm = exeDecision === 'confirm' ||
+    containerDecision === 'confirm' || containerDecision === 'warn';
+
+  if (needConfirm) {
+    let host = '未知来源';
+    if (originUrl) {
+      try { host = new URL(originUrl).host; } catch { host = originUrl; }
+    }
+    const containerAdvice = containerGuard.describeContainerRisk(containerClass);
+    const choice = dialog.showMessageBoxSync(mainWindow, {
+      type: 'warning',
+      buttons: ['取消', '仍然运行'],
+      defaultId: 0,
+      cancelId: 0,
+      title: '安全提示：运行来自互联网的程序',
+      message: `确定要打开 "${baseName}" 吗？`,
+      detail: [
+        `来源：${host}`,
+        '',
+        containerAdvice ||
+          '该文件是可执行程序或脚本，来自互联网（或来源不明），可能会危害您的',
+        containerAdvice ? '' : '计算机或更改系统设置。请仅在确认其来源可信时运行。',
+      ].filter(l => l !== undefined).join('\n').replace(/\n{3,}/g, '\n\n'),
+      noLink: true,
+    });
+    if (choice !== 1) {
+      recordSecurityEvent('download-open-blocked', 'info',
+        `用户取消运行来自互联网的文件: ${baseName}`, host);
+      return;
+    }
+  }
+  shell.openPath(resolved);
 });
 
 ipcMain.on('open-folder', (event, filePath) => {
