@@ -53,6 +53,14 @@ const mediaGuard = require('./mediaguard');
 const crashGuard = require('./crashguard');
 const cursorGuard = require('./cursorguard');
 const entryGuard = require('./entryguard');
+// r33：意外原生子窗口 / iframe 生命周期 / 屏幕捕获状态 / DevTools 开关 / 右键参数 /
+// IPC 入参形状，六个此前 0 接线的收口内核。
+const childWindowGuard = require('./childwindowguard');
+const frameGuard = require('./frameguard');
+const captureGuard = require('./captureguard');
+const devtoolsSwitchGuard = require('./devtoolswitchguard');
+const menuGuard = require('./menuguard');
+const inputGuard = require('./inputguard');
 const { pathToFileURL } = require('url');
 
 // 危险命令行开关 / ELECTRON_EXTRA_LAUNCH_ARGS 注入必须在 ready 之前就拦下：
@@ -183,6 +191,13 @@ const mediaStates = new Map();
 const crashStates = new Map();
 const cursorStates = new Map();
 const entryStates = new Map();
+// r33：意外子窗口 / 框架 / 捕获 / DevTools 开关的 per-contents 状态，did-navigate 归零。
+const childWindowStates = new Map();
+const frameStates = new Map();
+const captureStates = new Map();
+const devtoolsSwitchStates = new Map();
+// 记录“被判定为隔离保留的意外原生子窗口”的 webContents，供 DevTools 开关事件识别基线。
+const isolatedChildContents = new WeakSet();
 
 // getContentsState 读取按需创建的 per-contents 小状态；destroyed 时统一清理。
 function getContentsState(map, id, create) {
@@ -1603,6 +1618,12 @@ const SECURITY_EVENT_TYPES = new Set([
   'plugin-crash',            // 插件崩溃字段非法或崩溃循环提示被折叠/丢弃
   'cursor-abuse',            // cursor-changed 未知类型/超大位图/高频抖动回落默认光标
   'entry-flood',             // navigation-entry-committed 脏地址/历史条目洪泛被收敛
+  'child-window-blocked',    // 意外原生子窗口基线被破坏/危险首屏/开窗洪泛被销毁
+  'frame-blocked',           // 子框架危险协议/畸形 URL/iframe 爆炸被收敛
+  'screen-capture-active',   // 某标签进入屏幕/窗口捕获态（亮红点 + 留痕）
+  'devtools-switch',         // DevTools 在真实网页/隔离子窗被打开（隔离窗立即关闭）
+  'context-menu-sanitized',  // 右键菜单参数（链接/选中文本/错词/建议）被净化或丢弃
+  'ipc-input-rejected',      // 渲染侧 IPC 入参形状/长度/控制字符/体量畸形被拒绝
   'ipc-denied',
 ]);
 
@@ -3454,6 +3475,10 @@ function setupGlobalWebContentsHooks() {
       crashStates.delete(contents.id);
       cursorStates.delete(contents.id);
       entryStates.delete(contents.id);
+      childWindowStates.delete(contents.id);
+      frameStates.delete(contents.id);
+      captureStates.delete(contents.id);
+      devtoolsSwitchStates.delete(contents.id);
     });
     redirectChainStates.set(contents.id, redirectState);
     // 顶层真正落地导航后，重定向链归零，开始统计下一条链。
@@ -3470,6 +3495,11 @@ function setupGlobalWebContentsHooks() {
       crashGuard.resetForNavigation(crashStates.get(contents.id));
       cursorGuard.resetForNavigation(cursorStates.get(contents.id));
       entryGuard.resetForNavigation(entryStates.get(contents.id));
+      // r33：换文档后子窗口 / iframe / 捕获 / DevTools 开关配额随生命周期重置。
+      childWindowGuard.resetForNavigation(childWindowStates.get(contents.id));
+      frameGuard.resetForNavigation(frameStates.get(contents.id), Date.now());
+      captureGuard.resetForNavigation(captureStates.get(contents.id), Date.now());
+      devtoolsSwitchGuard.resetForNavigation(devtoolsSwitchStates.get(contents.id), Date.now());
     });
 
     // handleRedirect 在 navguard 的来源矩阵之前先做“重定向专项”判定，返回 true
@@ -3979,6 +4009,123 @@ function setupGlobalWebContentsHooks() {
         recordSecurityEvent('entry-flood', 'warn',
           entryGuard.describeEntryReason(v.reason), originOfContents(contents));
       }
+    });
+
+    // r33：意外原生子窗口收口。setWindowOpenHandler 恒 deny 后仍可能有少数路径真正
+    // new 出原生 BrowserWindow；这里核对其 webPreferences 基线与首屏地址，提权 / 危险
+    // 协议 / 开窗洪泛直接销毁，幸存的 http(s) 子窗标记为隔离并留痕。
+    contents.on('did-create-window', (childWindow, details) => {
+      try {
+        const openerSt = getContentsState(
+          childWindowStates, contents.id, childWindowGuard.createChildWindowState);
+        let childContents = null;
+        try {
+          childContents = childWindow && childWindow.webContents ? childWindow.webContents : null;
+        } catch {}
+        let prefs = null;
+        try {
+          if (childContents && typeof childContents.getLastWebPreferences === 'function') {
+            prefs = childContents.getLastWebPreferences();
+          }
+        } catch {}
+        let childUrl = '';
+        try {
+          childUrl = (childContents && childContents.getURL()) || (details && details.url) || '';
+        } catch {}
+        const verdict = childWindowGuard.evaluateChildWindow(
+          { url: childUrl, prefs, openerPresent: true }, openerSt, Date.now());
+        if (verdict.action === childWindowGuard.CHILD_CLOSE) {
+          recordSecurityEvent('child-window-blocked', 'warn',
+            `意外子窗口已销毁（${verdict.reasons.join('；')}）: ${String(childUrl).slice(0, 200)}`,
+            originOfContents(contents));
+          try { childWindow.destroy(); } catch {}
+          return;
+        }
+        if (verdict.action === childWindowGuard.CHILD_ISOLATE) {
+          if (childContents) isolatedChildContents.add(childContents);
+          recordSecurityEvent('child-window-blocked', 'info',
+            `意外子窗口按隔离基线保留（${verdict.reasons.join('；')}）`,
+            verdict.origin || originOfContents(contents));
+        }
+      } catch (err) {
+        recordSecurityEvent('child-window-blocked', 'info',
+          `子窗口守卫异常: ${String((err && err.message) || err)}`, originOfContents(contents));
+      }
+    });
+
+    // r33：frame-created 观测每个框架创建。该事件无法阻止框架落地，这里负责把危险
+    // 协议子框架 / 畸形 URL / iframe 爆炸统一留痕，真正的危险导航仍由 will-frame-navigate
+    // 与 CSP 兜底；洪泛折叠为单条 info，避免刷爆审计。
+    contents.on('frame-created', (event, frame) => {
+      try {
+        const st = getContentsState(frameStates, contents.id, frameGuard.createFrameState);
+        const v = frameGuard.evaluateFrame(frame, st, Date.now());
+        if (v.action === frameGuard.FRAME_DROP && v.reasons.length > 0) {
+          const sev = v.reasons.includes('frame-flood') ? 'info' : 'warn';
+          const tail = frame && frame.url ? ': ' + String(frame.url).slice(0, 200) : '';
+          recordSecurityEvent('frame-blocked', sev,
+            `子框架事件异常（${v.reasons.join('；')}）${tail}`,
+            v.origin || originOfContents(contents));
+        }
+      } catch (err) {
+        recordSecurityEvent('frame-blocked', 'info',
+          `框架守卫异常: ${String((err && err.message) || err)}`, originOfContents(contents));
+      }
+    });
+
+    // r33：screen-capture-changed 让“某个标签真的进入屏幕/窗口捕获态”可见：任何进入
+    // 捕获（start / 未停先换句柄）都亮留痕，畸形 / 高频切换事件被折叠，避免网页静默录屏。
+    contents.on('screen-capture-changed', (event, id, captureInfo) => {
+      try {
+        const st = getContentsState(captureStates, contents.id, captureGuard.createCaptureState);
+        const v = captureGuard.evaluateCaptureChange(st, id, captureInfo, Date.now());
+        if (v.action === captureGuard.CAPTURE_SIGNAL) {
+          if (v.phase === 'started' || v.phase === 'replaced') {
+            const audio = v.hasAudio ? '含音频' : '无音频';
+            recordSecurityEvent('screen-capture-active', 'warn',
+              v.phase === 'replaced'
+                ? `屏幕捕获句柄被替换（${audio}），该标签可能持续被录制`
+                : `标签进入屏幕/窗口捕获态（${audio}），请注意录屏提示`,
+              originOfContents(contents));
+          }
+        } else if (v.action === captureGuard.CAPTURE_DROP) {
+          recordSecurityEvent('screen-capture-active', 'info',
+            `屏幕捕获状态事件异常已忽略（${v.reasons.join('；')}）`, originOfContents(contents));
+        }
+      } catch (err) {
+        recordSecurityEvent('screen-capture-active', 'info',
+          `捕获状态守卫异常: ${String((err && err.message) || err)}`, originOfContents(contents));
+      }
+    });
+
+    // r33：devtools-opened/closed 收口调试通道本身。隔离子窗口按基线不该有 DevTools，
+    // 一旦被打开立即关闭并告警；普通标签打开 DevTools 只留痕（不阻断开发者），高频
+    // 开关（自动化 / 环境探测）折叠冷却。
+    contents.on('devtools-opened', () => {
+      try {
+        const st = getContentsState(
+          devtoolsSwitchStates, contents.id, devtoolsSwitchGuard.createDevtoolsState);
+        const isIso = isolatedChildContents.has(contents);
+        const v = devtoolsSwitchGuard.evaluateDevtoolsToggle(
+          st, 'opened', { isIsolatedChild: isIso }, Date.now());
+        if (v.action === devtoolsSwitchGuard.DEVTOOLS_CLOSE) {
+          recordSecurityEvent('devtools-switch', 'warn',
+            '按基线不应具备 DevTools 的隔离窗口被打开开发者工具，已立即关闭',
+            originOfContents(contents));
+          try { contents.closeDevTools(); } catch {}
+        } else if (v.action === devtoolsSwitchGuard.DEVTOOLS_AUDIT) {
+          recordSecurityEvent('devtools-switch', 'info',
+            '该标签打开了开发者工具：请勿在控制台粘贴来源不明的代码',
+            originOfContents(contents));
+        }
+      } catch (err) {
+        recordSecurityEvent('devtools-switch', 'info',
+          `DevTools 开关守卫异常: ${String((err && err.message) || err)}`, originOfContents(contents));
+      }
+    });
+    contents.on('devtools-closed', () => {
+      const st = devtoolsSwitchStates.get(contents.id);
+      if (st) devtoolsSwitchGuard.evaluateDevtoolsToggle(st, 'closed', {}, Date.now());
     });
   });
 }
@@ -4689,13 +4836,20 @@ function loadTabContent(tab) {
     });
 
     tab.view.webContents.on('context-menu', (event, params) => {
+      // r33：菜单入参完全来自网页，先经 menuguard 统一净化（危险链接协议、超长 /
+      // 含 CR/LF 的选中文本、非法错词与超长建议），后续一律只用净化后的值建菜单，
+      // 杜绝畸形 label 折行伪造条目与持久拼写词典投毒。
+      const mp = menuGuard.evaluateContextMenu(params);
+      if (mp.reasons.length > 0) {
+        recordSecurityEvent('context-menu-sanitized', 'info',
+          `右键菜单参数已净化（${mp.reasons.join('；')}）`, originOfContents(tab.view.webContents));
+      }
       const menu = new Menu();
       // 拼写建议放在菜单最顶部，与 Chromium 浏览器一致。
-      // misspelledWord 来自 Chromium 本地词典匹配，建议不离开本机。
-      if (spellcheckEnabled && params.isEditable && params.misspelledWord) {
-        const suggestions = (params.dictionarySuggestions || []).slice(0, 6);
-        if (suggestions.length) {
-          for (const word of suggestions) {
+      // misspelledWord / suggestions 已逐条校验，建议不离开本机。
+      if (spellcheckEnabled && mp.isEditable && mp.misspelledWord) {
+        if (mp.suggestions.length) {
+          for (const word of mp.suggestions) {
             menu.append(new MenuItem({
               label: word,
               click: () => tab.view.webContents.replaceMisspelling(word)
@@ -4708,7 +4862,8 @@ function loadTabContent(tab) {
           label: '添加到词典',
           click: () => {
             try {
-              tab.view.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord);
+              // mp.misspelledWord 已确认是合法单词（无空白 / 控制字符 / 标记符）。
+              tab.view.webContents.session.addWordToSpellCheckerDictionary(mp.misspelledWord);
             } catch (e) {
               console.error('添加自定义词典失败:', e);
             }
@@ -4716,21 +4871,21 @@ function loadTabContent(tab) {
         }));
         menu.append(new MenuItem({ type: 'separator' }));
       }
-      if (params.linkURL && isSafeUrl(params.linkURL)) {
-        menu.append(new MenuItem({ label: '在新标签页中打开', click: () => createNewTab(params.linkURL) }));
-        menu.append(new MenuItem({ label: '复制链接地址', click: () => clipboard.writeText(params.linkURL) }));
+      if (mp.canUseLink && mp.linkUrl) {
+        menu.append(new MenuItem({ label: '在新标签页中打开', click: () => createNewTab(mp.linkUrl) }));
+        menu.append(new MenuItem({ label: '复制链接地址', click: () => clipboard.writeText(mp.linkUrl) }));
         menu.append(new MenuItem({ type: 'separator' }));
       }
-      if (params.selectionText) {
+      if (mp.hasSelection) {
         menu.append(new MenuItem({ label: '复制', role: 'copy' }));
         menu.append(new MenuItem({
           label: '搜索所选内容',
-          click: () => createNewTab('https://www.bing.com/search?q=' + encodeURIComponent(params.selectionText))
+          click: () => createNewTab('https://www.bing.com/search?q=' + encodeURIComponent(mp.selectionText))
         }));
       }
-      if (params.selectionText && params.isEditable) menu.append(new MenuItem({ label: '剪切', role: 'cut' }));
-      if (params.isEditable) menu.append(new MenuItem({ label: '粘贴', role: 'paste' }));
-      if (params.isEditable) menu.append(new MenuItem({ label: '全选', role: 'selectAll' }));
+      if (mp.hasSelection && mp.isEditable) menu.append(new MenuItem({ label: '剪切', role: 'cut' }));
+      if (mp.isEditable) menu.append(new MenuItem({ label: '粘贴', role: 'paste' }));
+      if (mp.isEditable) menu.append(new MenuItem({ label: '全选', role: 'selectAll' }));
       if (menu.items.length > 0) menu.append(new MenuItem({ type: 'separator' }));
       if (isDev) menu.append(new MenuItem({ label: '开发者工具', click: toggleDevTools }));
       menu.popup({ window: mainWindow });
@@ -6251,6 +6406,24 @@ function sanitizeSettings(raw) {
 
 ipcMain.on('save-settings', (event, settings) => {
   if (!isMainSender(event)) return;
+  // r33：settings 是“整包序列化落盘”通道，先用 inputGuard 做形状与体量裁决：
+  // 非普通对象 / 嵌套过深 / 键数过多 / 体量逼近磁盘上限（16MiB）一律拒绝，防止
+  // 被攻陷渲染层用深层巨型对象打爆内存与 cosySettings.json。
+  const objRes = inputGuard.asPlainObject(settings);
+  if (!objRes.ok) {
+    recordSecurityEvent('ipc-input-rejected', 'warn',
+      'save-settings 收到非普通对象入参，已拒绝', originOfContents(event.sender));
+    event.reply('settings-saved', { success: false, error: 'invalid settings payload' });
+    return;
+  }
+  const measure = inputGuard.measureObject(settings);
+  if (!measure.ok) {
+    recordSecurityEvent('ipc-input-rejected', 'warn',
+      `save-settings 整包体量异常已拒绝（${measure.reason}，keys=${measure.keys}，bytes=${measure.bytes}）`,
+      originOfContents(event.sender));
+    event.reply('settings-saved', { success: false, error: 'settings payload too large' });
+    return;
+  }
   try {
     const clean = sanitizeSettings(settings);
     const settingsPath = path.join(app.getPath('userData'), 'cosySettings.json');
