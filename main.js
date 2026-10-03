@@ -28,6 +28,8 @@ const winPolicy = require('./winpolicy');
 const goneGuard = require('./goneguard');
 const shellGuard = require('./shellguard');
 const deeplinkGuard = require('./deeplinkguard');
+const ipcGuard = require('./ipcguard');
+const channelPolicy = require('./channelpolicy');
 const { pathToFileURL } = require('url');
 
 // 现代浏览器默认要求“用户与页面有过交互”才允许带声音自动播放，
@@ -425,6 +427,43 @@ const isDev = !app.isPackaged;
 function isMainSender(event) {
   return event.sender === mainWindow?.webContents;
 }
+
+// 判断一个 file: 帧是否为“应用自带的内置静态页”（如 tab 视图加载的 src/error.html、
+// src/download/index.html）。这些页物理上位于安装目录 __dirname 内；用户在标签里
+// 打开的任意本地 html（D:\xxx.html）在目录外，必须按不可信帧处理。
+function isInternalFileFrame(frameUrl) {
+  if (typeof frameUrl !== 'string' || !frameUrl.startsWith('file:')) return false;
+  let filePath;
+  try {
+    filePath = require('url').fileURLToPath(frameUrl);
+  } catch {
+    return false;
+  }
+  return winPolicy.isInsideRoot(filePath, __dirname);
+}
+
+// 入站 IPC 统一来源守卫：默认只放行主窗口外壳（file: 的 index.html）与 cosy: 内置
+// 帧；远程网页、data/blob/about、以及用户在标签里打开的本地 html（local-file）一律
+// 不进入任何业务 handler。这是 preload 降级之外的主进程第二道边界，一次性收掉过去
+// “每个 handler 手写 isMainSender”的遗漏——历史上 approve/list/remove/clear-cert
+// -exceptions 五个证书通道就完全没校验，任意被浏览网页都能放行 TLS 例外。
+// report-csp-violation 允许任意帧投递，但其 handler 内部仍按帧来源自验并丢弃远程上报。
+const ipcDenyCounter = ipcGuard.createRateCounter();
+ipcGuard.installIpcGuard(ipcMain, {
+  isShellSender: isMainSender,
+  isInternalFileFrame,
+  frameAllows: (kind, channel) => channelPolicy.frameAllows(kind, channel),
+  allowAnyFrame: new Set(['report-csp-violation']),
+  onReject: ({ channel, kind, reason }) => {
+    try {
+      const key = `${channel}|${kind}`;
+      // 同一“通道+来源”10 秒内最多记 20 条，防止被浏览网页狂刷特权 IPC 打爆安全台账。
+      if (!ipcDenyCounter.admit(key, 10000, 20)) return;
+      recordSecurityEvent('ipc-denied', 'warn',
+        `拒绝来自 ${kind} 帧的 IPC 调用: ${channel} (${reason})`, '');
+    } catch {}
+  },
+});
 
 function sendToRenderer(channel, ...args) {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -1454,6 +1493,7 @@ const SECURITY_EVENT_TYPES = new Set([
   'window-policy',           // 窗口 webPreferences 出现越界/不安全配置被基线拒绝
   'renderer-gone',           // 渲染/GPU 进程崩溃与无响应的恢复 / 熔断处置
   'deeplink-blocked',        // 命令行/open-file/open-url 非法深链被入口消毒拦截
+  'ipc-denied',
 ]);
 
 const securityEvents = [];
