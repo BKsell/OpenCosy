@@ -72,6 +72,7 @@ const storageAccessGuard = require('./storageaccessguard');
 const historyGuard = require('./historyguard');
 const bookmarkGuard = require('./bookmarkguard');
 const restoreGuard = require('./restoreguard');
+const ledgerStore = require('./ledgerstore');
 const { pathToFileURL } = require('url');
 
 // 危险命令行开关 / ELECTRON_EXTRA_LAUNCH_ARGS 注入必须在 ready 之前就拦下：
@@ -551,7 +552,7 @@ function applySpellcheckSettings() {
 function readPersistedSettings() {
   try {
     const p = path.join(app.getPath('userData'), 'cosySettings.json');
-    if (fsSync.existsSync(p)) return JSON.parse(fsSync.readFileSync(p, 'utf-8')) || {};
+    return ledgerStore.readJSONStore(p, {});
   } catch (e) {
     console.error('启动时读取设置失败:', e);
   }
@@ -780,7 +781,7 @@ function addToHistory(url, title) {
 function saveHistory() {
   const historyPath = path.join(app.getPath('userData'), 'history.json');
   try {
-    fsSync.writeFileSync(historyPath, JSON.stringify(history, null, 2), 'utf-8');
+    ledgerStore.writeJSONStore(historyPath, history, { pretty: true });
   } catch (e) {
     console.error('保存历史记录失败:', e);
   }
@@ -793,13 +794,8 @@ function loadHistory() {
     // history.json 是本地文件、也可能被外部程序 / 旧版本写坏：解析结果必须是数组，
     // 且每条都重新过内核净化（非 http/https、无法解析、标题含控制字符的一律丢弃 /
     // 清洗），时间戳必须为有限非负数，否则该条丢弃。绝不信任磁盘上的结构。
-    let parsed;
-    try {
-      parsed = JSON.parse(fsSync.readFileSync(historyPath, 'utf-8'));
-    } catch {
-      history = [];
-      return;
-    }
+    // 有界读取：损坏 / 被撑大的文件回落为 null，下面按“非数组”清空，绝不整读撑爆主进程。
+    const parsed = ledgerStore.readJSONStore(historyPath, null);
     if (!Array.isArray(parsed)) {
       history = [];
       return;
@@ -832,7 +828,7 @@ function saveBookmarks() {
     // 避免不可信标题或海量条目污染 bookmarks.json。
     const cleaned = bookmarkGuard.sanitizeBookmarkList(bookmarks, Date.now());
     bookmarks = cleaned.items;
-    fsSync.writeFileSync(bookmarksPath, JSON.stringify(bookmarks, null, 2), 'utf-8');
+    ledgerStore.writeJSONStore(bookmarksPath, bookmarks, { pretty: true });
   } catch (e) {
     console.error('保存书签失败:', e);
   }
@@ -844,8 +840,8 @@ function loadBookmarks() {
     if (fsSync.existsSync(bookmarksPath)) {
       // bookmarks.json 不是信任边界（可被手改 / 同步盘 / 恶意进程替换 / 崩溃截断）：
       // 非数组视为空，逐条做对象 / 字段 / scheme 校验，脏项丢弃，绝不把脏结构送进 UI。
-      const parsed = JSON.parse(fsSync.readFileSync(bookmarksPath, 'utf-8'));
-      bookmarks = bookmarkGuard.sanitizeBookmarkList(parsed, Date.now()).items;
+      const parsed = ledgerStore.readJSONStore(bookmarksPath, null);
+      if (parsed !== null) bookmarks = bookmarkGuard.sanitizeBookmarkList(parsed, Date.now()).items;
     }
   } catch (e) {
     console.error('读取书签失败:', e);
@@ -861,7 +857,7 @@ function saveSession() {
       .filter(tab => !String(tab.url || '').startsWith('cosy://'))
       .map(tab => ({ url: tab.url, title: tab.title }));
     const sessionTabs = restoreGuard.sanitizeSessionList(raw).tabs;
-    fsSync.writeFileSync(sessionPath, JSON.stringify(sessionTabs, null, 2), 'utf-8');
+    ledgerStore.writeJSONStore(sessionPath, sessionTabs, { pretty: true });
   } catch (e) {
     console.error('保存会话失败:', e);
   }
@@ -871,7 +867,8 @@ function loadSession() {
   try {
     const sessionPath = path.join(app.getPath('userData'), 'session.json');
     if (fsSync.existsSync(sessionPath)) {
-      const parsed = JSON.parse(fsSync.readFileSync(sessionPath, 'utf-8'));
+      const parsed = ledgerStore.readJSONStore(sessionPath, null);
+      if (parsed === null) return null;
       // 逐条做对象 / url / title 校验：旧实现只判 Array.isArray 就 filter(isSafeUrl)，
       // null / 数字 / 嵌套数组会让恢复时访问 tab.title 抛异常并阻断全部标签恢复。
       const { tabs: restored } = restoreGuard.sanitizeSessionList(parsed);
@@ -939,7 +936,7 @@ function isPrivateNetworkHost(url) {
 function readStoredSettings() {
   try {
     const p = path.join(app.getPath('userData'), 'cosySettings.json');
-    if (fsSync.existsSync(p)) return JSON.parse(fsSync.readFileSync(p, 'utf-8'));
+    return ledgerStore.readJSONStore(p, {});
   } catch (e) { console.error('读取设置失败:', e); }
   return {};
 }
@@ -965,8 +962,7 @@ function loadCookieLedger() {
   if (cookieLedgerLoaded) return;
   cookieLedgerLoaded = true;
   try {
-    const data = JSON.parse(fsSync.readFileSync(cookieLedgerStorePath, 'utf8'));
-    cookieLedger.load(data);
+    cookieLedger.load(ledgerStore.readJSONStore(cookieLedgerStorePath, {}));
   } catch {}
 }
 
@@ -974,9 +970,7 @@ function persistCookieLedger() {
   if (cookieLedgerSaveTimer) clearTimeout(cookieLedgerSaveTimer);
   cookieLedgerSaveTimer = setTimeout(() => {
     try {
-      const tmp = cookieLedgerStorePath + '.tmp';
-      fsSync.writeFileSync(tmp, JSON.stringify(cookieLedger.toJSON()), 'utf8');
-      fsSync.renameSync(tmp, cookieLedgerStorePath);
+      ledgerStore.writeJSONStore(cookieLedgerStorePath, cookieLedger.toJSON());
     } catch {}
   }, 300);
 }
@@ -992,7 +986,7 @@ function loadPnaLedger() {
   if (pnaLedgerLoaded) return;
   pnaLedgerLoaded = true;
   try {
-    const data = JSON.parse(fsSync.readFileSync(pnaLedgerStorePath, 'utf8'));
+    const data = ledgerStore.readJSONStore(pnaLedgerStorePath, {});
     const rows = Array.isArray(data && data.rows) ? data.rows : [];
     for (const r of rows) {
       if (!r || typeof r.host !== 'string') continue;
@@ -1011,9 +1005,7 @@ function persistPnaLedger() {
   pnaLedgerSaveTimer = setTimeout(() => {
     try {
       const rows = [...pnaLedger.values()];
-      const tmp = pnaLedgerStorePath + '.tmp';
-      fsSync.writeFileSync(tmp, JSON.stringify({ version: 1, rows }), 'utf8');
-      fsSync.renameSync(tmp, pnaLedgerStorePath);
+      ledgerStore.writeJSONStore(pnaLedgerStorePath, { version: 1, rows });
     } catch {}
   }, 400);
 }
@@ -1053,7 +1045,7 @@ function loadFpLedger() {
   if (fpLedgerLoaded) return;
   fpLedgerLoaded = true;
   try {
-    fpLedger.load(JSON.parse(fsSync.readFileSync(fpLedgerStorePath, 'utf8')));
+    fpLedger.load(ledgerStore.readJSONStore(fpLedgerStorePath, {}));
   } catch {}
 }
 
@@ -1061,9 +1053,7 @@ function persistFpLedger() {
   if (fpLedgerSaveTimer) clearTimeout(fpLedgerSaveTimer);
   fpLedgerSaveTimer = setTimeout(() => {
     try {
-      const tmp = fpLedgerStorePath + '.tmp';
-      fsSync.writeFileSync(tmp, JSON.stringify(fpLedger.toJSON()), 'utf8');
-      fsSync.renameSync(tmp, fpLedgerStorePath);
+      ledgerStore.writeJSONStore(fpLedgerStorePath, fpLedger.toJSON());
     } catch {}
   }, 400);
 }
@@ -1129,7 +1119,7 @@ function loadDohLedger() {
   if (dohLedgerLoaded) return;
   dohLedgerLoaded = true;
   try {
-    dohLedger.load(JSON.parse(fsSync.readFileSync(dohStorePath, 'utf8')));
+    dohLedger.load(ledgerStore.readJSONStore(dohStorePath, {}));
   } catch {}
 }
 
@@ -1137,9 +1127,7 @@ function persistDohLedger() {
   if (dohSaveTimer) clearTimeout(dohSaveTimer);
   dohSaveTimer = setTimeout(() => {
     try {
-      const tmp = dohStorePath + '.tmp';
-      fsSync.writeFileSync(tmp, JSON.stringify(dohLedger.toJSON()), 'utf8');
-      fsSync.renameSync(tmp, dohStorePath);
+      ledgerStore.writeJSONStore(dohStorePath, dohLedger.toJSON());
     } catch {}
   }, 400);
 }
@@ -1474,7 +1462,7 @@ function loadProtocolDecisions() {
   if (protocolDecisionsLoaded) return;
   protocolDecisionsLoaded = true;
   try {
-    const data = JSON.parse(fsSync.readFileSync(protocolDecisionStorePath, 'utf8'));
+    const data = ledgerStore.readJSONStore(protocolDecisionStorePath, {});
     const entries = data && typeof data === 'object' ? data.decisions : null;
     if (!entries || typeof entries !== 'object') return;
     for (const [k, v] of Object.entries(entries)) {
@@ -1498,9 +1486,7 @@ function persistProtocolDecisions() {
     try {
       const decisions = {};
       for (const [k, v] of protocolDecisions) decisions[k] = v;
-      const tmp = protocolDecisionStorePath + '.tmp';
-      fsSync.writeFileSync(tmp, JSON.stringify({ version: 1, decisions }), 'utf8');
-      fsSync.renameSync(tmp, protocolDecisionStorePath);
+      ledgerStore.writeJSONStore(protocolDecisionStorePath, { version: 1, decisions });
     } catch {}
   }, 300);
 }
@@ -1731,7 +1717,7 @@ function loadSecurityEvents() {
   if (securityEventsLoaded) return;
   securityEventsLoaded = true;
   try {
-    const data = JSON.parse(fsSync.readFileSync(securityEventStorePath, 'utf8'));
+    const data = ledgerStore.readJSONStore(securityEventStorePath, {});
     const entries = Array.isArray(data && data.events) ? data.events : null;
     if (!entries) return;
     for (const e of entries) {
@@ -1755,9 +1741,7 @@ function persistSecurityEvents() {
   if (securityEventSaveTimer) clearTimeout(securityEventSaveTimer);
   securityEventSaveTimer = setTimeout(() => {
     try {
-      const tmp = securityEventStorePath + '.tmp';
-      fsSync.writeFileSync(tmp, JSON.stringify({ version: 1, events: securityEvents }), 'utf8');
-      fsSync.renameSync(tmp, securityEventStorePath);
+      ledgerStore.writeJSONStore(securityEventStorePath, { version: 1, events: securityEvents });
     } catch {}
   }, 300);
 }
@@ -1849,7 +1833,7 @@ function loadCspReports() {
   if (cspReportsLoaded) return;
   cspReportsLoaded = true;
   try {
-    const data = JSON.parse(fsSync.readFileSync(cspReportStorePath, 'utf8'));
+    const data = ledgerStore.readJSONStore(cspReportStorePath, {});
     const entries = Array.isArray(data && data.reports) ? data.reports : null;
     if (!entries) return;
     for (const r of entries) {
@@ -1880,9 +1864,7 @@ function persistCspReports() {
   if (cspReportSaveTimer) clearTimeout(cspReportSaveTimer);
   cspReportSaveTimer = setTimeout(() => {
     try {
-      const tmp = cspReportStorePath + '.tmp';
-      fsSync.writeFileSync(tmp, JSON.stringify({ version: 1, reports: cspReports }), 'utf8');
-      fsSync.renameSync(tmp, cspReportStorePath);
+      ledgerStore.writeJSONStore(cspReportStorePath, { version: 1, reports: cspReports });
     } catch {}
   }, 300);
 }
@@ -2030,7 +2012,7 @@ function loadHeaderGrades() {
   if (headerGradesLoaded) return;
   headerGradesLoaded = true;
   try {
-    const data = JSON.parse(fsSync.readFileSync(headerGradeStorePath, 'utf8'));
+    const data = ledgerStore.readJSONStore(headerGradeStorePath, {});
     const entries = Array.isArray(data && data.hosts) ? data.hosts : null;
     if (!entries) return;
     for (const h of entries) {
@@ -2055,9 +2037,7 @@ function persistHeaderGrades() {
   if (headerGradeSaveTimer) clearTimeout(headerGradeSaveTimer);
   headerGradeSaveTimer = setTimeout(() => {
     try {
-      const tmp = headerGradeStorePath + '.tmp';
-      fsSync.writeFileSync(tmp, JSON.stringify({ version: 1, hosts: headerGrades }), 'utf8');
-      fsSync.renameSync(tmp, headerGradeStorePath);
+      ledgerStore.writeJSONStore(headerGradeStorePath, { version: 1, hosts: headerGrades });
     } catch {}
   }, 400);
 }
@@ -2144,7 +2124,7 @@ function loadRequestLog() {
   if (requestLogLoaded) return;
   requestLogLoaded = true;
   try {
-    const data = JSON.parse(fsSync.readFileSync(requestLogStorePath, 'utf8'));
+    const data = ledgerStore.readJSONStore(requestLogStorePath, {});
     if (data && Array.isArray(data.entries)) {
       requestLogStore = requestLog.hydrate(data.entries, MAX_REQUEST_LOG_HOSTS);
     }
@@ -2155,10 +2135,8 @@ function persistRequestLog() {
   if (requestLogSaveTimer) clearTimeout(requestLogSaveTimer);
   requestLogSaveTimer = setTimeout(() => {
     try {
-      const tmp = requestLogStorePath + '.tmp';
       const entries = requestLog.toList(requestLogStore);
-      fsSync.writeFileSync(tmp, JSON.stringify({ version: 1, savedAt: Date.now(), entries }), 'utf8');
-      fsSync.renameSync(tmp, requestLogStorePath);
+      ledgerStore.writeJSONStore(requestLogStorePath, { version: 1, savedAt: Date.now(), entries });
     } catch {}
   }, 5000);
 }
@@ -2226,7 +2204,7 @@ function loadBrandSpoofs() {
   if (brandSpoofsLoaded) return;
   brandSpoofsLoaded = true;
   try {
-    const data = JSON.parse(fsSync.readFileSync(brandSpoofStorePath, 'utf8'));
+    const data = ledgerStore.readJSONStore(brandSpoofStorePath, {});
     if (data && Array.isArray(data.hosts)) {
       const now = Date.now();
       for (const h of data.hosts) {
@@ -2254,9 +2232,7 @@ function persistBrandSpoofs() {
   if (brandSpoofSaveTimer) clearTimeout(brandSpoofSaveTimer);
   brandSpoofSaveTimer = setTimeout(() => {
     try {
-      const tmp = brandSpoofStorePath + '.tmp';
-      fsSync.writeFileSync(tmp, JSON.stringify({ version: 1, savedAt: Date.now(), hosts: brandSpoofs }), 'utf8');
-      fsSync.renameSync(tmp, brandSpoofStorePath);
+      ledgerStore.writeJSONStore(brandSpoofStorePath, { version: 1, savedAt: Date.now(), hosts: brandSpoofs });
     } catch {}
   }, 5000);
 }
@@ -2354,7 +2330,7 @@ function loadCertExceptions() {
   if (certExceptionsLoaded) return;
   certExceptionsLoaded = true;
   try {
-    const data = JSON.parse(fsSync.readFileSync(certExceptionStorePath, 'utf8'));
+    const data = ledgerStore.readJSONStore(certExceptionStorePath, {});
     if (data && Array.isArray(data.exceptions)) {
       for (const raw of data.exceptions) {
         const rec = certGuard.sanitizeExceptionRecord(raw);
@@ -2371,9 +2347,7 @@ function persistCertExceptions() {
   if (certExceptionSaveTimer) clearTimeout(certExceptionSaveTimer);
   certExceptionSaveTimer = setTimeout(() => {
     try {
-      const tmp = certExceptionStorePath + '.tmp';
-      fsSync.writeFileSync(tmp, JSON.stringify({ version: 1, savedAt: Date.now(), exceptions: certExceptions }), 'utf8');
-      fsSync.renameSync(tmp, certExceptionStorePath);
+      ledgerStore.writeJSONStore(certExceptionStorePath, { version: 1, savedAt: Date.now(), exceptions: certExceptions });
     } catch {}
   }, 1000);
 }
@@ -2570,8 +2544,10 @@ function loadClientCertChoices() {
   if (clientCertStoreLoaded) return;
   clientCertStoreLoaded = true;
   try {
-    const raw = fsSync.readFileSync(clientCertStorePath, 'utf8');
-    clientCertStore.loadJSON(raw);
+    // 有界文本读：clientCert 台账缺失时 readBoundedText 返回 {missing}，不解析、不加载；
+    // 被塞成巨值或损坏则交由外层 try/catch / loadJSON 容错，绝不整读撑爆主进程。
+    const picked = ledgerStore.readBoundedText(clientCertStorePath);
+    if (!picked.missing) clientCertStore.loadJSON(picked.text);
   } catch {}
 }
 
@@ -2579,9 +2555,7 @@ function persistClientCertChoices() {
   if (clientCertSaveTimer) clearTimeout(clientCertSaveTimer);
   clientCertSaveTimer = setTimeout(() => {
     try {
-      const tmp = clientCertStorePath + '.tmp';
-      fsSync.writeFileSync(tmp, JSON.stringify(clientCertStore.toJSON()), 'utf8');
-      fsSync.renameSync(tmp, clientCertStorePath);
+      ledgerStore.writeJSONStore(clientCertStorePath, clientCertStore.toJSON());
     } catch {}
   }, 300);
 }
@@ -2921,7 +2895,7 @@ function loadDownloadHashes() {
   if (downloadHashesLoaded) return;
   downloadHashesLoaded = true;
   try {
-    const data = JSON.parse(fsSync.readFileSync(downloadHashStorePath, 'utf8'));
+    const data = ledgerStore.readJSONStore(downloadHashStorePath, {});
     const entries = Array.isArray(data && data.records) ? data.records : null;
     if (!entries) return;
     for (const r of entries) {
@@ -2945,9 +2919,7 @@ function persistDownloadHashes() {
   if (downloadHashSaveTimer) clearTimeout(downloadHashSaveTimer);
   downloadHashSaveTimer = setTimeout(() => {
     try {
-      const tmp = downloadHashStorePath + '.tmp';
-      fsSync.writeFileSync(tmp, JSON.stringify({ version: 1, records: downloadHashRecords }), 'utf8');
-      fsSync.renameSync(tmp, downloadHashStorePath);
+      ledgerStore.writeJSONStore(downloadHashStorePath, { version: 1, records: downloadHashRecords });
     } catch {}
   }, 300);
 }
@@ -3109,7 +3081,7 @@ function loadPermissionDecisions() {
   if (permissionDecisionsLoaded) return;
   permissionDecisionsLoaded = true;
   try {
-    const data = JSON.parse(fsSync.readFileSync(permissionStorePath, 'utf8'));
+    const data = ledgerStore.readJSONStore(permissionStorePath, {});
     const entries = data && typeof data === 'object' ? data.decisions : null;
     if (!entries || typeof entries !== 'object') return;
     for (const [k, v] of Object.entries(entries)) {
@@ -3133,9 +3105,7 @@ function persistPermissionDecisions() {
     try {
       const decisions = {};
       for (const [k, v] of permissionDecisions) decisions[k] = v;
-      const tmp = permissionStorePath + '.tmp';
-      fsSync.writeFileSync(tmp, JSON.stringify({ version: 1, decisions }), 'utf8');
-      fsSync.renameSync(tmp, permissionStorePath);
+      ledgerStore.writeJSONStore(permissionStorePath, { version: 1, decisions });
     } catch {}
   }, 300);
 }
@@ -4543,30 +4513,16 @@ function setupExtraSessionHardening() {
 }
 
 function getTabLayout() {
-  const settingsPath = path.join(app.getPath('userData'), 'cosySettings.json');
-  try {
-    if (fsSync.existsSync(settingsPath)) {
-      const settings = JSON.parse(fsSync.readFileSync(settingsPath, 'utf-8'));
-      return settings.tabLayout || 'horizontal';
-    }
-  } catch (e) {
-    console.error('读取设置失败:', e);
-  }
-  return 'horizontal';
+  // 复用统一的有界设置读取（坏 / 超大文件回落 {}），不再各自 existsSync+parse。
+  const settings = readStoredSettings();
+  return settings.tabLayout || 'horizontal';
 }
 
 function getDefaultTabUrl() {
-  const settingsPath = path.join(app.getPath('userData'), 'cosySettings.json');
-  try {
-    if (fsSync.existsSync(settingsPath)) {
-      const settings = JSON.parse(fsSync.readFileSync(settingsPath, 'utf-8'));
-      if (settings.defaultTab === 'bing') return 'https://www.bing.com';
-      if (settings.defaultTab === 'custom' && settings.customUrl && isSafeUrl(settings.customUrl))
-        return settings.customUrl;
-    }
-  } catch (e) {
-    console.error('读取设置失败:', e);
-  }
+  const settings = readStoredSettings();
+  if (settings.defaultTab === 'bing') return 'https://www.bing.com';
+  if (settings.defaultTab === 'custom' && settings.customUrl && isSafeUrl(settings.customUrl))
+    return settings.customUrl;
   return 'cosy://newtab';
 }
 
@@ -5463,7 +5419,7 @@ function loadDownloadRisks() {
   if (downloadRiskLoaded) return;
   downloadRiskLoaded = true;
   try {
-    const data = JSON.parse(fsSync.readFileSync(downloadRiskStorePath, 'utf8'));
+    const data = ledgerStore.readJSONStore(downloadRiskStorePath, {});
     const entries = Array.isArray(data && data.records) ? data.records : null;
     if (!entries) return;
     for (const r of entries) {
@@ -5491,9 +5447,7 @@ function persistDownloadRisks() {
   if (downloadRiskSaveTimer) clearTimeout(downloadRiskSaveTimer);
   downloadRiskSaveTimer = setTimeout(() => {
     try {
-      const tmp = downloadRiskStorePath + '.tmp';
-      fsSync.writeFileSync(tmp, JSON.stringify({ version: 1, records: downloadRiskRecords }), 'utf8');
-      fsSync.renameSync(tmp, downloadRiskStorePath);
+      ledgerStore.writeJSONStore(downloadRiskStorePath, { version: 1, records: downloadRiskRecords });
     } catch {}
   }, 300);
 }
@@ -6056,8 +6010,8 @@ function originOfUrl(u) {
 // 文件损坏 / 被外部塞非法内容时静默丢弃，绝不因此影响浏览器启动。
 function loadZoomFactors() {
   try {
-    const raw = fsSync.readFileSync(zoomStorePath, 'utf8');
-    const data = JSON.parse(raw);
+    // 有界读：缺失 / 损坏 / 被撑大的 zoom 台账回落 null，直接 return，不影响启动。
+    const data = ledgerStore.readJSONStore(zoomStorePath, null);
     if (!data || typeof data !== 'object' || !data.origins || typeof data.origins !== 'object') return;
     for (const [origin, factor] of Object.entries(data.origins)) {
       if (typeof origin !== 'string' || !/^https?:|^cosy:/.test(origin)) continue;
@@ -6075,9 +6029,7 @@ function persistZoomFactors() {
     try {
       const origins = {};
       for (const [origin, factor] of zoomFactorsByOrigin) origins[origin] = factor;
-      const tmp = zoomStorePath + '.tmp';
-      fsSync.writeFileSync(tmp, JSON.stringify({ version: 1, origins }), 'utf8');
-      fsSync.renameSync(tmp, zoomStorePath);
+      ledgerStore.writeJSONStore(zoomStorePath, { version: 1, origins });
     } catch {}
   }, 400);
 }
@@ -6831,7 +6783,8 @@ ipcMain.on('save-settings', (event, settings) => {
   try {
     const clean = sanitizeSettings(settings);
     const settingsPath = path.join(app.getPath('userData'), 'cosySettings.json');
-    fsSync.writeFileSync(settingsPath, JSON.stringify(clean, null, 2), 'utf-8');
+    // 崩溃安全原子写：避免写一半断电导致设置文件截断、下次启动全部偏好丢失。
+    ledgerStore.writeJSONStore(settingsPath, clean, { pretty: true });
     // 立即把 darkMode / httpsOnly / memorySaver 应用到运行时
     applyDarkMode(clean.darkMode);
     httpsOnlyEnabled = clean.httpsOnly !== false;
@@ -6876,9 +6829,8 @@ ipcMain.on('update-theme-color', (event, color) => {
 ipcMain.on('get-settings', (event) => {
   if (!isMainSender(event)) return;
   try {
-    const settingsPath = path.join(app.getPath('userData'), 'cosySettings.json');
-    if (fsSync.existsSync(settingsPath)) event.reply('settings-loaded', JSON.parse(fsSync.readFileSync(settingsPath, 'utf-8')));
-    else event.reply('settings-loaded', {});
+    // 复用统一的有界设置读取，坏 / 超大文件回落 {}，不再 existsSync+整读。
+    event.reply('settings-loaded', readStoredSettings());
   } catch (e) {
     console.error('读取设置失败:', e);
     event.reply('settings-loaded', {});
