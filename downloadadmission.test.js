@@ -170,3 +170,53 @@ test('输出对象不共享可变状态（多次调用互不污染）', () => {
   assert.strictEqual(b.host, 'cdn.test.org');
   assert.notStrictEqual(a.analysis, b.analysis);
 });
+
+test('mimeType 原样透传给类型分析内核（驱动 MIME/扩展交叉比对）', () => {
+  let seenMime = null;
+  const deps = makeDeps({
+    analyzeName(filename, mime) {
+      seenMime = mime;
+      return { decision: DECISION.ALLOW, displayName: filename, finalExt: '', risks: [] };
+    },
+  });
+  admission.planDownloadAdmission(deps, {
+    url: 'https://example.com/dl', rawFilename: 'a.bin', mimeType: 'application/x-msdownload',
+  });
+  assert.strictEqual(seenMime, 'application/x-msdownload');
+});
+
+test('非字符串入参被强转为字符串，不抛异常', () => {
+  const deps = makeDeps({
+    analyzeName(filename) {
+      assert.strictEqual(typeof filename, 'string');
+      return { decision: DECISION.ALLOW, displayName: '', finalExt: '', risks: [] };
+    },
+  });
+  const out = admission.planDownloadAdmission(deps, {
+    url: 'https://example.com/x', rawFilename: 12345, mimeType: null,
+  });
+  assert.strictEqual(out.rawFilename, '12345');
+  assert.strictEqual(out.action, admission.ACTION_ALLOW);
+});
+
+test('分析器返回未知 decision 字符串时回落 ALLOW（只认显式 REJECT/CONFIRM/WARN）', () => {
+  const deps = makeDeps({
+    analyzeName: () => ({ decision: 'something-new', displayName: 'x', finalExt: '', risks: [] }),
+  });
+  const out = admission.planDownloadAdmission(deps, {
+    url: 'https://example.com/x', rawFilename: 'x',
+  });
+  assert.strictEqual(out.action, admission.ACTION_ALLOW);
+});
+
+test('actions 为五个互不相同的稳定字符串常量', () => {
+  const acts = [
+    admission.ACTION_BLOCK_UNSAFE,
+    admission.ACTION_REJECT,
+    admission.ACTION_CONFIRM,
+    admission.ACTION_WARN,
+    admission.ACTION_ALLOW,
+  ];
+  assert.strictEqual(new Set(acts).size, acts.length);
+  for (const a of acts) assert.strictEqual(typeof a, 'string');
+});
