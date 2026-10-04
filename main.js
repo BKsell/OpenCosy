@@ -14,6 +14,7 @@ const netAuthGuard = require('./netauthguard');
 const cookieGuard = require('./cookieguard');
 const pnaGuard = require('./pna');
 const fpGuard = require('./fpguard');
+const requestPipeline = require('./requestpipeline');
 const dohGuard = require('./dohguard');
 const permPolicy = require('./permpolicy');
 const dloadGuard = require('./dloadguard');
@@ -1258,153 +1259,98 @@ function hardenResponseHeaders(rawHeaders, details, options) {
   return headers;
 }
 
-function setupSecurityHeaders() {
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    const headers = hardenResponseHeaders(details.responseHeaders, details, { grade: true });
-    callback({ responseHeaders: headers });
-  });
-
-  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
-    const headers = details.requestHeaders;
+// applyOutboundHeaderHardening：在任意会话上挂统一的“出向请求头”加固。
+// 无论默认会话还是 fromPartition 的隔离 / 访客会话，都必须：
+//   - 注入 DNT / Sec-GPC / Upgrade-Insecure-Requests；
+//   - 收敛 Referer；
+//   - 剥离高熵 Client Hints、Topics / 归因等广告指纹头（fpGuard）。
+// 历史上隔离会话只补了前两项，漏掉 fpGuard 清洗，导致“本该更隐私的隔离分区”
+// 反而继续外发高熵指纹头。options.recordFp 仅控制是否把命中聚合进指纹台账
+// （分区会话不重复计数），但清洗动作在所有会话上恒为开启。
+function applyOutboundHeaderHardening(targetSession, options) {
+  const recordFp = !!(options && options.recordFp);
+  targetSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    const headers = details.requestHeaders || {};
     headers['DNT'] = '1';
     headers['Sec-GPC'] = '1';
     headers['Upgrade-Insecure-Requests'] = '1';
-    trimReferrerHeader(details, headers);
-    // 指纹 / 广告信号收敛：剥离高熵 Client Hints 与归因 / Topics 请求头。
+    try { trimReferrerHeader(details, headers); } catch {}
     try {
-      const fpOptions = {
+      const removed = fpGuard.sanitizeOutboundHeaders(details, headers, {
         reduceClientHints,
         blockAdSignals,
         blockHyperlinkPing,
         stripAcceptCh,
         webrtcMode,
-      };
-      const removed = fpGuard.sanitizeOutboundHeaders(details, headers, fpOptions);
-      const host = fpGuard.hostOf(details.url);
-      if (host && removed.clientHints.length) {
-        recordFpHit(host, 'client-hints', removed.clientHints);
-      }
-      if (host && removed.adSignals.length) {
-        recordFpHit(host, 'ad-signals', removed.adSignals);
+      });
+      if (recordFp) {
+        const host = fpGuard.hostOf(details.url);
+        if (host && removed.clientHints.length) {
+          recordFpHit(host, 'client-hints', removed.clientHints);
+        }
+        if (host && removed.adSignals.length) {
+          recordFpHit(host, 'ad-signals', removed.adSignals);
+        }
       }
     } catch {}
     callback({ requestHeaders: headers });
   });
+}
 
-  session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
-    const isHttpUrl = details.url.startsWith('http://') || details.url.startsWith('https://');
-    // 超链接审计打点（<a ping> / sendBeacon 类 ping）：静默取消，顶层导航不受影响。
-    if (isHttpUrl) {
-      try {
-        if (fpGuard.isHyperlinkPing(details, { blockHyperlinkPing })) {
-          const host = fpGuard.hostOf(details.url);
-          recordFpHit(host, 'ping', ['hyperlink-ping']);
-          recordSecurityEvent('fingerprint-blocked', 'info',
-            `已阻止超链接打点请求（ping）：${details.url}`, host);
-          recordRequestAttempt(details, true);
-          return callback({ cancel: true });
-        }
-      } catch {}
-    }
-    // 第三方追踪 / 广告子资源：直接取消（不动顶层导航）。
-    if (isHttpUrl && isTrackerRequest(details)) {
-      recordBlockedTracker(details.url);
-      recordRequestAttempt(details, true);
-      return callback({ cancel: true });
-    }
+// applyWebRequestFiltering：在任意会话上挂统一的 onBeforeRequest 过滤。
+// Electron 的 webRequest 处理器按会话注册、不会从 defaultSession 继承，因此
+// fromPartition 的隔离 / 访客会话必须各自挂一份，否则 tracker / ping / 私网访问 /
+// 混合内容 / 追踪参数 / HTTPS-only 在这些“本该更安全”的分区里全部失效。
+// options.logRequests 仅控制是否把请求量计入默认会话的连接统计（分区不重复计数）；
+// 阻断 / 升级 / 安全审计在所有会话上行为一致。
+// buildRequestPipelineDeps 组装纯决策内核所需的守卫 / 台账 / 横幅能力。
+// 三个开关是可变设置（用户可在设置页切换），用 getter 保证每次判定都读到当前值。
+function buildRequestPipelineDeps() {
+  return {
+    flags: {
+      get blockHyperlinkPing() { return blockHyperlinkPing; },
+      get blockLocalNetworkAccess() { return blockLocalNetworkAccess; },
+      get httpsOnlyEnabled() { return httpsOnlyEnabled; },
+    },
+    guards: {
+      isHyperlinkPing: fpGuard.isHyperlinkPing.bind(fpGuard),
+      hostOf: fpGuard.hostOf.bind(fpGuard),
+      isTrackerRequest,
+      evaluatePnaRequest: pnaGuard.evaluatePnaRequest.bind(pnaGuard),
+      classifyMixedContent: mixedGuard.classifyMixedContent.bind(mixedGuard),
+      stripTrackingFromUrl,
+      analyzeHostForSpoof,
+      analyzeBrand: brandGuard.analyzeBrand.bind(brandGuard),
+      analyzePhish: phishUrl.analyze.bind(phishUrl),
+      isPrivateNetworkHost,
+    },
+    record: {
+      fpHit: recordFpHit,
+      securityEvent: recordSecurityEvent,
+      blockedTracker: recordBlockedTracker,
+      pnaBlock: recordPnaBlock,
+      brandSpoof: recordBrandSpoof,
+    },
+    notify: { sendToRenderer },
+  };
+}
 
-    // 私有网络访问（PNA）：公网页面不得借浏览器打本机 / 内网 / 云元数据。
-    if (isHttpUrl) {
-      try {
-        const verdict = pnaGuard.evaluatePnaRequest(details, {
-          enabled: blockLocalNetworkAccess,
-        });
-        if (verdict.block) {
-          recordPnaBlock(details, verdict);
-          recordSecurityEvent('pna-blocked', 'warn',
-            `已阻止公网页面访问${verdict.targetSpace === 'loopback' ? '本机' :
-              verdict.targetSpace === 'link-local' ? '链路本地/元数据' : '内网'}地址：${details.url}`,
-            verdict.targetHost || '');
-          recordRequestAttempt(details, true);
-          return callback({ cancel: true });
-        }
-      } catch { /* 判定异常不干预浏览 */ }
-    }
+function applyWebRequestFiltering(targetSession, options) {
+  // options.logRequests 仅控制是否把请求量计入默认会话的连接统计（分区不重复计数）；
+  // 阻断 / 升级 / 安全审计在所有会话上行为一致。
+  const logRequests = !!(options && options.logRequests);
+  const noteAttempt = logRequests ? recordRequestAttempt : () => {};
+  requestPipeline.applyPipeline(targetSession.webRequest, buildRequestPipelineDeps(), noteAttempt);
+}
 
-    // 混合内容：HTTPS 页面却去加载 HTTP 子资源，会把整页保护拆掉。
-    // 主动内容（脚本 / XHR / 子框架 / WebSocket / 样式 / 插件对象）直接阻断；
-    // 被动内容（图片 / 媒体 / 字体 / ping）自动升级到 HTTPS，升级请求会
-    // 带着新 URL 再进本回调且判定为 secure-resource，不会形成重定向环。
-    // 顶层 mainFrame 导航由分类器判定为 allow，交给下面的 HTTPS-only 链路。
-    try {
-      const mixedPage = details.documentURL || details.originURL || '';
-      const mixed = mixedGuard.classifyMixedContent(details.url, mixedPage, details.resourceType);
-      if (mixed.action === 'block') {
-        recordSecurityEvent('mixed-content-blocked', 'warn',
-          `已阻止混合内容（${mixed.resourceType}）：${details.url}（页面 ${mixedPage}）`,
-          String(mixedPage).slice(0, 2048));
-        recordRequestAttempt(details, true);
-        return callback({ cancel: true });
-      }
-      if (mixed.action === 'upgrade' && mixed.upgrade) {
-        return callback({ redirectURL: mixed.upgrade });
-      }
-    } catch { /* 判定异常则不干预，退回 Chromium 默认策略 */ }
-
-    // 顶层导航：剥离 utm_* 等追踪参数（只重定向一次，不动 fragment / 子资源）。
-    let workingUrl = details.url;
-    if (isHttpUrl && details.resourceType === 'mainFrame') {
-      const stripped = stripTrackingFromUrl(details.url);
-      if (stripped && stripped !== details.url) {
-        return callback({ redirectURL: stripped });
-      }
-      // 同形异义 / IDN 反钓鱼提示（只提示，不阻断导航）。
-      try {
-        const navHost = new URL(details.url).hostname;
-        const spoof = analyzeHostForSpoof(navHost);
-        if (spoof) sendToRenderer('spoof-warning', spoof);
-        // 品牌仿冒 / 拼写劫持（纯拉丁拼写编辑距离、子域碰瓷、品牌词+诱导词），
-        // 与上面的 homograph 检测互补；命中后发横幅并登记到安全中心台账。
-        const brandHit = brandGuard.analyzeBrand(navHost);
-        if (brandHit) {
-          recordBrandSpoof(brandHit);
-          sendToRenderer('brand-spoof-warning', brandHit);
-        }
-        // URL 结构特征钓鱼：userinfo 偷渡、裸/十六进制 IP、编码主机、
-        // punycode+品牌、可疑后缀/端口/深层子域叠加等。只对 high 级提示，
-        // 中低风险不打扰，把普通网站误伤降到最低。
-        const phishHit = phishUrl.analyze(details.url);
-        if (phishHit && phishHit.level === 'high') {
-          const topSignal = Array.isArray(phishHit.signals) && phishHit.signals.length
-            ? phishHit.signals[0] : null;
-          // 登记进安全中心品牌/钓鱼台账，复用同一按主机聚合的落盘通道。
-          recordBrandSpoof({
-            hostname: phishHit.hostname,
-            brand: phishHit.brand,
-            reason: 'url-structural',
-            hint: topSignal ? topSignal.detail : 'URL 结构高度可疑',
-          });
-          sendToRenderer('phish-url-warning', {
-            hostname: phishHit.hostname,
-            url: phishHit.url,
-            score: phishHit.score,
-            brand: phishHit.brand,
-            signals: phishHit.signals,
-          });
-        }
-      } catch { /* 无效主机名忽略 */ }
-    }
-
-    // HTTPS-only 模式：用户可在设置里关掉；私网/回环主机永远保留 http://
-    if (httpsOnlyEnabled && workingUrl.startsWith('http://') && !isPrivateNetworkHost(workingUrl)) {
-      callback({ redirectURL: 'https://' + workingUrl.slice(7) });
-    } else {
-      // 走到“放行”这一最终决策才记一次；上面的 redirect 会带着新 URL 再进本回调，
-      // 不在中途记录，避免同一条请求被重复计数。
-      recordRequestAttempt(details, false);
-      callback({});
-    }
+function setupSecurityHeaders() {
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    const headers = hardenResponseHeaders(details.responseHeaders, details, { grade: true });
+    callback({ responseHeaders: headers });
   });
+  // 默认会话聚合指纹命中与请求量统计；三套过滤与隔离会话共用同一内核，避免行为分叉。
+  applyOutboundHeaderHardening(session.defaultSession, { recordFp: true });
+  applyWebRequestFiltering(session.defaultSession, { logRequests: true });
 }
 
 // 注意：'openExternal' 不再自动放行。网页调 window.openExternal / <a href="ms-*:">
@@ -4444,18 +4390,10 @@ function setupExtraSessionHardening() {
     }
   };
 
-  const applyOutgoingPrivacyHeaders = (ses) => {
-    try {
-      ses.webRequest.onBeforeSendHeaders((details, callback) => {
-        const headers = details.requestHeaders || {};
-        headers['DNT'] = '1';
-        headers['Sec-GPC'] = '1';
-        headers['Upgrade-Insecure-Requests'] = '1';
-        try { trimReferrerHeader(details, headers); } catch {}
-        callback({ requestHeaders: headers });
-      });
-    } catch {}
-  };
+  // 出向请求头与 onBeforeRequest 过滤统一复用模块级共享内核
+  // applyOutboundHeaderHardening / applyWebRequestFiltering，确保隔离 / 访客 /
+  // 非法分区会话与默认会话行为一致（tracker、ping、PNA、混合内容、HTTPS-only、
+  // 追踪参数剥离、Client Hints / 广告头清洗全部生效），仅关闭默认会话的聚合计数。
 
   // applyIncomingResponseHardening：让隔离 / 访客会话与 defaultSession 走同一套
   // 入向响应头加固（nosniff / XFO / Referrer-Policy / Permissions-Policy 画中画 /
@@ -4498,7 +4436,8 @@ function setupExtraSessionHardening() {
           ses.setDevicePermissionHandler(() => false);
         }
       } catch {}
-      applyOutgoingPrivacyHeaders(ses);
+      applyOutboundHeaderHardening(ses, { recordFp: false });
+      applyWebRequestFiltering(ses, { logRequests: false });
       applyIncomingResponseHardening(ses);
       recordSecurityEvent('session-partition-rejected', 'warn',
         `检测到非法会话分区（${decision.reason}），已对该会话强制默认拒绝`, '');
@@ -4527,7 +4466,8 @@ function setupExtraSessionHardening() {
         });
       }
     } catch {}
-    applyOutgoingPrivacyHeaders(ses);
+    applyOutboundHeaderHardening(ses, { recordFp: false });
+    applyWebRequestFiltering(ses, { logRequests: false });
     applyIncomingResponseHardening(ses);
 
     const persist = decision && decision.classification && decision.classification.persist;
