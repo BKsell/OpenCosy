@@ -234,6 +234,22 @@
             <div class="setting-item">
                 <div class="setting-icon">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" stroke-width="2" />
+                        <rect x="12" y="11" width="7" height="5" rx="1" fill="currentColor" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">允许网页画中画</label>
+                    <p class="setting-description">允许视频网站调用画中画（Picture-in-Picture）在离开页面后用悬浮小窗继续播放；关闭后通过 Permissions-Policy 全局禁用该能力，可避免视频站点借悬浮窗持续跟踪播放</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="allowPictureInPicture" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <rect x="3" y="4" width="18" height="13" rx="2" stroke="currentColor" stroke-width="2" />
                         <path d="M7 21h10M9 8h6M9 11h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
                     </svg>
@@ -597,13 +613,13 @@
         <button class="save-button" onclick="saveSettings()">保存设置</button>
     </div>
     <script>
-        const ALLOWED_SETTING_KEYS = new Set(['defaultTab', 'tabLayout', 'searchEngine', 'backgroundType', 'customUrl', 'customBackgroundUrl', 'themeColor', 'darkMode', 'memorySaver', 'clearOnExit', 'confirmCloseMultiple', 'blockTrackers', 'blockThirdPartyCookies', 'hardenCookies', 'blockLocalNetworkAccess', 'reduceClientHints', 'blockAdSignals', 'blockHyperlinkPing', 'stripAcceptCh', 'webrtcMode', 'dohMode', 'dohProvider', 'dohCustomUrl', 'crashRecovery', 'stripTrackingParams', 'spellcheckEnabled', 'spellcheckLanguages']);
+        const ALLOWED_SETTING_KEYS = new Set(['defaultTab', 'tabLayout', 'searchEngine', 'backgroundType', 'customUrl', 'customBackgroundUrl', 'themeColor', 'darkMode', 'memorySaver', 'clearOnExit', 'confirmCloseMultiple', 'blockTrackers', 'blockThirdPartyCookies', 'hardenCookies', 'blockLocalNetworkAccess', 'reduceClientHints', 'blockAdSignals', 'blockHyperlinkPing', 'stripAcceptCh', 'allowPictureInPicture', 'webrtcMode', 'dohMode', 'dohProvider', 'dohCustomUrl', 'crashRecovery', 'stripTrackingParams', 'spellcheckEnabled', 'spellcheckLanguages']);
         const ALLOWED_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'cosy:']);
         const COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
         const DEFAULT_SPELLCHECK_LANGS = ['en-US', 'zh-CN'];
         // 这些键在 .inf 配置里保存为 true/false，导入时必须还原成布尔值，
         // 否则字符串 'false' 会被当成真值，导致"关闭"类设置永远关不掉。
-        const BOOLEAN_SETTING_KEYS = new Set(['darkMode', 'memorySaver', 'clearOnExit', 'confirmCloseMultiple', 'blockTrackers', 'blockThirdPartyCookies', 'hardenCookies', 'blockLocalNetworkAccess', 'reduceClientHints', 'blockAdSignals', 'blockHyperlinkPing', 'stripAcceptCh', 'crashRecovery', 'stripTrackingParams', 'spellcheckEnabled']);
+        const BOOLEAN_SETTING_KEYS = new Set(['darkMode', 'memorySaver', 'clearOnExit', 'confirmCloseMultiple', 'blockTrackers', 'blockThirdPartyCookies', 'hardenCookies', 'blockLocalNetworkAccess', 'reduceClientHints', 'blockAdSignals', 'blockHyperlinkPing', 'stripAcceptCh', 'allowPictureInPicture', 'crashRecovery', 'stripTrackingParams', 'spellcheckEnabled']);
 
         // 安全 DNS 控件联动：关闭模式下禁用解析器选择；仅 custom 时启用自定义 URL。
         (function syncDohControls() {
@@ -818,6 +834,7 @@
             document.getElementById('blockThirdPartyCookies').checked = settings.blockThirdPartyCookies !== false;
             document.getElementById('hardenCookies').checked = settings.hardenCookies !== false;
             document.getElementById('blockLocalNetworkAccess').checked = settings.blockLocalNetworkAccess !== false;
+document.getElementById('allowPictureInPicture').checked = settings.allowPictureInPicture !== false;
 document.getElementById('reduceClientHints').checked = settings.reduceClientHints !== false;
 document.getElementById('blockAdSignals').checked = settings.blockAdSignals !== false;
 document.getElementById('blockHyperlinkPing').checked = settings.blockHyperlinkPing !== false;
@@ -867,6 +884,7 @@ document.getElementById('dohMode').dispatchEvent(new Event('change'));
             const blockAdSignals = document.getElementById('blockAdSignals').checked;
             const blockHyperlinkPing = document.getElementById('blockHyperlinkPing').checked;
             const stripAcceptCh = document.getElementById('stripAcceptCh').checked;
+            const allowPictureInPicture = document.getElementById('allowPictureInPicture').checked;
             const webrtcModeValue = document.getElementById('webrtcMode').value;
             const webrtcMode = ['strict', 'balanced', 'legacy'].includes(webrtcModeValue) ? webrtcModeValue : 'strict';
             const dohModeValue = document.getElementById('dohMode').value;
@@ -934,6 +952,7 @@ document.getElementById('dohMode').dispatchEvent(new Event('change'));
                 blockAdSignals,
                 blockHyperlinkPing,
                 stripAcceptCh,
+                allowPictureInPicture,
                 webrtcMode,
                 dohMode,
                 dohProvider,
