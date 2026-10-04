@@ -103,3 +103,29 @@ test('parsePermissionsPolicy 跳过非法片段与头注入尝试', () => {
   assert.deepEqual(parsed.microphone, []);
   assert.equal(parsed.camera[0], 'self');
 });
+
+test('picture-in-picture 属于已知可配置能力', () => {
+  assert.equal(p.CONFIGURABLE_FEATURES.includes('picture-in-picture'), true);
+  assert.equal(p.isValidFeatureName('picture-in-picture'), true);
+  assert.equal(p.FORCED_DISABLE.includes('picture-in-picture'), false);
+});
+
+test('headerWithPictureInPicture 允许时放开为 * 且仍钉死追踪特性', () => {
+  const h = p.headerWithPictureInPicture(true);
+  assert.ok(h.includes('picture-in-picture=(*)'), '允许时应输出 (*)');
+  assert.equal(p.isFeatureDisabled(h, 'picture-in-picture'), false);
+  for (const f of p.FORCED_DISABLE) {
+    assert.equal(p.isFeatureDisabled(h, f), true, `${f} 仍须强制全禁`);
+  }
+});
+
+test('headerWithPictureInPicture 关闭时全禁画中画', () => {
+  const h = p.headerWithPictureInPicture(false);
+  assert.ok(h.includes('picture-in-picture=()'), '关闭时应输出 ()');
+  assert.equal(p.isFeatureDisabled(h, 'picture-in-picture'), true);
+});
+
+test('画中画策略可被解析回允许令牌', () => {
+  const parsed = p.parsePermissionsPolicy(p.headerWithPictureInPicture(true));
+  assert.deepEqual(parsed['picture-in-picture'], ['*']);
+});
