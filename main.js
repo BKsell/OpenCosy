@@ -1183,74 +1183,84 @@ function applySecureDns() {
   }
 }
 
+// LOCAL_UI_CSP：自有 UI（cosy:// / file://）页面统一的严 CSP，defaultSession 与
+// 隔离 / 访客会话共用，避免两套手写策略漂移。
+//  object-src 'none'      ：彻底禁掉插件 / 嵌入对象（Flash 残留、恶意 <embed>）；
+//  base-uri 'self'       ：页面不允许被 <base> 改掉所有相对 URL 的基准；
+//  form-action 'self'    ：表单不允许提交到外部源（防内部页被注入后外发数据）；
+//  frame-ancestors 'none'：任何页面都不许 iframe 我们的内部 UI（等价 X-Frame-Options DENY）；
+//  worker-src 'self'     ：worker 只能从自身加载，挡 data: blob: worker 注入。
+const LOCAL_UI_CSP =
+  "default-src 'self'; " +
+  "script-src 'self' 'unsafe-inline'; " +
+  "style-src 'self' 'unsafe-inline'; " +
+  "img-src 'self' data: https:; " +
+  "connect-src 'self' https:; " +
+  "object-src 'none'; " +
+  "base-uri 'self'; " +
+  "form-action 'self'; " +
+  "frame-ancestors 'none'; " +
+  "worker-src 'self';";
+
+// hardenResponseHeaders：把一份“服务器原始响应头”就地加固后返回。defaultSession 与
+// 每个非默认会话（访客 / 隔离 partition）共用同一套变换，杜绝只加固主会话的纵深缺口。
+// options.grade=true 时对远端顶层文档记一条安全头评级（仅 defaultSession 需要记账）。
+function hardenResponseHeaders(rawHeaders, details, options) {
+  const headers = rawHeaders || {};
+  const grade = !!(options && options.grade);
+  // 安全头评级必须在下面任何 setIfMissing 之前完成，反映服务器原始姿态；
+  // 只评远端顶层文档，不评我们自己强制注入的 cosy:// 页面与第三方子资源。
+  if (grade && details.resourceType === 'mainFrame' && /^https?:/i.test(details.url)) {
+    recordHeaderGrade(details.url, headers);
+  }
+  // 移除站点下发的 Accept-CH / Critical-CH：阻止其订阅高熵 Client Hints，
+  // Critical-CH 还会触发带新头的重试，一并清掉以掐断放大通道。
+  try {
+    const removedCh = fpGuard.stripAcceptClientHints(headers, { stripAcceptCh });
+    if (removedCh.length) {
+      recordFpHit(fpGuard.hostOf(details.url), 'accept-ch', removedCh);
+    }
+  } catch {}
+  const setIfMissing = (name, value) => {
+    if (!headers[name] && !headers[name.toLowerCase()]) headers[name] = value;
+  };
+  setIfMissing('X-Content-Type-Options', ['nosniff']);
+  setIfMissing('X-Frame-Options', ['SAMEORIGIN']);
+  setIfMissing('Referrer-Policy', ['strict-origin-when-cross-origin']);
+  // 关闭 FLoC / 广告兴趣组 / Topics / 隐私令牌等追踪特性。
+  // 指令由 permpolicy 内核统一构建（强制关闭项不可被放开，白名单防头注入）；
+  // 站点未自行下发策略时注入默认值，尊重站点对其它能力的显式配置。
+  // 画中画按用户隐私开关显式给出 picture-in-picture 指令（放开 * / 全禁 ()）。
+  setIfMissing('Permissions-Policy', [permPolicy.headerWithPictureInPicture(allowPictureInPicture)]);
+  const isLocal = details.url.startsWith('cosy://') || details.url.startsWith('file://');
+  if (isLocal && !headers['Content-Security-Policy'] && !headers['content-security-policy']) {
+    headers['Content-Security-Policy'] = [LOCAL_UI_CSP];
+  }
+  // 本地页面（cosy:// / file://）加 COOP/COEP/CORP，跨源资源进不来，
+  // 防止恶意网页把我们的设置页 / 下载页 iframe 化后读内容（Spectre 类侧信道）。
+  if (isLocal) {
+    headers['Cross-Origin-Opener-Policy'] = ['same-origin'];
+    headers['Cross-Origin-Embedder-Policy'] = ['require-corp'];
+    headers['Cross-Origin-Resource-Policy'] = ['same-origin'];
+  }
+  // HTTPS 响应默认补 HSTS，让浏览器后续访问自动升级（1 年 + includeSubDomains）。
+  // 已经自带 HSTS 的站点不覆盖。
+  if (details.url.startsWith('https://') &&
+      !headers['Strict-Transport-Security'] && !headers['strict-transport-security']) {
+    headers['Strict-Transport-Security'] = ['max-age=31536000; includeSubDomains'];
+  }
+  // Cookie 加固放在所有响应头处理之后、回写之前：剥离第三方 / 非法前缀 /
+  // http 下 Secure 的 Set-Cookie，并为第一方 Cookie 补 SameSite=Lax。
+  // 仅处理 http(s) 响应，内部 cosy:// 页面不种浏览器 Cookie。
+  if (/^https?:/i.test(details.url)) {
+    applyCookieHardening(headers, details);
+  }
+  return headers;
+}
+
 function setupSecurityHeaders() {
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    const headers = details.responseHeaders || {};
-    // 安全头评级必须在下面任何 setIfMissing 之前完成，反映服务器原始姿态；
-    // 只评远端顶层文档，不评我们自己强制注入的 cosy:// 页面与第三方子资源。
-    if (details.resourceType === 'mainFrame' && /^https?:/i.test(details.url)) {
-      recordHeaderGrade(details.url, headers);
-    }
-    // 移除站点下发的 Accept-CH / Critical-CH：阻止其订阅高熵 Client Hints，
-    // Critical-CH 还会触发带新头的重试，一并清掉以掐断放大通道。
-    try {
-      const removedCh = fpGuard.stripAcceptClientHints(headers, { stripAcceptCh });
-      if (removedCh.length) {
-        const chHost = fpGuard.hostOf(details.url);
-        recordFpHit(chHost, 'accept-ch', removedCh);
-      }
-    } catch {}
-    const setIfMissing = (name, value) => {
-      if (!headers[name] && !headers[name.toLowerCase()]) headers[name] = value;
-    };
-    setIfMissing('X-Content-Type-Options', ['nosniff']);
-    setIfMissing('X-Frame-Options', ['SAMEORIGIN']);
-    setIfMissing('Referrer-Policy', ['strict-origin-when-cross-origin']);
-    // 关闭 FLoC / 广告兴趣组 / Topics / 隐私令牌等追踪特性。
-    // 指令由 permpolicy 内核统一构建（强制关闭项不可被放开，白名单防头注入）；
-    // 站点未自行下发策略时注入默认值，尊重站点对其它能力的显式配置。
-    // 画中画按用户隐私开关显式给出 picture-in-picture 指令（放开 * / 全禁 ()）。
-    setIfMissing('Permissions-Policy', [permPolicy.headerWithPictureInPicture(allowPictureInPicture)]);
-    const isLocal = details.url.startsWith('cosy://') || details.url.startsWith('file://');
-    if (isLocal && !headers['Content-Security-Policy'] && !headers['content-security-policy']) {
-      // 自有 UI 页面的 CSP 比公网站点更严：
-      //  object-src 'none'      ：彻底禁掉插件 / 嵌入对象（Flash 残留、恶意 <embed>）；
-      //  base-uri 'self'       ：页面不允许被 <base> 改掉所有相对 URL 的基准；
-      //  form-action 'self'    ：表单不允许提交到外部源（防内部页被注入后外发数据）；
-      //  frame-ancestors 'none'：任何页面都不许 iframe 我们的内部 UI（等价 X-Frame-Options DENY）；
-      //  worker-src 'self'     ：worker 只能从自身加载，挡 data: blob: worker 注入。
-      headers['Content-Security-Policy'] = [
-        "default-src 'self'; " +
-        "script-src 'self' 'unsafe-inline'; " +
-        "style-src 'self' 'unsafe-inline'; " +
-        "img-src 'self' data: https:; " +
-        "connect-src 'self' https:; " +
-        "object-src 'none'; " +
-        "base-uri 'self'; " +
-        "form-action 'self'; " +
-        "frame-ancestors 'none'; " +
-        "worker-src 'self';"
-      ];
-    }
-    // 本地页面（cosy:// / file://）加 COOP/COEP/CORP，跨源资源进不来，
-    // 防止恶意网页把我们的设置页 / 下载页 iframe 化后读内容（Spectre 类侧信道）。
-    if (isLocal) {
-      headers['Cross-Origin-Opener-Policy'] = ['same-origin'];
-      headers['Cross-Origin-Embedder-Policy'] = ['require-corp'];
-      headers['Cross-Origin-Resource-Policy'] = ['same-origin'];
-    }
-    // HTTPS 响应默认补 HSTS，让浏览器后续访问自动升级（1 年 + includeSubDomains）。
-    // 已经自带 HSTS 的站点不覆盖。
-    if (details.url.startsWith('https://') &&
-        !headers['Strict-Transport-Security'] && !headers['strict-transport-security']) {
-      headers['Strict-Transport-Security'] = ['max-age=31536000; includeSubDomains'];
-    }
-    // Cookie 加固放在所有响应头处理之后、回写之前：剥离第三方 / 非法前缀 /
-    // http 下 Secure 的 Set-Cookie，并为第一方 Cookie 补 SameSite=Lax。
-    // 仅处理 http(s) 响应，内部 cosy:// 页面不种浏览器 Cookie。
-    if (/^https?:/i.test(details.url)) {
-      applyCookieHardening(headers, details);
-    }
+    const headers = hardenResponseHeaders(details.responseHeaders, details, { grade: true });
     callback({ responseHeaders: headers });
   });
 
@@ -4447,6 +4457,19 @@ function setupExtraSessionHardening() {
     } catch {}
   };
 
+  // applyIncomingResponseHardening：让隔离 / 访客会话与 defaultSession 走同一套
+  // 入向响应头加固（nosniff / XFO / Referrer-Policy / Permissions-Policy 画中画 /
+  // HSTS / 本地页 CSP + COOP/COEP/CORP / Cookie 收口），补齐此前只挂出向头的纵深缺口。
+  // 非默认会话不重复记安全头评级（评级只在主会话聚合，避免分区会话重复计数）。
+  const applyIncomingResponseHardening = (ses) => {
+    try {
+      ses.webRequest.onHeadersReceived((details, callback) => {
+        const headers = hardenResponseHeaders(details.responseHeaders, details, { grade: false });
+        callback({ responseHeaders: headers });
+      });
+    } catch {}
+  };
+
   app.on('session-created', (ses) => {
     let partition = '';
     try { partition = typeof ses.getStoragePath === 'function' ? '' : (ses.partition || ''); } catch {}
@@ -4476,6 +4499,7 @@ function setupExtraSessionHardening() {
         }
       } catch {}
       applyOutgoingPrivacyHeaders(ses);
+      applyIncomingResponseHardening(ses);
       recordSecurityEvent('session-partition-rejected', 'warn',
         `检测到非法会话分区（${decision.reason}），已对该会话强制默认拒绝`, '');
       return;
@@ -4504,10 +4528,11 @@ function setupExtraSessionHardening() {
       }
     } catch {}
     applyOutgoingPrivacyHeaders(ses);
+    applyIncomingResponseHardening(ses);
 
     const persist = decision && decision.classification && decision.classification.persist;
     recordSecurityEvent('session-hardened', 'info',
-      `新建${persist ? '持久' : '临时'}会话已套用默认拒绝权限/设备策略与出向隐私头`, '');
+      `新建${persist ? '持久' : '临时'}会话已套用默认拒绝权限/设备策略、出向隐私头与入向响应头加固`, '');
   });
 
   // 先把 defaultSession 标记为“已加固”，真正的处理器由 setupPermissionHandlers /
