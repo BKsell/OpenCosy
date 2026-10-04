@@ -176,6 +176,10 @@ let blockHyperlinkPing = true;
 // stripAcceptCh：移除站点下发的 Accept-CH / Critical-CH，阻止其订阅高熵提示
 // 并触发带新头的重试。
 let stripAcceptCh = true;
+// allowPictureInPicture：是否允许网页进入画中画（Permissions-Policy:
+// picture-in-picture）。默认放开以保留现代浏览器能力，用户可在隐私设置里全局关闭，
+// 防止视频站点用悬浮小窗持续跟踪 / 离开页面后继续播放。
+let allowPictureInPicture = true;
 // webrtcMode：strict(默认,不暴露内网 IP) / balanced(mDNS 混淆) / legacy(不干预)。
 let webrtcMode = fpGuard.DEFAULT_WEBRTC_POLICY;
 // 安全 DNS（DoH）：dohMode off/automatic(默认)/secure；dohProvider 为内置 id 或 custom。
@@ -1205,7 +1209,8 @@ function setupSecurityHeaders() {
     // 关闭 FLoC / 广告兴趣组 / Topics / 隐私令牌等追踪特性。
     // 指令由 permpolicy 内核统一构建（强制关闭项不可被放开，白名单防头注入）；
     // 站点未自行下发策略时注入默认值，尊重站点对其它能力的显式配置。
-    setIfMissing('Permissions-Policy', [permPolicy.defaultHeader()]);
+    // 画中画按用户隐私开关显式给出 picture-in-picture 指令（放开 * / 全禁 ()）。
+    setIfMissing('Permissions-Policy', [permPolicy.headerWithPictureInPicture(allowPictureInPicture)]);
     const isLocal = details.url.startsWith('cosy://') || details.url.startsWith('file://');
     if (isLocal && !headers['Content-Security-Policy'] && !headers['content-security-policy']) {
       // 自有 UI 页面的 CSP 比公网站点更严：
@@ -5777,6 +5782,7 @@ app.whenReady().then(async () => {
   blockAdSignals = stored.blockAdSignals !== false;
   blockHyperlinkPing = stored.blockHyperlinkPing !== false;
   stripAcceptCh = stored.stripAcceptCh !== false;
+  if ('allowPictureInPicture' in stored) allowPictureInPicture = !!stored.allowPictureInPicture;
   if ('webrtcMode' in stored) webrtcMode = fpGuard.normalizeWebRtcMode(stored.webrtcMode);
   dohMode = dohGuard.normalizeMode(stored.dohMode);
   if (typeof stored.dohProvider === 'string') dohProvider = stored.dohProvider;
@@ -6725,6 +6731,7 @@ const ALLOWED_SETTING_KEYS = {
   blockAdSignals: v => typeof v === 'boolean',
   blockHyperlinkPing: v => typeof v === 'boolean',
   stripAcceptCh: v => typeof v === 'boolean',
+  allowPictureInPicture: v => typeof v === 'boolean',
   webrtcMode: v => typeof v === 'string' &&
     Object.prototype.hasOwnProperty.call(fpGuard.WEBRTC_POLICIES, v),
   dohMode: v => typeof v === 'string' &&
@@ -6796,6 +6803,7 @@ ipcMain.on('save-settings', (event, settings) => {
     blockAdSignals = clean.blockAdSignals !== false;
     blockHyperlinkPing = clean.blockHyperlinkPing !== false;
     stripAcceptCh = clean.stripAcceptCh !== false;
+    if ('allowPictureInPicture' in clean) allowPictureInPicture = !!clean.allowPictureInPicture;
     if ('webrtcMode' in clean) webrtcMode = fpGuard.normalizeWebRtcMode(clean.webrtcMode);
     applyWebRtcPolicy();
     if ('dohMode' in clean) dohMode = dohGuard.normalizeMode(clean.dohMode);
