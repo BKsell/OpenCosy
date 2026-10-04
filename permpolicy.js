@@ -42,6 +42,7 @@ const CONFIGURABLE_FEATURES = Object.freeze([
   'idle-detection',
   'wake-lock',
   'autoplay',
+  'picture-in-picture',
 ]);
 
 const ALL_FEATURES = new Set([...FORCED_DISABLE, ...CONFIGURABLE_FEATURES]);
@@ -184,6 +185,15 @@ function defaultHeader() {
   return buildPermissionsPolicy({ featureOverrides: {} });
 }
 
+// headerWithPictureInPicture 在默认基线之上，按用户开关显式给出 picture-in-picture
+// 指令。允许时取 '*' 以完整保留浏览器默认能力（含跨源 iframe 内嵌视频进入画中画），
+// 关闭时取 () 全局禁用。强制关闭项仍由 buildPermissionsPolicy 钉死，无法被放开。
+function headerWithPictureInPicture(allowed) {
+  return buildPermissionsPolicy({
+    featureOverrides: { 'picture-in-picture': allowed ? ALLOW_TOKEN_ANY : false },
+  });
+}
+
 module.exports = {
   FORCED_DISABLE,
   CONFIGURABLE_FEATURES,
@@ -196,4 +206,5 @@ module.exports = {
   parsePermissionsPolicy,
   isFeatureDisabled,
   defaultHeader,
+  headerWithPictureInPicture,
 };
