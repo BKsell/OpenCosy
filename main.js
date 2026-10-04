@@ -16,6 +16,7 @@ const pnaGuard = require('./pna');
 const fpGuard = require('./fpguard');
 const requestPipeline = require('./requestpipeline');
 const downloadAdmission = require('./downloadadmission');
+const extensionStore = require('./extensionstore');
 const dohGuard = require('./dohguard');
 const permPolicy = require('./permpolicy');
 const dloadGuard = require('./dloadguard');
@@ -6588,30 +6589,70 @@ async function validateExtensionFolder(folderPath) {
   }
 }
 
-function isSafeEntryName(name) {
-  return name && name !== '.' && name !== '..' && !name.includes('/') && !name.includes('\\') && !path.isAbsolute(name);
-}
+// 条目名安全判定统一走 extensionstore 内核（含穿越、ADS 冒号、控制字符、超长名）。
+const isSafeEntryName = extensionStore.isSafeEntryName;
 
-// copyExtensionToStorage 递归复制扩展文件到 extensionsPath。
-// 安全关键：用 lstat 而不是 stat，并且跳过 symlink。否则一个恶意扩展包里塞个
-// 符号链接指到 C:\Users\xxx\.ssh\id_rsa，我们会把私钥复制进扩展目录，
-// renderer 里的扩展脚本就能直接读到。
+// copyExtensionToStorage 递归复制扩展文件到 extensionsPath/<id>。
+// 安全关键：
+//  1. 用 lstat 的 isSymbolicLink()（注意小写 i；旧代码误写 IsSymbolicLink，Node 无此
+//     方法，调用必抛 TypeError，导致复制永远失败、符号链接保护也从未生效）。符号链接
+//     一律跳过，否则一个指到 ~/.ssh/id_rsa 的链接会把私钥复制进扩展目录被扩展读到。
+//  2. 每个目标路径用 resolveWithinRoot 收口，防止条目名或目录深度拼接触底扩展根。
+//  3. 复制受深度 / 条目数 / 总字节预算约束，防止恶意目录耗尽磁盘。
+// 返回 { ok:true } 或 { ok:false, reason }，越界预算类问题整单中止（不装半截扩展）。
 async function copyExtensionToStorage(sourcePath, extensionId) {
-  try {
-    const targetPath = path.join(extensionsPath, extensionId);
-    await fs.mkdir(targetPath, { recursive: true });
-    const files = await fs.readdir(sourcePath);
+  const targetRoot = extensionStore.resolveExtensionDir(extensionsPath, extensionId);
+  if (!targetRoot) return { ok: false, reason: 'invalid-extension-id' };
+  const budget = extensionStore.createCopyBudget();
+
+  async function walk(srcDir, depth, relSegments) {
+    const files = await fs.readdir(srcDir);
     for (const file of files) {
-      if (!isSafeEntryName(file)) continue;
-      const sourceFile = path.join(sourcePath, file);
-      const targetFile = path.join(targetPath, file);
-      const stat = await fs.lstat(sourceFile);
-      if (stat.IsSymbolicLink()) continue;
-      if (stat.isDirectory()) await copyExtensionToStorage(sourceFile, path.join(extensionId, file));
-      else await fs.copyFile(sourceFile, targetFile);
+      const srcFile = path.join(srcDir, file);
+      let stat;
+      try {
+        stat = await fs.lstat(srcFile);
+      } catch {
+        return { ok: false, reason: 'stat-failed' };
+      }
+      const verdict = extensionStore.classifyCopyEntry({
+        name: file,
+        symlink: stat.isSymbolicLink(),
+        directory: stat.isDirectory(),
+        size: stat.size,
+      }, depth, budget);
+
+      if (verdict.action === extensionStore.COPY_SKIP) continue;
+      if (verdict.action === extensionStore.COPY_REJECT) {
+        return { ok: false, reason: verdict.reason };
+      }
+      const destFile = extensionStore.resolveWithinRoot.apply(
+        null, [targetRoot].concat(relSegments, [file]));
+      if (!destFile) return { ok: false, reason: 'target-outside-root' };
+
+      if (verdict.action === extensionStore.COPY_ACCEPT_DIR) {
+        await fs.mkdir(destFile, { recursive: true });
+        const sub = await walk(srcFile, depth + 1, relSegments.concat([file]));
+        if (!sub.ok) return sub;
+      } else {
+        await fs.copyFile(srcFile, destFile);
+      }
     }
-    return true;
-  } catch (e) { console.error('复制插件失败:', e); return false; }
+    return { ok: true };
+  }
+
+  try {
+    await fs.mkdir(targetRoot, { recursive: true });
+    const result = await walk(sourcePath, 1, []);
+    if (!result.ok) {
+      await fs.rm(targetRoot, { recursive: true, force: true }).catch(() => {});
+    }
+    return result;
+  } catch (e) {
+    console.error('复制插件失败:', e);
+    await fs.rm(targetRoot, { recursive: true, force: true }).catch(() => {});
+    return { ok: false, reason: 'copy-exception' };
+  }
 }
 
 async function loadEnabledExtensions() {
@@ -6625,7 +6666,13 @@ async function loadEnabledExtensions() {
 
 async function loadExtension(extension) {
   try {
-    const extensionPath = path.join(extensionsPath, extension.id);
+    // 配置文件可能被外部篡改，id 必须仍解析到扩展根之内，拒绝加载任意目录。
+    const extensionPath = extensionStore.resolveExtensionDir(extensionsPath, extension && extension.id);
+    if (!extensionPath) {
+      recordSecurityEvent('extension-blocked', 'warn',
+        `拒绝加载越界插件目录（id=${extension && extension.id}）`, '');
+      return;
+    }
     if (fsSync.existsSync(extensionPath)) {
       await session.defaultSession.loadExtension(extensionPath, { allowFileAccess: false });
       console.log('插件加载成功:', extension.name);
@@ -6648,25 +6695,27 @@ ipcMain.handle('add-extension', async (event, folderPath) => {
     const validation = await validateExtensionFolder(folderPath);
     if (!validation.valid) return { success: false, error: validation.error };
     const { manifest } = validation;
-    const sanitizedName = manifest.name.replace(/[^a-zA-Z0-9]/g, '_');
-    const sanitizedVersion = String(manifest.version).replace(/[^a-zA-Z0-9._-]/g, '_');
-    const extensionId = `${sanitizedName}_${sanitizedVersion}`;
+    const extensionId = extensionStore.buildExtensionId(manifest.name, manifest.version);
+    if (!extensionId) return { success: false, error: '插件名称或版本不合法，无法生成安全ID' };
     const config = await readExtensionsConfig();
     if (config.extensions.find(ext => ext.id === extensionId)) return { success: false, error: '该插件已存在' };
-    const copySuccess = await copyExtensionToStorage(folderPath, extensionId);
-    if (!copySuccess) return { success: false, error: '复制插件文件失败' };
+    const copyResult = await copyExtensionToStorage(folderPath, extensionId);
+    if (!copyResult.ok) return { success: false, error: '复制插件文件失败（' + copyResult.reason + '）' };
     let iconPath = '';
     if (manifest.icons) {
       const iconSizes = Object.keys(manifest.icons).sort((a, b) => parseInt(b) - parseInt(a));
       if (iconSizes.length > 0) {
         const iconName = manifest.icons[iconSizes[0]];
-        if (isSafeEntryName(iconName)) iconPath = path.join(extensionsPath, extensionId, iconName);
+        if (isSafeEntryName(iconName)) {
+          iconPath = extensionStore.resolveWithinRoot(extensionsPath, extensionId, iconName) || '';
+        }
       }
     }
+    const extensionDir = extensionStore.resolveExtensionDir(extensionsPath, extensionId);
     const newExtension = {
       id: extensionId, name: manifest.name, version: manifest.version,
       description: manifest.description || '', icon: iconPath,
-      path: path.join(extensionsPath, extensionId), enabled: true, addedDate: new Date().toISOString()
+      path: extensionDir || '', enabled: true, addedDate: new Date().toISOString()
     };
     config.extensions.push(newExtension);
     const saveSuccess = await saveExtensionsConfig(config);
@@ -6703,7 +6752,14 @@ ipcMain.handle('remove-extension', async (event, id) => {
     const extensionIndex = config.extensions.findIndex(ext => ext.id === id);
     if (extensionIndex === -1) return { success: false, error: '插件未找到' };
     await unloadExtension(id);
-    const extensionPath = path.join(extensionsPath, id);
+    // 递归 rm 前必须把目录收口到扩展根之内：配置若被塞成 id="../AppData"，旧实现
+    // path.join 后会递归删除扩展目录之外的内容。越界直接拒绝删除。
+    const extensionPath = extensionStore.resolveExtensionDir(extensionsPath, id);
+    if (!extensionPath) {
+      recordSecurityEvent('extension-blocked', 'warn',
+        `拒绝删除越界插件目录（id=${id}）`, '');
+      return { success: false, error: '插件目录不合法' };
+    }
     if (fsSync.existsSync(extensionPath)) await fs.rm(extensionPath, { recursive: true, force: true });
     config.extensions.splice(extensionIndex, 1);
     const saveSuccess = await saveExtensionsConfig(config);
