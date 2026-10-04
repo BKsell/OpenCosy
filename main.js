@@ -15,6 +15,7 @@ const cookieGuard = require('./cookieguard');
 const pnaGuard = require('./pna');
 const fpGuard = require('./fpguard');
 const requestPipeline = require('./requestpipeline');
+const downloadAdmission = require('./downloadadmission');
 const dohGuard = require('./dohguard');
 const permPolicy = require('./permpolicy');
 const dloadGuard = require('./dloadguard');
@@ -4439,6 +4440,9 @@ function setupExtraSessionHardening() {
       applyOutboundHeaderHardening(ses, { recordFp: false });
       applyWebRequestFiltering(ses, { logRequests: false });
       applyIncomingResponseHardening(ses);
+      // 即便分区串非法，其下载仍会在该 session 上触发，同样挂下载保护，杜绝借
+      // 异常分区绕过文件名净化 / 危险类型确认 / MOTW。
+      try { attachDownloadManager(ses); } catch {}
       recordSecurityEvent('session-partition-rejected', 'warn',
         `检测到非法会话分区（${decision.reason}），已对该会话强制默认拒绝`, '');
       return;
@@ -4469,6 +4473,9 @@ function setupExtraSessionHardening() {
     applyOutboundHeaderHardening(ses, { recordFp: false });
     applyWebRequestFiltering(ses, { logRequests: false });
     applyIncomingResponseHardening(ses);
+    // 隔离 / 访客会话的下载挂同一套保护：文件名穿越净化、可执行 / 伪装确认、
+    // 唯一保存路径与 MOTW 全部生效，台账仍聚合到模块级 downloads[]。
+    try { attachDownloadManager(ses); } catch {}
 
     const persist = decision && decision.classification && decision.classification.persist;
     recordSecurityEvent('session-hardened', 'info',
@@ -5490,30 +5497,46 @@ function confirmDownloadDecision(analysis, originUrl) {
 }
 
 
-function setupDownloadManager() {
-  session.defaultSession.on('will-download', (event, item, webContents) => {
+// handleDownloadEvent 是所有 session 共用的 will-download 处理器。历史上它只挂在
+// defaultSession 上，而隔离 / 访客分区（fromPartition）的下载只在各自 session 上触发，
+// 于是分区下载绕过了文件名净化、危险类型确认、保存路径策略与 MOTW。准入判定抽到
+// downloadadmission 纯内核后，这里只负责执行决策（取消 / 弹窗 / 台账 / 落盘）。
+function handleDownloadEvent(event, item, webContents) {
     const url = item.getURL();
-    if (!isSafeUrl(url)) {
+    let mimeType = '';
+    try { mimeType = typeof item.getMimeType === 'function' ? item.getMimeType() : ''; } catch { mimeType = ''; }
+
+    // 纯内核一次给出：URL 是否放行、净化后的文件名、危险类型档位与风险原因链。
+    const admission = downloadAdmission.planDownloadAdmission(
+      {
+        isSafeUrl,
+        sanitizeFilename: sanitizeDownloadFilename,
+        analyzeName: analyzeDownloadSafety,
+        DECISION: dloadGuard.DECISION,
+      },
+      { url, rawFilename: item.getFilename(), mimeType },
+    );
+    const riskAnalysis = admission.analysis || { decision: '', finalExt: '', risks: [] };
+    const finalFilename = admission.finalFilename || 'download';
+    const dlHost = admission.host;
+
+    // block-unsafe-url：不安全协议/地址（file:/javascript:/data: 等）直接取消整次下载。
+    if (admission.action === downloadAdmission.ACTION_BLOCK_UNSAFE) {
       recordSecurityEvent('download-blocked', 'critical',
         `阻止了来自不安全协议/地址的下载: ${url}`, originOfContents(webContents));
+      // 与 reject 分支保持一致：危险协议下载拦截也要进 download-risk 台账，
+      // 否则 cosy://security 安全中心只能看到危险文件名、看不到危险协议来源。
+      recordDownloadRisk({
+        filename: item.getFilename() || '(unsafe-url)', host: dlHost,
+        decision: 'reject', action: 'rejected',
+        ext: riskAnalysis.finalExt || '', risks: riskAnalysis.risks || [],
+      });
       event.preventDefault();
       return;
     }
 
-    // 关键修复：不信任服务端给的 filename，先净化（路径穿越 + RTL/保留名/尾点）。
-    const safeFilename = sanitizeDownloadFilename(item.getFilename());
-
-    // 用 dloadguard 做完整伪装/类型分析，MIME 与文件名交叉比对。
-    let mimeType = '';
-    try { mimeType = typeof item.getMimeType === 'function' ? item.getMimeType() : ''; } catch { mimeType = ''; }
-    const riskAnalysis = analyzeDownloadSafety(item.getFilename(), mimeType);
-    // 净化后名字以分析内核给出的 displayName 为准（二者都已剥目录与不可见字符）。
-    const finalFilename = riskAnalysis.displayName ? sanitizeDownloadFilename(riskAnalysis.displayName) : safeFilename;
-    let dlHost = '';
-    try { dlHost = new URL(url).host; } catch { dlHost = ''; }
-
     // reject：文件名无法净化成合法名字，直接取消。
-    if (riskAnalysis.decision === dloadGuard.DECISION.REJECT) {
+    if (admission.action === downloadAdmission.ACTION_REJECT) {
       try { item.cancel(); } catch {}
       recordSecurityEvent('download-blocked', 'critical',
         `拒绝保存文件名非法的下载: ${item.getFilename()}`, originOfContents(webContents));
@@ -5526,7 +5549,7 @@ function setupDownloadManager() {
     }
 
     // confirm：可执行 / 伪装 / MIME 不符必须用户显式确认，阻断静默 drive-by 下载。
-    if (riskAnalysis.decision === dloadGuard.DECISION.CONFIRM) {
+    if (admission.action === downloadAdmission.ACTION_CONFIRM) {
       const allow = confirmDownloadDecision(riskAnalysis, url);
       if (!allow) {
         try { item.cancel(); } catch {}
@@ -5544,10 +5567,10 @@ function setupDownloadManager() {
     }
 
     // warn：容器（内部文件不继承 MOTW）/ 本地 HTML 等，保存并轻提示。
-    if (riskAnalysis.decision === dloadGuard.DECISION.WARN) {
+    // 走到这里 action 必为 WARN（CONFIRM 已在上方独立分支处理），台账动作即 saved。
+    if (admission.action === downloadAdmission.ACTION_WARN) {
       recordDownloadRisk({
-        filename: finalFilename, host: dlHost, decision: 'warn',
-        action: riskAnalysis.decision === dloadGuard.DECISION.CONFIRM ? 'confirmed' : 'saved',
+        filename: finalFilename, host: dlHost, decision: 'warn', action: 'saved',
         ext: riskAnalysis.finalExt, risks: riskAnalysis.risks,
       });
     }
@@ -5617,7 +5640,7 @@ function setupDownloadManager() {
           id: downloadInfo.id,
           savePath: downloadInfo.savePath,
           url: completedUrl,
-          filename: downloadInfo.filename || safeFilename,
+          filename: downloadInfo.filename || finalFilename,
         });
         // 显式补写 Windows Mark-of-the-Web（Zone.Identifier ADS）。Chromium
         // 自定义落盘/跨盘移动/从压缩包解出都可能丢失 MOTW；best-effort，失败
@@ -5645,7 +5668,26 @@ function setupDownloadManager() {
       }
       sendShelf();
     });
-  });
+}
+
+// managedDownloadSessions 记录已挂过下载保护的 session。will-download 若对同一
+// session 注册两次，一次下载会触发两轮回调：弹两次确认框、写两条台账、落盘后补两次
+// MOTW。defaultSession 走 setupDownloadManager、分区走 session-created，理论上互斥，
+// 但仍用 WeakSet 做幂等兜底（session 回收后条目自动消失，不泄漏）。
+const managedDownloadSessions = new WeakSet();
+
+// attachDownloadManager 把同一套下载保护挂到任意 session；defaultSession 与分区会话
+// 都必须经过它，避免隔离 / 访客分区下载绕过文件名净化、危险类型确认与 MOTW。
+function attachDownloadManager(sess) {
+  if (!sess || managedDownloadSessions.has(sess)) return;
+  try {
+    sess.on('will-download', handleDownloadEvent);
+    managedDownloadSessions.add(sess);
+  } catch {}
+}
+
+function setupDownloadManager() {
+  attachDownloadManager(session.defaultSession);
 }
 
 function formatSpeed(bytesPerSecond) {
