@@ -17,6 +17,7 @@ const fpGuard = require('./fpguard');
 const requestPipeline = require('./requestpipeline');
 const downloadAdmission = require('./downloadadmission');
 const extensionStore = require('./extensionstore');
+const suggestionGuard = require('./suggestionguard');
 const dohGuard = require('./dohguard');
 const permPolicy = require('./permpolicy');
 const dloadGuard = require('./dloadguard');
@@ -7337,6 +7338,10 @@ function fetchSearchSuggestions(query) {
     }, SUGGEST_TIMEOUT_MS);
 
     const chunks = [];
+    // 流式字节预算：建议接口是极小 JSON，收到超过上限立即 destroy，不再拼接后续
+    // 数据块，避免被异常 / 被劫持接口用超大 body 打爆主进程内存。
+    const budget = suggestionGuard.createByteBudget(suggestionGuard.SUGGEST_DEFAULT_MAX_BYTES);
+    let oversized = false;
     request.on('response', (response) => {
       const ct = (response.headers['content-type'] || []).join('').toLowerCase();
       // osjson 正常返回 json；跟随到别的类型直接丢弃。
@@ -7345,24 +7350,27 @@ function fetchSearchSuggestions(query) {
         try { response.destroy(); } catch {}
         return finish([]);
       }
-      response.on('data', (c) => chunks.push(c));
+      response.on('data', (c) => {
+        if (oversized) return;
+        if (!budget.accept(c)) {
+          oversized = true;
+          try { response.destroy(); } catch {}
+          finish([]);
+          return;
+        }
+        chunks.push(c);
+      });
       response.on('end', () => {
         clearTimeout(timer);
-        try {
-          const data = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-          if (!Array.isArray(data) || !Array.isArray(data[1])) return finish([]);
-          const out = [];
-          for (const item of data[1]) {
-            if (typeof item !== 'string') continue;
-            const s = item.trim();
-            if (!s || s.length > 100) continue;
-            out.push(s);
-            if (out.length >= SUGGEST_MAX_ITEMS) break;
-          }
-          finish(out);
-        } catch {
-          finish([]);
-        }
+        if (oversized) return;
+        // 结构固化、逐条消毒 / 去重 / 限量统一走 suggestionguard 内核，
+        // 不再在 IPC 里手写 JSON.parse + 字符串判断。
+        const parsed = suggestionGuard.parseOpenSearchSuggestions(Buffer.concat(chunks), {
+          maxBytes: suggestionGuard.SUGGEST_DEFAULT_MAX_BYTES,
+          maxItems: SUGGEST_MAX_ITEMS,
+          itemMaxChars: 100,
+        });
+        finish(parsed.ok ? parsed.suggestions : []);
       });
       response.on('error', () => { clearTimeout(timer); finish([]); });
     });
