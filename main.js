@@ -18,6 +18,7 @@ const requestPipeline = require('./requestpipeline');
 const downloadAdmission = require('./downloadadmission');
 const extensionStore = require('./extensionstore');
 const suggestionGuard = require('./suggestionguard');
+const hostMatch = require('./hostmatch');
 const dohGuard = require('./dohguard');
 const permPolicy = require('./permpolicy');
 const dloadGuard = require('./dloadguard');
@@ -336,14 +337,10 @@ const TRACKER_DOMAIN_GROUPS = {
 const TRACKER_HOSTS = new Set(Object.values(TRACKER_DOMAIN_GROUPS).flat());
 
 // hostMatchesTracker 判断主机是否为已知追踪域（精确或其子域）。
+// 归一化（小写/去尾点）与精确-子域边界判断统一由 hostmatch 内核负责，
+// 避免与 Cookie 归属、私网判定各写一套口径。
 function hostMatchesTracker(hostname) {
-  let h = String(hostname || '').toLowerCase().replace(/\.$/, '');
-  if (!h) return false;
-  if (TRACKER_HOSTS.has(h)) return true;
-  for (const t of TRACKER_HOSTS) {
-    if (h.endsWith('.' + t)) return true;
-  }
-  return false;
+  return hostMatch.hostMatchesList(hostname, TRACKER_HOSTS);
 }
 
 // isTrackerRequest 只拦子资源，顶层框架 / iframe 框架文档一律放行，避免误伤导航。
@@ -923,19 +920,8 @@ function isLocalhost(url) {
 
 function isPrivateNetworkHost(url) {
   try {
-    const host = new URL(url).hostname.replace(/^\[|\]$/g, '');
-    if (host === 'localhost' || host === '::1' || host.endsWith('.localhost')) return true;
-    if (host === '::ffff:127.0.0.1') return true;
-    const m = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-    if (m) {
-      const a = +m[1], b = +m[2];
-      if (a === 127 || a === 10) return true;
-      if (a === 172 && b >= 16 && b <= 31) return true;
-      if (a === 192 && b === 168) return true;
-      if (a === 169 && b === 254) return true;
-      return false;
-    }
-    return false;
+    // 主机名归一、IPv4 分段与私网段判断统一走 hostmatch 内核（无正则）。
+    return hostMatch.isPrivateHostname(new URL(url).hostname);
   } catch { return false; }
 }
 
@@ -7228,7 +7214,7 @@ ipcMain.handle('get-site-cookies', async (event, payload = {}) => {
     const all = await session.defaultSession.cookies.get({});
     const matched = all.filter(c => {
       const d = normalizeCookieDomain(c.domain);
-      return d === domain || d.endsWith('.' + domain);
+      return hostMatch.hostEqualsOrSubdomain(d, domain);
     }).map(pickCookieFields);
     return { success: true, domain, cookies: matched };
   } catch (e) {
@@ -7266,7 +7252,7 @@ ipcMain.handle('delete-site-cookies', async (event, payload = {}) => {
     const all = await session.defaultSession.cookies.get({});
     const targets = all.filter(c => {
       const d = normalizeCookieDomain(c.domain);
-      return d === domain || d.endsWith('.' + domain);
+      return hostMatch.hostEqualsOrSubdomain(d, domain);
     });
     let removed = 0;
     for (const c of targets) {
