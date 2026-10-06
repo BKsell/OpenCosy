@@ -356,8 +356,7 @@ function isTrackerRequest(details) {
 
 function recordBlockedTracker(url) {
   blockedTrackerCount += 1;
-  let host = '';
-  try { host = new URL(url).hostname; } catch { host = '(unknown)'; }
+  const host = urlResolve.safeHostname(url, '(unknown)');
   blockedTrackerByHost.set(host, (blockedTrackerByHost.get(host) || 0) + 1);
   sendToRenderer('trackers-blocked', {
     count: blockedTrackerCount,
@@ -2604,8 +2603,7 @@ function setupNetworkAuth() {
   // TLS 客户端证书：默认不发送，除非用户为该主机明确记住过一张证书的指纹。
   session.defaultSession.on('select-client-certificate', (certEvent, webContents, url, certificateList, callback) => {
     certEvent.preventDefault();
-    let hostname = '';
-    try { hostname = new URL(url).hostname; } catch {}
+    const hostname = urlResolve.safeHostname(url);
     const remembered = hostname ? clientCertStore.get(hostname) : null;
     const pick = netAuthGuard.chooseClientCertificate({
       certificateList,
@@ -2909,8 +2907,7 @@ function queueDownloadHashing(task) {
   downloadHashChain = downloadHashChain.then(async () => {
     try {
       const { sha256, size } = await hashFileSha256(task.savePath);
-      let host = '';
-      try { host = new URL(task.url).host; } catch {}
+      const host = urlResolve.safeHost(task.url);
       const record = {
         id: String(task.id),
         time: Date.now(),
@@ -4763,7 +4760,8 @@ function registerShortcuts() {
 }
 
 function getUrlProtocol(url) {
-  try { return new URL(url).protocol; } catch { return null; }
+  // safeProtocol 默认解析失败回 null，与历史实现逐字一致。
+  return urlResolve.safeProtocol(url);
 }
 
 function createNewTab(url = 'cosy://newtab') {
@@ -5437,8 +5435,7 @@ function analyzeDownloadSafety(filename, mime) {
 
 // confirmDownloadDecision 针对需要确认的下载弹出原生对话框，列出具体命中原因。
 function confirmDownloadDecision(analysis, originUrl) {
-  let host = '';
-  try { host = new URL(originUrl).host; } catch { host = originUrl || '未知来源'; }
+  const host = urlResolve.safeHost(originUrl, originUrl || '未知来源');
   const lines = analysis.risks
     .filter(r => r.severity === dloadGuard.DECISION.CONFIRM)
     .map(r => `• ${r.message}`)
@@ -6268,10 +6265,7 @@ ipcMain.on('open-file', (event, filePath) => {
     containerDecision === 'confirm' || containerDecision === 'warn';
 
   if (needConfirm) {
-    let host = '未知来源';
-    if (originUrl) {
-      try { host = new URL(originUrl).host; } catch { host = originUrl; }
-    }
+    const host = originUrl ? urlResolve.safeHost(originUrl, originUrl) : '未知来源';
     const containerAdvice = containerGuard.describeContainerRisk(containerClass);
     const choice = dialog.showMessageBoxSync(mainWindow, {
       type: 'warning',
