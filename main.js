@@ -19,6 +19,7 @@ const downloadAdmission = require('./downloadadmission');
 const extensionStore = require('./extensionstore');
 const suggestionGuard = require('./suggestionguard');
 const hostMatch = require('./hostmatch');
+const urlResolve = require('./urlresolve');
 const dohGuard = require('./dohguard');
 const permPolicy = require('./permpolicy');
 const dloadGuard = require('./dloadguard');
@@ -471,7 +472,8 @@ function analyzeHostForSpoof(hostname) {
 //   - 跨源且安全等级不降低：收敛为源（origin/）；
 //   - https → http 降级：直接去除 Referer。
 function originOf(u) {
-  try { return new URL(u).origin; } catch { return null; }
+  // Referer 收敛需要用 null 表达"无法解析/无同源源"，保持原语义。
+  return urlResolve.safeOrigin(u, null);
 }
 
 function trimReferrerHeader(details, headers) {
@@ -909,13 +911,6 @@ function getLastClosedTab() {
   // 条目在 addToRecentlyClosed 入栈时已逐条净化，这里维持原“弹出栈顶”语义。
   if (recentlyClosedTabs.length === 0) return null;
   return recentlyClosedTabs.pop();
-}
-
-function isLocalhost(url) {
-  try {
-    const host = new URL(url).hostname;
-    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
-  } catch { return false; }
 }
 
 function isPrivateNetworkHost(url) {
@@ -1482,11 +1477,8 @@ function classifyFrameNavigation(url, isMainFrame) {
 }
 
 function originOfContents(contents) {
-  try {
-    return new URL(contents.getURL()).origin;
-  } catch {
-    return '';
-  }
+  if (!contents || typeof contents.getURL !== 'function') return '';
+  return urlResolve.safeOrigin(contents.getURL(), '');
 }
 
 // launchExternalWithPrompt 是所有"页面想唤起外部程序"的唯一出口。
@@ -2526,11 +2518,8 @@ function rejectAuthChallenge(nonce) {
 }
 
 function authEventOrigin(webContents) {
-  try {
-    return new URL(webContents.getURL()).origin;
-  } catch {
-    return '';
-  }
+  if (!webContents || typeof webContents.getURL !== 'function') return '';
+  return urlResolve.safeOrigin(webContents.getURL(), '');
 }
 
 // sanitizeCertPickList 只把证书的非敏感摘要给渲染层，绝不传证书对象本体。
@@ -3154,8 +3143,7 @@ function setupPermissionHandlers() {
     }
 
     if (SENSITIVE_PAGE_PERMISSIONS.has(permission)) {
-      let origin = '';
-      try { origin = new URL(webContents.getURL()).origin; } catch { origin = ''; }
+      const origin = urlResolve.safeOrigin(webContents.getURL());
 
       // 用户对该站点记忆过"始终允许/拒绝"：直接兑现决定，不再弹询问条。
       const remembered = getRememberedPermission(origin, permission);
@@ -3200,8 +3188,7 @@ function setupPermissionHandlers() {
     // 知道某个网站在尝试枚举蓝牙 / HID 设备。
     const allowed = ALLOWED_PERMISSIONS.has(permission);
     if (!allowed) {
-      let origin = '';
-      try { origin = new URL(webContents.getURL()).origin; } catch {}
+      const origin = urlResolve.safeOrigin(webContents.getURL());
       recordSecurityEvent('permission-blocked', 'warn',
         `网站请求了未授权的浏览器权限: ${permission}`, origin);
     }
@@ -3212,8 +3199,7 @@ function setupPermissionHandlers() {
     // 敏感权限：记忆为"允许"才承认；记忆为"拒绝"或未记忆一律返回 false，
     // 让站点真正调用时走 request handler（弹询问条或直接兑现拒绝）。
     if (SENSITIVE_PAGE_PERMISSIONS.has(permission)) {
-      let origin = '';
-      try { origin = new URL(webContents.getURL()).origin; } catch { origin = ''; }
+      const origin = urlResolve.safeOrigin(webContents.getURL());
       return getRememberedPermission(origin, permission) === 'allow';
     }
     return ALLOWED_PERMISSIONS.has(permission);
@@ -3225,8 +3211,7 @@ function setupPermissionHandlers() {
   // 一律拒绝：浏览器场景下网页没有正当理由直连本机 HID / 串口 / USB 设备。
   if (typeof session.defaultSession.setDevicePermissionHandler === 'function') {
     session.defaultSession.setDevicePermissionHandler((details) => {
-      let origin = '';
-      try { origin = new URL(details && details.origin ? details.origin : '').origin; } catch {}
+      const origin = urlResolve.safeOrigin(details && details.origin ? details.origin : '');
       const mediaType = (details && (details.deviceType || details.device && details.device.deviceClass)) || 'unknown-device';
       recordSecurityEvent('device-permission-blocked', 'warn',
         `网站尝试获取本机设备（${mediaType} / ${details && details.permissionType ? details.permissionType : '未知'}）`,
@@ -4371,12 +4356,8 @@ function setupSystemEventGuards() {
 // 出向隐私头（DNT / GPC / Upgrade-Insecure / Referrer 收敛）。
 function setupExtraSessionHardening() {
   const originOfPermissionRequest = (webContents) => {
-    try {
-      return webContents && typeof webContents.getURL === 'function'
-        ? new URL(webContents.getURL()).origin : '';
-    } catch {
-      return '';
-    }
+    if (!webContents || typeof webContents.getURL !== 'function') return '';
+    return urlResolve.safeOrigin(webContents.getURL(), '');
   };
 
   // 出向请求头与 onBeforeRequest 过滤统一复用模块级共享内核
@@ -4449,8 +4430,7 @@ function setupExtraSessionHardening() {
       }
       if (typeof ses.setDevicePermissionHandler === 'function') {
         ses.setDevicePermissionHandler((details) => {
-          let origin = '';
-          try { origin = new URL((details && details.origin) || '').origin; } catch {}
+          const origin = urlResolve.safeOrigin((details && details.origin) || '');
           recordSecurityEvent('device-permission-blocked', 'info',
             `隔离/访客会话中的设备选择已默认拒绝（${details && details.permissionType ? details.permissionType : '未知'}）`,
             origin);
@@ -6004,7 +5984,7 @@ function clampZoomFactor(f) {
 }
 
 function originOfUrl(u) {
-  try { return new URL(u).origin; } catch { return ''; }
+  return urlResolve.safeOrigin(u, '');
 }
 
 // loadZoomFactors 启动时从 userData 读取按站点记忆的缩放（对齐 Chrome 跨重启保留缩放）。
@@ -6344,8 +6324,7 @@ ipcMain.on('open-folder', (event, filePath) => {
 // 主进程做协议校验 + 按站点记忆 + 原生确认，再调 shell.openExternal。
 ipcMain.handle('open-external-url', async (event, url) => {
   if (!isMainSender(event)) return { ok: false, reason: 'unauthorized' };
-  let origin = '';
-  try { origin = new URL(event.sender.getURL()).origin; } catch {}
+  const origin = urlResolve.safeOrigin(event.sender.getURL());
   return await confirmAndOpenExternal(String(url || ''), origin);
 });
 
