@@ -20,6 +20,7 @@ const extensionStore = require('./extensionstore');
 const suggestionGuard = require('./suggestionguard');
 const hostMatch = require('./hostmatch');
 const urlResolve = require('./urlresolve');
+const shortcutKeys = require('./shortcutkeys');
 const dohGuard = require('./dohguard');
 const permPolicy = require('./permpolicy');
 const dloadGuard = require('./dloadguard');
@@ -4597,164 +4598,195 @@ function createWindow() {
 function registerShortcuts() {
   if (!mainWindow) return;
   mainWindow.webContents.on('before-input-event', (event, input) => {
-    if (input.type !== 'keyDown') return;
-    const ctrl = input.control || input.meta;
-    const shift = input.shift;
-    const alt = input.alt;
-    const key = input.key.toLowerCase();
-
-    if (ctrl && key === 't' && !shift) {
-      createNewTab();
-      event.preventDefault();
-    } else if (ctrl && key === 't' && shift) {
-      const lastClosedTab = getLastClosedTab();
-      if (lastClosedTab) createNewTab(lastClosedTab.url);
-      event.preventDefault();
-    } else if (ctrl && key === 'w') {
-      closeTab(currentTabIndex);
-      event.preventDefault();
-    } else if (ctrl && key === 'n') {
-      createWindow();
-      event.preventDefault();
-    } else if (ctrl && key === 'k' && shift) {
-      const tab = tabs[currentTabIndex];
-      if (tab && isSafeUrl(tab.url)) createNewTab(tab.url);
-      event.preventDefault();
-    } else if (ctrl && key === 'b' && shift) {
-      // Ctrl+Shift+B：切换书签栏（Chrome/Edge 惯例）
-      sendToRenderer('toggle-bookmarks-bar');
-      event.preventDefault();
-    } else if (ctrl && key === 'd' && shift) {
-      // Ctrl+Shift+D：把所有打开的标签一键加为书签
-      const newBookmarks = tabs
-        .filter(t => isSafeUrl(t.url) && !t.url.startsWith('cosy://'))
-        .map(t => ({ url: t.url, title: t.title, addedDate: new Date().toISOString() }))
-        .filter(b => !bookmarks.find(x => x.url === b.url));
-      if (newBookmarks.length > 0) {
-        bookmarks.push(...newBookmarks);
-        saveBookmarks();
-        sendToRenderer('bookmarks-updated', bookmarks);
-        sendToRenderer('show-toast', `已收藏 ${newBookmarks.length} 个标签页`);
-      } else {
-        sendToRenderer('show-toast', '没有可收藏的标签页');
-      }
-      event.preventDefault();
-    } else if (ctrl && key === 's' && shift) {
-      // Ctrl+Shift+S：立即释放所有后台标签内存（Memory Saver 手动触发）
-      const n = discardAllBackgroundTabs();
-      sendToRenderer('show-toast', n > 0 ? `已休眠 ${n} 个后台标签页` : '没有需要休眠的后台标签页');
-      event.preventDefault();
-    } else if (ctrl && key === 'tab') {
-      const nextIndex = shift
-        ? (currentTabIndex - 1 + tabs.length) % tabs.length
-        : (currentTabIndex + 1) % tabs.length;
-      switchToTab(nextIndex);
-      event.preventDefault();
-    } else if (ctrl && key === 'l') {
-      mainWindow.webContents.send('focus-address-bar');
-      event.preventDefault();
-    } else if (input.key === 'F6') {
-      // F6：Chrome/Edge 惯例，聚焦地址栏
-      mainWindow.webContents.send('focus-address-bar');
-      event.preventDefault();
-    } else if (ctrl && input.key === 'F4') {
-      // Ctrl+F4：关闭当前标签页（与 Ctrl+W 等价的多标签窗口惯例）
-      closeTab(currentTabIndex);
-      event.preventDefault();
-    } else if (ctrl && key === 'f') {
-      mainWindow.webContents.send('show-find-bar');
-      event.preventDefault();
-    } else if (input.key === 'F3' || (ctrl && key === 'g')) {
-      // F3 / Ctrl+G：继续查找下一个（Shift 反向），对齐 Chrome/Edge 惯例。
-      applyFind(!shift);
-      event.preventDefault();
-    } else if (ctrl && key === 'j') {
-      createNewTab('cosy://downloadlist');
-      event.preventDefault();
-    } else if (ctrl && key === 'p') {
-      const wc = getCurrentTabWebContents();
-      if (wc) wc.print({ silent: false, printBackground: true });
-      event.preventDefault();
-    } else if (ctrl && key === 'u') {
-      const tab = tabs[currentTabIndex];
-      if (tab && tab.view?.webContents && isSafeUrl(tab.url)) {
-        tab.view.webContents.viewSource();
-      }
-      event.preventDefault();
-    } else if (ctrl && key === 'o') {
-      showOpenFileDialog();
-      event.preventDefault();
-    } else if (alt && input.key === 'Home') {
-      goHome();
-      event.preventDefault();
-    } else if (ctrl && key === 'r' && !shift) {
-      const wc = getCurrentTabWebContents();
-      if (wc) wc.reload();
-      event.preventDefault();
-    } else if (ctrl && key === 'r' && shift) {
-      const wc = getCurrentTabWebContents();
-      if (wc) wc.reloadIgnoringCache();
-      event.preventDefault();
-    } else if (input.key === 'F5' && !shift) {
-      const wc = getCurrentTabWebContents();
-      if (wc) wc.reload();
-      event.preventDefault();
-    } else if (input.key === 'F5' && shift) {
-      const wc = getCurrentTabWebContents();
-      if (wc) wc.reloadIgnoringCache();
-      event.preventDefault();
-    } else if (input.key === 'F12') {
-      toggleDevTools();
-      event.preventDefault();
-    } else if (input.key === 'Escape') {
-      // 现代浏览器惯例：Esc 退出 HTML 全屏
-      const wc = getCurrentTabWebContents();
-      if (wc && wc.isFullScreen()) {
-        wc.exitFullScreen();
+    // 键位匹配（修饰键归一化、ctrl/meta 等价、优先级）全部收口到 shortcutkeys.js，
+    // 这里只负责把动作 id 派发到对应处理函数，并与旧实现逐字等价地阻止默认行为。
+    const action = shortcutKeys.matchShortcut(input);
+    if (!action) return;
+    switch (action) {
+      case shortcutKeys.ACTION.NEW_TAB:
+        createNewTab();
         event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.REOPEN_CLOSED_TAB: {
+        const lastClosedTab = getLastClosedTab();
+        if (lastClosedTab) createNewTab(lastClosedTab.url);
+        event.preventDefault();
+        break;
       }
-    } else if (ctrl && input.key === '=') {
-      zoomIn();
-      event.preventDefault();
-    } else if (ctrl && input.key === '-') {
-      zoomOut();
-      event.preventDefault();
-    } else if (ctrl && input.key === '0') {
-      resetZoom();
-      event.preventDefault();
-    } else if (alt && input.key === 'ArrowLeft') {
-      const wc = getCurrentTabWebContents();
-      if (wc?.canGoBack()) wc.goBack();
-      event.preventDefault();
-    } else if (alt && input.key === 'ArrowRight') {
-      const wc = getCurrentTabWebContents();
-      if (wc?.canGoForward()) wc.goForward();
-      event.preventDefault();
-    } else if (ctrl && key === 'd' && !shift) {
-      const tab = tabs[currentTabIndex];
-      if (tab && isSafeUrl(tab.url) && !tab.url.startsWith('cosy://')) {
-        const existing = bookmarks.findIndex(b => b.url === tab.url);
-        if (existing === -1) {
-          bookmarks.push({ url: tab.url, title: tab.title, addedDate: new Date().toISOString() });
+      case shortcutKeys.ACTION.CLOSE_TAB:
+      case shortcutKeys.ACTION.CLOSE_TAB_F4:
+        // Ctrl+W 与 Ctrl+F4 都是关闭当前标签页（多标签窗口惯例）
+        closeTab(currentTabIndex);
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.NEW_WINDOW:
+        createWindow();
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.DUPLICATE_TAB: {
+        const tab = tabs[currentTabIndex];
+        if (tab && isSafeUrl(tab.url)) createNewTab(tab.url);
+        event.preventDefault();
+        break;
+      }
+      case shortcutKeys.ACTION.TOGGLE_BOOKMARKS_BAR:
+        // Ctrl+Shift+B：切换书签栏（Chrome/Edge 惯例）
+        sendToRenderer('toggle-bookmarks-bar');
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.BOOKMARK_ALL_TABS: {
+        // Ctrl+Shift+D：把所有打开的标签一键加为书签
+        const newBookmarks = tabs
+          .filter(t => isSafeUrl(t.url) && !t.url.startsWith('cosy://'))
+          .map(t => ({ url: t.url, title: t.title, addedDate: new Date().toISOString() }))
+          .filter(b => !bookmarks.find(x => x.url === b.url));
+        if (newBookmarks.length > 0) {
+          bookmarks.push(...newBookmarks);
           saveBookmarks();
-          tab.bookmarked = true;
           sendToRenderer('bookmarks-updated', bookmarks);
-          sendToRenderer('show-toast', '已添加书签');
+          sendToRenderer('show-toast', `已收藏 ${newBookmarks.length} 个标签页`);
         } else {
-          bookmarks.splice(existing, 1);
-          saveBookmarks();
-          tab.bookmarked = false;
-          sendToRenderer('bookmarks-updated', bookmarks);
-          sendToRenderer('show-toast', '已移除书签');
+          sendToRenderer('show-toast', '没有可收藏的标签页');
         }
+        event.preventDefault();
+        break;
       }
-      event.preventDefault();
-    } else if (ctrl && key === 'h') {
-      mainWindow.webContents.send('show-history');
-      event.preventDefault();
-    } else if (ctrl && key === 'delete' && shift) {
-      sendToRenderer('show-clear-data-dialog');
-      event.preventDefault();
+      case shortcutKeys.ACTION.DISCARD_BACKGROUND_TABS: {
+        // Ctrl+Shift+S：立即释放所有后台标签内存（Memory Saver 手动触发）
+        const n = discardAllBackgroundTabs();
+        sendToRenderer('show-toast', n > 0 ? `已休眠 ${n} 个后台标签页` : '没有需要休眠的后台标签页');
+        event.preventDefault();
+        break;
+      }
+      case shortcutKeys.ACTION.NEXT_TAB:
+        switchToTab((currentTabIndex + 1) % tabs.length);
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.PREV_TAB:
+        switchToTab((currentTabIndex - 1 + tabs.length) % tabs.length);
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.FOCUS_ADDRESS_BAR:
+        // Ctrl+L / F6：聚焦地址栏（Chrome/Edge 惯例）
+        mainWindow.webContents.send('focus-address-bar');
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.FIND:
+        mainWindow.webContents.send('show-find-bar');
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.FIND_NEXT:
+      case shortcutKeys.ACTION.FIND_PREV:
+        // F3 / Ctrl+G：继续查找（Shift 反向），动作 id 已编码方向
+        applyFind(action === shortcutKeys.ACTION.FIND_NEXT);
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.OPEN_DOWNLOADS:
+        createNewTab('cosy://downloadlist');
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.PRINT: {
+        const wc = getCurrentTabWebContents();
+        if (wc) wc.print({ silent: false, printBackground: true });
+        event.preventDefault();
+        break;
+      }
+      case shortcutKeys.ACTION.VIEW_SOURCE: {
+        const tab = tabs[currentTabIndex];
+        if (tab && tab.view?.webContents && isSafeUrl(tab.url)) {
+          tab.view.webContents.viewSource();
+        }
+        event.preventDefault();
+        break;
+      }
+      case shortcutKeys.ACTION.OPEN_FILE:
+        showOpenFileDialog();
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.GO_HOME:
+        goHome();
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.RELOAD: {
+        const wc = getCurrentTabWebContents();
+        if (wc) wc.reload();
+        event.preventDefault();
+        break;
+      }
+      case shortcutKeys.ACTION.RELOAD_BYPASSING_CACHE: {
+        const wc = getCurrentTabWebContents();
+        if (wc) wc.reloadIgnoringCache();
+        event.preventDefault();
+        break;
+      }
+      case shortcutKeys.ACTION.TOGGLE_DEVTOOLS:
+        toggleDevTools();
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.EXIT_FULLSCREEN: {
+        // 现代浏览器惯例：Esc 退出 HTML 全屏（仅在全屏时才拦截）
+        const wc = getCurrentTabWebContents();
+        if (wc && wc.isFullScreen()) {
+          wc.exitFullScreen();
+          event.preventDefault();
+        }
+        break;
+      }
+      case shortcutKeys.ACTION.ZOOM_IN:
+        zoomIn();
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.ZOOM_OUT:
+        zoomOut();
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.ZOOM_RESET:
+        resetZoom();
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.BACK: {
+        const wc = getCurrentTabWebContents();
+        if (wc?.canGoBack()) wc.goBack();
+        event.preventDefault();
+        break;
+      }
+      case shortcutKeys.ACTION.FORWARD: {
+        const wc = getCurrentTabWebContents();
+        if (wc?.canGoForward()) wc.goForward();
+        event.preventDefault();
+        break;
+      }
+      case shortcutKeys.ACTION.TOGGLE_BOOKMARK: {
+        const tab = tabs[currentTabIndex];
+        if (tab && isSafeUrl(tab.url) && !tab.url.startsWith('cosy://')) {
+          const existing = bookmarks.findIndex(b => b.url === tab.url);
+          if (existing === -1) {
+            bookmarks.push({ url: tab.url, title: tab.title, addedDate: new Date().toISOString() });
+            saveBookmarks();
+            tab.bookmarked = true;
+            sendToRenderer('bookmarks-updated', bookmarks);
+            sendToRenderer('show-toast', '已添加书签');
+          } else {
+            bookmarks.splice(existing, 1);
+            saveBookmarks();
+            tab.bookmarked = false;
+            sendToRenderer('bookmarks-updated', bookmarks);
+            sendToRenderer('show-toast', '已移除书签');
+          }
+        }
+        event.preventDefault();
+        break;
+      }
+      case shortcutKeys.ACTION.OPEN_HISTORY:
+        mainWindow.webContents.send('show-history');
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.CLEAR_BROWSING_DATA:
+        sendToRenderer('show-clear-data-dialog');
+        event.preventDefault();
+        break;
+      default:
+        break;
     }
   });
 }
