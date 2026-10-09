@@ -88,13 +88,28 @@ test('全部证书例外相关通道都被显式定级（无遗漏成 general）
   }
 });
 
-test('三个分级集合两两不相交', () => {
-  const all = [cp.SHELL_ONLY_CHANNELS, cp.CERT_FLOW_CHANNELS, cp.GENERAL_CHANNELS];
+test('四个分级集合两两不相交', () => {
+  const all = [cp.SHELL_ONLY_CHANNELS, cp.CERT_FLOW_CHANNELS,
+    cp.COSY_ONLY_CHANNELS, cp.GENERAL_CHANNELS];
   for (let i = 0; i < all.length; i++) {
     for (let j = i + 1; j < all.length; j++) {
       for (const ch of all[i]) assert.equal(all[j].has(ch), false, ch);
     }
   }
+});
+
+test('HTTPS 例外写操作仅 cosy 内置页，错误页/远程页不可写', () => {
+  for (const ch of ['add-https-exception', 'remove-https-exception', 'clear-https-exceptions']) {
+    assert.equal(cp.channelTier(ch), cp.TIER_COSY_ONLY, ch);
+    assert.equal(cp.frameAllows(COSY, ch), true, 'cosy ' + ch);
+    assert.equal(cp.frameAllows(ERR, ch), false, 'err ' + ch);
+    assert.equal(cp.frameAllows(WEB, ch), false, 'web ' + ch);
+    assert.equal(cp.frameAllows(LOCAL, ch), false, 'local ' + ch);
+    assert.equal(cp.frameAllows(SHELL, ch), true, 'shell ' + ch);
+  }
+  // 只读列表是 general，证书错误页等受信帧也能读。
+  assert.equal(cp.channelTier('list-https-exceptions'), cp.TIER_GENERAL);
+  assert.equal(cp.frameAllows(ERR, 'list-https-exceptions'), true);
 });
 
 test('preload 白名单内每个通道都被显式分级（没有无意落入默认 shell-only 的通道）', () => {
@@ -138,9 +153,12 @@ test('preload 白名单内每个通道都被显式分级（没有无意落入默
     'get-doh-status', 'clear-doh-events', 'list-download-risks',
     'clear-download-risks', 'clean-share-url',
     'get-task-manager-processes', 'end-task-manager-tab',
+    'list-https-exceptions', 'add-https-exception', 'remove-https-exception',
+    'clear-https-exceptions',
   ];
   const classified = new Set([
-    ...cp.SHELL_ONLY_CHANNELS, ...cp.CERT_FLOW_CHANNELS, ...cp.GENERAL_CHANNELS,
+    ...cp.SHELL_ONLY_CHANNELS, ...cp.CERT_FLOW_CHANNELS,
+    ...cp.COSY_ONLY_CHANNELS, ...cp.GENERAL_CHANNELS,
   ]);
   const missing = [];
   for (const ch of whitelist) {
