@@ -61,6 +61,7 @@ const allowedInvokeChannels = new Set([
   'clear-browsing-data',
   'get-https-only',
   'get-network-status',
+  'get-reader-article',
   'open-external-url',
   'permission-response',
   'set-zoom',
