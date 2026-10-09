@@ -126,6 +126,7 @@ test('preload 白名单内每个通道都被显式分级（没有无意落入默
     'create-tab', 'switch-tab', 'close-tab', 'navigate-tab', 'navigate-back',
     'navigate-forward', 'reload-tab', 'stop-loading', 'duplicate-tab',
     'reopen-closed-tab', 'set-tab-muted', 'get-current-tab', 'get-all-tabs',
+    'set-tab-pinned', 'toggle-tab-pinned', 'close-tabs-batch',
     'add-extension', 'get-extensions', 'toggle-extension', 'remove-extension',
     'browse-folder', 'get-bookmarks', 'export-bookmarks', 'import-bookmarks',
     'get-history', 'clear-history', 'clear-browsing-data', 'get-https-only',
