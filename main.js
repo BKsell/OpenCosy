@@ -29,6 +29,7 @@ const urlClean = require('./urlclean');
 const popupGuard = require('./popupguard');
 const quarantine = require('./quarantine');
 const navGuard = require('./navguard');
+const httpsOnlyCore = require('./httpsonly');
 const containerGuard = require('./container');
 const schemeOrigin = require('./schemeorigin');
 const webviewHarden = require('./webviewharden');
@@ -931,6 +932,102 @@ function readStoredSettings() {
   return {};
 }
 
+// ===== HTTPS-Only 站点例外（https-exceptions.json / cosy://httpsonly 面板）=====
+// HTTPS-Only 默认把公网 http 主动升级到 https；但确实存在只有明文 HTTP 的老站点 /
+// 内网系统。升级失败时，只有在错误码属于“对端根本没在做 TLS”的强信号、且用户在
+// 原生确认框里明确同意后，才把该主机登记为例外并回退一次 http。该集合持久化，
+// 下次访问同一站点直接保留 http（仍受私网判定与开关约束）。主机名经内核净化，
+// 容量受限，写盘防抖，避免被刷爆。
+const httpsExceptionStorePath = path.join(app.getPath('userData'), 'https-exceptions.json');
+const httpsExceptions = new httpsOnlyCore.HttpExceptionStore(500);
+let httpsExceptionsLoaded = false;
+let httpsExceptionSaveTimer = null;
+
+function loadHttpsExceptions() {
+  if (httpsExceptionsLoaded) return;
+  httpsExceptionsLoaded = true;
+  try {
+    httpsExceptions.load(ledgerStore.readJSONStore(httpsExceptionStorePath, {}));
+  } catch (e) { console.error('读取 HTTPS 例外失败:', e); }
+}
+
+function persistHttpsExceptions() {
+  if (httpsExceptionSaveTimer) clearTimeout(httpsExceptionSaveTimer);
+  httpsExceptionSaveTimer = setTimeout(() => {
+    try {
+      ledgerStore.writeJSONStore(httpsExceptionStorePath, httpsExceptions.toJSON());
+    } catch (e) { console.error('写入 HTTPS 例外失败:', e); }
+  }, 300);
+}
+
+// isHttpExceptionHost 供请求管道与回退逻辑共用，输入可以是 URL 或主机名。
+function isHttpExceptionHost(urlOrHost) {
+  try {
+    const host = String(urlOrHost || '').indexOf('://') >= 0
+      ? new URL(urlOrHost).hostname
+      : httpsOnlyCore.normalizeExceptionHost(urlOrHost);
+    return !!host && httpsExceptions.has(host);
+  } catch { return false; }
+}
+
+// maybeFallbackAfterUpgradeFailure 在“HTTPS-Only 升级后加载失败”时，判断并执行
+// 一次性的、用户知情的 http 回退。返回 true 表示已接手（弹过框 / 已回退），调用方
+// 不再显示通用错误页；false 表示不属于可回退场景，交给正常错误页。
+function maybeFallbackAfterUpgradeFailure(tab, errorCode, validatedURL) {
+  if (!httpsOnlyEnabled) return false;
+  if (!httpsOnlyCore.isFallbackableUpgradeError(errorCode)) return false;
+  if (typeof validatedURL !== 'string' || !validatedURL.startsWith('https://')) return false;
+  const httpUrl = httpsOnlyCore.downgradeHttpsUrlForFallback(validatedURL);
+  if (!httpUrl) return false;
+  let host = '';
+  try {
+    host = new URL(validatedURL).hostname.toLowerCase();
+  } catch { return false; }
+  if (!host || httpsExceptions.has(host)) return false;
+  // 只有“该 http 地址确实会被我们升级成当前这个 https 地址”才允许回退，避免把
+  // 用户手动输入 / 书签里的 https 地址错误地降级到明文。
+  let repro;
+  try {
+    repro = httpsOnlyCore.upgradeHttpUrl(httpUrl);
+  } catch { repro = null; }
+  if (!repro || !repro.ok || repro.url !== validatedURL) return false;
+  // 私网 / 回环本来就不会被升级，理论上进不来；再守一道。
+  if (isPrivateNetworkHost(httpUrl)) return false;
+  if (tab.httpsFallbackPrompting) return true; // 已有一个确认框在等，不叠加。
+  tab.httpsFallbackPrompting = true;
+  let choice = 0;
+  try {
+    const res = dialog.showMessageBoxSync(mainWindow, {
+      type: 'warning',
+      buttons: ['返回安全页面', '继续使用 HTTP（本次并记住该站点）'],
+      defaultId: 0,
+      cancelId: 0,
+      title: '该站点不支持 HTTPS',
+      message: `无法通过加密连接访问 ${host}`,
+      detail: '服务器在 443 端口没有提供可用的 TLS（连接被拒绝 / 协议不匹配）。\n\n'
+        + '如果继续，将以明文 HTTP 访问该站点，同网段中的其他人可能看到或篡改你与该站点之间传输的内容。\n'
+        + '仅在你确认这是可信站点、且它确实只提供 HTTP 时才继续。',
+      noLink: true,
+    });
+    choice = Number(res) || 0;
+  } finally {
+    tab.httpsFallbackPrompting = false;
+  }
+  if (choice !== 1) return true; // 用户选择留在错误页，已接手不再叠加通用错误页。
+  httpsExceptions.add(host);
+  persistHttpsExceptions();
+  recordSecurityEvent('https-only', 'warn',
+    `用户确认在不支持 HTTPS 的站点回退到明文 HTTP：${host}`, host);
+  try {
+    tab.view.webContents.loadURL(httpUrl);
+  } catch (e) {
+    console.error('HTTPS 回退加载失败:', e);
+    return false;
+  }
+  return true;
+}
+
+
 // applyDarkMode 切 Chromium 原生暗色主题，影响滚动条、文件对话框、DevTools 外壳。
 // renderer 的 CSS 暗色由 settings-loaded 自己管，这里只管原生 UI。
 function applyDarkMode(dark) {
@@ -1308,6 +1405,7 @@ function buildRequestPipelineDeps() {
       analyzeBrand: brandGuard.analyzeBrand.bind(brandGuard),
       analyzePhish: phishUrl.analyze.bind(phishUrl),
       isPrivateNetworkHost,
+      isHttpException: isHttpExceptionHost,
     },
     record: {
       fpHit: recordFpHit,
@@ -5215,6 +5313,9 @@ function loadTabContent(tab) {
         });
         return;
       }
+      // HTTPS-Only 升级后对端没有可用 TLS：先给用户知情回退（确认后按站点记住
+      // HTTP 例外）。用户选择留在错误页、或不属于可回退错误码时，才显示通用错误页。
+      if (maybeFallbackAfterUpgradeFailure(tab, errorCode, validatedURL)) return;
       showErrorPage(tab, errorCode, errorDescription, validatedURL);
     });
 
@@ -5323,7 +5424,8 @@ function loadTabContent(tab) {
         'security': 'src/security.html',
         'hashes': 'src/hashes.html',
         'download': 'src/download', 'downloadlist': 'src/downloadlist.html',
-        'taskmanager': 'src/taskmanager.html'
+        'taskmanager': 'src/taskmanager.html',
+        'httpsonly': 'src/httpsonly.html'
       };
       const filePath = pageMap[hostname];
       if (filePath) tab.view.webContents.loadFile(filePath);
@@ -5851,6 +5953,7 @@ app.whenReady().then(async () => {
   const stored = readStoredSettings();
   applyDarkMode(!!stored.darkMode);
   httpsOnlyEnabled = stored.httpsOnly !== false;
+  loadHttpsExceptions();
   blockTrackers = stored.blockTrackers !== false;
   blockThirdPartyCookies = stored.blockThirdPartyCookies !== false;
   hardenCookies = stored.hardenCookies !== false;
@@ -7093,6 +7196,41 @@ ipcMain.handle('clear-history', (event) => {
 ipcMain.handle('get-https-only', (event) => {
   if (!isMainSender(event)) return { success: false };
   return { success: true, enabled: httpsOnlyEnabled };
+});
+
+// HTTPS-Only 站点例外的查询与管理。来源校验交给 ipcGuard（仅受信 file/cosy 帧，
+// 远程网页在主进程边界即被拒）；主机名一律经内核净化，非法输入返回 ok:false，
+// 不接受路径 / 端口 / 控制字符。写操作落盘并向所有受信界面广播变更。
+ipcMain.handle('list-https-exceptions', () => ({
+  enabled: httpsOnlyEnabled,
+  hosts: httpsExceptions.hosts(),
+}));
+
+ipcMain.handle('add-https-exception', (event, payload = {}) => {
+  const host = httpsOnlyCore.normalizeExceptionHost(payload && payload.host);
+  if (!host) return { ok: false, error: '主机名无效' };
+  httpsExceptions.add(host);
+  persistHttpsExceptions();
+  sendToRenderer('https-exceptions-updated', { hosts: httpsExceptions.hosts() });
+  return { ok: true, host };
+});
+
+ipcMain.handle('remove-https-exception', (event, payload = {}) => {
+  const host = httpsOnlyCore.normalizeExceptionHost(payload && payload.host);
+  if (!host) return { ok: false, error: '主机名无效' };
+  const removed = httpsExceptions.remove(host);
+  if (removed) {
+    persistHttpsExceptions();
+    sendToRenderer('https-exceptions-updated', { hosts: httpsExceptions.hosts() });
+  }
+  return { ok: true, removed };
+});
+
+ipcMain.handle('clear-https-exceptions', () => {
+  httpsExceptions.clear();
+  persistHttpsExceptions();
+  sendToRenderer('https-exceptions-updated', { hosts: httpsExceptions.hosts() });
+  return { ok: true };
 });
 
 ipcMain.handle('get-network-status', (event) => {
