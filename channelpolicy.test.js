@@ -137,6 +137,7 @@ test('preload 白名单内每个通道都被显式分级（没有无意落入默
     'list-fingerprint-entries', 'get-fingerprint-stats', 'clear-fingerprint-entries',
     'get-doh-status', 'clear-doh-events', 'list-download-risks',
     'clear-download-risks', 'clean-share-url',
+    'get-task-manager-processes', 'end-task-manager-tab',
   ];
   const classified = new Set([
     ...cp.SHELL_ONLY_CHANNELS, ...cp.CERT_FLOW_CHANNELS, ...cp.GENERAL_CHANNELS,
