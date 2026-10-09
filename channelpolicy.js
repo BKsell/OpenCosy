@@ -115,6 +115,10 @@ const GENERAL_CHANNELS = new Set([
   'navigate-forward', 'reload-tab', 'stop-loading', 'duplicate-tab',
   'reopen-closed-tab', 'set-tab-muted', 'discard-tab', 'discard-background-tabs',
   'set-tab-pinned', 'toggle-tab-pinned', 'close-tabs-batch',
+  'get-tab-groups', 'create-tab-group', 'add-tabs-to-group',
+  'remove-tabs-from-group', 'move-tab-to-group', 'rename-tab-group',
+  'set-tab-group-color', 'set-tab-group-collapsed', 'move-tab-group',
+  'dissolve-tab-group',
   'close-current-tab', 'navigate-to-url', 'reload-tab-by-id', 'reopen-tab-url',
   'get-current-tab', 'get-all-tabs', 'search-tabs', 'print-current-tab',
   // 外观 / 标签栏（非持久化敏感配置）
