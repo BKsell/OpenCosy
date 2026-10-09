@@ -114,6 +114,7 @@ const GENERAL_CHANNELS = new Set([
   'create-tab', 'switch-tab', 'close-tab', 'navigate-tab', 'navigate-back',
   'navigate-forward', 'reload-tab', 'stop-loading', 'duplicate-tab',
   'reopen-closed-tab', 'set-tab-muted', 'discard-tab', 'discard-background-tabs',
+  'set-tab-pinned', 'toggle-tab-pinned', 'close-tabs-batch',
   'close-current-tab', 'navigate-to-url', 'reload-tab-by-id', 'reopen-tab-url',
   'get-current-tab', 'get-all-tabs', 'print-current-tab',
   // 外观 / 标签栏（非持久化敏感配置）
