@@ -156,6 +156,47 @@ test('HTTPS-only 对公网 http 升级，对私网保留 http', () => {
   assert.equal(rq.type, DECISION_ALLOW);
 });
 
+test('HTTPS-only 显式 80 端口收敛到 https 默认 443（不带端口）', () => {
+  const d = baseDeps();
+  d.deps.flags.httpsOnlyEnabled = true;
+  const r = decideRequest(d.deps, { url: 'http://a.test:80/path?x=1', resourceType: 'mainFrame' });
+  assert.equal(r.type, DECISION_REDIRECT);
+  assert.equal(r.url, 'https://a.test/path?x=1');
+});
+
+test('HTTPS-only 非标准端口保留 HTTP 不放行到带同端口的 https', () => {
+  const d = baseDeps();
+  d.deps.flags.httpsOnlyEnabled = true;
+  const r = decideRequest(d.deps, { url: 'http://a.test:8080/app', resourceType: 'mainFrame' });
+  assert.equal(r.type, DECISION_ALLOW);
+  // 留痕一次，便于安全面板观察“为什么这个站没被升级”。
+  assert.ok(d.calls.some((c) => c[0] === 'securityEvent'
+    && String(c[3]).indexOf('非标准端口') >= 0));
+});
+
+test('HTTPS-only 对用户登记的 HTTP 例外站点不升级', () => {
+  const d = baseDeps();
+  d.deps.flags.httpsOnlyEnabled = true;
+  d.deps.guards.isHttpException = (u) => {
+    try { return new URL(u).hostname === 'legacy.test'; } catch { return false; }
+  };
+  const ex = decideRequest(d.deps, { url: 'http://legacy.test/', resourceType: 'mainFrame' });
+  assert.equal(ex.type, DECISION_ALLOW);
+  const other = decideRequest(d.deps, { url: 'http://normal.test/', resourceType: 'mainFrame' });
+  assert.equal(other.type, DECISION_REDIRECT);
+  assert.equal(other.url, 'https://normal.test/');
+});
+
+test('HTTPS-only 守卫回调抛异常时退化为不升级、不崩管道', () => {
+  const d = baseDeps();
+  d.deps.flags.httpsOnlyEnabled = true;
+  d.deps.guards.isPrivateNetworkHost = () => { throw new Error('boom'); };
+  d.deps.guards.isHttpException = () => { throw new Error('boom'); };
+  const r = decideRequest(d.deps, { url: 'http://a.test/', resourceType: 'mainFrame' });
+  // 两个查询都抛错时按“既非私网也非例外”处理，公网仍正常升级。
+  assert.equal(r.type, DECISION_REDIRECT);
+});
+
 test('判定守卫抛异常时不影响后续放行（fail-open 浏览）', () => {
   const { deps } = baseDeps();
   deps.guards.evaluatePnaRequest = () => { throw new Error('boom'); };
