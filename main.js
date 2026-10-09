@@ -21,6 +21,7 @@ const suggestionGuard = require('./suggestionguard');
 const hostMatch = require('./hostmatch');
 const urlResolve = require('./urlresolve');
 const shortcutKeys = require('./shortcutkeys');
+const taskManagerCore = require('./taskmanager');
 const dohGuard = require('./dohguard');
 const permPolicy = require('./permpolicy');
 const dloadGuard = require('./dloadguard');
@@ -4723,6 +4724,10 @@ function registerShortcuts() {
         toggleDevTools();
         event.preventDefault();
         break;
+      case shortcutKeys.ACTION.OPEN_TASK_MANAGER:
+        openTaskManagerTab();
+        event.preventDefault();
+        break;
       case shortcutKeys.ACTION.EXIT_FULLSCREEN: {
         // 现代浏览器惯例：Esc 退出 HTML 全屏（仅在全屏时才拦截）
         const wc = getCurrentTabWebContents();
@@ -4814,6 +4819,19 @@ function createNewTab(url = 'cosy://newtab') {
   sendToRenderer('tab-switched', { id: tab.id, index: currentTabIndex });
   setTimeout(updateBrowserViewBounds, 0);
   return tab;
+}
+
+const TASK_MANAGER_URL = 'cosy://taskmanager';
+
+// openTaskManagerTab 打开（或切到已有的）任务管理器内置页。任务管理器是 cosy: 页，
+// 承载在普通标签视图里；已开则复用，避免连按 Shift+Esc 开出一堆相同页。
+function openTaskManagerTab() {
+  const existing = tabs.findIndex(t => t && t.url === TASK_MANAGER_URL);
+  if (existing >= 0) {
+    if (existing !== currentTabIndex) switchToTab(existing);
+    return tabs[existing];
+  }
+  return createNewTab(TASK_MANAGER_URL);
 }
 
 function showErrorPage(tab, errorCode, errorDescription, validatedURL) {
@@ -4996,6 +5014,60 @@ ipcMain.handle('get-memory-saver', (event) => {
   idleMs: MEMORY_SAVER_IDLE_MS,
   discarded: tabs.filter(t => t.discarded).map(t => ({ id: t.id, url: t.url })),
   };
+});
+
+// ===== 任务管理器（cosy://taskmanager，Shift+Esc 唤起）=====
+// 指标来自 app.getAppMetrics()（percentCPUUsage 是相对上一次调用的均值，因此渲染端
+// 固定 2s 轮询），内存单位 KB。标签进程用 webContents.getOSProcessId() 的 OS pid 关联，
+// 绝不能混用 getProcessId()（Chromium 内部 pid）。
+function isTaskManagerFrameSender(event) {
+  if (isMainSender(event)) return true;
+  const frame = event && event.senderFrame;
+  if (!frame || typeof frame.url !== 'string') return false;
+  let u;
+  try { u = new URL(frame.url); } catch { return false; }
+  return u.protocol === 'cosy:' && u.hostname === 'taskmanager';
+}
+
+// 汇总各标签渲染进程 OS pid -> {id,title,index}，用于把进程指标关联到具体标签。
+// 视图已销毁 / pid 取不到的标签跳过，不让单个坏标签影响整页指标。
+function buildTabPidMap() {
+  const map = new Map();
+  for (let i = 0; i < tabs.length; i++) {
+    const tab = tabs[i];
+    const wc = tab && tab.view && tab.view.webContents;
+    if (!wc || typeof wc.getOSProcessId !== 'function') continue;
+    let pid;
+    try { pid = wc.getOSProcessId(); } catch { continue; }
+    if (Number.isInteger(pid) && pid > 0 && !map.has(pid)) {
+      map.set(pid, { id: String(tab.id), title: String(tab.title || tab.url || ''), index: i });
+    }
+  }
+  return map;
+}
+
+ipcMain.handle('get-task-manager-processes', (event) => {
+  if (!isTaskManagerFrameSender(event)) {
+    return { total: { count: 0, memoryKB: 0, cpu: 0 }, byKind: [], rows: [] };
+  }
+  let metrics = [];
+  try { metrics = app.getAppMetrics(); } catch { metrics = []; }
+  return taskManagerCore.summarizeProcesses(metrics, buildTabPidMap());
+});
+
+// 结束标签：只接受任务管理器帧，按“稳定标签 id”定位（不接受会随标签增删漂移的索引），
+// 且只允许关闭当前确实关联到某标签渲染进程的项；实际关闭复用现有 closeTab，不直接 kill。
+ipcMain.handle('end-task-manager-tab', (event, payload = {}) => {
+  if (!isTaskManagerFrameSender(event)) return { success: false, error: 'denied' };
+  const id = payload && payload.id != null ? String(payload.id) : '';
+  if (!id) return { success: false, error: 'bad-id' };
+  const index = tabs.findIndex(t => t && String(t.id) === id);
+  if (index < 0) return { success: false, error: 'not-found' };
+  const tab = tabs[index];
+  const urlProtocol = getUrlProtocol(tab.url);
+  if (urlProtocol !== 'cosy:' && !isSafeUrl(tab.url)) return { success: false, error: 'unsafe' };
+  closeTab(index);
+  return { success: true, id };
 });
 
 function loadTabContent(tab) {
@@ -5250,7 +5322,8 @@ function loadTabContent(tab) {
         'permissions': 'src/permissions.html',
         'security': 'src/security.html',
         'hashes': 'src/hashes.html',
-        'download': 'src/download', 'downloadlist': 'src/downloadlist.html'
+        'download': 'src/download', 'downloadlist': 'src/downloadlist.html',
+        'taskmanager': 'src/taskmanager.html'
       };
       const filePath = pageMap[hostname];
       if (filePath) tab.view.webContents.loadFile(filePath);
