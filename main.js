@@ -5615,6 +5615,14 @@ function switchToTab(tabIndex) {
 function closeTab(tabIndex) {
   if (tabIndex >= 0 && tabIndex < tabs.length) {
     const tab = tabs[tabIndex];
+    // 单独关闭一个固定标签视为用户明确要去掉它：同步移出固定集合并落盘，
+    // 否则下次启动会被固定清单按 URL 重新拉回。批量关闭从不包含固定标签，
+    // 因此固定的长期页不会被“关闭其他/左侧/右侧”顺手清掉。
+    if (tab.pinned) {
+      pinModel.unpin(tab.id);
+      tab.pinned = false;
+      persistPins();
+    }
     addToRecentlyClosed(tab);
     popupOpenTimes.delete(tab.id);
     if (tab.view) tab.view.webContents.destroy();
