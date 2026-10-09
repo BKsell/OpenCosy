@@ -181,3 +181,16 @@ test('ruleMatches 对错误键名直接返回 false', () => {
   assert.strictEqual(ruleMatches(mk('t', { control: true }), 'x', rule), false);
   assert.strictEqual(ruleMatches(mk('t', { control: true }), 't', rule), true);
 });
+
+test('Alt+Shift+P 切换固定标签，且不与 Ctrl+P 打印冲突', () => {
+  assert.strictEqual(
+    matchShortcut(mk('p', { alt: true, shift: true })),
+    ACTION.TOGGLE_PINNED_TAB
+  );
+  // Ctrl+P 仍然是打印；Ctrl+Shift+P 也仍归打印（打印规则不限制 shift）。
+  assert.strictEqual(matchShortcut(mk('p', { control: true })), ACTION.PRINT);
+  assert.strictEqual(matchShortcut(mk('p', { control: true, shift: true })), ACTION.PRINT);
+  // 单独 Alt+P / Shift+P 不触发固定。
+  assert.strictEqual(matchShortcut(mk('p', { alt: true })), null);
+  assert.strictEqual(matchShortcut(mk('p', { shift: true })), null);
+});
