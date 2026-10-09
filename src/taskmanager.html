@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+<title>任务管理器 - OpenCosy</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+:root{--bg:#f3f3f3;--card:#fff;--text:#222;--sub:#666;--border:#dfe4e1;--accent:#0078d4;--danger:#dc3545;}
+[data-theme="dark"]{--bg:#1a1a1a;--card:#2d2d2d;--text:#e6e6e6;--sub:#9a9a9a;--border:#444;}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);padding:24px;transition:.3s;}
+h1{font-size:20px;margin-bottom:4px;}
+.tip{color:var(--sub);font-size:13px;margin-bottom:16px;}
+.summary{display:flex;gap:16px;margin-bottom:14px;flex-wrap:wrap;}
+.stat{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 18px;min-width:150px;}
+.stat .k{font-size:12px;color:var(--sub);}
+.stat .v{font-size:20px;font-weight:600;margin-top:2px;}
+.kinds{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
+.kind{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-size:12px;color:var(--sub);}
+.kind b{color:var(--text);font-size:14px;margin:0 2px;}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;}
+th,td{padding:9px 12px;text-align:left;font-size:13px;border-bottom:1px solid var(--border);}
+th{background:var(--card);color:var(--sub);font-weight:600;position:sticky;top:0;}
+tr:last-child td{border-bottom:none;}
+td.num{text-align:right;font-variant-numeric:tabular-nums;}
+button.end{background:transparent;border:1px solid var(--danger);color:var(--danger);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;}
+button.end:hover{background:var(--danger);color:#fff;}
+.badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;background:var(--border);color:var(--sub);}
+.empty{padding:30px;text-align:center;color:var(--sub);}
+</style>
+</head>
+<body>
+<h1>任务管理器</h1>
+<div class="tip">显示浏览器各进程的内存与 CPU 占用。仅可结束关联到具体标签页的进程（会正常关闭该标签），系统进程不提供结束入口。数据每 2 秒刷新。</div>
+<div class="summary">
+  <div class="stat"><div class="k">进程数</div><div class="v" id="s-count">-</div></div>
+  <div class="stat"><div class="k">总内存</div><div class="v" id="s-mem">-</div></div>
+  <div class="stat"><div class="k">总 CPU</div><div class="v" id="s-cpu">-</div></div>
+</div>
+<div class="kinds" id="kinds"></div>
+<table>
+  <thead><tr><th>进程</th><th>类型</th><th class="num">内存</th><th class="num">CPU</th><th>PID</th><th></th></tr></thead>
+  <tbody id="rows"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
+</table>
+<script>
+(function () {
+  'use strict';
+  var KIND_LABEL = { browser:'浏览器主进程', tab:'标签页 / 渲染器', gpu:'GPU', utility:'系统服务', other:'其它' };
+  var rowsEl = document.getElementById('rows');
+  var kindsEl = document.getElementById('kinds');
+  var pollTimer = null;
+
+  function fmtMem(kb) {
+    kb = Number(kb) || 0;
+    if (kb < 1024) return Math.round(kb) + ' KB';
+    var mb = kb / 1024;
+    if (mb < 1024) return (Math.round(mb * 10) / 10) + ' MB';
+    return (Math.round((mb / 1024) * 100) / 100) + ' GB';
+  }
+  function setText(el, text) { el.textContent = String(text); }
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) setText(e, text);
+    return e;
+  }
+
+  function renderKinds(byKind) {
+    kindsEl.textContent = '';
+    if (!Array.isArray(byKind)) return;
+    byKind.forEach(function (k) {
+      var box = el('div', 'kind');
+      box.appendChild(document.createTextNode(KIND_LABEL[k.kind] || k.kind));
+      box.appendChild(document.createTextNode(' ×'));
+      box.appendChild(el('b', null, k.count));
+      box.appendChild(document.createTextNode(' · '));
+      box.appendChild(el('b', null, fmtMem(k.memoryKB)));
+      box.appendChild(document.createTextNode(' · ' + (Number(k.cpu) || 0) + '% CPU'));
+      kindsEl.appendChild(box);
+    });
+  }
+
+  function render(data) {
+    if (!data || !Array.isArray(data.rows)) return;
+    var t = data.total || { count:0, memoryKB:0, cpu:0 };
+    setText(document.getElementById('s-count'), t.count);
+    setText(document.getElementById('s-mem'), fmtMem(t.memoryKB));
+    setText(document.getElementById('s-cpu'), (Number(t.cpu) || 0) + ' %');
+    renderKinds(data.byKind);
+    rowsEl.textContent = '';
+    if (data.rows.length === 0) {
+      var tr = el('tr');
+      var td = el('td', 'empty', '暂无进程数据');
+      td.colSpan = 6;
+      tr.appendChild(td);
+      rowsEl.appendChild(tr);
+      return;
+    }
+    data.rows.forEach(function (row) {
+      var tr = document.createElement('tr');
+      var name = row.title || row.name || KIND_LABEL[row.kind] || '进程';
+      var c1 = el('td', null, name);
+      var c2 = document.createElement('td');
+      c2.appendChild(el('span', 'badge', KIND_LABEL[row.kind] || row.type || '其它'));
+      var c3 = el('td', 'num', fmtMem(row.memoryKB));
+      var c4 = el('td', 'num', (Number(row.cpu) || 0) + ' %');
+      var c5 = el('td', 'num', row.pid);
+      var c6 = document.createElement('td');
+      if (row.closable) {
+        var btn = el('button', 'end', '结束');
+        btn.type = 'button';
+        btn.addEventListener('click', function () {
+          btn.disabled = true;
+          window.electronAPI.invoke('end-task-manager-tab', { id: row.tabId })
+            .then(function (r) { if (!r || !r.ok) { btn.disabled = false; } })
+            .catch(function () { btn.disabled = false; });
+        });
+        c6.appendChild(btn);
+      }
+      [c1, c2, c3, c4, c5, c6].forEach(function (c) { tr.appendChild(c); });
+      rowsEl.appendChild(tr);
+    });
+  }
+
+  function poll() {
+    if (!window.electronAPI || !window.electronAPI.invoke) return;
+    window.electronAPI.invoke('get-task-manager-processes', {})
+      .then(render)
+      .catch(function () {});
+  }
+  poll();
+  pollTimer = setInterval(poll, 2000);
+  window.addEventListener('beforeunload', function () { if (pollTimer) clearInterval(pollTimer); });
+})();
+</script>
+</body>
+</html>
