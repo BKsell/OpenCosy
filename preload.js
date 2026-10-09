@@ -51,6 +51,7 @@ const allowedInvokeChannels = new Set([
   'close-tabs-batch',
   'get-current-tab',
   'get-all-tabs',
+  'search-tabs',
   'add-extension',
   'get-extensions',
   'toggle-extension',
