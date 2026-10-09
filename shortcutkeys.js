@@ -49,6 +49,7 @@ const ACTION = Object.freeze({
   TOGGLE_BOOKMARK: 'toggle-bookmark',
   OPEN_HISTORY: 'open-history',
   CLEAR_BROWSING_DATA: 'clear-browsing-data',
+  TOGGLE_PINNED_TAB: 'toggle-pinned-tab',
 });
 
 // 修饰三态：
@@ -103,6 +104,9 @@ const SHORTCUT_RULES = Object.freeze([
   { action: ACTION.TOGGLE_BOOKMARK, key: 'd', ctrl: true, shift: false, alt: null },
   { action: ACTION.OPEN_HISTORY, key: 'h', ctrl: true, shift: null, alt: null },
   { action: ACTION.CLEAR_BROWSING_DATA, key: 'delete', ctrl: true, shift: true, alt: null },
+  // 固定 / 取消固定当前标签。用 Alt+Shift+P 而不是 Ctrl+Shift+P：Ctrl+P 已绑打印，
+  // 且打印规则对 shift 不做限制，叠加 Ctrl 会被它抢先命中。
+  { action: ACTION.TOGGLE_PINNED_TAB, key: 'p', ctrl: false, shift: true, alt: true },
 ]);
 
 // normalizeKey 把 Electron input.key 收敛成规则表里的小写形式。
@@ -178,6 +182,7 @@ const PRIMARY_ACCELERATOR = Object.freeze({
   [ACTION.TOGGLE_BOOKMARK]: 'Ctrl+D',
   [ACTION.OPEN_HISTORY]: 'Ctrl+H',
   [ACTION.CLEAR_BROWSING_DATA]: 'Ctrl+Shift+Delete',
+  [ACTION.TOGGLE_PINNED_TAB]: 'Alt+Shift+P',
 });
 
 // describeAccelerator 返回动作的主加速键文本；未登记动作返回空串。
