@@ -124,6 +124,9 @@ const GENERAL_CHANNELS = new Set([
   // 页面状态只读
   'get-https-only', 'get-network-status', 'get-memory-saver', 'get-trackers',
   'get-spellcheck-info',
+  // 任务管理器：进程指标只读；结束标签与 close-tab 同级（handler 内再限定只有
+  // cosy://taskmanager 帧、且只能按稳定标签 id 关闭关联到标签的渲染进程）。
+  'get-task-manager-processes', 'end-task-manager-tab',
   // 各类安全/隐私面板的“读”通道（清空类在 shell-only）
   'list-site-data', 'get-site-cookies',
   'list-permission-decisions', 'get-protocol-decisions',
