@@ -3166,4 +3166,207 @@ function showClientCertDialog(data) {
   });
 }
 
+// ===== 标签搜索（Tab Search）渲染层 =====
+// 现代浏览器的“搜索已打开标签页”：Ctrl+Shift+A 唤起浮层，输入关键字在所有打开
+// 标签的标题/网址里过滤，上下键选择、回车切到该标签、Esc 关闭。所有匹配与排序
+// 在主进程的 tabsearch 内核完成，这里只负责呈现与键盘交互；列表文本一律走
+// textContent，不拼 HTML，避免被网页控制的标题/网址做 DOM 注入。
+(function setupTabSearch() {
+  if (!window.electronAPI || typeof window.electronAPI.invoke !== 'function') return;
+
+  const MAX_VISIBLE = 50;
+  let overlay = null;
+  let input = null;
+  let listEl = null;
+  let emptyEl = null;
+  let results = [];
+  let activeIndex = -1;
+  let querySeq = 0;
+
+  function buildDom() {
+    overlay = document.createElement('div');
+    overlay.className = 'tab-search-overlay';
+    overlay.setAttribute('aria-hidden', 'true');
+
+    const panel = document.createElement('div');
+    panel.className = 'tab-search-panel';
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-label', '搜索标签页');
+
+    const searchRow = document.createElement('div');
+    searchRow.className = 'tab-search-row';
+
+    input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'tab-search-input';
+    input.placeholder = '搜索已打开的标签页…';
+    input.setAttribute('aria-autocomplete', 'list');
+    input.setAttribute('aria-expanded', 'false');
+    input.spellcheck = false;
+
+    searchRow.appendChild(input);
+    panel.appendChild(searchRow);
+
+    listEl = document.createElement('ul');
+    listEl.className = 'tab-search-list';
+    listEl.setAttribute('role', 'listbox');
+    panel.appendChild(listEl);
+
+    emptyEl = document.createElement('div');
+    emptyEl.className = 'tab-search-empty';
+    emptyEl.textContent = '没有匹配的标签页';
+    emptyEl.style.display = 'none';
+    panel.appendChild(emptyEl);
+
+    const hint = document.createElement('div');
+    hint.className = 'tab-search-hint';
+    hint.textContent = '↑↓ 选择 · Enter 切换 · Esc 关闭';
+    panel.appendChild(hint);
+
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+  }
+
+  function renderResults() {
+    listEl.textContent = '';
+    const hasResults = results.length > 0;
+    emptyEl.style.display = hasResults ? 'none' : 'block';
+    listEl.style.display = hasResults ? 'block' : 'none';
+    if (activeIndex >= results.length) activeIndex = results.length - 1;
+
+    for (let i = 0; i < results.length && i < MAX_VISIBLE; i++) {
+      const item = results[i];
+      const li = document.createElement('li');
+      li.className = 'tab-search-item' + (i === activeIndex ? ' active' : '');
+      li.setAttribute('role', 'option');
+      li.setAttribute('aria-selected', i === activeIndex ? 'true' : 'false');
+
+      const title = document.createElement('div');
+      title.className = 'tab-search-item-title';
+      title.textContent = item.title && item.title.length ? item.title
+        : (item.url && item.url.length ? item.url : '(未命名标签页)');
+
+      const url = document.createElement('div');
+      url.className = 'tab-search-item-url';
+      url.textContent = item.url || '';
+
+      if (item.pinned) {
+        const pin = document.createElement('span');
+        pin.className = 'tab-search-item-pin';
+        pin.textContent = '\u{1F4CC}';
+        title.insertBefore(pin, title.firstChild);
+      }
+
+      li.appendChild(title);
+      li.appendChild(url);
+      (function (idx) {
+        li.addEventListener('mousedown', (e) => {
+          // mousedown 而非 click：输入框失焦前就切换，避免浮层先被关闭。
+          e.preventDefault();
+          chooseResult(idx);
+        });
+        li.addEventListener('mouseenter', () => setActive(idx));
+      })(i);
+
+      listEl.appendChild(li);
+    }
+    input.setAttribute('aria-expanded', hasResults ? 'true' : 'false');
+  }
+
+  function setActive(idx) {
+    if (idx < 0 || idx >= results.length) return;
+    activeIndex = idx;
+    const nodes = listEl.children;
+    for (let i = 0; i < nodes.length; i++) {
+      const on = i === idx;
+      nodes[i].classList.toggle('active', on);
+      nodes[i].setAttribute('aria-selected', on ? 'true' : 'false');
+    }
+    const cur = nodes[idx];
+    if (cur && typeof cur.scrollIntoView === 'function') {
+      cur.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  async function runQuery() {
+    const seq = ++querySeq;
+    let r;
+    try {
+      r = await window.electronAPI.invoke('search-tabs', input.value);
+    } catch {
+      return;
+    }
+    if (seq !== querySeq) return; // 已有更新的一次查询，丢弃过期结果
+    results = Array.isArray(r) ? r : [];
+    activeIndex = results.length > 0 ? 0 : -1;
+    renderResults();
+  }
+
+  function chooseResult(idx) {
+    if (idx < 0 || idx >= results.length) return;
+    const target = results[idx];
+    closeSearch();
+    if (typeof target.index === 'number') {
+      window.electronAPI.invoke('switch-tab', target.index).catch(() => {});
+    }
+  }
+
+  function openSearch() {
+    if (!overlay) buildDom();
+    overlay.style.display = 'flex';
+    overlay.setAttribute('aria-hidden', 'false');
+    results = [];
+    activeIndex = -1;
+    input.value = '';
+    renderResults();
+    // 空查询先拉一次“固定在前”的全量预览，便于纯键盘浏览定位。
+    runQuery();
+    setTimeout(() => input.focus(), 0);
+  }
+
+  function closeSearch() {
+    if (!overlay) return;
+    overlay.style.display = 'none';
+    overlay.setAttribute('aria-hidden', 'true');
+    querySeq++;
+  }
+
+  function isOpen() {
+    return !!overlay && overlay.style.display === 'flex';
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
+      e.preventDefault();
+      isOpen() ? closeSearch() : openSearch();
+      return;
+    }
+    if (!isOpen()) return;
+
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeSearch();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (results.length > 0) setActive((activeIndex + 1) % results.length);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (results.length > 0) {
+        setActive((activeIndex - 1 + results.length) % results.length);
+      }
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      chooseResult(activeIndex);
+    }
+  }, true);
+
+  // 输入框事件需在 DOM 建好后绑定；用一次性点击代理在首次打开后安装。
+  document.addEventListener('input', (e) => {
+    if (isOpen() && e.target === input) runQuery();
+  });
+  document.addEventListener('mousedown', (e) => {
+    if (isOpen() && overlay && !overlay.contains(e.target)) closeSearch();
+  });
+})();
+
 
