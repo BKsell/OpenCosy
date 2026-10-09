@@ -431,6 +431,57 @@ body {
     background: var(--bg-tertiary);
 }
 
+/* ===== 固定标签页（Pinned Tabs）=====
+   固定后收窄成只剩图标、隐藏标题与关闭按钮，排在标签栏最前；右侧加一条细分隔线，
+   与普通标签区分开。固定区宽度固定，避免标题变化导致标签栏抖动。 */
+.tab.pinned {
+    min-width: 40px;
+    max-width: 40px;
+    padding: 0 10px;
+    justify-content: center;
+}
+
+.tab.pinned .tab-favicon,
+.tab.pinned .text-favicon {
+    margin-right: 0;
+}
+
+.tab.pinned .tab-title {
+    display: none;
+}
+
+/* 固定标签的关闭按钮始终隐藏（即使 hover），要关先取消固定。 */
+.tab.pinned .tab-close {
+    display: none !important;
+}
+
+/* 图钉指示：固定时常驻显示，hover 时给一点底色反馈。 */
+.tab-pin-indicator {
+    opacity: 0.55;
+    transition: opacity var(--transition-normal), background var(--transition-normal);
+}
+
+.tab.pinned .tab-pin-indicator {
+    opacity: 1;
+}
+
+.tab.pinned .tab-pin-indicator:hover {
+    opacity: 1;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-full);
+}
+
+/* 固定区与普通标签之间的竖分隔线：给最后一个固定标签加右边框。 */
+.tab.pinned.pinned-sep-end,
+.tab.pinned:has(+ .tab:not(.pinned)) {
+    border-right: 1px solid var(--border-color);
+    margin-right: 2px;
+}
+
+.tab.pinned.active {
+    background: var(--bg-primary);
+}
+
 .new-tab-button {
     width: 31px;
     height: 31px;
