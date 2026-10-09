@@ -39,6 +39,8 @@ test('resolveCosyPage 白名单命中与回落', () => {
   assert.equal(resolveCosyPage('cosy://security/').file, COSY_PAGES.security);
   assert.equal(resolveCosyPage('cosy://security/').known, true);
   assert.equal(resolveCosyPage('cosy://download/?x=1').file, COSY_PAGES.download);
+  assert.equal(resolveCosyPage('cosy://httpsonly/').file, COSY_PAGES.httpsonly);
+  assert.equal(resolveCosyPage('cosy://httpsonly/').known, true);
   // 未知 host 回落 newtab，且 path/query 不参与文件选择。
   const r = resolveCosyPage('cosy://unknown/../../etc/passwd');
   assert.equal(r.file, 'newtab.html');
