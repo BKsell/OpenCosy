@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+<title>HTTPS-Only 例外 - OpenCosy</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+:root{--bg:#f3f3f3;--card:#fff;--text:#222;--sub:#666;--border:#dfe4e1;--accent:#0078d4;--danger:#dc3545;--warnbg:#fff8e1;--warnbd:#e0b100;}
+[data-theme="dark"]{--bg:#1a1a1a;--card:#2d2d2d;--text:#e6e6e6;--sub:#9a9a9a;--border:#444;--warnbg:#3a3210;--warnbd:#8a6d00;}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);padding:24px;transition:.3s;}
+h1{font-size:20px;margin-bottom:4px;}
+.tip{color:var(--sub);font-size:13px;margin-bottom:16px;line-height:1.6;}
+.status{display:inline-flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--border);
+  border-radius:8px;padding:8px 14px;font-size:13px;margin-bottom:18px;}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--accent);}
+.dot.off{background:var(--sub);}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-bottom:16px;}
+.card h2{font-size:14px;margin-bottom:10px;}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+input[type=text]{flex:1;min-width:240px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;
+  background:var(--bg);color:var(--text);font-size:13px;}
+button{border-radius:6px;padding:8px 14px;font-size:13px;cursor:pointer;border:1px solid var(--accent);
+  background:var(--accent);color:#fff;}
+button.ghost{background:transparent;color:var(--accent);}
+button.danger{background:transparent;border-color:var(--danger);color:var(--danger);}
+button.danger:hover{background:var(--danger);color:#fff;}
+button:disabled{opacity:.5;cursor:not-allowed;}
+table{width:100%;border-collapse:collapse;}
+th,td{padding:9px 12px;text-align:left;font-size:13px;border-bottom:1px solid var(--border);}
+th{color:var(--sub);font-weight:600;}
+tr:last-child td{border-bottom:none;}
+td.num{color:var(--sub);font-variant-numeric:tabular-nums;white-space:nowrap;}
+.empty{padding:26px;text-align:center;color:var(--sub);font-size:13px;}
+.warn{background:var(--warnbg);border:1px solid var(--warnbd);border-radius:8px;padding:10px 14px;
+  font-size:12.5px;line-height:1.6;margin-bottom:16px;}
+.msg{font-size:12.5px;color:var(--danger);min-height:18px;margin-top:8px;}
+.count{color:var(--sub);font-size:12.5px;margin-left:8px;}
+</style>
+</head>
+<body>
+<h1>HTTPS-Only 模式例外</h1>
+<div class="tip">
+  HTTPS-Only 默认把公网站点的 http:// 主动升级为加密的 https://。下列主机是你明确允许
+  “继续使用明文 HTTP”的站点——访问这些主机时不会再尝试升级。明文连接可能被同网段的人
+  窃听或篡改，仅对确知只提供 HTTP 的可信站点使用。
+</div>
+
+<div class="status"><span class="dot" id="dot"></span><span id="stateText">-</span></div>
+
+<div class="warn">
+  例外只在 HTTPS-Only 开启时生效；关闭总开关后所有站点都按其原始协议访问。非标准端口
+  （如 :8080）与私网 / 回环地址（localhost、192.168.*、10.* 等）本就不会被强制升级，
+  无需加入。
+</div>
+
+<div class="card">
+  <h2>手动添加例外主机</h2>
+  <div class="row">
+    <input type="text" id="hostInput" placeholder="例如 legacy.example.com（不要带 http://、路径或端口）" autocomplete="off" spellcheck="false">
+    <button id="addBtn">添加</button>
+  </div>
+  <div class="msg" id="addMsg"></div>
+</div>
+
+<div class="card">
+  <h2>已允许使用 HTTP 的站点<span class="count" id="count"></span></h2>
+  <table>
+    <thead><tr><th>主机</th><th>添加时间</th><th></th></tr></thead>
+    <tbody id="rows"><tr><td colspan="3" class="empty">加载中…</td></tr></tbody>
+  </table>
+  <div class="row" style="margin-top:12px;">
+    <button class="danger" id="clearBtn" disabled>全部清空</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var api = window.electronAPI;
+  var rowsEl = document.getElementById('rows');
+  var countEl = document.getElementById('count');
+  var clearBtn = document.getElementById('clearBtn');
+  var addBtn = document.getElementById('addBtn');
+  var hostInput = document.getElementById('hostInput');
+  var addMsg = document.getElementById('addMsg');
+  var dotEl = document.getElementById('dot');
+  var stateTextEl = document.getElementById('stateText');
+  var currentHosts = [];
+
+  function fmtTime(ts) {
+    var n = Number(ts);
+    if (!n || !isFinite(n) || n <= 0) return '未知';
+    try { return new Date(n).toLocaleString(); } catch (e) { return '未知'; }
+  }
+
+  function applyTheme() {
+    var dark = false;
+    try { dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches; } catch (e) {}
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  }
+
+  function setAddMsg(text) {
+    addMsg.textContent = text || '';
+  }
+
+  function render(payload) {
+    var enabled = !!(payload && payload.enabled);
+    var hosts = (payload && payload.hosts) || [];
+    currentHosts = hosts;
+    dotEl.className = 'dot' + (enabled ? '' : ' off');
+    stateTextEl.textContent = enabled ? 'HTTPS-Only 已开启' : 'HTTPS-Only 已关闭';
+
+    rowsEl.textContent = '';
+    if (!hosts.length) {
+      var tr = document.createElement('tr');
+      var td = document.createElement('td');
+      td.colSpan = 3;
+      td.className = 'empty';
+      td.textContent = '暂无例外站点';
+      tr.appendChild(td);
+      rowsEl.appendChild(tr);
+    } else {
+      hosts.forEach(function (item) {
+        var tr = document.createElement('tr');
+
+        var tdHost = document.createElement('td');
+        tdHost.textContent = item.host;
+
+        var tdTime = document.createElement('td');
+        tdTime.className = 'num';
+        tdTime.textContent = fmtTime(item.addedAt);
+
+        var tdOp = document.createElement('td');
+        tdOp.className = 'num';
+        var rm = document.createElement('button');
+        rm.className = 'danger';
+        rm.type = 'button';
+        rm.textContent = '移除';
+        rm.addEventListener('click', function () { removeHost(item.host); });
+        tdOp.appendChild(rm);
+
+        tr.appendChild(tdHost);
+        tr.appendChild(tdTime);
+        tr.appendChild(tdOp);
+        rowsEl.appendChild(tr);
+      });
+    }
+    countEl.textContent = hosts.length ? '（' + hosts.length + '）' : '';
+    clearBtn.disabled = !hosts.length;
+  }
+
+  function refresh() {
+    if (!api || !api.invoke) return;
+    api.invoke('list-https-exceptions').then(function (res) {
+      render(res || { enabled: true, hosts: [] });
+    }).catch(function () {
+      stateTextEl.textContent = '读取状态失败';
+    });
+  }
+
+  function addHost() {
+    setAddMsg('');
+    var raw = hostInput.value;
+    if (!api || !api.invoke) return;
+    api.invoke('add-https-exception', { host: raw }).then(function (res) {
+      if (res && res.ok) {
+        hostInput.value = '';
+        refresh();
+      } else {
+        setAddMsg((res && res.error) ? res.error : '添加失败：主机名无效');
+      }
+    }).catch(function () { setAddMsg('添加失败'); });
+  }
+
+  function removeHost(host) {
+    if (!api || !api.invoke) return;
+    api.invoke('remove-https-exception', { host: host }).then(function () { refresh(); })
+      .catch(function () {});
+  }
+
+  function clearAll() {
+    if (!api || !api.invoke) return;
+    var ok = window.confirm('确定清空全部 HTTPS 例外站点吗？清空后这些站点会重新被强制升级到 HTTPS。');
+    if (!ok) return;
+    api.invoke('clear-https-exceptions').then(function () { refresh(); }).catch(function () {});
+  }
+
+  addBtn.addEventListener('click', addHost);
+  hostInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') addHost();
+  });
+  clearBtn.addEventListener('click', clearAll);
+
+  if (api && api.on) {
+    api.on('https-exceptions-updated', function () { refresh(); });
+  }
+  if (window.matchMedia) {
+    try { window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme); } catch (e) {}
+  }
+  applyTheme();
+  refresh();
+})();
+</script>
+</body>
+</html>
