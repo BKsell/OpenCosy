@@ -932,3 +932,93 @@ body {
     color: var(--text-secondary);
     cursor: pointer;
 }
+
+/* ===== 标签搜索（Tab Search）浮层 ===== */
+.tab-search-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    background: rgba(0, 0, 0, 0.35);
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 12vh;
+}
+.tab-search-panel {
+    width: min(560px, 90vw);
+    max-height: 60vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--bg-tertiary);
+    border-radius: 10px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+    overflow: hidden;
+}
+.tab-search-row {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--bg-tertiary);
+}
+.tab-search-input {
+    width: 100%;
+    box-sizing: border-box;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 15px;
+    padding: 4px 2px;
+}
+.tab-search-list {
+    list-style: none;
+    margin: 0;
+    padding: 6px;
+    overflow-y: auto;
+    flex: 1 1 auto;
+}
+.tab-search-item {
+    padding: 8px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.tab-search-item.active {
+    background: var(--bg-hover);
+}
+.tab-search-item-title {
+    font-size: 13px;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.tab-search-item-url {
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.tab-search-item-pin {
+    font-size: 11px;
+    flex: 0 0 auto;
+}
+.tab-search-empty {
+    padding: 18px 14px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    text-align: center;
+}
+.tab-search-hint {
+    padding: 8px 12px;
+    border-top: 1px solid var(--bg-tertiary);
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-align: right;
+}
