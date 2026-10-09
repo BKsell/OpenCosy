@@ -130,6 +130,8 @@ const allowedInvokeChannels = new Set([
   'list-download-risks',
   'clear-download-risks',
   'clean-share-url',
+  'get-task-manager-processes',
+  'end-task-manager-tab',
 ]);
 
 // 接收方向白名单：main -> renderer
