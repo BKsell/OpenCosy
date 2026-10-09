@@ -27,6 +27,10 @@ const DECISION_CANCEL = 'cancel';
 const DECISION_REDIRECT = 'redirect';
 const DECISION_ALLOW = 'allow';
 
+// HTTPS-Only 的升级 / 例外判定复用纯内核 httpsonly.js（无正则、无 Electron 依赖），
+// 避免在管道里手写 'https://' + slice(7) 把显式 :80/:8080 端口一起带崩。
+const httpsOnly = require('./httpsonly');
+
 function isHttpUrl(url) {
   return typeof url === 'string'
     && (url.startsWith('http://') || url.startsWith('https://'));
@@ -165,11 +169,33 @@ function decideRequest(deps, details) {
     } catch { /* 无效主机名忽略 */ }
   }
 
-  // 7) HTTPS-only：可关闭；私网 / 回环主机永远保留 http://。
-  if (flags.httpsOnlyEnabled
-    && url.startsWith('http://')
-    && !(guards.isPrivateNetworkHost && guards.isPrivateNetworkHost(url))) {
-    return { type: DECISION_REDIRECT, url: 'https://' + url.slice(7), reason: 'https-only' };
+  // 7) HTTPS-only：可关闭；私网 / 回环主机、以及用户明确登记的 HTTP 例外站点保留
+  //    http://。升级目标由 httpsonly 内核计算：默认端口（无端口/:80）收敛到 https
+  //    默认 443；非标准端口不盲目改 scheme（对端在该端口说的是明文 HTTP，强行 TLS
+  //    握手必失败），此时直接放行 http 并留痕，由后续“升级失败可回退”链路兜底。
+  if (flags.httpsOnlyEnabled && url.startsWith('http://')) {
+    let privateHost = false;
+    try {
+      privateHost = !!(guards.isPrivateNetworkHost && guards.isPrivateNetworkHost(url));
+    } catch { privateHost = false; }
+    let exceptionHost = false;
+    try {
+      exceptionHost = !!(guards.isHttpException && guards.isHttpException(url));
+    } catch { exceptionHost = false; }
+    if (!privateHost && !exceptionHost) {
+      let upgrade;
+      try {
+        upgrade = httpsOnly.upgradeHttpUrl(url);
+      } catch { upgrade = null; }
+      if (upgrade && upgrade.ok) {
+        return { type: DECISION_REDIRECT, url: upgrade.url, reason: 'https-only' };
+      }
+      if (upgrade && upgrade.reason === httpsOnly.REASON_NONSTANDARD_PORT) {
+        recordSecurityEvent('https-only', 'info',
+          `非标准端口不自动升级，保留 HTTP：${url}`, upgrade.host || '');
+      }
+      // private-host / 畸形 URL：落到下面的 allow，不干预浏览。
+    }
   }
 
   // 8) 放行。
