@@ -103,6 +103,8 @@ const COSY_ONLY_CHANNELS = new Set([
   'add-https-exception',
   'remove-https-exception',
   'clear-https-exceptions',
+  // 阅读模式正文数据只允许 cosy://reader 等内置页读取（远程网页帧拿不到）。
+  'get-reader-article',
 ]);
 
 // 通用浏览能力：受信帧（外壳 / cosy 内置页 / 证书错误页）都可调用。只登记“读”与
