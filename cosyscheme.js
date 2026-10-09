@@ -41,6 +41,7 @@ const COSY_PAGES = Object.freeze({
   download: 'download/index.html',
   downloadlist: 'downloadlist.html',
   taskmanager: 'taskmanager.html',
+  httpsonly: 'httpsonly.html',
 });
 const DEFAULT_PAGE = 'newtab.html';
 
