@@ -28,6 +28,7 @@ const {
 
 const TIER_SHELL_ONLY = 'shell-only';
 const TIER_CERT_FLOW = 'cert-flow';
+const TIER_COSY_ONLY = 'cosy-only';
 const TIER_GENERAL = 'general';
 
 // 强管理 / 破坏性 / 凭据类通道：仅主窗口外壳。
@@ -98,6 +99,12 @@ const CERT_FLOW_CHANNELS = new Set([
   'cert-exception-updated',
 ]);
 
+const COSY_ONLY_CHANNELS = new Set([
+  'add-https-exception',
+  'remove-https-exception',
+  'clear-https-exceptions',
+]);
+
 // 通用浏览能力：受信帧（外壳 / cosy 内置页 / 证书错误页）都可调用。只登记“读”与
 // 常规浏览动作，任何带破坏性 / 凭据 / 配置写的通道都不放这里。
 const GENERAL_CHANNELS = new Set([
@@ -122,7 +129,7 @@ const GENERAL_CHANNELS = new Set([
   'pause-download', 'resume-download', 'cancel-download', 'retry-download',
   'remove-download', 'shelf-show-all', 'get-download-shelf',
   // 页面状态只读
-  'get-https-only', 'get-network-status', 'get-memory-saver', 'get-trackers',
+  'get-https-only', 'list-https-exceptions', 'get-network-status', 'get-memory-saver', 'get-trackers',
   'get-spellcheck-info',
   // 任务管理器：进程指标只读；结束标签与 close-tab 同级（handler 内再限定只有
   // cosy://taskmanager 帧、且只能按稳定标签 id 关闭关联到标签的渲染进程）。
@@ -152,6 +159,7 @@ function channelTier(channel) {
   if (typeof channel !== 'string' || channel === '') return TIER_SHELL_ONLY;
   if (SHELL_ONLY_CHANNELS.has(channel)) return TIER_SHELL_ONLY;
   if (CERT_FLOW_CHANNELS.has(channel)) return TIER_CERT_FLOW;
+  if (COSY_ONLY_CHANNELS.has(channel)) return TIER_COSY_ONLY;
   if (GENERAL_CHANNELS.has(channel)) return TIER_GENERAL;
   return TIER_SHELL_ONLY;
 }
@@ -173,6 +181,7 @@ function frameAllows(kind, channel) {
   const tier = channelTier(channel);
   if (tier === TIER_SHELL_ONLY) return false;
   if (tier === TIER_GENERAL) return true;
+  if (tier === TIER_COSY_ONLY) return kind === KIND_COSY;
   // cert-flow 只对证书错误页（internal-file）开放，cosy 新标签页等不需要。
   return tier === TIER_CERT_FLOW && kind === KIND_INTERNAL_FILE;
 }
@@ -180,9 +189,11 @@ function frameAllows(kind, channel) {
 module.exports = {
   TIER_SHELL_ONLY,
   TIER_CERT_FLOW,
+  TIER_COSY_ONLY,
   TIER_GENERAL,
   SHELL_ONLY_CHANNELS,
   CERT_FLOW_CHANNELS,
+  COSY_ONLY_CHANNELS,
   GENERAL_CHANNELS,
   channelTier,
   frameAllows,
