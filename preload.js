@@ -132,6 +132,10 @@ const allowedInvokeChannels = new Set([
   'clean-share-url',
   'get-task-manager-processes',
   'end-task-manager-tab',
+  'list-https-exceptions',
+  'add-https-exception',
+  'remove-https-exception',
+  'clear-https-exceptions',
 ]);
 
 // 接收方向白名单：main -> renderer
@@ -198,6 +202,7 @@ const allowedOnChannels = new Set([
   'cookie-hardening-updated',
   'pna-blocked-updated',
   'fingerprint-blocked-updated',
+  'https-exceptions-updated',
 ]);
 
 // sanitizeArg 过滤掉 renderer 传入的可疑对象：只保留 JSON 可序列化的纯数据，
