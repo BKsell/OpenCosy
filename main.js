@@ -63,6 +63,7 @@ const mediaGuard = require('./mediaguard');
 const crashGuard = require('./crashguard');
 const cursorGuard = require('./cursorguard');
 const entryGuard = require('./entryguard');
+const pinTabs = require('./pintabs');
 // r33：意外原生子窗口 / iframe 生命周期 / 屏幕捕获状态 / DevTools 开关 / 右键参数 /
 // IPC 入参形状，六个此前 0 接线的收口内核。
 const childWindowGuard = require('./childwindowguard');
@@ -677,6 +678,9 @@ class Tab {
     // 已被回收，切回时需要按 tab.url 重新加载。
     this.lastActiveAt = Date.now();
     this.discarded = false;
+    // 固定标签（Pinned Tab）：固定后收窄成图标、排在标签栏最前、不参与任何
+    // 批量关闭，并跨重启按 URL 重水合。权威集合由 pintabs 内核统一维护。
+    this.pinned = false;
   }
 }
 
@@ -4608,6 +4612,8 @@ function createWindow() {
       } else {
         createNewTab(getDefaultTabUrl());
       }
+      // 固定标签独立持久化：会话恢复后补开缺失的固定页并重水合固定态。
+      ensurePinnedTabsOpened();
     }
   });
 
@@ -4615,7 +4621,13 @@ function createWindow() {
   mainWindow.on('move', updateBrowserViewBounds);
   mainWindow.once('closed', () => {
     // 开启了“退出时清除浏览数据”就不要把本次标签会话落盘，避免下次又恢复出来。
-    if (!clearOnExit) saveSession();
+    if (!clearOnExit) {
+      saveSession();
+      // 同步写一次固定标签，防抖定时器在退出时可能来不及触发。
+      savePinsNow();
+    } else {
+      clearStoredPins();
+    }
     mainWindow = null;
   });
 
@@ -4766,6 +4778,18 @@ function registerShortcuts() {
         switchToTab((currentTabIndex - 1 + tabs.length) % tabs.length);
         event.preventDefault();
         break;
+      case shortcutKeys.ACTION.TOGGLE_PINNED_TAB: {
+        // Alt+Shift+P：固定 / 取消固定当前标签。
+        const cur = tabs[currentTabIndex];
+        if (cur) {
+          const r = toggleTabPinned(cur.id);
+          if (r && r.success) {
+            sendToRenderer('show-toast', r.pinned ? '已固定标签页' : '已取消固定标签页');
+          }
+        }
+        event.preventDefault();
+        break;
+      }
       case shortcutKeys.ACTION.FOCUS_ADDRESS_BAR:
         // Ctrl+L / F6：聚焦地址栏（Chrome/Edge 惯例）
         mainWindow.webContents.send('focus-address-bar');
@@ -4917,7 +4941,7 @@ function createNewTab(url = 'cosy://newtab') {
 
   tabs.push(tab);
   currentTabIndex = tabs.length - 1;
-  sendToRenderer('tab-created', { id: tab.id, url: tab.url, title: tab.title, favicon: tab.favicon });
+  sendToRenderer('tab-created', { id: tab.id, url: tab.url, title: tab.title, favicon: tab.favicon, pinned: !!tab.pinned });
   loadTabContent(tab);
   sendToRenderer('tab-switched', { id: tab.id, index: currentTabIndex });
   setTimeout(updateBrowserViewBounds, 0);
@@ -5606,6 +5630,177 @@ function closeTab(tabIndex) {
   }
 }
 
+// ===== 固定标签页（Pinned Tabs）=====
+// 权威固定集合由 pintabs 纯内核维护；这里负责把固定状态落到 Tab 对象、把固定
+// 标签物理重排到标签栏最前、跨重启按 URL 重水合、以及把状态变化广播给渲染层。
+// 固定清单单独存 pintabs.json（session.json 只存 http/https 页，固定的 cosy 内置
+// 页会被它过滤掉，无法复用）。
+const pinModel = new pinTabs.PinModel();
+const pinStorePath = path.join(app.getPath('userData'), 'pintabs.json');
+let pinSaveTimer = null;
+
+function savePinsNow() {
+  try {
+    // 跨重启运行时 id 会重新生成，因此按 URL 记录固定标签，重水合时再匹配新 id。
+    const entries = [];
+    for (const id of pinModel.ids()) {
+      const t = tabs.find(tab => tab && tab.id === id);
+      if (t && t.url) entries.push({ id, url: t.url });
+    }
+    ledgerStore.writeJSONStore(pinStorePath, { version: 1, entries });
+  } catch (e) {
+    console.error('保存固定标签失败:', e);
+  }
+}
+
+function persistPins() {
+  if (pinSaveTimer) clearTimeout(pinSaveTimer);
+  pinSaveTimer = setTimeout(savePinsNow, 400);
+}
+
+function loadStoredPins() {
+  try {
+    const data = ledgerStore.readJSONStore(pinStorePath, null);
+    if (!data || typeof data !== 'object') return [];
+    return pinTabs.sanitizeStoredPinEntries(data.entries);
+  } catch (e) {
+    console.error('读取固定标签失败:', e);
+    return [];
+  }
+}
+
+function clearStoredPins() {
+  try {
+    if (fsSync.existsSync(pinStorePath)) fsSync.unlinkSync(pinStorePath);
+  } catch (e) {
+    console.error('清除固定标签失败:', e);
+  }
+}
+
+function findTabIndexById(tabId) {
+  return tabs.findIndex(t => t && String(t.id) === String(tabId));
+}
+
+// broadcastPinnedState 把单个标签的固定 / 取消固定结果推给渲染层。
+function broadcastPinnedState(tab) {
+  sendToRenderer('tab-pinned-changed', { id: tab.id, pinned: !!tab.pinned });
+}
+
+// applyPinnedState 设置标签固定态并同步内核；不负责重排，重排统一走
+// movePinnedTabsToFront，便于批量重水合时只重排一次。
+function applyPinnedState(tabId, pinned) {
+  const idx = findTabIndexById(tabId);
+  if (idx < 0) return { success: false };
+  const tab = tabs[idx];
+  const want = !!pinned;
+  if (want) {
+    const r = pinModel.pin(tab.id);
+    if (!r.ok) return { success: false, reason: r.reason };
+  } else {
+    const r = pinModel.unpin(tab.id);
+    if (!r.ok) return { success: false, reason: r.reason };
+  }
+  tab.pinned = want;
+  broadcastPinnedState(tab);
+  return { success: true, pinned: want, changed: true };
+}
+
+// movePinnedTabsToFront 依据内核的稳定分区结果，物理重排 tabs 数组（视图对象挂在
+// Tab 上，随元素一起移动，不需要重建），并修正当前标签索引，最后让渲染层同步顺序。
+function movePinnedTabsToFront() {
+  const ordered = pinModel.arrange(tabs.map(t => t.id));
+  if (ordered.length !== tabs.length) return false;
+  const byId = new Map(tabs.map(t => [t.id, t]));
+  const next = ordered.map(id => byId.get(id));
+  const currentTab = tabs[currentTabIndex];
+  for (let i = 0; i < tabs.length; i++) tabs[i] = next[i];
+  if (currentTab) {
+    const ni = tabs.indexOf(currentTab);
+    if (ni >= 0) currentTabIndex = ni;
+  }
+  sendToRenderer('pins-order-changed', { ids: pinModel.ids() });
+  return true;
+}
+
+function pinTab(tabId) {
+  const r = applyPinnedState(tabId, true);
+  if (!r.success) return r;
+  movePinnedTabsToFront();
+  persistPins();
+  return r;
+}
+
+function unpinTab(tabId) {
+  const r = applyPinnedState(tabId, false);
+  if (!r.success) return r;
+  movePinnedTabsToFront();
+  persistPins();
+  return r;
+}
+
+function toggleTabPinned(tabId) {
+  const idx = findTabIndexById(tabId);
+  if (idx < 0) return { success: false };
+  return tabs[idx].pinned ? unpinTab(tabs[idx].id) : pinTab(tabs[idx].id);
+}
+
+// rehydratePinnedTabs 在启动恢复出标签后，用磁盘上的固定 URL 清单匹配本次新标签，
+// 一次性恢复固定态并把它们排到最前。匹配不到（对应页本次没恢复）的固定项忽略。
+function rehydratePinnedTabs() {
+  const stored = loadStoredPins();
+  if (!stored.length) return 0;
+  const current = tabs.map(t => ({ id: t.id, url: t.url }));
+  const pinnedIds = pinTabs.rehydratePinsByUrl(stored, current);
+  for (const id of pinnedIds) {
+    const r = applyPinnedState(id, true);
+    if (!r.success) continue;
+  }
+  if (pinModel.count() > 0) movePinnedTabsToFront();
+  return pinModel.count();
+}
+
+// ensurePinnedTabsOpened 在启动会话恢复之后调用：固定标签独立于 session.json
+// 持久化，即使会话文件被清，也应把固定的 http/https 页补开后再重水合。固定的
+// cosy 内置页不主动补开（避免与默认新标签页重复），只在它本次本就存在时固定。
+function ensurePinnedTabsOpened() {
+  const stored = loadStoredPins();
+  if (!stored.length) return 0;
+  const haveUrls = new Set(tabs.map(t => t.url));
+  for (const rec of stored) {
+    if (haveUrls.has(rec.url)) continue;
+    if (getUrlProtocol(rec.url) === 'cosy:') continue;
+    if (!isSafeUrl(rec.url)) continue;
+    haveUrls.add(rec.url);
+    createNewTab(rec.url);
+  }
+  return rehydratePinnedTabs();
+}
+
+// closeTabsByIds 按一组标签 id 批量关闭。为避免 splice 导致的索引漂移，统一从
+// 最大索引向最小索引关闭。返回实际关闭数量。
+function closeTabsByIds(ids) {
+  const indexes = [];
+  for (const id of ids) {
+    const i = findTabIndexById(id);
+    if (i >= 0) indexes.push(i);
+  }
+  indexes.sort((a, b) => b - a);
+  for (const i of indexes) closeTab(i);
+  return indexes.length;
+}
+
+// planAndCloseTabs 是批量关闭的唯一权威入口：先由 pintabs 内核裁决哪些标签允许
+// 关闭（固定标签在任何模式下都保留），再真正关闭。渲染层不再自己循环关标签。
+function planAndCloseTabs(mode, anchorId) {
+  const plan = pinTabs.planBatchClose(
+    tabs.map(t => ({ id: t.id, pinned: !!t.pinned })),
+    { mode, anchorId }
+  );
+  if (!plan) return { success: false, closed: 0 };
+  const closed = closeTabsByIds(plan.closeIds);
+  return { success: true, closed, kept: plan.keepIds };
+}
+
 // sanitizeDownloadFilename 防 Content-Disposition 路径穿越与视觉伪装：
 // 服务端可能在 filename 里塞 "../../evil.exe"、RTL 反转符、结尾点空格或
 // Windows 保留设备名。这里委托 dloadguard.sanitizeName：剥离目录组件与不可见
@@ -6265,6 +6460,45 @@ ipcMain.handle('switch-tab', (event, tabIndex) => {
   return { success: true };
 });
 
+// set-tab-pinned 固定 / 取消固定指定标签（默认当前标签）。重排与持久化都在
+// 主进程完成，渲染层只据广播更新视图。
+ipcMain.handle('set-tab-pinned', (event, payload = {}) => {
+  if (!isMainSender(event)) return { success: false };
+  const { tabId, pinned } = payload || {};
+  const targetId = (tabId === undefined || tabId === null)
+    ? (tabs[currentTabIndex] && tabs[currentTabIndex].id)
+    : tabId;
+  if (targetId === undefined || targetId === null) return { success: false };
+  const r = applyPinnedState(targetId, !!pinned);
+  if (!r.success) return { success: false, reason: r.reason };
+  movePinnedTabsToFront();
+  persistPins();
+  return { success: true, pinned: !!pinned };
+});
+
+// toggle-tab-pinned 在固定 / 取消固定之间切换（供右键菜单与快捷键使用）。
+ipcMain.handle('toggle-tab-pinned', (event, payload = {}) => {
+  if (!isMainSender(event)) return { success: false };
+  const tabId = (payload && payload.tabId !== undefined && payload.tabId !== null)
+    ? payload.tabId
+    : (tabs[currentTabIndex] && tabs[currentTabIndex].id);
+  if (tabId === undefined || tabId === null) return { success: false };
+  const r = toggleTabPinned(tabId);
+  if (!r.success) return { success: false, reason: r.reason };
+  return { success: true, pinned: !!r.pinned };
+});
+
+// close-tabs-batch 批量关闭（all/others/left/right）。固定标签由主进程内核统一
+// 豁免，渲染层不再自行循环关闭，避免固定标签被“关闭其他 / 左侧 / 右侧”误关。
+ipcMain.handle('close-tabs-batch', (event, payload = {}) => {
+  if (!isMainSender(event)) return { success: false, closed: 0 };
+  const mode = payload && payload.mode;
+  const anchorId = payload && payload.anchorId;
+  const r = planAndCloseTabs(mode, anchorId);
+  if (!r.success) return { success: false, closed: 0 };
+  return { success: true, closed: r.closed };
+});
+
 // set-tab-muted 静音 / 取消静音指定标签（默认当前标签）。
 // tabId 由渲染进程传入，统一转字符串比较，避免类型不一致误判。
 // 每个源（origin）记住一个缩放系数，导航 / 刷新后自动恢复，行为对齐 Chrome。
@@ -6674,7 +6908,7 @@ ipcMain.handle('get-all-tabs', (event) => {
   return tabs.map(tab => ({
     id: tab.id, url: tab.url, title: tab.title, favicon: tab.favicon,
     isLoading: tab.isLoading, canGoBack: tab.canGoBack, canGoForward: tab.canGoForward,
-    discarded: !!tab.discarded
+    discarded: !!tab.discarded, pinned: !!tab.pinned
   }));
 });
 
