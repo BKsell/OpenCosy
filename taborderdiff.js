@@ -143,7 +143,7 @@ function longestStableSet(prev, next) {
  *   ok:boolean, reason?:string,
  *   prev:string[], next:string[],
  *   created:string[], removed:string[], stable:string[],
- *   moves:Array<{{id:string, afterId:(string|null)}}>,
+ *   moves:Array<{id:string, afterId:(string|null)}>,
  *   unchanged:boolean
  * }}
  */
