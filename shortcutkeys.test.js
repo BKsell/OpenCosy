@@ -125,6 +125,18 @@ test('Shift+Esc 打开任务管理器；纯 Esc / Ctrl+Shift+Esc 仍是退出全
   assert.strictEqual(describeAccelerator(ACTION.OPEN_TASK_MANAGER), 'Shift+Esc');
 });
 
+test('Ctrl+Alt+R 进入阅读模式，且不劫持刷新三连', () => {
+  assert.strictEqual(matchShortcut(mk('r', { control: true, alt: true })), ACTION.ENTER_READER);
+  assert.strictEqual(matchShortcut(mk('r', { control: true, alt: true, shift: false })), ACTION.ENTER_READER);
+  // 普通 Ctrl+R 仍是普通刷新，不能被阅读模式吞掉。
+  assert.strictEqual(matchShortcut(mk('r', { control: true })), ACTION.RELOAD);
+  // Ctrl+Shift+R 仍是强制刷新（带 alt 的组合才是阅读模式）。
+  assert.strictEqual(matchShortcut(mk('r', { control: true, shift: true })), ACTION.RELOAD_BYPASSING_CACHE);
+  // Ctrl+Shift+Alt+R 因阅读规则要求 shift 未按下，不命中阅读模式。
+  assert.strictEqual(matchShortcut(mk('r', { control: true, shift: true, alt: true })), ACTION.RELOAD_BYPASSING_CACHE);
+  assert.strictEqual(describeAccelerator(ACTION.ENTER_READER), 'Ctrl+Alt+R');
+});
+
 test('缩放三连', () => {
   assert.strictEqual(matchShortcut(mk('=', { control: true })), ACTION.ZOOM_IN);
   assert.strictEqual(matchShortcut(mk('-', { control: true })), ACTION.ZOOM_OUT);
