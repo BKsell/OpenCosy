@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- 阅读页内容全部来自主进程净化后的纯数据树，并用 createElement+textContent 重建；
+     不加载任何远程脚本/样式。图片仅允许 http/https（原文配图）与 data: 占位。 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src http: https: data:;">
+<title>阅读模式 - OpenCosy</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+:root{
+  --bg:#f5f3ee; --surface:#fbfaf7; --text:#23201b; --sub:#6f6a5f; --border:#e3ddd1;
+  --accent:#0078d4; --link:#0a5fcf; --quote:#5c5648;
+}
+[data-theme="dark"]{
+  --bg:#15161a; --surface:#1e2026; --text:#e7e5df; --sub:#9b978c; --border:#33363f;
+  --accent:#4da3ff; --link:#79b8ff; --quote:#b7b1a1;
+}
+html,body{height:100%;}
+body{
+  font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+  background:var(--bg); color:var(--text); transition:background .25s,color .25s;
+}
+.bar{
+  position:sticky; top:0; z-index:10; display:flex; align-items:center; gap:8px;
+  padding:10px 16px; background:var(--surface); border-bottom:1px solid var(--border);
+  flex-wrap:wrap;
+}
+.bar .brand{font-size:13px;font-weight:600;color:var(--sub);margin-right:6px;white-space:nowrap;}
+.bar button{
+  border:1px solid var(--border); background:transparent; color:var(--text);
+  border-radius:7px; padding:6px 11px; font-size:13px; cursor:pointer; line-height:1;
+}
+.bar button:hover{border-color:var(--accent);color:var(--accent);}
+.bar .spacer{flex:1;}
+.bar .meta{font-size:12px;color:var(--sub);white-space:nowrap;}
+.wrap{max-width:720px;margin:0 auto;padding:34px 22px 90px;}
+h1.title{font-size:28px;line-height:1.35;margin-bottom:10px;font-weight:700;}
+.srcline{font-size:13px;color:var(--sub);margin-bottom:26px;word-break:break-all;}
+.srcline a{color:var(--accent);text-decoration:none;}
+.article{font-size:var(--fs,18px);line-height:1.85;word-break:break-word;}
+.article p{margin:0 0 1.15em;}
+.article h1,.article h2,.article h3,.article h4,.article h5,.article h6{
+  line-height:1.4;margin:1.5em 0 .6em;font-weight:700;
+}
+.article h2{font-size:1.35em;} .article h3{font-size:1.18em;}
+.article blockquote{
+  margin:0 0 1.15em; padding:4px 16px; border-left:3px solid var(--accent);
+  color:var(--quote); background:var(--surface); border-radius:0 8px 8px 0;
+}
+.article pre{
+  margin:0 0 1.15em; padding:14px 16px; background:var(--surface);
+  border:1px solid var(--border); border-radius:9px; overflow:auto;
+  font-family:Consolas,'Courier New',monospace; font-size:.86em; line-height:1.6;
+}
+.article code{font-family:Consolas,'Courier New',monospace;font-size:.9em;}
+.article ul,.article ol{margin:0 0 1.15em; padding-left:1.6em;}
+.article li{margin:.3em 0;}
+.article a{color:var(--link);text-decoration:underline;cursor:pointer;}
+.article img{max-width:100%;height:auto;border-radius:9px;display:block;margin:.4em auto;}
+.article figure{margin:0 0 1.15em;}
+.article figcaption{font-size:.82em;color:var(--sub);text-align:center;margin-top:.5em;}
+.article hr{border:none;border-top:1px solid var(--border);margin:1.8em 0;}
+.article table{border-collapse:collapse;width:100%;margin:0 0 1.15em;display:block;overflow-x:auto;}
+.article th,.article td{border:1px solid var(--border);padding:7px 11px;font-size:.92em;}
+.article th{background:var(--surface);}
+.empty{max-width:560px;margin:14vh auto 0;text-align:center;color:var(--sub);padding:0 24px;}
+.empty h2{font-size:19px;margin-bottom:10px;color:var(--text);}
+.empty p{font-size:14px;line-height:1.8;margin-bottom:18px;}
+mark{background:rgba(255,213,79,.45);border-radius:3px;padding:0 2px;}
+</style>
+</head>
+<body>
+<div class="bar">
+  <span class="brand">阅读模式</span>
+  <button type="button" id="fontMinus" title="减小字号">A−</button>
+  <button type="button" id="fontPlus" title="增大字号">A+</button>
+  <button type="button" id="widthToggle" title="切换行宽">行宽</button>
+  <button type="button" id="themeToggle" title="切换深色 / 浅色">主题</button>
+  <span class="spacer"></span>
+  <span class="meta" id="readMeta"></span>
+  <button type="button" id="openSource" title="在原标签页打开原文">原文</button>
+  <button type="button" id="closeReader" title="关闭阅读页">关闭</button>
+</div>
+
+<div id="root"></div>
+
+<script>
+(function () {
+  'use strict';
+  var api = window.electronAPI;
+  var rootEl = document.getElementById('root');
+  var metaEl = document.getElementById('readMeta');
+
+  // 页面侧再做一次 scheme 校验：即便数据已在主进程净化，渲染层也不接受非 http(s) 链接。
+  function isHttpUrl(raw) {
+    var s = String(raw == null ? '' : raw);
+    var p = 0;
+    while (p < s.length && s.charCodeAt(p) <= 0x20) p++;
+    s = s.slice(p);
+    if (s.length < 4) return false;
+    var colon = s.indexOf(':');
+    if (colon <= 0) return false;
+    var scheme = s.slice(0, colon).toLowerCase();
+    return scheme === 'http' || scheme === 'https';
+  }
+
+  var BLOCK = {
+    p:1, h1:1, h2:1, h3:1, h4:1, h5:1, h6:1, blockquote:1, pre:1, ul:1, ol:1, li:1,
+    figure:1, figcaption:1, img:1, hr:1, table:1, thead:1, tbody:1, tr:1, th:1, td:1
+  };
+  var INLINE = {
+    strong:1, b:1, em:1, i:1, code:1, kbd:1, samp:1, var:1, mark:1, small:1,
+    sub:1, sup:1, a:1, br:1, span:1, time:1, cite:1, q:1, abbr:1
+  };
+
+  function openLink(href) {
+    if (!isHttpUrl(href) || !api || !api.invoke) return;
+    // 外链一律开新标签，由主进程 isSafeUrl 二次把关，禁止在 cosy 页内直接跳转。
+    api.invoke('create-tab', href).catch(function () {});
+  }
+
+  function renderInlineInto(container, nodes, depth) {
+    if (!Array.isArray(nodes) || depth > 40) return;
+    nodes.forEach(function (node) {
+      if (!node || typeof node !== 'object') return;
+      var tag = String(node.tag || '');
+      if (!INLINE[tag]) {
+        // 未知内联容器：只提升其子节点与文本，不创建该元素。
+        if (node.text) container.appendChild(document.createTextNode(node.text));
+        renderInlineInto(container, node.children, depth + 1);
+        return;
+      }
+      if (tag === 'br') { container.appendChild(document.createElement('br')); return; }
+      var el = document.createElement(tag);
+      if (tag === 'a') {
+        if (isHttpUrl(node.href)) {
+          el.setAttribute('href', node.href);
+          el.setAttribute('rel', 'noopener noreferrer');
+          el.addEventListener('click', function (e) { e.preventDefault(); openLink(node.href); });
+        }
+      }
+      if (node.text) el.textContent = node.text;
+      renderInlineInto(el, node.children, depth + 1);
+      // 危险 / 空链接降级为纯文本片段，不保留可点行为。
+      if (tag === 'a' && !isHttpUrl(node.href) && !el.hasChildNodes()) return;
+      container.appendChild(el);
+    });
+  }
+
+  function renderBlock(node, depth) {
+    if (!node || typeof node !== 'object') return null;
+    var tag = String(node.tag || '');
+    if (!BLOCK[tag]) return null;
+
+    if (tag === 'hr') return document.createElement('hr');
+    if (tag === 'img') {
+      if (!isHttpUrl(node.src)) return null;
+      var img = document.createElement('img');
+      img.setAttribute('src', node.src);
+      img.setAttribute('loading', 'lazy');
+      if (node.alt) img.setAttribute('alt', node.alt);
+      return img;
+    }
+
+    var el = document.createElement(tag);
+    if (tag === 'a') return null; // a 只允许作为内联出现
+
+    if (tag === 'figure' || tag === 'p' || tag === 'figcaption' ||
+        tag === 'blockquote' || tag === 'pre' ||
+        tag === 'h1' || tag === 'h2' || tag === 'h3' || tag === 'h4' ||
+        tag === 'h5' || tag === 'h6' || tag === 'li' || tag === 'th' || tag === 'td') {
+      if (node.text) el.textContent = node.text;
+    }
+
+    (node.children || []).forEach(function (child) {
+      var childTag = String((child && child.tag) || '');
+      var blockEl = BLOCK[childTag] ? renderBlock(child, depth + 1) : null;
+      if (blockEl) {
+        el.appendChild(blockEl);
+      } else if (INLINE[childTag] || child.text || (child.children && child.children.length)) {
+        renderInlineInto(el, childTag ? [child] : (child.children || []), depth + 1);
+      }
+    });
+    return el;
+  }
+
+  function renderArticle(article) {
+    rootEl.textContent = '';
+    if (!article || !article.ok || !Array.isArray(article.contentNodes) || !article.contentNodes.length) {
+      var empty = document.createElement('div');
+      empty.className = 'empty';
+      var h = document.createElement('h2');
+      h.textContent = '没有可显示的阅读内容';
+      var p = document.createElement('p');
+      p.textContent = '当前页面没有抽取到正文，或阅读数据已失效。请回到原网页后再次使用阅读模式（Ctrl+Alt+R）。';
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = '关闭阅读页';
+      btn.addEventListener('click', closeSelf);
+      empty.appendChild(h); empty.appendChild(p); empty.appendChild(btn);
+      rootEl.appendChild(empty);
+      metaEl.textContent = '';
+      return;
+    }
+
+    var wrap = document.createElement('div');
+    wrap.className = 'wrap';
+    var title = document.createElement('h1');
+    title.className = 'title';
+    title.textContent = article.title || '阅读模式';
+    wrap.appendChild(title);
+
+    if (isHttpUrl(article.sourceUrl)) {
+      var srcLine = document.createElement('div');
+      srcLine.className = 'srcline';
+      var srcLink = document.createElement('a');
+      srcLink.textContent = article.sourceUrl;
+      srcLink.addEventListener('click', function () { openLink(article.sourceUrl); });
+      srcLine.appendChild(document.createTextNode('原文：'));
+      srcLine.appendChild(srcLink);
+      wrap.appendChild(srcLine);
+    }
+
+    var bodyEl = document.createElement('div');
+    bodyEl.className = 'article';
+    article.contentNodes.forEach(function (node) {
+      var el = renderBlock(node, 0);
+      if (el) bodyEl.appendChild(el);
+    });
+    wrap.appendChild(bodyEl);
+    rootEl.appendChild(wrap);
+
+    var mins = Number(article.minutes) || 1;
+    metaEl.textContent = '约 ' + mins + ' 分钟';
+  }
+
+  function closeSelf() {
+    if (api && api.send) api.send('close-current-tab');
+  }
+
+  // ---- 本地偏好（字号 / 行宽 / 主题），仅存 localStorage，不外发 ----
+  var prefsKey = 'cosy-reader-prefs';
+  function loadPrefs() {
+    try { return JSON.parse(localStorage.getItem(prefsKey) || '{}'); } catch (e) { return {}; }
+  }
+  function savePrefs(prefs) {
+    try { localStorage.setItem(prefsKey, JSON.stringify(prefs)); } catch (e) {}
+  }
+  var prefs = loadPrefs();
+  var fontSteps = [16, 17, 18, 20, 22, 24];
+  var fontIdx = 2;
+  if (typeof prefs.fontIdx === 'number' && prefs.fontIdx >= 0 && prefs.fontIdx < fontSteps.length) {
+    fontIdx = prefs.fontIdx;
+  }
+  function applyFont() { document.documentElement.style.setProperty('--fs', fontSteps[fontIdx] + 'px'); }
+  function applyTheme(theme) {
+    var dark = theme === 'dark';
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  }
+  function systemDark() {
+    try { return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches); } catch (e) { return false; }
+  }
+
+  var theme = prefs.theme === 'dark' || prefs.theme === 'light' ? prefs.theme : (systemDark() ? 'dark' : 'light');
+  var wide = !!prefs.wide;
+  function applyWidth() {
+    var wraps = document.querySelectorAll('.wrap');
+    for (var i = 0; i < wraps.length; i++) wraps[i].style.maxWidth = wide ? '920px' : '';
+  }
+
+  document.getElementById('fontMinus').addEventListener('click', function () {
+    if (fontIdx > 0) { fontIdx--; applyFont(); prefs.fontIdx = fontIdx; savePrefs(prefs); }
+  });
+  document.getElementById('fontPlus').addEventListener('click', function () {
+    if (fontIdx < fontSteps.length - 1) { fontIdx++; applyFont(); prefs.fontIdx = fontIdx; savePrefs(prefs); }
+  });
+  document.getElementById('widthToggle').addEventListener('click', function () {
+    wide = !wide; prefs.wide = wide; savePrefs(prefs); applyWidth();
+  });
+  document.getElementById('themeToggle').addEventListener('click', function () {
+    theme = theme === 'dark' ? 'light' : 'dark'; prefs.theme = theme; savePrefs(prefs); applyTheme(theme);
+  });
+  document.getElementById('closeReader').addEventListener('click', closeSelf);
+  document.getElementById('openSource').addEventListener('click', function () {
+    if (lastArticle && isHttpUrl(lastArticle.sourceUrl)) openLink(lastArticle.sourceUrl);
+  });
+
+  var lastArticle = null;
+  function load() {
+    applyFont();
+    applyTheme(theme);
+    if (!api || !api.invoke) { renderArticle(null); return; }
+    api.invoke('get-reader-article').then(function (article) {
+      lastArticle = article;
+      renderArticle(article);
+      applyWidth();
+    }).catch(function () { renderArticle(null); });
+  }
+  load();
+})();
+</script>
+</body>
+</html>
