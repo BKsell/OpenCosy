@@ -64,6 +64,7 @@ const crashGuard = require('./crashguard');
 const cursorGuard = require('./cursorguard');
 const entryGuard = require('./entryguard');
 const pinTabs = require('./pintabs');
+const tabSearch = require('./tabsearch');
 // r33：意外原生子窗口 / iframe 生命周期 / 屏幕捕获状态 / DevTools 开关 / 右键参数 /
 // IPC 入参形状，六个此前 0 接线的收口内核。
 const childWindowGuard = require('./childwindowguard');
@@ -6918,6 +6919,21 @@ ipcMain.handle('get-all-tabs', (event) => {
     isLoading: tab.isLoading, canGoBack: tab.canGoBack, canGoForward: tab.canGoForward,
     discarded: !!tab.discarded, pinned: !!tab.pinned
   }));
+});
+
+// search-tabs：在“当前权威 tabs 列表”上跑纯逻辑标签搜索。匹配/排序全部在
+// tabsearch 内核完成，这里只喂 id/title/url/pinned，结果里的 index 即当前 tabs
+// 下标，渲染层回车时直接复用 switch-tab(index) 切换，不需要新增激活通道。
+ipcMain.handle('search-tabs', (event, query) => {
+  if (!isMainSender(event)) return [];
+  const q = typeof query === 'string' ? query : '';
+  const snapshot = tabs.map(tab => ({
+    id: tab.id,
+    title: typeof tab.title === 'string' ? tab.title : '',
+    url: typeof tab.url === 'string' ? tab.url : '',
+    pinned: !!tab.pinned,
+  }));
+  return tabSearch.searchTabs(snapshot, q);
 });
 
 ipcMain.on('close-current-tab', (event) => {
