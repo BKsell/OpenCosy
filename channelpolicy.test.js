@@ -155,6 +155,7 @@ test('preload 白名单内每个通道都被显式分级（没有无意落入默
     'get-task-manager-processes', 'end-task-manager-tab',
     'list-https-exceptions', 'add-https-exception', 'remove-https-exception',
     'clear-https-exceptions',
+    'get-reader-article',
   ];
   const classified = new Set([
     ...cp.SHELL_ONLY_CHANNELS, ...cp.CERT_FLOW_CHANNELS,
@@ -169,4 +170,13 @@ test('preload 白名单内每个通道都被显式分级（没有无意落入默
 
 test('clear-downloads 是破坏性清空动作，显式归 shell-only', () => {
   assert.equal(cp.channelTier('clear-downloads'), cp.TIER_SHELL_ONLY);
+});
+
+test('get-reader-article 只允许 cosy 内置页读取，网页 / 证书页拿不到正文', () => {
+  assert.equal(cp.channelTier('get-reader-article'), cp.TIER_COSY_ONLY);
+  assert.equal(cp.frameAllows(COSY, 'get-reader-article'), true);
+  assert.equal(cp.frameAllows(SHELL, 'get-reader-article'), true);
+  assert.equal(cp.frameAllows(WEB, 'get-reader-article'), false);
+  assert.equal(cp.frameAllows(ERR, 'get-reader-article'), false);
+  assert.equal(cp.frameAllows(LOCAL, 'get-reader-article'), false);
 });
