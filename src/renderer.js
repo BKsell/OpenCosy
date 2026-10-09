@@ -249,6 +249,8 @@ class TabManager {
     window.electronAPI.on('tab-switched', (tabData) => this.switchToTabUI(tabData.id));
     window.electronAPI.on('tab-closed', (tabIndex) => this.removeTabFromUI(tabIndex));
     window.electronAPI.on('tab-audio-changed', (data) => this.updateTabAudio(data));
+    window.electronAPI.on('tab-pinned-changed', (data) => this.setTabPinnedUI(data && data.id, !!(data && data.pinned)));
+    window.electronAPI.on('pins-order-changed', (data) => this.reorderTabsUI((data && data.ids) || []));
     window.electronAPI.on('popup-blocked', () => this.showToast('已拦截一个弹出窗口（疑似弹窗轰炸）'));
     window.electronAPI.on('permission-request', (data) => this.handlePermissionRequest(data));
     window.electronAPI.on('html-fullscreen-changed', (data) => this.toggleFullscreenUI(data.isFullscreen));
@@ -721,12 +723,26 @@ class TabManager {
       tabElement.style.opacity = '0.55';
       tabElement.title = '此标签已休眠以释放内存，点击即可重新加载';
     }
+    // 固定标签：收窄成图标、隐藏关闭按钮、排在最前；状态以主进程为准。
+    if (tabData.pinned) tabElement.classList.add('pinned');
 
     tabElement.appendChild(this.createFaviconElement(tabData));
 
     const titleSpan = document.createElement('span');
     titleSpan.className = 'tab-title';
     titleSpan.textContent = tabData.title || '';
+
+    // 固定指示：固定后在标签上显示图钉，点击可取消固定。未固定时不占位。
+    const pinBtn = document.createElement('button');
+    pinBtn.className = 'tab-pin-indicator';
+    pinBtn.title = '取消固定标签页';
+    pinBtn.textContent = '\u{1F4CC}';
+    pinBtn.style.cssText = 'display:none;border:none;background:none;cursor:pointer;padding:0 2px;font-size:11px;line-height:1;flex-shrink:0;';
+    if (tabData.pinned) pinBtn.style.display = '';
+    pinBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      window.electronAPI.invoke('toggle-tab-pinned', { tabId: tabData.id });
+    });
 
     // 音频指示：发声时显示喇叭，静音时显示带斜杠的喇叭；点击切换静音。
     const audioBtn = document.createElement('button');
@@ -744,12 +760,17 @@ class TabManager {
     const closeBtn = document.createElement('button');
     closeBtn.className = 'tab-close';
     closeBtn.textContent = '×';
+    // 固定标签不显示关闭按钮，防止随手关掉长期挂着的页（取消固定后再关）。
+    if (tabData.pinned) closeBtn.style.display = 'none';
     closeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
+      const t = this.tabs.find(x => x.id === tabData.id);
+      if (t && t.pinned) return;
       this.closeTab(tabData.id);
     });
 
     tabElement.appendChild(titleSpan);
+    tabElement.appendChild(pinBtn);
     tabElement.appendChild(audioBtn);
     tabElement.appendChild(closeBtn);
 
@@ -796,6 +817,54 @@ class TabManager {
     } else {
       el.style.display = 'none';
     }
+  }
+
+  // setTabPinnedUI 同步单个标签的固定视觉态：数据、.pinned class、图钉按钮与
+  // 关闭按钮显隐。固定状态以主进程广播为准，渲染层不自行翻转。
+  setTabPinnedUI(tabId, pinned) {
+    if (tabId === undefined || tabId === null) return;
+    const tab = this.tabs.find(t => t.id === tabId);
+    if (tab) tab.pinned = !!pinned;
+    const el = document.querySelector(`[data-tab-id="${tabId}"]`);
+    if (!el) return;
+    el.classList.toggle('pinned', !!pinned);
+    const pinBtn = el.querySelector('.tab-pin-indicator');
+    if (pinBtn) {
+      pinBtn.style.display = pinned ? '' : 'none';
+      pinBtn.title = pinned ? '取消固定标签页' : '固定标签页';
+    }
+    const closeBtn = el.querySelector('.tab-close');
+    if (closeBtn) closeBtn.style.display = pinned ? 'none' : '';
+  }
+
+  // reorderTabsUI 按主进程权威的固定 id 顺序，把固定标签稳定地排到最前。
+  // 与 pintabs 内核 arrange 同规则：固定区按传入顺序、非固定区保持当前相对顺序。
+  reorderTabsUI(pinnedIds) {
+    const pinSet = new Set(pinnedIds);
+    const pinnedKnown = [];
+    const rest = [];
+    for (const t of this.tabs) {
+      if (pinSet.has(t.id)) pinnedKnown.push(t);
+      else rest.push(t);
+    }
+    const byId = new Map(pinnedKnown.map(t => [t.id, t]));
+    const orderedPinned = pinnedIds.map(id => byId.get(id)).filter(Boolean);
+    const ordered = orderedPinned.concat(rest);
+    if (ordered.length !== this.tabs.length) return; // 数据不一致时不擅动
+    this.tabs = ordered;
+    const strip = document.getElementById('tabs-container');
+    if (strip) {
+      for (const t of ordered) {
+        const el = strip.querySelector(`[data-tab-id="${t.id}"]`);
+        if (el) strip.appendChild(el); // append 已存在节点会移动而非复制
+      }
+    }
+  }
+
+  // isTabPinned 判断本地缓存里某标签是否固定（供右键菜单 / 中键豁免使用）。
+  isTabPinned(tabId) {
+    const t = this.tabs.find(x => x.id === tabId);
+    return !!(t && t.pinned);
   }
 
   // 主进程转来的敏感权限请求（摄像头/麦克风/定位/通知/MIDI）。
@@ -2075,19 +2144,21 @@ document.addEventListener('keydown', (e) => {
           const t = tabManager.tabs.find(t => t.id === tabId);
           window.electronAPI.invoke('set-tab-muted', { tabId, muted: !(t && t.muted) });
         } },
+      { label: tabManager.isTabPinned(tabId) ? '取消固定标签页' : '固定标签页',
+        fn: () => window.electronAPI.invoke('toggle-tab-pinned', { tabId }) },
       { divider: true },
       { label: '关闭标签页', fn: () => tabManager.closeTab(tabId) },
+      // 批量关闭统一走主进程 close-tabs-batch，固定标签由主进程内核豁免，
+      // 渲染层不再自己循环关闭，避免固定的长期页被“关闭左侧/右侧/其他”误关。
       { label: '关闭左侧标签页', fn: () => {
-          const order = tabManager.tabs.map(t => t.id);
-          const i = order.indexOf(tabId);
-          if (i > 0) order.slice(0, i).forEach(id => tabManager.closeTab(id));
+          window.electronAPI.invoke('close-tabs-batch', { mode: 'left', anchorId: tabId });
         } },
       { label: '关闭右侧标签页', fn: () => {
-          const order = tabManager.tabs.map(t => t.id);
-          const i = order.indexOf(tabId);
-          if (i >= 0) order.slice(i + 1).forEach(id => tabManager.closeTab(id));
+          window.electronAPI.invoke('close-tabs-batch', { mode: 'right', anchorId: tabId });
         } },
-      { label: '关闭其他标签页', fn: () => tabManager.tabs.filter(t => t.id !== tabId).forEach(t => tabManager.closeTab(t.id)) },
+      { label: '关闭其他标签页', fn: () => {
+          window.electronAPI.invoke('close-tabs-batch', { mode: 'others', anchorId: tabId });
+        } },
       { label: '重新加载所有标签页', fn: () => tabManager.tabs.forEach(t => tabManager.reloadTab(t.id)) },
       { divider: true },
       { label: '静音其他标签页', fn: () => {
@@ -2125,15 +2196,18 @@ document.addEventListener('keydown', (e) => {
       const tabEl = e.target.closest('.tab');
       if (!tabEl) return;
       e.preventDefault();
-      buildMenu(e.clientX, e.clientY, parseInt(tabEl.dataset.tabId));
+      // 主进程标签 id 是“时间戳+随机后缀”的字符串，不能 parseInt（会变 NaN）。
+      buildMenu(e.clientX, e.clientY, tabEl.dataset.tabId);
     });
-    // 中键点击标签直接关闭
+    // 中键点击标签直接关闭；固定标签豁免（要关先取消固定），避免误关长期页。
     strip.addEventListener('mousedown', (e) => {
       if (e.button !== 1) return;
       const tabEl = e.target.closest('.tab');
       if (!tabEl) return;
       e.preventDefault();
-      tabManager.closeTab(parseInt(tabEl.dataset.tabId));
+      const tabId = tabEl.dataset.tabId;
+      if (tabManager.isTabPinned(tabId)) return;
+      tabManager.closeTab(tabId);
     });
     return true;
   }
