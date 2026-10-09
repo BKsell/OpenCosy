@@ -39,6 +39,7 @@ const ACTION = Object.freeze({
   RELOAD_BYPASSING_CACHE: 'reload-bypassing-cache',
   TOGGLE_DEVTOOLS: 'toggle-devtools',
   OPEN_TASK_MANAGER: 'open-task-manager',
+  ENTER_READER: 'enter-reader',
   EXIT_FULLSCREEN: 'exit-fullscreen',
   ZOOM_IN: 'zoom-in',
   ZOOM_OUT: 'zoom-out',
@@ -81,6 +82,10 @@ const SHORTCUT_RULES = Object.freeze([
   { action: ACTION.VIEW_SOURCE, key: 'u', ctrl: true, shift: null, alt: null },
   { action: ACTION.OPEN_FILE, key: 'o', ctrl: true, shift: null, alt: null },
   { action: ACTION.GO_HOME, key: 'home', ctrl: null, shift: null, alt: true },
+  // Ctrl+Alt+R 进入阅读模式。必须排在 Ctrl+R 刷新之前：刷新规则 alt 为“不关心”，
+  // 若靠后会先吞掉 Ctrl+Alt+R；本条显式要求 alt 按下、shift 未按下，普通 Ctrl+R
+  // 与 Ctrl+Shift+R 均不命中，继续落到各自的刷新规则。
+  { action: ACTION.ENTER_READER, key: 'r', ctrl: true, shift: false, alt: true },
   { action: ACTION.RELOAD, key: 'r', ctrl: true, shift: false, alt: null },
   { action: ACTION.RELOAD_BYPASSING_CACHE, key: 'r', ctrl: true, shift: true, alt: null },
   { action: ACTION.RELOAD, key: 'f5', ctrl: null, shift: false, alt: null },
@@ -163,6 +168,7 @@ const PRIMARY_ACCELERATOR = Object.freeze({
   [ACTION.RELOAD_BYPASSING_CACHE]: 'Ctrl+Shift+R',
   [ACTION.TOGGLE_DEVTOOLS]: 'F12',
   [ACTION.OPEN_TASK_MANAGER]: 'Shift+Esc',
+  [ACTION.ENTER_READER]: 'Ctrl+Alt+R',
   [ACTION.EXIT_FULLSCREEN]: 'Esc',
   [ACTION.ZOOM_IN]: 'Ctrl+=',
   [ACTION.ZOOM_OUT]: 'Ctrl+-',
