@@ -113,6 +113,18 @@ test('F12 与 Esc 不校验任何修饰（与原 input.key 直判一致）', () 
   assert.strictEqual(matchShortcut(mk('Escape', { control: true, shift: true })), ACTION.EXIT_FULLSCREEN);
 });
 
+test('Shift+Esc 打开任务管理器；纯 Esc / Ctrl+Shift+Esc 仍是退出全屏', () => {
+  assert.strictEqual(matchShortcut(mk('Escape', { shift: true })), ACTION.OPEN_TASK_MANAGER);
+  assert.strictEqual(matchShortcut(mk('Escape', { shift: true, alt: false })), ACTION.OPEN_TASK_MANAGER);
+  // 纯 Esc（无 shift）不命中任务管理器。
+  assert.strictEqual(matchShortcut(mk('Escape')), ACTION.EXIT_FULLSCREEN);
+  // 带 ctrl/meta/alt 的 Shift+Esc 不劫持：Ctrl+Shift+Esc 落回退出全屏。
+  assert.strictEqual(matchShortcut(mk('Escape', { control: true, shift: true })), ACTION.EXIT_FULLSCREEN);
+  assert.strictEqual(matchShortcut(mk('Escape', { meta: true, shift: true })), ACTION.EXIT_FULLSCREEN);
+  assert.strictEqual(matchShortcut(mk('Escape', { shift: true, alt: true })), ACTION.EXIT_FULLSCREEN);
+  assert.strictEqual(describeAccelerator(ACTION.OPEN_TASK_MANAGER), 'Shift+Esc');
+});
+
 test('缩放三连', () => {
   assert.strictEqual(matchShortcut(mk('=', { control: true })), ACTION.ZOOM_IN);
   assert.strictEqual(matchShortcut(mk('-', { control: true })), ACTION.ZOOM_OUT);
