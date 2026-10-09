@@ -38,6 +38,7 @@ const ACTION = Object.freeze({
   RELOAD: 'reload',
   RELOAD_BYPASSING_CACHE: 'reload-bypassing-cache',
   TOGGLE_DEVTOOLS: 'toggle-devtools',
+  OPEN_TASK_MANAGER: 'open-task-manager',
   EXIT_FULLSCREEN: 'exit-fullscreen',
   ZOOM_IN: 'zoom-in',
   ZOOM_OUT: 'zoom-out',
@@ -85,6 +86,9 @@ const SHORTCUT_RULES = Object.freeze([
   { action: ACTION.RELOAD, key: 'f5', ctrl: null, shift: false, alt: null },
   { action: ACTION.RELOAD_BYPASSING_CACHE, key: 'f5', ctrl: null, shift: true, alt: null },
   { action: ACTION.TOGGLE_DEVTOOLS, key: 'f12', ctrl: null, shift: null, alt: null },
+  // Shift+Esc 打开任务管理器，必须排在通吃的纯 Esc 退出全屏规则之前；
+  // 纯 Esc（shift 未按）不命中本条，Ctrl+Shift+Esc 因要求 ctrl:false 也落到退出全屏。
+  { action: ACTION.OPEN_TASK_MANAGER, key: 'escape', ctrl: false, shift: true, alt: false },
   { action: ACTION.EXIT_FULLSCREEN, key: 'escape', ctrl: null, shift: null, alt: null },
   { action: ACTION.ZOOM_IN, key: '=', ctrl: true, shift: null, alt: null },
   { action: ACTION.ZOOM_OUT, key: '-', ctrl: true, shift: null, alt: null },
@@ -158,6 +162,7 @@ const PRIMARY_ACCELERATOR = Object.freeze({
   [ACTION.RELOAD]: 'Ctrl+R',
   [ACTION.RELOAD_BYPASSING_CACHE]: 'Ctrl+Shift+R',
   [ACTION.TOGGLE_DEVTOOLS]: 'F12',
+  [ACTION.OPEN_TASK_MANAGER]: 'Shift+Esc',
   [ACTION.EXIT_FULLSCREEN]: 'Esc',
   [ACTION.ZOOM_IN]: 'Ctrl+=',
   [ACTION.ZOOM_OUT]: 'Ctrl+-',
