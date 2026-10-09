@@ -30,6 +30,7 @@ const popupGuard = require('./popupguard');
 const quarantine = require('./quarantine');
 const navGuard = require('./navguard');
 const httpsOnlyCore = require('./httpsonly');
+const readerCore = require('./reader');
 const containerGuard = require('./container');
 const schemeOrigin = require('./schemeorigin');
 const webviewHarden = require('./webviewharden');
@@ -4826,6 +4827,10 @@ function registerShortcuts() {
         openTaskManagerTab();
         event.preventDefault();
         break;
+      case shortcutKeys.ACTION.ENTER_READER:
+        enterReaderMode();
+        event.preventDefault();
+        break;
       case shortcutKeys.ACTION.EXIT_FULLSCREEN: {
         // 现代浏览器惯例：Esc 退出 HTML 全屏（仅在全屏时才拦截）
         const wc = getCurrentTabWebContents();
@@ -4930,6 +4935,92 @@ function openTaskManagerTab() {
     return tabs[existing];
   }
   return createNewTab(TASK_MANAGER_URL);
+}
+
+const READER_PAGE_URL = 'cosy://reader';
+
+// readerArticle 只暂存最近一次抽取结果，供紧随其后打开的 cosy://reader 读取；
+// 阅读页关闭后清空。阅读数据虽由本进程可信内核产出，但它跨了“网页主世界”边界
+// （executeJavaScript 的返回值来自页面环境），落进主进程前再做一次形状与长度收口。
+let readerArticle = null;
+
+function clampReaderInt(value, max) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(Math.floor(n), max);
+}
+
+function sanitizeReaderNodes(nodes, depth, budget) {
+  const out = [];
+  if (!Array.isArray(nodes) || depth > readerCore.READER_MAX_DEPTH) return out;
+  for (const node of nodes) {
+    if (budget.left <= 0) break;
+    if (!node || typeof node !== 'object') continue;
+    const tag = String(node.tag || '');
+    if (!readerCore.OUTPUT_BLOCK_TAGS.has(tag) && !readerCore.OUTPUT_INLINE_TAGS.has(tag)) continue;
+    const text = typeof node.text === 'string'
+      ? node.text.slice(0, readerCore.READER_MAX_TEXT_CHARS) : '';
+    const clean = { tag, text };
+    if (typeof node.href === 'string' && node.href) clean.href = node.href.slice(0, readerCore.READER_MAX_LINK_CHARS);
+    if (typeof node.src === 'string' && node.src) clean.src = node.src.slice(0, readerCore.READER_MAX_LINK_CHARS);
+    if (typeof node.alt === 'string' && node.alt) clean.alt = node.alt.slice(0, 200);
+    const kids = sanitizeReaderNodes(node.children, depth + 1, budget);
+    if (kids.length) clean.children = kids;
+    if (text || kids.length || clean.href || clean.src) {
+      out.push(clean);
+      budget.left -= 1;
+    }
+  }
+  return out;
+}
+
+function sanitizeReaderArticle(raw, sourceUrl, sourceTitle) {
+  const budget = { left: readerCore.READER_MAX_NODES };
+  const contentNodes = sanitizeReaderNodes(raw && raw.contentNodes, 0, budget);
+  return {
+    ok: !!(raw && raw.ok && contentNodes.length),
+    title: String((raw && raw.title) || sourceTitle || '阅读模式').slice(0, 300),
+    sourceUrl: String(sourceUrl || '').slice(0, readerCore.READER_MAX_LINK_CHARS),
+    wordCount: clampReaderInt(raw && raw.wordCount, 10000000),
+    minutes: clampReaderInt(raw && raw.minutes, 1000),
+    contentNodes,
+  };
+}
+
+function openReaderTab() {
+  const existing = tabs.findIndex(t => t && t.url === READER_PAGE_URL);
+  if (existing >= 0) {
+    if (existing !== currentTabIndex) switchToTab(existing);
+    return tabs[existing];
+  }
+  return createNewTab(READER_PAGE_URL);
+}
+
+// enterReaderMode 在“当前活动的 http(s) 标签”真实 DOM 内只读抽取正文，再带着
+// 净化后的数据打开阅读页。抽取脚本运行在页面主世界但只调用只读 DOM API；返回值
+// 经主进程二次形状校验。cosy:/file: 等内置页不支持阅读模式。
+async function enterReaderMode() {
+  const tab = tabs[currentTabIndex];
+  const wc = tab && tab.view && !tab.view.webContents.isDestroyed() ? tab.view.webContents : null;
+  if (!wc) return { ok: false, error: '当前标签不可用' };
+  if (getUrlProtocol(tab.url) !== 'https:' && getUrlProtocol(tab.url) !== 'http:') {
+    return { ok: false, error: '阅读模式仅支持 http(s) 网页' };
+  }
+  let raw = null;
+  try {
+    const script = readerCore.buildReaderExtractScript();
+    raw = await Promise.race([
+      wc.executeJavaScript(script, true),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('reader-timeout')), 4000)),
+    ]);
+  } catch {
+    return { ok: false, error: '无法抽取当前页面' };
+  }
+  const article = sanitizeReaderArticle(raw, tab.url, tab.title);
+  if (!article.ok || !article.contentNodes.length) return { ok: false, error: '未在该页找到可阅读的正文' };
+  readerArticle = article;
+  openReaderTab();
+  return { ok: true };
 }
 
 function showErrorPage(tab, errorCode, errorDescription, validatedURL) {
@@ -5425,6 +5516,7 @@ function loadTabContent(tab) {
         'hashes': 'src/hashes.html',
         'download': 'src/download', 'downloadlist': 'src/downloadlist.html',
         'taskmanager': 'src/taskmanager.html',
+        'reader': 'src/reader.html',
         'httpsonly': 'src/httpsonly.html'
       };
       const filePath = pageMap[hostname];
@@ -7236,6 +7328,13 @@ ipcMain.handle('clear-https-exceptions', () => {
 ipcMain.handle('get-network-status', (event) => {
   if (!isMainSender(event)) return { success: false };
   return { success: true, online: net.isOnline() };
+});
+
+// 阅读页读取本次抽取结果（分级 COSY_ONLY，仅 cosy://reader 帧可调）。文章保留到
+// 阅读标签关闭或下一次抽取，便于页面内切换字号 / 暗色后重建时重复取用。
+ipcMain.handle('get-reader-article', () => {
+  const article = readerArticle;
+  return article || { ok: false, contentNodes: [] };
 });
 
 ipcMain.handle('get-trackers', (event) => {
