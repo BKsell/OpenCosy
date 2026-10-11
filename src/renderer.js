@@ -2842,6 +2842,7 @@ document.addEventListener('keydown', (e) => {
     { label: '打开下载列表', kw: 'download xiazai liebiao', run: () => tabManager.createNewTab('cosy://downloadlist') },
     { label: '打开设置', kw: 'settings shezhi', run: () => tabManager.createNewTab('cosy://setting') },
     { label: '打开拦截规则', kw: 'block rules lanjie guize tracker', run: () => tabManager.createNewTab('cosy://blockrules') },
+    { label: '打开保险库与数据清理', kw: 'vault baoxianku cleaner qingli site data', run: () => tabManager.createNewTab('cosy://vault') },
     { label: '清除浏览数据', kw: 'clear data qingchu shuju', run: () => tabManager.showClearDataDialog() },
     { label: '后退', kw: 'back houtui', run: () => tabManager.goBack() },
     { label: '前进', kw: 'forward qianjin', run: () => tabManager.goForward() },
