@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+<title>内部页面 - OpenCosy</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+:root{--bg:#f3f3f3;--card:#fff;--text:#222;--sub:#666;--border:#dfe4e1;--accent:#0078d4;}
+[data-theme="dark"]{--bg:#1a1a1a;--card:#2d2d2d;--text:#e6e6e6;--sub:#9a9a9a;--border:#444;}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);padding:24px;transition:.3s;max-width:900px;margin:0 auto;}
+h1{font-size:20px;margin-bottom:4px;}
+.tip{color:var(--sub);font-size:13px;margin-bottom:16px;}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;cursor:pointer;transition:box-shadow .15s,transform .1s;display:flex;flex-direction:column;gap:6px;}
+.card:hover{box-shadow:0 4px 14px rgba(0,0,0,.12);}
+.card .p-title{font-size:14px;font-weight:600;}
+.card .p-desc{font-size:12px;color:var(--sub);flex:1;line-height:1.5;}
+.card .p-url{font-size:11px;color:var(--accent);font-family:Consolas,'Courier New',monospace;}
+.empty-page{padding:40px;text-align:center;color:var(--sub);}
+</style>
+</head>
+<body>
+<h1>内部页面</h1>
+<div class="tip">OpenCosy 内置页面导航。点击任意卡片在当前窗口新标签打开；也可直接在地址栏输入对应 cosy:// 地址。内部页均受帧白名单守卫，远程网页无法调取其 IPC。</div>
+<div class="grid" id="grid"><div class="empty-page">加载中…</div></div>
+<script>
+(function () {
+  'use strict';
+  var gridEl = document.getElementById('grid');
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = String(text);
+    return e;
+  }
+  function render(pages) {
+    gridEl.textContent = '';
+    if (!pages || pages.length === 0) {
+      gridEl.appendChild(el('div', 'empty-page', '内部页面数据加载失败'));
+      return;
+    }
+    pages.forEach(function (p) {
+      var card = el('div', 'card');
+      card.appendChild(el('div', 'p-title', p.title || p.name || ''));
+      if (p.desc) card.appendChild(el('div', 'p-desc', p.desc));
+      card.appendChild(el('div', 'p-url', 'cosy://' + (p.name || '')));
+      card.addEventListener('click', function () {
+        window.electronAPI.invoke('pages-open', { name: p.name }).catch(function () {});
+      });
+      gridEl.appendChild(card);
+    });
+  }
+  function load() {
+    if (!window.electronAPI || !window.electronAPI.invoke) return;
+    window.electronAPI.invoke('pages-snapshot', {})
+      .then(function (r) { render(r && r.ok ? r.pages : null); })
+      .catch(function () { render(null); });
+  }
+  load();
+})();
+</script>
+</body>
+</html>
