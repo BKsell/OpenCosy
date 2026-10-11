@@ -384,6 +384,43 @@ function render() {
   }
 }
 
+// 导出当前站点统计清单为 JSON：只含域名与计数元数据（Cookie 名/值、存储
+// 内容一律不导出），供审计与反馈使用，不触发任何写操作。
+function buildExportButton() {
+  if ($('exportListBtn')) return;
+  const host = $('sortSelect').parentElement;
+  const btn = document.createElement('button');
+  btn.id = 'exportListBtn';
+  btn.className = 'btn-ghost btn-mini';
+  btn.type = 'button';
+  btn.textContent = '导出清单';
+  btn.onclick = () => {
+    const payload = state.rows.map(r => ({
+      domain: String(r.domain || ''),
+      count: Number(r.count) || 0,
+      secureCount: Number(r.secureCount) || 0,
+      httpOnlyCount: Number(r.httpOnlyCount) || 0,
+      sessionCount: Number(r.sessionCount) || 0,
+      names: (Array.isArray(r.names) ? r.names : []).slice(0, 50),
+    }));
+    const data = {
+      exportedAt: new Date().toISOString(),
+      domains: payload.length,
+      totalCookies: state.totalCookies || 0,
+      sites: payload,
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'cosy-site-data-' + new Date().toISOString().slice(0, 10) + '.json';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 800);
+    toast('已导出 ' + payload.length + ' 个域名的统计清单');
+  };
+  host.appendChild(btn);
+}
+
 async function loadData() {
   $('refreshBtn').disabled = true;
   try {
@@ -391,6 +428,7 @@ async function loadData() {
     if (!r || !r.success) { toast((r && r.error) || '加载失败', true); return; }
     state.rows = r.rows || [];
     state.totalCookies = r.totalCookies || 0;
+    buildExportButton();
     render();
   } finally {
     $('refreshBtn').disabled = false;
