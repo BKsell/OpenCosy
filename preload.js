@@ -26,6 +26,7 @@ const allowedSendChannels = new Set([
   'clear-downloads',
   'shelf-show-all',
   'close-current-tab',
+  'copy-text',
   'find-in-page',
   'stop-find',
   'reload-tab-by-id',
