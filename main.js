@@ -16,6 +16,7 @@ const pnaGuard = require('./pna');
 const fpGuard = require('./fpguard');
 const requestPipeline = require('./requestpipeline');
 const downloadAdmission = require('./downloadadmission');
+const downloadNotify = require('./downloadnotify');
 const extensionStore = require('./extensionstore');
 const suggestionGuard = require('./suggestionguard');
 const hostMatch = require('./hostmatch');
@@ -654,6 +655,47 @@ function shelfSnapshot() {
 
 function sendShelf() {
   sendToRenderer('download-shelf', shelfSnapshot());
+}
+
+// ===== 下载系统通知（downloadnotify 内核的 Electron 接线）=====
+// 窗口最小化 / 失焦时用户看不到底部下载栏，完成与失败都要弹系统通知（Chrome、
+// Edge 同款行为）。通知内容已由 downloadnotify 内核净化：剥控制字符与 CSI 序列、
+// 按字节截断、不落完整本地路径、失败不给原始异常，这里只把内核产出接到 Electron
+// Notification 与点击动作上（完成点开文件，失败只聚焦窗口并留给用户显式重试）。
+function downloadNotifyDeps() {
+  return {
+    isSupported: () => !!(Notification && Notification.isSupported && Notification.isSupported()),
+    showNotification(note, onClick) {
+      const n = new Notification({
+        title: String((note && note.title) || ''),
+        body: String((note && note.body) || ''),
+        silent: !!(note && note.silent),
+      });
+      if (typeof onClick === 'function') n.on('click', onClick);
+      n.show();
+    },
+    openPath(savePath) {
+      if (savePath) shell.openPath(savePath);
+    },
+    focusWindow() {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    },
+  };
+}
+
+// notifyDownloadResult 把一次下载结果接成系统通知；通知失败只审计，不打断下载流程。
+function notifyDownloadResult(kind, info) {
+  try {
+    downloadNotify.notifyDownload(kind, downloadNotifyDeps(), info);
+  } catch (notifyErr) {
+    recordSecurityEvent('download-notify', 'info',
+      `系统通知失败: ${String(notifyErr && notifyErr.message || notifyErr)}`,
+      originOfContents(webContents));
+  }
 }
 
 function getSafeDirs() {
@@ -6608,6 +6650,14 @@ function handleDownloadEvent(event, item, webContents) {
         downloadInfo.status = 'complete';
         downloadInfo.savePath = item.getSavePath();
         sendToRenderer('download-complete', { id: downloadInfo.id, savePath: downloadInfo.savePath });
+        // 系统通知：完成（静音、低打扰；点击打开文件）。在 MOTW 补写之前弹，
+        // 用户看到通知时文件已落盘且来源登记已完成。
+        notifyDownloadResult('complete', {
+          filename: downloadInfo.filename || finalFilename,
+          sizeBytes: downloadInfo.totalBytes,
+          url: downloadInfo.url || url,
+          savePath: downloadInfo.savePath,
+        });
         // 登记来源，供“打开文件”时判断互联网可执行文件是否需要二次确认。
         const completedUrl = downloadInfo.url || url;
         rememberDownloadOrigin(downloadInfo.savePath, completedUrl);
@@ -6641,7 +6691,17 @@ function handleDownloadEvent(event, item, webContents) {
         }
       } else {
         downloadInfo.status = 'error';
-        sendToRenderer('download-error', { id: downloadInfo.id });
+        const failureReason = state === 'interrupted' ? '下载被中断' : '下载未能完成';
+        sendToRenderer('download-error', {
+          id: downloadInfo.id,
+          filename: downloadInfo.filename || finalFilename,
+          errorMessage: failureReason,
+        });
+        // 系统通知：失败（非静音，高打扰；点击只聚焦窗口，不自动重试）。
+        notifyDownloadResult('error', {
+          filename: downloadInfo.filename || finalFilename,
+          errorMessage: failureReason,
+        });
       }
       sendShelf();
     });
