@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+<title>隐私与网络 - OpenCosy</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+:root{--bg:#f3f3f3;--card:#fff;--text:#222;--sub:#666;--border:#dfe4e1;--accent:#0078d4;--ok:#1e8e3e;--warnbg:#fff8e1;--warnbd:#e0b100;}
+[data-theme="dark"]{--bg:#1a1a1a;--card:#2d2d2d;--text:#e6e6e6;--sub:#9a9a9a;--border:#444;--warnbg:#3a3210;--warnbd:#8a6d00;}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);padding:24px;transition:.3s;}
+h1{font-size:20px;margin-bottom:4px;}
+.tip{color:var(--sub);font-size:13px;margin-bottom:16px;line-height:1.6;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-bottom:16px;}
+.card h2{font-size:14px;margin-bottom:10px;}
+.mode-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;}
+.mode-opt{display:flex;gap:6px;align-items:center;font-size:13px;padding:8px 12px;border:1px solid var(--border);
+  border-radius:8px;cursor:pointer;background:var(--bg);}
+.mode-opt input{margin:0;}
+.mode-opt.sel{border-color:var(--accent);background:color-mix(in srgb, var(--accent) 8%, var(--bg));}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+input[type=text],input[type=number]{padding:8px 10px;border:1px solid var(--border);border-radius:6px;
+  background:var(--bg);color:var(--text);font-size:13px;min-width:240px;}
+input[type=number]{min-width:160px;}
+button{border-radius:6px;padding:8px 14px;font-size:13px;cursor:pointer;border:1px solid var(--accent);
+  background:var(--accent);color:#fff;}
+button.ghost{background:transparent;color:var(--accent);}
+button:disabled{opacity:.5;cursor:not-allowed;}
+.ua-box{font-family:Consolas,'Courier New',monospace;font-size:12px;background:var(--bg);
+  border:1px solid var(--border);border-radius:6px;padding:10px 12px;word-break:break-all;margin-bottom:8px;}
+.stat{display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;color:var(--sub);}
+.stat b{color:var(--text);font-variant-numeric:tabular-nums;}
+.msg{font-size:12.5px;min-height:18px;margin-top:8px;}
+.msg.ok{color:var(--ok);}
+.msg.err{color:var(--danger, #dc3545);}
+.warn{background:var(--warnbg);border:1px solid var(--warnbd);border-radius:8px;padding:10px 14px;
+  font-size:12.5px;line-height:1.6;margin-bottom:16px;}
+.hide{display:none;}
+</style>
+</head>
+<body>
+<h1>隐私与网络</h1>
+<div class="tip">
+  浏览器默认会在每个请求里带上真实的引擎标识（OpenCosyBrowser/1.0.0 + Electron/Chromium 版本）。
+  站点可以据此唯一识别你的浏览器，即使你换了 IP 也甩不掉。下面的设置让你按自己的意愿
+  决定对外暴露哪条 User-Agent；下载限速则把大文件下载控制在指定带宽内。
+</div>
+
+<div class="warn">
+  自定义 UA 或随机 Chrome UA 可能被个别站点误判为“不支持的浏览器”，导致功能降级或
+  登录风控。仅在你确知需要隐藏浏览器指纹时开启。
+</div>
+
+<div class="card">
+  <h2>User-Agent 覆盖策略</h2>
+  <div class="mode-row" id="modeRow">
+    <label class="mode-opt" data-mode="default"><input type="radio" name="uaMode" value="default">默认（真实标识）</label>
+    <label class="mode-opt" data-mode="custom"><input type="radio" name="uaMode" value="custom">自定义</label>
+    <label class="mode-opt" data-mode="chrome-random"><input type="radio" name="uaMode" value="chrome-random">随机常见 Chrome</label>
+  </div>
+  <div class="row hide" id="customRow">
+    <input type="text" id="customUa" placeholder="Mozilla/5.0 (X11; Linux x86_64) FooBar/1.0" maxlength="384">
+    <span class="count" style="color:var(--sub);font-size:12px;">≤384 字符</span>
+  </div>
+  <div class="tip" style="margin-top:10px;">当前对外 UA：</div>
+  <div class="ua-box" id="effectiveUa">-</div>
+  <div class="stat">
+    <span>改写请求数：<b id="overrideCount">0</b></span>
+    <span>最近改写：<b id="lastOverrideAt">从未</b></span>
+    <span>随机池大小：<b id="poolSize">-</b></span>
+  </div>
+  <div class="row" style="margin-top:12px;">
+    <button id="saveUa">保存策略</button>
+    <button class="ghost" id="resetUa">恢复默认并清零统计</button>
+  </div>
+  <div class="msg" id="uaMsg"></div>
+</div>
+
+<div class="card">
+  <h2>下载限速</h2>
+  <div class="tip">0 表示不限速。设置对“尚未开始与正在下载”的任务立即生效；单位 KB/s。</div>
+  <div class="row">
+    <input type="number" id="rateInput" min="0" max="1048576" step="64" placeholder="0 = 不限速">
+    <span style="color:var(--sub);font-size:12.5px;">KB/s</span>
+    <button id="saveRate">应用限速</button>
+  </div>
+  <div class="msg" id="rateMsg"></div>
+</div>
+
+<div class="warn" style="margin-top:8px;">
+  这些设置只保存在本机（cosySettings 同级的私有文件），不会上报。随机 Chrome UA 池内置
+  于应用，选择逻辑在本地完成，不依赖任何外部服务。
+</div>
+
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  let state = null;
+
+  function fmtUa(ua) {
+    return ua || '-';
+  }
+
+  function fmtTime(ts) {
+    if (!ts) return '从未';
+    try {
+      return new Date(ts).toLocaleTimeString('zh-CN', { hour12: false });
+    } catch { return String(ts); }
+  }
+
+  function setModeUI(mode) {
+    const radios = document.querySelectorAll('input[name="uaMode"]');
+    radios.forEach(r => { r.checked = (r.value === mode); });
+    document.querySelectorAll('.mode-opt').forEach(el => {
+      el.classList.toggle('sel', el.dataset.mode === mode);
+    });
+    $('customRow').classList.toggle('hide', mode !== 'custom');
+  }
+
+  async function loadAll() {
+    const uaRes = await window.electronAPI.invoke('get-ua-policy');
+    const rateRes = await window.electronAPI.invoke('get-download-rate-limit');
+    if (uaRes && uaRes.success) {
+      state = uaRes;
+      setModeUI(uaRes.mode);
+      $('customUa').value = uaRes.custom || '';
+      $('effectiveUa').textContent = fmtUa(uaRes.effectiveUa);
+      $('overrideCount').textContent = Number(uaRes.overrideCount) || 0;
+      $('lastOverrideAt').textContent = fmtTime(uaRes.lastOverrideAt);
+      $('poolSize').textContent = Number(uaRes.poolSize) || 0;
+    }
+    if (rateRes && rateRes.success) {
+      const kbps = rateRes.bytesPerSecond > 0 ? Math.round(rateRes.bytesPerSecond / 1024) : 0;
+      $('rateInput').value = String(kbps);
+    }
+  }
+
+  async function saveUa() {
+    const mode = document.querySelector('input[name="uaMode"]:checked');
+    const m = mode ? mode.value : 'default';
+    const payload = { mode: m };
+    if (m === 'custom') payload.custom = $('customUa').value;
+    const res = await window.electronAPI.invoke('set-ua-policy', payload);
+    if (res && res.success) {
+      $('uaMsg').textContent = '已保存。';
+      $('uaMsg').className = 'msg ok';
+      $('effectiveUa').textContent = fmtUa(res.effectiveUa);
+      setModeUI(res.mode);
+      $('customUa').value = res.custom || '';
+    } else {
+      $('uaMsg').textContent = '保存失败，请检查输入。';
+      $('uaMsg').className = 'msg err';
+    }
+  }
+
+  async function resetUa() {
+    const res = await window.electronAPI.invoke('reset-ua-policy');
+    if (res && res.success) {
+      $('uaMsg').textContent = '已恢复默认策略，改写统计已清零。';
+      $('uaMsg').className = 'msg ok';
+      $('effectiveUa').textContent = fmtUa(res.effectiveUa);
+      $('overrideCount').textContent = '0';
+      $('lastOverrideAt').textContent = '从未';
+      setModeUI(res.mode);
+      $('customUa').value = '';
+    }
+  }
+
+  async function saveRate() {
+    const raw = Number($('rateInput').value) || 0;
+    const bytes = Math.max(0, Math.floor(raw * 1024));
+    const res = await window.electronAPI.invoke('set-download-rate-limit', { bytesPerSecond: bytes });
+    if (res && res.success) {
+      $('rateMsg').textContent = res.bytesPerSecond > 0
+        ? `已应用：${Math.round(res.bytesPerSecond / 1024)} KB/s。`
+        : '已取消限速。';
+      $('rateMsg').className = 'msg ok';
+    } else {
+      $('rateMsg').textContent = '应用失败，请输入非负整数。';
+      $('rateMsg').className = 'msg err';
+    }
+  }
+
+  document.querySelectorAll('input[name="uaMode"]').forEach(r => {
+    r.addEventListener('change', () => setModeUI(document.querySelector('input[name="uaMode"]:checked').value));
+  });
+  $('saveUa').addEventListener('click', saveUa);
+  $('resetUa').addEventListener('click', resetUa);
+  $('saveRate').addEventListener('click', saveRate);
+
+  // 跟随系统暗色：与其它内置页一致，用 prefers-color-scheme 兜底 + data-theme 覆盖。
+  const mq = window.matchMedia('(prefers-color-scheme: dark)');
+  const applyTheme = () => {
+    document.documentElement.dataset.theme = mq.matches ? 'dark' : 'light';
+  };
+  applyTheme();
+  mq.addEventListener('change', applyTheme);
+
+  loadAll().catch(() => {
+    $('effectiveUa').textContent = '（读取失败）';
+  });
+})();
+</script>
+</body>
+</html>
