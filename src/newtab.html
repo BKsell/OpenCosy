@@ -137,6 +137,10 @@
             <label class="switch"><input type="checkbox" id="toggle-suggest"><span class="slider"></span></label>
         </div>
         <div class="settings-row">
+            <span>显示最近关闭</span>
+            <label class="switch"><input type="checkbox" id="toggle-recent"><span class="slider"></span></label>
+        </div>
+        <div class="settings-row">
             <span>恢复默认磁贴</span>
             <button id="btn-reset">重置</button>
         </div>
@@ -163,6 +167,7 @@
         const HIDDEN_KEY = 'cosyQuickLinkHidden';
         const MAX_CUSTOM_LINKS = 24;
         const MAX_SUGGESTIONS = 8;
+        const MAX_RECENT_CLOSED = 6;
 
         // 当前正在拖拽的磁贴 URL；磁贴右键菜单的状态对象。
         let dragSrcUrl = null;
@@ -476,6 +481,61 @@
             }
         }
 
+        // ---- 最近关闭（Speed Dial 风格恢复条）----
+        // 数据源是主进程的 recentlyClosedTabs 快照（get-recently-closed 通道），
+        // 主进程侧已剥控制字符/限长、url 过 isSafeUrl 白名单且剔除 cosy:// 内置页，
+        // 这里只负责渲染与触发恢复，不做任何字段信任。
+        let cachedRecent = [];
+
+        async function fetchRecentlyClosed() {
+            try {
+                if (!window.electronAPI || !window.electronAPI.invoke) return;
+                const res = await window.electronAPI.invoke('get-recently-closed');
+                if (res && res.success && Array.isArray(res.items)) cachedRecent = res.items;
+            } catch { cachedRecent = []; }
+        }
+
+        function renderRecentlyClosed() {
+            const wrap = document.getElementById('recent-wrap');
+            const row = document.getElementById('recent-row');
+            if (!wrap || !row) return;
+            row.innerHTML = '';
+            const s = loadNTSettings();
+            if (s.showRecentlyClosed === false || cachedRecent.length === 0) {
+                wrap.style.display = 'none';
+                return;
+            }
+            wrap.style.display = 'block';
+            for (const it of cachedRecent.slice(0, MAX_RECENT_CLOSED)) {
+                if (!it || !it.url || !/^https?:/i.test(it.url) || !isSafeUrl(it.url)) continue;
+                const title = String(it.title || '').trim() || hostOf(it.url);
+                const chip = document.createElement('span');
+                chip.className = 'suggest-chip recent-chip';
+                chip.title = it.url;
+                const letter = document.createElement('span');
+                letter.className = 'sc-letter';
+                letter.style.background = guessColor(it.url);
+                letter.textContent = escapeHtml(title.charAt(0).toUpperCase());
+                const nm = document.createElement('span');
+                nm.className = 'sc-name';
+                nm.textContent = title.slice(0, 40);
+                chip.appendChild(letter);
+                chip.appendChild(nm);
+                chip.addEventListener('click', () => {
+                    navigateTo(it.url);
+                });
+                row.appendChild(chip);
+            }
+        }
+
+        async function reloadNewTabData() {
+            await fetchHistory();
+            await fetchRecentlyClosed();
+            renderQuickLinks();
+            renderSuggestions();
+            renderRecentlyClosed();
+        }
+
         // ---- 磁贴排序 / 隐藏 / 备份 ----
         function loadOrder() {
             try {
@@ -715,9 +775,9 @@
         // ---- 新标签页设置面板 ----
         const NTS_KEY = 'cosyNewtabSettings';
         function loadNTSettings() {
-            try { return Object.assign({ sortByVisits: true, searchEngine: 'bing', suggestFromHistory: true },
+            try { return Object.assign({ sortByVisits: true, searchEngine: 'bing', suggestFromHistory: true, showRecentlyClosed: true },
                 JSON.parse(localStorage.getItem(NTS_KEY) || '{}')); }
-            catch { return { sortByVisits: true, searchEngine: 'bing', suggestFromHistory: true }; }
+            catch { return { sortByVisits: true, searchEngine: 'bing', suggestFromHistory: true, showRecentlyClosed: true }; }
         }
         function saveNTSettings(patch) {
             const s = Object.assign(loadNTSettings(), patch);
@@ -735,6 +795,7 @@
             const sel = document.getElementById('sel-engine');
             const tgl = document.getElementById('toggle-sort');
             const tglSuggest = document.getElementById('toggle-suggest');
+            const tglRecent = document.getElementById('toggle-recent');
             const rst = document.getElementById('btn-reset');
             const btnUnhide = document.getElementById('btn-unhide');
             const btnExport = document.getElementById('btn-export');
@@ -745,6 +806,7 @@
             sel.value = s.searchEngine;
             tgl.checked = s.sortByVisits !== false;
             tglSuggest.checked = s.suggestFromHistory !== false;
+            if (tglRecent) tglRecent.checked = s.showRecentlyClosed !== false;
             gear.addEventListener('click', e => {
                 e.stopPropagation();
                 panel.classList.toggle('open');
@@ -762,6 +824,10 @@
             tglSuggest.addEventListener('change', () => {
                 saveNTSettings({ suggestFromHistory: tglSuggest.checked });
                 renderSuggestions();
+            });
+            if (tglRecent) tglRecent.addEventListener('change', () => {
+                saveNTSettings({ showRecentlyClosed: tglRecent.checked });
+                renderRecentlyClosed();
             });
             rst.addEventListener('click', () => {
                 if (!confirm('清除所有自定义磁贴、排序、隐藏状态和访问记录？')) return;
@@ -923,6 +989,7 @@
             updateNetworkPill();
             setupSettingsPanel();
             await fetchHistory();
+            await fetchRecentlyClosed();
             renderSuggestions();
             renderRecentlyClosed();
             window.addEventListener('online', updateNetworkPill);
