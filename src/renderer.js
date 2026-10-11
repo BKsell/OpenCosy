@@ -584,6 +584,15 @@ class TabManager {
     const header = document.createElement('div');
     header.className = 'cosy-panel-header';
     header.innerHTML = '<strong class="cosy-panel-title">历史记录</strong>';
+    const openFullBtn = document.createElement('button');
+    openFullBtn.textContent = '完整历史';
+    openFullBtn.className = 'cosy-panel-clear-btn';
+    openFullBtn.title = '在新标签页打开完整历史记录页';
+    openFullBtn.onclick = () => {
+      panel.remove();
+      this.createNewTab('cosy://history');
+    };
+    header.appendChild(openFullBtn);
     const clearBtn = document.createElement('button');
     clearBtn.textContent = '清除历史';
     clearBtn.className = 'cosy-panel-clear-btn';
