@@ -248,6 +248,7 @@
       <option value="info">仅提示</option>
     </select>
     <button class="btn-primary" id="refreshBtn">刷新</button>
+    <button class="btn-ghost" id="exportBtn" type="button">导出事件</button>
     <button class="btn-danger-ghost" id="clearBtn">清空记录</button>
   </div>
 
@@ -730,6 +731,32 @@ async function loadData() {
 }
 
 $('refreshBtn').onclick = loadData;
+
+// 导出当前安全事件（按当前严重级筛选结果）为 JSON 文件，便于离线分析或
+// 反馈给开发者；字段经过裁剪，不含 Cookie / 凭据 / 本地路径细节。
+function exportEvents() {
+  const sev = $('severitySelect') ? $('severitySelect').value : '';
+  const rows = (Array.isArray(state.rows) ? state.rows : [])
+    .filter(r => !sev || r.severity === sev)
+    .map(r => ({
+      time: r.ts || r.time || 0,
+      type: String(r.type || ''),
+      severity: String(r.severity || 'info'),
+      summary: String(r.summary || '').slice(0, 300),
+      host: String(r.host || '').slice(0, 200),
+    }));
+  const data = { exportedAt: new Date().toISOString(), filter: sev || 'all', count: rows.length, events: rows };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'cosy-security-events-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 800);
+  toast('已导出 ' + rows.length + ' 条事件');
+}
+
+$('exportBtn').onclick = exportEvents;
 $('clearBtn').onclick = async () => {
   const ok = await showConfirm('将清空全部安全事件记录，且无法恢复。继续？');
   if (!ok) return;
