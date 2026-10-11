@@ -8854,8 +8854,29 @@ ipcMain.handle('about-snapshot', (event) => {
   };
 });
 
-// 快捷键速查页快照：导出规则表（动作 id + 键位 + 修饰键），供 cosy://shortcuts
-// 渲染。只放行内置帧；规则键值全部标量化，避免把内部对象引用暴露给页面。
+// 关于页导出诊断 JSON：渲染层已本地生成纯文本，本端仅收口类型与长度，
+// 弹保存框写盘。仅受信帧可触发。
+ipcMain.handle('about-export-diagnostics', async (event, payload = {}) => {
+  if (!isAboutFrameSender(event)) return { ok: false, error: 'denied' };
+  try {
+    const text = typeof payload.text === 'string' ? payload.text : '';
+    if (text.length > 16 * 1024 * 1024) return { ok: false, error: 'too-large' };
+    const stamp = new Date().toISOString().slice(0, 10);
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: '导出诊断信息',
+      defaultPath: `opencosy-diagnostics-${stamp}.json`,
+      filters: [{ name: 'JSON 文件', extensions: ['json'] }, { name: '所有文件', extensions: ['*'] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: true, canceled: true };
+    fsSync.writeFileSync(result.filePath, text, 'utf-8');
+    return { ok: true, path: result.filePath };
+  } catch (e) {
+    console.error('导出诊断失败:', e);
+    return { ok: false, error: e.message };
+  }
+});
+
+// 快捷键速查页快照：导出规则表（动作 id + 键位 + 修饰键），供 cosy://shortcuts// 渲染。只放行内置帧；规则键值全部标量化，避免把内部对象引用暴露给页面。
 ipcMain.handle('shortcuts-snapshot', (event) => {
   if (!isShortcutsFrameSender(event)) return { ok: false, error: 'denied', rules: [] };
   const rules = shortcutKeys.SHORTCUT_RULES.map(r => ({
