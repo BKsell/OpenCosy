@@ -148,6 +148,8 @@ class TabManager {
     this.bookmarks = [];
     this.history = [];
     this.findBarVisible = false;
+    this.tabGroups = { groups: [], order: [] };
+    this.groupColorOf = new Map();
     this.initialize();
   }
 
@@ -251,6 +253,7 @@ class TabManager {
     window.electronAPI.on('tab-audio-changed', (data) => this.updateTabAudio(data));
     window.electronAPI.on('tab-pinned-changed', (data) => this.setTabPinnedUI(data && data.id, !!(data && data.pinned)));
     window.electronAPI.on('pins-order-changed', (data) => this.reorderTabsUI((data && data.ids) || []));
+    window.electronAPI.on('tab-groups-changed', (data) => this.applyTabGroupsUI(data || {}));
     window.electronAPI.on('popup-blocked', () => this.showToast('已拦截一个弹出窗口（疑似弹窗轰炸）'));
     window.electronAPI.on('permission-request', (data) => this.handlePermissionRequest(data));
     window.electronAPI.on('html-fullscreen-changed', (data) => this.toggleFullscreenUI(data.isFullscreen));
@@ -837,10 +840,27 @@ class TabManager {
     if (closeBtn) closeBtn.style.display = pinned ? 'none' : '';
   }
 
-  // reorderTabsUI 按主进程权威的固定 id 顺序，把固定标签稳定地排到最前。
-  // 与 pintabs 内核 arrange 同规则：固定区按传入顺序、非固定区保持当前相对顺序。
-  reorderTabsUI(pinnedIds) {
-    const pinSet = new Set(pinnedIds);
+  // reorderTabsUI 按主进程权威的标签 id 顺序重排标签栏 DOM。
+  //   - 默认模式（pinnedIds + isFullOrder=false）：只把固定标签稳定排到最前，
+  //     与 pintabs 内核 arrange 同规则：固定区按传入顺序、非固定区保持当前顺序；
+  //   - 全序模式（isFullOrder=true）：按传入完整顺序重排（标签分组广播用），
+  //     与主进程 tabGroupOrder 编排结果一一对应。
+  reorderTabsUI(ids, isFullOrder) {
+    if (!Array.isArray(ids)) return;
+    const strip = document.getElementById('tabs-container');
+    if (!strip) return;
+    if (isFullOrder === true) {
+      const byId = new Map(this.tabs.map(t => [t.id, t]));
+      const ordered = ids.map(id => byId.get(id)).filter(Boolean);
+      if (ordered.length !== this.tabs.length) return; // 数据不一致时不擅动
+      this.tabs = ordered;
+      for (const t of ordered) {
+        const el = strip.querySelector(`[data-tab-id="${t.id}"]`);
+        if (el) strip.appendChild(el); // append 已存在节点会移动而非复制
+      }
+      return;
+    }
+    const pinSet = new Set(ids);
     const pinnedKnown = [];
     const rest = [];
     for (const t of this.tabs) {
@@ -848,11 +868,10 @@ class TabManager {
       else rest.push(t);
     }
     const byId = new Map(pinnedKnown.map(t => [t.id, t]));
-    const orderedPinned = pinnedIds.map(id => byId.get(id)).filter(Boolean);
+    const orderedPinned = ids.map(id => byId.get(id)).filter(Boolean);
     const ordered = orderedPinned.concat(rest);
     if (ordered.length !== this.tabs.length) return; // 数据不一致时不擅动
     this.tabs = ordered;
-    const strip = document.getElementById('tabs-container');
     if (strip) {
       for (const t of ordered) {
         const el = strip.querySelector(`[data-tab-id="${t.id}"]`);
@@ -865,6 +884,75 @@ class TabManager {
   isTabPinned(tabId) {
     const t = this.tabs.find(x => x.id === tabId);
     return !!(t && t.pinned);
+  }
+
+  // ===== 标签分组（Tab Groups）UI =====
+  // 权威分组数据在主进程（tabgroups 内核），这里只消费 tab-groups-changed 广播：
+  // 记录分组快照、给标签贴分组色标、并按主进程编排好的顺序重排标签栏。
+  // 渲染层绝不自行增删分组成员，所有变更都走 invoke 让内核裁决后广播回来。
+  applyTabGroupsUI(data) {
+    const groups = Array.isArray(data.groups) ? data.groups : [];
+    const order = Array.isArray(data.order) ? data.order : [];
+    this.tabGroups = { groups, order };
+    // 组 id -> 颜色映射（供标签色标与上下文菜单用）。
+    const colorOf = new Map();
+    for (const g of groups) {
+      if (g && g.id) colorOf.set(g.id, g.color || null);
+    }
+    this.groupColorOf = colorOf;
+    this.paintTabGroupBadges();
+    if (order.length === this.tabs.length) this.reorderTabsUI(order, true);
+  }
+
+  // paintTabGroupBadges 给每个标签 DOM 刷新分组色标：属于某组的标签显示组色
+  // 顶条，未分组的清掉。颜色以主进程广播为准，标签只读不改。
+  paintTabGroupBadges() {
+    const strip = document.getElementById('tabs-container');
+    if (!strip) return;
+    const membership = this.tabGroups && Array.isArray(this.tabGroups.groups)
+      ? this.tabGroups.groups : [];
+    // 构建 tabId -> groupId 映射（同一标签只会属于一个组，内核保证）。
+    const owner = new Map();
+    for (const g of membership) {
+      if (!g || !g.id || !Array.isArray(g.tabIds)) continue;
+      for (const tid of g.tabIds) {
+        if (typeof tid === 'string' && !owner.has(tid)) owner.set(tid, g.id);
+      }
+    }
+    for (const t of this.tabs) {
+      const el = strip.querySelector(`[data-tab-id="${t.id}"]`);
+      if (!el) continue;
+      const gid = owner.get(t.id);
+      if (gid) {
+        el.classList.add('in-tab-group');
+        const color = (this.groupColorOf && this.groupColorOf.get(gid)) || null;
+        if (color) el.style.setProperty('--tab-group-color', color);
+        else el.style.removeProperty('--tab-group-color');
+      } else {
+        el.classList.remove('in-tab-group');
+        el.style.removeProperty('--tab-group-color');
+      }
+    }
+  }
+
+  // tabGroupOf 返回某标签所属分组 id（无则 null）。
+  tabGroupOf(tabId) {
+    const groups = (this.tabGroups && this.tabGroups.groups) || [];
+    for (const g of groups) {
+      if (g && Array.isArray(g.tabIds) && g.tabIds.includes(tabId)) return g.id;
+    }
+    return null;
+  }
+
+  // groupById 返回分组快照（渲染层只读消费，不修改）。
+  groupById(groupId) {
+    const groups = (this.tabGroups && this.tabGroups.groups) || [];
+    return groups.find(g => g && g.id === groupId) || null;
+  }
+
+  // allGroups 供上下文菜单列出“把当前标签加入某组”的候选组。
+  allGroups() {
+    return (this.tabGroups && this.tabGroups.groups) || [];
   }
 
   // 主进程转来的敏感权限请求（摄像头/麦克风/定位/通知/MIDI）。
@@ -2147,6 +2235,29 @@ document.addEventListener('keydown', (e) => {
       { label: tabManager.isTabPinned(tabId) ? '取消固定标签页' : '固定标签页',
         fn: () => window.electronAPI.invoke('toggle-tab-pinned', { tabId }) },
       { divider: true },
+      // ===== 标签分组操作（数据由主进程 tabgroups 内核权威裁决）=====
+      // “新建分组并加入”只带当前标签；“加入分组”列出已有组；“移出分组”仅在
+      // 当前标签已属于某组时出现；最后一项总是“新建带颜色的分组”。
+      { label: '新建分组并加入此标签页',
+        fn: () => window.electronAPI.invoke('create-tab-group', { tabIds: [tabId] })
+          .then(r => {
+            if (!r || !r.ok) tabManager.showToast((r && r.reason) || '创建分组失败');
+          }) },
+      {
+        label: '将标签页加入分组',
+        submenu: tabManager.allGroups().map(g => ({
+          label: g.title || '未命名分组',
+          fn: () => window.electronAPI.invoke('move-tab-to-group', { tabId, groupId: g.id })
+            .then(r => { if (!r || !r.ok) tabManager.showToast((r && r.reason) || '加入分组失败'); }),
+        })),
+      },
+      {
+        label: '将标签页移出当前分组',
+        enabled: !!tabManager.tabGroupOf(tabId),
+        fn: () => window.electronAPI.invoke('remove-tabs-from-group', { tabIds: [tabId] })
+          .then(r => { if (!r || !r.ok) tabManager.showToast((r && r.reason) || '移出分组失败'); }),
+      },
+      { divider: true },
       { label: '关闭标签页', fn: () => tabManager.closeTab(tabId) },
       // 批量关闭统一走主进程 close-tabs-batch，固定标签由主进程内核豁免，
       // 渲染层不再自己循环关闭，避免固定的长期页被“关闭左侧/右侧/其他”误关。
@@ -2176,10 +2287,43 @@ document.addEventListener('keydown', (e) => {
       }
       const row = document.createElement('div');
       row.textContent = it.label;
+      if (it.enabled === false) {
+        // 禁用态：置灰、不可点（如“移出当前分组”在标签未分组时）。
+        row.style.cssText = 'padding:8px 14px;cursor:default;color:#aaa;';
+        menu.appendChild(row);
+        return;
+      }
       row.style.cssText = 'padding:8px 14px;cursor:pointer;';
       row.addEventListener('mouseenter', () => row.style.background = '#f0f0f0');
       row.addEventListener('mouseleave', () => row.style.background = '');
-      row.addEventListener('click', () => { menu.style.display = 'none'; it.fn(); });
+      if (Array.isArray(it.submenu) && it.submenu.length > 0) {
+        // 子菜单：悬停展开为右侧二级菜单。二级项禁用规则与一级一致。
+        row.style.position = 'relative';
+        const arrow = document.createElement('span');
+        arrow.textContent = '▸';
+        arrow.style.cssText = 'float:right;color:#888;';
+        row.appendChild(arrow);
+        const sub = document.createElement('div');
+        sub.style.cssText = 'position:absolute;left:100%;top:-6px;background:#fff;border:1px solid #ddd;border-radius:6px;box-shadow:0 6px 20px rgba(0,0,0,.18);z-index:10002;display:none;min-width:160px;font:13px/1.4 system-ui,sans-serif;';
+        it.submenu.forEach(si => {
+          const srow = document.createElement('div');
+          srow.textContent = si.label;
+          if (si.enabled === false) {
+            srow.style.cssText = 'padding:7px 12px;cursor:default;color:#aaa;';
+          } else {
+            srow.style.cssText = 'padding:7px 12px;cursor:pointer;';
+            srow.addEventListener('mouseenter', () => srow.style.background = '#f0f0f0');
+            srow.addEventListener('mouseleave', () => srow.style.background = '');
+            srow.addEventListener('click', () => { menu.style.display = 'none'; si.fn(); });
+          }
+          sub.appendChild(srow);
+        });
+        row.appendChild(sub);
+        row.addEventListener('mouseenter', () => { sub.style.display = 'block'; });
+        row.addEventListener('mouseleave', () => { sub.style.display = 'none'; });
+      } else {
+        row.addEventListener('click', () => { menu.style.display = 'none'; it.fn(); });
+      }
       menu.appendChild(row);
     });
     menu.style.left = x + 'px';
@@ -2237,6 +2381,27 @@ document.addEventListener('keydown', (e) => {
       e.preventDefault();
       const t = tabManager.tabs.find(t => t.id === tabManager.currentTabId);
       if (t && t.url) tabManager.createNewTab(t.url);
+    }
+    // Ctrl+Shift+G：把当前标签加入一个新分组（等价于右键“新建分组并加入”）。
+    if (e.ctrlKey && e.shiftKey && (e.key === 'G' || e.key === 'g')) {
+      e.preventDefault();
+      const t = tabManager.tabs.find(x => x.id === tabManager.currentTabId);
+      if (!t || t.pinned) return;
+      window.electronAPI.invoke('create-tab-group', { tabIds: [t.id] }).then(r => {
+        if (!r || !r.ok) tabManager.showToast((r && r.reason) || '创建分组失败');
+        else tabManager.showToast('已创建分组');
+      });
+    }
+    // Ctrl+Shift+U：把当前标签移出所在分组（等价于右键“移出当前分组”）。
+    if (e.ctrlKey && e.shiftKey && (e.key === 'U' || e.key === 'u')) {
+      e.preventDefault();
+      const t = tabManager.tabs.find(x => x.id === tabManager.currentTabId);
+      if (!t || t.pinned) return;
+      const gid = tabManager.tabGroupOf(t.id);
+      if (!gid) return;
+      window.electronAPI.invoke('remove-tabs-from-group', { tabIds: [t.id] }).then(r => {
+        if (!r || !r.ok) tabManager.showToast((r && r.reason) || '移出分组失败');
+      });
     }
   });
 
