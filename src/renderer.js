@@ -3062,6 +3062,11 @@ document.addEventListener('keydown', (e) => {
     items.forEach(d => {
       const row = document.createElement('div');
       row.style.cssText = 'pointer-events:auto;display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(255,255,255,.97);border:1px solid #ddd;border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.1);';
+      // 下载项右键菜单：打开 / 文件夹 / 复制链接 / 复制文件名 / 删除（按状态出项）。
+      row.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        showRowMenu(d, e.clientX, e.clientY);
+      });
 
       const info = document.createElement('div');
       info.style.cssText = 'flex:1;min-width:0;';
@@ -3093,8 +3098,13 @@ document.addEventListener('keydown', (e) => {
         ctl.appendChild(actionBtn('打开', '打开文件', () => d.savePath && api.send('open-file', d.savePath)));
         ctl.appendChild(actionBtn('文件夹', '在文件夹中显示', () => d.savePath && api.send('open-folder', d.savePath)));
       } else {
-        sub.textContent = '下载失败';
+        // 失败行展示错误原因（剥控制字符、截断 80 字符，防止长异常刷屏 / 注入样式）。
+        const safeReason = typeof d.errorMessage === 'string' && d.errorMessage
+          ? d.errorMessage.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 80)
+          : '';
+        sub.textContent = '下载失败' + (safeReason ? ` · ${safeReason}` : '');
         sub.style.color = '#d93025';
+        if (safeReason) sub.title = safeReason;
         ctl.appendChild(actionBtn('重试', '重新下载', () => d.url && api.send('retry-download', { url: d.url })));
       }
       ctl.appendChild(actionBtn('✕', '移除此项', () => api.send('remove-download', d.id)));
@@ -3124,6 +3134,48 @@ document.addEventListener('keydown', (e) => {
       else api.send('shelf-show-all');
     }).catch(() => api.send('shelf-show-all'));
   });
+
+  // 下载项右键菜单：自绘浮层，所有文本走 textContent（无 HTML 注入面），
+  // 复制操作走受控 'copy-text' IPC（主进程再做类型 / 长度收口）。
+  function showRowMenu(d, x, y) {
+    hideRowMenu();
+    const menu = document.createElement('div');
+    menu.className = 'cosy-dl-rowmenu';
+    menu.style.cssText = 'position:fixed;left:' + x + 'px;top:' + y + 'px;z-index:20000;background:#fff;border:1px solid #ddd;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.15);padding:4px 0;font:13px/1.5 system-ui,sans-serif;min-width:160px;';
+    const item = (text, fn) => {
+      const it = document.createElement('div');
+      it.textContent = text;
+      it.style.cssText = 'padding:6px 14px;cursor:pointer;color:#222;white-space:nowrap;';
+      it.addEventListener('mouseenter', () => { it.style.background = '#eef3ff'; });
+      it.addEventListener('mouseleave', () => { it.style.background = 'transparent'; });
+      it.addEventListener('click', () => { hideRowMenu(); fn(); });
+      menu.appendChild(it);
+      return it;
+    };
+    if (d.status === 'complete' && d.savePath) {
+      item('打开', () => api.send('open-file', d.savePath));
+      item('在文件夹中显示', () => api.send('open-folder', d.savePath));
+    }
+    if (typeof d.url === 'string' && d.url) {
+      item('复制链接地址', () => api.send('copy-text', d.url));
+    }
+    if (typeof d.filename === 'string' && d.filename) {
+      item('复制文件名', () => api.send('copy-text', d.filename));
+    }
+    if (d.status === 'complete' || d.status === 'error' || d.status === 'cancelled') {
+      item('删除记录', () => api.send('remove-download', d.id));
+    } else {
+      item('取消下载', () => api.send('cancel-download', d.id));
+    }
+    document.body.appendChild(menu);
+    menu.addEventListener('mouseleave', hideRowMenu);
+    setTimeout(() => document.addEventListener('click', hideRowMenu, { once: true }), 0);
+  }
+
+  function hideRowMenu() {
+    const m = document.querySelector('.cosy-dl-rowmenu');
+    if (m) m.remove();
+  }
 
   // 主界面加载后拉一次当前 shelf，覆盖“启动时已有下载”的场景。
   function init() {
