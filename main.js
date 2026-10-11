@@ -4859,6 +4859,10 @@ function registerShortcuts() {
         openTaskManagerTab();
         event.preventDefault();
         break;
+      case shortcutKeys.ACTION.OPEN_TAB_OVERVIEW:
+        openTabOverviewTab();
+        event.preventDefault();
+        break;
       case shortcutKeys.ACTION.ENTER_READER:
         enterReaderMode();
         event.preventDefault();
@@ -4967,6 +4971,19 @@ function openTaskManagerTab() {
     return tabs[existing];
   }
   return createNewTab(TASK_MANAGER_URL);
+}
+
+const TAB_OVERVIEW_URL = 'cosy://taboverview';
+
+// openTabOverviewTab 打开（或切到已有的）标签页概览网格页。与任务管理器同款
+// 语义：已开则复用，避免 Ctrl+Shift+E 连按开出一堆相同页。
+function openTabOverviewTab() {
+  const existing = tabs.findIndex(t => t && t.url === TAB_OVERVIEW_URL);
+  if (existing >= 0) {
+    if (existing !== currentTabIndex) switchToTab(existing);
+    return tabs[existing];
+  }
+  return createNewTab(TAB_OVERVIEW_URL);
 }
 
 const READER_PAGE_URL = 'cosy://reader';
@@ -5291,6 +5308,111 @@ ipcMain.handle('end-task-manager-tab', (event, payload = {}) => {
   return { success: true, id };
 });
 
+// ===== 标签页概览（cosy://taboverview，Ctrl+Shift+E 唤起）=====
+// 概览页按“网格卡片”展示全部标签，可搜索 / 切换 / 关闭 / 看缩略图。所有写入动作
+// 都只接受概览页自身帧或主窗口帧发起，且 id 必须是当前 tabs 里真实存在的标签。
+
+function isTabOverviewFrameSender(event) {
+  if (isMainSender(event)) return true;
+  const frame = event && event.senderFrame;
+  if (!frame || typeof frame.url !== 'string') return false;
+  let u;
+  try { u = new URL(frame.url); } catch { return false; }
+  return u.protocol === 'cosy:' && u.hostname === 'taboverview';
+}
+
+// tabOverviewItem 输出单标签的概览数据。字段做类型收口，避免脏标题 / 长 URL
+// 破坏网格布局；分组信息从 tabGroupModel 实时取，标签被改组后概览自动跟随。
+function tabOverviewItem(tab, index) {
+  const groupId = tabGroupModel.groupOf(tab.id);
+  let groupName = '';
+  let groupColor = '';
+  if (groupId) {
+    const g = tabGroupModel.getGroup(groupId);
+    if (g) {
+      groupName = String(g.title || '');
+      groupColor = String(g.color || '');
+    }
+  }
+  const wc = tab && tab.view && tab.view.webContents;
+  return {
+    id: String(tab.id),
+    index,
+    title: String(tab.title || tab.url || '未命名标签页').slice(0, 300),
+    url: String(tab.url || '').slice(0, 1000),
+    favicon: typeof tab.favicon === 'string' ? tab.favicon.slice(0, 1000) : '',
+    active: index === currentTabIndex,
+    pinned: !!tab.pinned,
+    muted: !!tab.muted,
+    crashed: !!tab.crashed,
+    discarded: !!tab.discarded,
+    groupId: groupId || '',
+    groupName: groupName.slice(0, 60),
+    groupColor: groupColor.slice(0, 40),
+    alive: !!(wc && !wc.isDestroyed()),
+  };
+}
+
+ipcMain.handle('tab-overview-snapshot', (event) => {
+  if (!isTabOverviewFrameSender(event)) return { ok: false, error: 'denied' };
+  return { ok: true, tabs: tabs.map(tabOverviewItem) };
+});
+
+// 概览页点击卡片：切到该标签。id 不存在时静默失败（标签可能已被关闭）。
+ipcMain.handle('tab-overview-activate', (event, payload = {}) => {
+  if (!isTabOverviewFrameSender(event)) return { ok: false, error: 'denied' };
+  const id = payload && payload.id != null ? String(payload.id) : '';
+  const index = tabs.findIndex(t => t && String(t.id) === id);
+  if (index < 0) return { ok: false, error: 'not-found' };
+  switchToTab(index);
+  return { ok: true, id };
+});
+
+// 概览页关闭卡片：复用现有 closeTab（含分组联动 / 最近关闭 / 持久化）。
+ipcMain.handle('tab-overview-close', (event, payload = {}) => {
+  if (!isTabOverviewFrameSender(event)) return { ok: false, error: 'denied' };
+  const id = payload && payload.id != null ? String(payload.id) : '';
+  const index = tabs.findIndex(t => t && String(t.id) === id);
+  if (index < 0) return { ok: false, error: 'not-found' };
+  closeTab(index);
+  return { ok: true, id };
+});
+
+// 概览页缩略图：capturePage 截当前标签画面，按最长边 ≤360px 缩放成 dataURL。
+// 只接受概览页帧；视图已销毁 / 崩溃 / 后台被丢弃的标签返回空，不让单页拖垮整页。
+ipcMain.handle('tab-overview-capture', async (event, payload = {}) => {
+  if (!isTabOverviewFrameSender(event)) return { ok: false, error: 'denied' };
+  const id = payload && payload.id != null ? String(payload.id) : '';
+  const index = tabs.findIndex(t => t && String(t.id) === id);
+  if (index < 0) return { ok: false, error: 'not-found' };
+  const tab = tabs[index];
+  const wc = tab && tab.view && tab.view.webContents;
+  if (!wc || wc.isDestroyed() || tab.crashed || tab.discarded) {
+    return { ok: false, error: 'unavailable' };
+  }
+  try {
+    const image = await wc.capturePage();
+    if (image.isEmpty()) return { ok: false, error: 'empty' };
+    const size = image.getSize();
+    const longest = Math.max(size.width, size.height) || 1;
+    let scaled = image;
+    if (longest > 360) {
+      const factor = 360 / longest;
+      scaled = image.resize({
+        width: Math.max(1, Math.round(size.width * factor)),
+        height: Math.max(1, Math.round(size.height * factor)),
+      });
+    }
+    const dataUrl = scaled.toDataURL();
+    if (typeof dataUrl !== 'string' || dataUrl.length > 600000) {
+      return { ok: false, error: 'too-large' };
+    }
+    return { ok: true, dataUrl };
+  } catch {
+    return { ok: false, error: 'capture-failed' };
+  }
+});
+
 function loadTabContent(tab) {
   if (!tab.view) {
     // 标签视图与主窗口共用同一份 webPreferences 安全基线，杜绝两处配置漂移。
@@ -5548,6 +5670,7 @@ function loadTabContent(tab) {
         'hashes': 'src/hashes.html',
         'download': 'src/download', 'downloadlist': 'src/downloadlist.html',
         'taskmanager': 'src/taskmanager.html',
+        'taboverview': 'src/taboverview.html',
         'reader': 'src/reader.html',
         'httpsonly': 'src/httpsonly.html'
       };
