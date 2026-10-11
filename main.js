@@ -4956,6 +4956,10 @@ function registerShortcuts() {
         createNewTab('cosy://history');
         event.preventDefault();
         break;
+      case shortcutKeys.ACTION.OPEN_READING_LIST:
+        createNewTab('cosy://readinglist');
+        event.preventDefault();
+        break;
       case shortcutKeys.ACTION.CLEAR_BROWSING_DATA:
         sendToRenderer('show-clear-data-dialog');
         event.preventDefault();
