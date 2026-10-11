@@ -4925,6 +4925,10 @@ function registerShortcuts() {
         mainWindow.webContents.send('show-history');
         event.preventDefault();
         break;
+      case shortcutKeys.ACTION.OPEN_HISTORY_PAGE:
+        createNewTab('cosy://history');
+        event.preventDefault();
+        break;
       case shortcutKeys.ACTION.CLEAR_BROWSING_DATA:
         sendToRenderer('show-clear-data-dialog');
         event.preventDefault();
@@ -5321,6 +5325,16 @@ function isTabOverviewFrameSender(event) {
   return u.protocol === 'cosy:' && u.hostname === 'taboverview';
 }
 
+// 历史页帧守卫：只放行 cosy://history 内置帧（主窗口外壳也可直达，供面板跳转）。
+function isHistoryFrameSender(event) {
+  if (isMainSender(event)) return true;
+  const frame = event && event.senderFrame;
+  if (!frame || typeof frame.url !== 'string') return false;
+  let u;
+  try { u = new URL(frame.url); } catch { return false; }
+  return u.protocol === 'cosy:' && u.hostname === 'history';
+}
+
 // tabOverviewItem 输出单标签的概览数据。字段做类型收口，避免脏标题 / 长 URL
 // 破坏网格布局；分组信息从 tabGroupModel 实时取，标签被改组后概览自动跟随。
 function tabOverviewItem(tab, index) {
@@ -5683,6 +5697,7 @@ function loadTabContent(tab) {
         'download': 'src/download', 'downloadlist': 'src/downloadlist.html',
         'taskmanager': 'src/taskmanager.html',
         'taboverview': 'src/taboverview.html',
+        'history': 'src/history.html',
         'reader': 'src/reader.html',
         'httpsonly': 'src/httpsonly.html'
       };
@@ -7918,6 +7933,51 @@ ipcMain.handle('clear-history', (event) => {
   history = [];
   saveHistory();
   return { success: true };
+});
+
+// 历史页快照：全量返回历史数组（上限 1000 条，磁盘加载已按 MAX_HISTORY_ENTRIES
+// 截断）。只放行历史页帧 / 主窗口外壳；返回前对每条做类型收口，绝不让脏标题
+// 或畸形 URL 进入内部页 DOM。
+ipcMain.handle('history-snapshot', (event) => {
+  if (!isHistoryFrameSender(event)) return { ok: false, error: 'denied', items: [] };
+  const items = history.slice(0, MAX_HISTORY_ENTRIES).map(item => ({
+    url: typeof item.url === 'string' ? item.url.slice(0, 8192) : '',
+    title: typeof item.title === 'string' ? item.title.slice(0, 300) : '',
+    timestamp: typeof item.timestamp === 'number' && Number.isFinite(item.timestamp) ? item.timestamp : 0,
+  }));
+  return { ok: true, items };
+});
+
+// 历史页删除单条：按 url + timestamp 精确匹配删除（同一 URL 可能有多条时间戳）。
+// 匹配不到静默成功；删除后落盘。
+ipcMain.handle('history-delete-entry', (event, payload = {}) => {
+  if (!isHistoryFrameSender(event)) return { ok: false, error: 'denied' };
+  const url = typeof payload.url === 'string' ? payload.url : '';
+  const timestamp = typeof payload.timestamp === 'number' ? payload.timestamp : NaN;
+  const before = history.length;
+  history = history.filter(item =>
+    !(String(item.url || '') === url && item.timestamp === timestamp));
+  if (history.length !== before) saveHistory();
+  return { ok: true, removed: before - history.length };
+});
+
+// 历史页点击条目：经 isSafeUrl 校验后在当前窗口新开标签。cosy:// 内置地址
+// 同样放行（历史页“在新标签打开”允许内部页跳转），其余非法协议一律拒绝。
+ipcMain.handle('history-open-url', (event, url) => {
+  if (!isHistoryFrameSender(event)) return { ok: false, error: 'denied' };
+  if (!isSafeUrl(url) && !(typeof url === 'string' && url.startsWith('cosy://'))) {
+    return { ok: false, error: 'bad-url' };
+  }
+  const tab = createNewTab(url);
+  return { ok: true, id: tab.id, index: tabs.length - 1 };
+});
+
+// 历史页清空：仅受信帧可触发，与面板“清除历史”共用 saveHistory 落盘。
+ipcMain.handle('history-clear-all', (event) => {
+  if (!isHistoryFrameSender(event)) return { ok: false, error: 'denied' };
+  history = [];
+  saveHistory();
+  return { ok: true };
 });
 
 ipcMain.handle('get-https-only', (event) => {
