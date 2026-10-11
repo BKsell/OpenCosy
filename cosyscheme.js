@@ -45,6 +45,7 @@ const COSY_PAGES = Object.freeze({
   httpsonly: 'httpsonly.html',
   blockrules: 'blockrules.html',
   vault: 'vault.html',
+  privacy: 'privacy.html',
 });
 const DEFAULT_PAGE = 'newtab.html';
 

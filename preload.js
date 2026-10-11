@@ -198,6 +198,11 @@ const allowedInvokeChannels = new Set([
   'cleaner-execute',
   'cleaner-audit',
   'cleaner-prune-audit',
+  'get-ua-policy',
+  'set-ua-policy',
+  'reset-ua-policy',
+  'get-download-rate-limit',
+  'set-download-rate-limit',
 ]);
 
 // 接收方向白名单：main -> renderer

@@ -34,6 +34,7 @@ const httpsOnlyCore = require('./httpsonly');
 const readerCore = require('./reader');
 const vaultCore = require('./vault');
 const cleanerCore = require('./cleaner');
+const uaPolicyCore = require('./uapolicy');
 const containerGuard = require('./container');
 const schemeOrigin = require('./schemeorigin');
 const webviewHarden = require('./webviewharden');
@@ -1104,6 +1105,64 @@ let vaultHandle = null;  // 已解锁句柄；锁定态为 null
 let vaultUsePasswordMode = false;
 let cleanAuditLog = [];
 
+// ===== UA 覆盖策略（uapolicy）与下载限速 =====
+// UA 策略由 uapolicy.js 纯内核判定（default / custom / chrome-random），这里只
+// 负责持久化与把结果灌进 webRequest。改写计数仅统计“真的改了”的请求，供
+// cosy://privacy 页展示。下载限速是全局设置（字节/秒，0 表示不限），在
+// will-download 里对每个新下载项 setRate 生效。
+const uaPolicyPath = path.join(app.getPath('userData'), 'ua-policy.json');
+const rateLimitPath = path.join(app.getPath('userData'), 'download-rate-limit.json');
+let uaPolicyState = { ...uaPolicyCore.DEFAULT_POLICY };
+let uaOverrideCount = 0;
+let uaLastOverrideAt = 0;
+let downloadRateLimit = 0; // 字节/秒；0 = 不限速
+
+function loadUaPolicyStateFromDisk() {
+  try {
+    if (fsSync.existsSync(uaPolicyPath)) {
+      const raw = JSON.parse(fsSync.readFileSync(uaPolicyPath, 'utf8'));
+      uaPolicyState = uaPolicyCore.sanitizePolicy(raw);
+    }
+  } catch (e) { console.error('读取 UA 策略失败:', e); }
+  try {
+    if (fsSync.existsSync(rateLimitPath)) {
+      const raw = JSON.parse(fsSync.readFileSync(rateLimitPath, 'utf8'));
+      if (raw && Number.isFinite(raw.bytesPerSecond) && raw.bytesPerSecond >= 0) {
+        downloadRateLimit = Math.floor(raw.bytesPerSecond);
+      }
+    }
+  } catch (e) { console.error('读取下载限速失败:', e); }
+}
+
+function persistUaPolicyState() {
+  try { atomicWriteJSON(uaPolicyPath, uaPolicyState); } catch (e) { console.error('写入 UA 策略失败:', e); }
+}
+
+function persistRateLimitState() {
+  try { atomicWriteJSON(rateLimitPath, { bytesPerSecond: downloadRateLimit }); } catch (e) { console.error('写入下载限速失败:', e); }
+}
+
+// applyUaPolicyToSession：把当前策略应用到目标 session（导航级 UA）。
+// webRequest 层的按请求改写由 applyOutboundHeaderHardening 负责；这里只在
+// 启动与策略变更时调用，让导航请求也吃到最新 UA。
+function applyUaPolicyToSession(targetSession) {
+  try {
+    const effective = uaPolicyCore.resolveUa(uaPolicyState, generateUserAgent());
+    targetSession.setUserAgent(effective);
+  } catch (e) { console.error('应用 UA 策略失败:', e); }
+}
+
+// resolveEffectiveUa 是 webRequest 层每次请求都读取的 UA 取值器。
+function resolveEffectiveUa() {
+  return uaPolicyCore.resolveUa(uaPolicyState, generateUserAgent());
+}
+
+// applyRateLimitToItem：对新下载项套限速（0 表示不限，setRate 无效时不抛）。
+function applyRateLimitToItem(item) {
+  if (!item || !downloadRateLimit) return;
+  try { item.setRate(downloadRateLimit); } catch {}
+}
+
 function atomicWriteJSON(filePath, obj) {
   const dir = path.dirname(filePath);
   const tmp = path.join(dir, '.' + path.basename(filePath) + '.tmp-' + process.pid);
@@ -1702,6 +1761,14 @@ function applyOutboundHeaderHardening(targetSession, options) {
     headers['DNT'] = '1';
     headers['Sec-GPC'] = '1';
     headers['Upgrade-Insecure-Requests'] = '1';
+    // UA 覆盖：非 default 策略时把请求头里的 User-Agent 换成策略取值。
+    // 顶层导航的 UA 由 session.setUserAgent（applyUaPolicyToSession）兜底，
+    // 这里覆盖 fetch/XHR/子资源等所有子请求，统计只计实际改写次数。
+    if (uaPolicyState.mode !== uaPolicyCore.MODES.DEFAULT) {
+      headers['User-Agent'] = resolveEffectiveUa();
+      uaOverrideCount = uaPolicyCore.countUaOverrides(uaOverrideCount);
+      uaLastOverrideAt = Date.now();
+    }
     try { trimReferrerHeader(details, headers); } catch {}
     try {
       const removed = fpGuard.sanitizeOutboundHeaders(details, headers, {
@@ -6888,6 +6955,7 @@ function handleDownloadEvent(event, item, webContents) {
       item.setSavePath(defaultSavePath);
       downloadInfo.savePath = defaultSavePath;
     }
+    applyRateLimitToItem(item);
     sendShelf();
     sendToRenderer('download-status-changed', { id: downloadInfo.id, status: 'downloading' });
     item.on('updated', (event, state) => {
@@ -7169,7 +7237,8 @@ app.whenReady().then(async () => {
   spellcheckEnabled = persisted.spellcheckEnabled !== false;
   spellcheckLanguages = sanitizeSpellcheckLanguages(persisted.spellcheckLanguages);
   applySpellcheckSettings();
-  session.defaultSession.setUserAgent(generateUserAgent());
+  loadUaPolicyStateFromDisk();
+  applyUaPolicyToSession(session.defaultSession);
   createWindow();
   await loadEnabledExtensions();
 
@@ -8974,6 +9043,63 @@ ipcMain.handle('cleaner-prune-audit', (event, keep) => {
   const r = cleanerCore.pruneAuditLog(cleanAuditLog, Number(keep) || 0);
   if (r.ok) persistCleanAudit();
   return { success: true, ...r };
+});
+
+// ===== UA 覆盖策略 IPC =====
+// get-ua-policy：返回当前策略、改写统计与生效 UA（含 default 时的自算值），
+// 供 cosy://privacy 页展示。set/reset 都会持久化并立刻应用到 defaultSession
+// （隔离会话下一次请求时也会吃到新策略，因为 resolveEffectiveUa 每次现算）。
+ipcMain.handle('get-ua-policy', (event) => {
+  if (!isMainSender(event)) return { success: false };
+  return {
+    success: true,
+    ...uaPolicyCore.policyToPlain(uaPolicyState),
+    effectiveUa: resolveEffectiveUa(),
+    overrideCount: uaOverrideCount,
+    lastOverrideAt: uaLastOverrideAt,
+  };
+});
+
+ipcMain.handle('set-ua-policy', (event, payload = {}) => {
+  if (!isMainSender(event)) return { success: false };
+  const next = uaPolicyCore.sanitizePolicy(payload);
+  uaPolicyState = next;
+  persistUaPolicyState();
+  applyUaPolicyToSession(session.defaultSession);
+  return {
+    success: true,
+    ...uaPolicyCore.policyToPlain(uaPolicyState),
+    effectiveUa: resolveEffectiveUa(),
+  };
+});
+
+ipcMain.handle('reset-ua-policy', (event) => {
+  if (!isMainSender(event)) return { success: false };
+  uaPolicyState = { ...uaPolicyCore.DEFAULT_POLICY };
+  uaOverrideCount = 0;
+  uaLastOverrideAt = 0;
+  persistUaPolicyState();
+  applyUaPolicyToSession(session.defaultSession);
+  return { success: true, ...uaPolicyCore.policyToPlain(uaPolicyState), effectiveUa: resolveEffectiveUa() };
+});
+
+// ===== 下载限速 IPC =====
+ipcMain.handle('get-download-rate-limit', (event) => {
+  if (!isMainSender(event)) return { success: false };
+  return { success: true, bytesPerSecond: downloadRateLimit, kbps: Math.round(downloadRateLimit / 1024) };
+});
+
+ipcMain.handle('set-download-rate-limit', (event, payload = {}) => {
+  if (!isMainSender(event)) return { success: false };
+  const raw = Number(payload && payload.bytesPerSecond);
+  if (!Number.isFinite(raw) || raw < 0) return { success: false, reason: 'invalid-rate' };
+  downloadRateLimit = Math.floor(Math.min(raw, 1024 * 1024 * 1024)); // 封顶 1 GiB/s
+  persistRateLimitState();
+  // 已在进行中的下载项逐个应用新限速（未开始的在 will-download 时套用）。
+  for (const d of downloads) {
+    if (d.item && d.isItemValid) applyRateLimitToItem(d.item);
+  }
+  return { success: true, bytesPerSecond: downloadRateLimit };
 });
 
 // 崩溃横幅上的“强制刷新”：按 tabId 找到对应标签重载（无响应 / 连续崩溃后由用户手动触发）。

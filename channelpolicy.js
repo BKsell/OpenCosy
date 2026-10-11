@@ -122,6 +122,11 @@ const COSY_ONLY_CHANNELS = new Set([
   // 清理执行 / 修剪审计：破坏性写，只允许内置页触发。
   'cleaner-execute',
   'cleaner-prune-audit',
+  // UA 覆盖策略 / 下载限速的写通道：改的是全局隐私与带宽配置，只允许安全内置页
+  // （cosy://privacy）修改，远程网页帧与普通内置页一律拿不到。
+  'set-ua-policy',
+  'reset-ua-policy',
+  'set-download-rate-limit',
 ]);
 
 // 通用浏览能力：受信帧（外壳 / cosy 内置页 / 证书错误页）都可调用。只登记“读”与
@@ -175,6 +180,8 @@ const GENERAL_CHANNELS = new Set([
   'list-pna-blocks', 'get-pna-block-stats',
   'list-fingerprint-entries', 'get-fingerprint-stats',
   'get-doh-status', 'list-download-risks',
+  // UA 策略 / 下载限速的只读快照（写通道在 cosy-only）。
+  'get-ua-policy', 'get-download-rate-limit',
 ]);
 
 /**
