@@ -789,6 +789,13 @@ class TabManager {
     tabElement.addEventListener('click', (e) => {
       if (!e.target.classList.contains('tab-close')) this.switchToTab(tabData.id);
     });
+    // 标签右键菜单：只透传内部 tabId，由主进程基于本机 tab 状态构建原生菜单，
+    // 菜单项里的 URL/标题一律来自主进程数据，渲染层不参与拼装，杜绝注入面。
+    tabElement.addEventListener('contextmenu', (e) => {
+      if (e.target.classList.contains('tab-close')) return;
+      e.preventDefault();
+      window.electronAPI.send('show-tab-context-menu', { tabId: tabData.id });
+    });
 
     tabsContainer.appendChild(tabElement);
     this.tabs.push(tabData);
@@ -1257,6 +1264,97 @@ class TabManager {
 }
 
 const tabManager = new TabManager();
+
+// ===== 顶栏书签栏（bookmarks bar）=====
+// 与 main 端 Ctrl+Shift+B（TOGGLE_BOOKMARKS_BAR）联动：main 发 toggle-bookmarks-bar
+// 事件，这里负责渲染/移除。数据统一走 get-bookmarks（主进程已过 bookmarkguard 净化）
+// + bookmarks-updated 增量事件；栏上条目再经 BookmarkBar 内核二次净化（只显示
+// http/https、标题截断、数量上限 + 溢出折叠）。点击语义：左键当前标签导航，
+// Ctrl/Cmd+左键或中键新标签，Ctrl+Shift 后台新标签；溢出「更多」直接复用既有
+// 书签管理面板，不重复实现编辑 UI。全部用 textContent 赋值，杜绝书签标题注入 DOM。
+(function setupBookmarkBar(tm) {
+  const api = window.electronAPI;
+  const BK = window.BookmarkBar;
+  if (!api || !BK) return;
+  const BAR_ID = 'bookmark-bar';
+  let visible = false;
+  let cached = [];
+
+  function paint() {
+    const existing = document.getElementById(BAR_ID);
+    if (!visible) {
+      if (existing) existing.remove();
+      return;
+    }
+    const { items, overflowCount } = BK.buildBookmarkBarItems(cached);
+    let bar = existing;
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = BAR_ID;
+      bar.className = 'bookmark-bar';
+      const tc = document.getElementById('tabs-container');
+      if (tc && tc.parentNode) {
+        tc.parentNode.insertBefore(bar, tc);
+      } else {
+        document.body.insertBefore(bar, document.body.firstChild);
+      }
+    }
+    bar.textContent = '';
+    for (const it of items) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'bookmark-bar-item';
+      btn.title = it.url;
+      btn.textContent = it.title;
+      btn.addEventListener('click', (ev) => {
+        const act = BK.classifyBookmarkClick(ev);
+        if (act === 'ignore') return;
+        ev.preventDefault();
+        if (act === 'current') tm.navigateCurrentTab(it.url);
+        else tm.createNewTab(it.url);
+      });
+      btn.addEventListener('auxclick', (ev) => {
+        if (ev.button !== 1) return;
+        ev.preventDefault();
+        tm.createNewTab(it.url);
+      });
+      bar.appendChild(btn);
+    }
+    if (overflowCount > 0) {
+      const more = document.createElement('button');
+      more.type = 'button';
+      more.className = 'bookmark-bar-item bookmark-bar-more';
+      more.textContent = `更多(${overflowCount})`;
+      more.title = '打开书签管理面板';
+      more.addEventListener('click', () => tm.showBookmarksBar());
+      bar.appendChild(more);
+    }
+  }
+
+  api.on('toggle-bookmarks-bar', () => {
+    visible = !visible;
+    paint();
+    api.send('set-bookmark-bar-visible', { visible });
+  });
+  api.on('bookmarks-updated', (list) => {
+    if (Array.isArray(list)) {
+      cached = list;
+      paint();
+    }
+  });
+  api.invoke('get-bookmark-bar-visible').then((res) => {
+    if (res && typeof res.visible === 'boolean') {
+      visible = res.visible;
+      paint();
+    }
+  }).catch(() => {});
+  api.invoke('get-bookmarks').then((list) => {
+    if (Array.isArray(list)) {
+      cached = list;
+      paint();
+    }
+  }).catch(() => {});
+})(tabManager);
 
 // ===== 快捷键帮助浮层（F1 / Ctrl+/）=====
 const SHORTCUT_GROUPS = [
