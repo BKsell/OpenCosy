@@ -159,6 +159,21 @@
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
   #toast.error { background: #c42b1c; }
   .back-link { display: inline-block; margin-bottom: 14px; font-size: 13px; text-decoration: none; }
+  .sort-sel {
+    padding: 8px 10px; border: 1px solid #d0d0d0; border-radius: 6px; font-size: 13px;
+    background: #fafafa; color: inherit; outline: none;
+  }
+  .sort-sel:focus { border-color: #0078d4; }
+  body.dark-mode .sort-sel { background: #3d3d3d; border-color: #555; }
+  .batchbar {
+    display: flex; gap: 10px; align-items: center; margin: 0 0 12px;
+    background: #fff; border-radius: 8px; padding: 8px 14px; font-size: 12px;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.06);
+  }
+  body.dark-mode .batchbar { background: #2d2d2d; box-shadow: 0 1px 6px rgba(0,0,0,0.3); }
+  .batchbar .info { color: #0078d4; font-weight: 600; }
+  body.dark-mode .batchbar .info { color: #4da3ff; }
+  .hash-sel { width: 16px; height: 16px; accent-color: #0078d4; flex-shrink: 0; }
 </style>
 </head>
 <body>
@@ -193,9 +208,23 @@
 
   <div class="toolbar">
     <input class="search-box" id="searchInput" type="search" placeholder="按文件名或来源主机搜索" autocomplete="off">
+    <select class="sort-sel" id="sortSel" title="排序方式">
+      <option value="new">最新在前</option>
+      <option value="old">最早在前</option>
+      <option value="size">按大小</option>
+      <option value="name">按文件名</option>
+    </select>
     <button class="btn-ghost" id="copyAllBtn">复制全部校验和</button>
     <button class="btn-primary" id="refreshBtn">刷新</button>
     <button class="btn-danger-ghost" id="clearBtn">清空记录</button>
+  </div>
+
+  <div class="batchbar" id="batchbar" style="display:none;">
+    <input type="checkbox" id="selAll" class="hash-sel" title="全选当前结果">
+    <span>全选</span>
+    <span class="info" id="selInfo"></span>
+    <button class="btn-danger-ghost" id="seldelBtn" style="padding:5px 12px;">删除选中</button>
+    <button class="btn-ghost" id="selcopyBtn" style="padding:5px 12px;">复制选中 SHA</button>
   </div>
 
   <div class="hash-list" id="hashList"></div>
@@ -232,6 +261,7 @@
 
 const api = window.electronAPI;
 const state = { rows: [] };
+const selected = {};
 const $ = id => document.getElementById(id);
 
 function applyDarkMode() {
@@ -251,9 +281,11 @@ function toast(message, isError = false) {
   toast._timer = setTimeout(() => el.classList.remove('show'), 2600);
 }
 
-function showConfirm() {
+function showConfirm(message) {
   return new Promise(resolve => {
     const modal = $('confirmModal');
+    const body = modal.querySelector('.modal-body');
+    if (body && message) body.textContent = message;
     modal.classList.add('show');
     const done = ok => {
       modal.classList.remove('show');
@@ -416,10 +448,16 @@ function render() {
   $('statBytes').textContent = formatSize(totalBytes);
   $('statHosts').textContent = hosts.size;
 
-  const rows = state.rows.filter(r => {
+  let rows = state.rows.filter(r => {
     if (!query) return true;
     return ((r.filename || '') + ' ' + (r.host || '')).toLowerCase().includes(query);
   });
+
+  const sortMode = $('sortSel').value;
+  if (sortMode === 'old') rows = rows.slice().sort((a, b) => (Number(a.time) || 0) - (Number(b.time) || 0));
+  else if (sortMode === 'size') rows = rows.slice().sort((a, b) => (Number(b.size) || 0) - (Number(a.size) || 0));
+  else if (sortMode === 'name') rows = rows.slice().sort((a, b) => String(a.filename || '').localeCompare(String(b.filename || '')));
+  else rows = rows.slice().sort((a, b) => (Number(b.time) || 0) - (Number(a.time) || 0));
 
   $('emptyState').style.display = rows.length ? 'none' : 'block';
   $('emptyText').textContent = query ? '没有记录匹配当前搜索' : '还没有已计算校验和的下载';
@@ -432,6 +470,18 @@ function render() {
 
     const head = document.createElement('div');
     head.className = 'hash-head';
+
+    const chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.className = 'hash-sel';
+    chk.checked = !!selected[r.id];
+    chk.title = '选择此条记录';
+    chk.addEventListener('change', () => {
+      if (chk.checked) selected[r.id] = true;
+      else delete selected[r.id];
+      updateBatch(rows);
+    });
+    head.appendChild(chk);
 
     const name = document.createElement('span');
     name.className = 'hash-name';
@@ -486,6 +536,27 @@ function render() {
     row.append(head, digest, verifyBox);
     list.appendChild(row);
   }
+}
+
+function updateBatch(rows) {
+  const ids = Object.keys(selected);
+  const bar = $('batchbar');
+  if (!ids.length) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  $('selInfo').textContent = '已选 ' + ids.length + ' 条';
+  $('selAll').checked = rows.length > 0 && rows.every(r => selected[r.id]);
+}
+
+async function removeRows(ids) {
+  let okCount = 0;
+  for (const id of ids) {
+    try {
+      const r = await api.invoke('remove-download-hash', { id });
+      if (r && r.success) { delete selected[id]; okCount++; }
+    } catch {}
+  }
+  if (okCount > 0) toast('已删除 ' + okCount + ' 条记录');
+  loadData();
 }
 
 async function loadData() {
@@ -546,7 +617,33 @@ $('clearBtn').onclick = async () => {
   if (r && r.success) { toast('已清空校验和记录'); loadData(); }
   else toast('清空失败', true);
 };
+$('sortSel').addEventListener('change', render);
 $('searchInput').addEventListener('input', render);
+$('selAll').addEventListener('change', () => {
+  const query = $('searchInput').value.trim().toLowerCase();
+  const rows = state.rows.filter(r => {
+    if (!query) return true;
+    return ((r.filename || '') + ' ' + (r.host || '')).toLowerCase().includes(query);
+  });
+  if ($('selAll').checked) rows.forEach(r => { selected[r.id] = true; });
+  else rows.forEach(r => { delete selected[r.id]; });
+  updateBatch(rows);
+  render();
+});
+$('seldelBtn').onclick = async () => {
+  const ids = Object.keys(selected);
+  if (!ids.length) return;
+  const ok = await showConfirm();
+  if (!ok) return;
+  await removeRows(ids);
+};
+$('selcopyBtn').onclick = () => {
+  const ids = Object.keys(selected);
+  if (!ids.length) { toast('请先勾选要复制的记录', true); return; }
+  const map = new Map(state.rows.map(r => [r.id, r]));
+  const lines = ids.map(id => { const r = map.get(id); return r ? (r.sha256 + '  ' + (r.filename || 'download')) : ''; }).filter(Boolean);
+  copyText(lines.join('\n'), '选中 ' + lines.length + ' 条');
+};
 $('confirmModal').addEventListener('click', e => {
   if (e.target === $('confirmModal')) $('confirmModal').classList.remove('show');
 });
