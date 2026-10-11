@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+<title>保险库与数据清理 - OpenCosy</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+:root{--bg:#f3f3f3;--card:#fff;--text:#222;--sub:#666;--border:#dfe4e1;--accent:#0078d4;--danger:#dc3545;--ok:#1e8e3e;--warnbg:#fff8e1;--warnbd:#e0b100;}
+[data-theme="dark"]{--bg:#1a1a1a;--card:#2d2d2d;--text:#e6e6e6;--sub:#9a9a9a;--border:#444;--warnbg:#3a3210;--warnbd:#8a6d00;}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);padding:24px;transition:.3s;}
+h1{font-size:20px;margin-bottom:4px;}
+.tip{color:var(--sub);font-size:13px;margin-bottom:16px;line-height:1.6;}
+.status{display:inline-flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--border);
+  border-radius:8px;padding:8px 14px;font-size:13px;margin-bottom:18px;}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--ok);}
+.dot.off{background:var(--sub);}
+.dot.bad{background:var(--danger);}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-bottom:16px;}
+.card h2{font-size:14px;margin-bottom:10px;}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+label{font-size:12.5px;color:var(--sub);display:flex;flex-direction:column;gap:4px;}
+input[type=text],input[type=password],select{min-width:200px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;
+  background:var(--bg);color:var(--text);font-size:13px;}
+textarea{width:100%;min-height:110px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;
+  background:var(--bg);color:var(--text);font-size:12.5px;font-family:Consolas,monospace;resize:vertical;}
+button{border-radius:6px;padding:8px 14px;font-size:13px;cursor:pointer;border:1px solid var(--accent);
+  background:var(--accent);color:#fff;}
+button.ghost{background:transparent;color:var(--accent);}
+button.danger{background:transparent;border-color:var(--danger);color:var(--danger);}
+button.danger:hover{background:var(--danger);color:#fff;}
+button:disabled{opacity:.5;cursor:not-allowed;}
+table{width:100%;border-collapse:collapse;}
+th,td{padding:9px 12px;text-align:left;font-size:13px;border-bottom:1px solid var(--border);}
+th{color:var(--sub);font-weight:600;}
+tr:last-child td{border-bottom:none;}
+td.mono{font-family:Consolas,monospace;font-size:12.5px;word-break:break-all;}
+.empty{padding:26px;text-align:center;color:var(--sub);font-size:13px;}
+.warn{background:var(--warnbg);border:1px solid var(--warnbd);border-radius:8px;padding:10px 14px;
+  font-size:12.5px;line-height:1.6;margin-bottom:16px;}
+.msg{font-size:12.5px;color:var(--danger);min-height:18px;margin-top:8px;}
+.msg.ok{color:var(--ok);}
+.count{color:var(--sub);font-size:12.5px;margin-left:8px;}
+.badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;background:var(--bg);
+  border:1px solid var(--border);color:var(--sub);margin-right:6px;}
+details summary{cursor:pointer;color:var(--accent);font-size:13px;margin-bottom:6px;}
+</style>
+</head>
+<body>
+<h1>保险库与数据清理</h1>
+<div class="tip">
+  <b>保险库</b>：用 AES-256-GCM 加密保存密码、恢复码、令牌等敏感条目。主密钥由系统安全存储
+  （OS 级加密）保护自动解锁；也可设主密码（310000 轮 PBKDF2 慢化）。密文落盘
+  <code>vault.json</code>，不含任何明文。
+  <br><b>数据清理</b>：按站点/域名/时间窗规划清理浏览数据，先出计划再执行，每次清理记审计。
+</div>
+
+<div class="status"><span class="dot" id="dot"></span><span id="stateText">-</span></div>
+<div class="msg" id="vaultMsg"></div>
+
+<!-- 未解锁 / 首次使用 -->
+<div class="card" id="unlockCard">
+  <h2>解锁或创建保险库</h2>
+  <div class="row">
+    <label>主密码（留空 = 使用系统安全存储自动解锁）
+      <input type="password" id="masterPw" autocomplete="off">
+    </label>
+    <button id="btnUnlock">解锁</button>
+    <button class="ghost" id="btnCreate">创建 / 重建保险库</button>
+  </div>
+  <div class="warn" style="margin-top:12px" id="noKeychainWarn">
+    系统安全存储不可用：请使用主密码解锁 / 创建，密钥不会落盘。
+  </div>
+</div>
+
+<!-- 已解锁：条目管理 -->
+<div class="card" id="entryCard" style="display:none">
+  <h2>条目 <span class="count" id="entryCount"></span></h2>
+  <div class="row" style="margin-bottom:10px">
+    <label>种类
+      <select id="kindSel">
+        <option value="password">密码</option>
+        <option value="note">文本备注</option>
+        <option value="recovery">恢复码</option>
+      </select>
+    </label>
+    <label>标签
+      <input type="text" id="labelIn" placeholder="例如：GitHub 登录">
+    </label>
+    <label>内容（JSON 对象或字符串）
+      <input type="text" id="payloadIn" placeholder='{"user":"alice","pass":"***"}' style="min-width:260px">
+    </label>
+    <button id="btnAdd">写入</button>
+    <button class="ghost" id="btnLock">锁定</button>
+  </div>
+  <table id="entryTable">
+    <thead><tr><th>种类</th><th>标签</th><th>更新时间</th><th>操作</th></tr></thead>
+    <tbody id="entryBody"></tbody>
+  </table>
+  <div class="row" style="margin-top:12px">
+    <button class="ghost" id="btnRekey">修改主密码（重新包裹全部条目）</button>
+    <button class="ghost" id="btnExport">导出密文备份</button>
+    <button class="ghost" id="btnImport">从备份合并</button>
+  </div>
+  <div id="rekeyRow" class="row" style="display:none;margin-top:10px">
+    <label>新主密码（留空 = 换回系统安全存储随机密钥）
+      <input type="password" id="rekeyPw" autocomplete="off">
+    </label>
+    <button id="btnRekeyGo">执行改密</button>
+  </div>
+  <div id="backupBox" style="display:none;margin-top:10px">
+    <textarea id="backupText" placeholder="备份密文 JSON（不含密钥与明文）"></textarea>
+    <div class="row" style="margin-top:8px">
+      <button class="ghost" id="btnBackupCopy">复制导出文本</button>
+      <button class="ghost" id="btnImportGo">合并下方文本</button>
+    </div>
+  </div>
+</div>
+
+<!-- 数据清理中心 -->
+<div class="card" id="cleanerCard">
+  <h2>站点数据清理</h2>
+  <div class="row" style="margin-bottom:10px">
+    <label>匹配方式
+      <select id="modeSel">
+        <option value="exact">仅该站点</option>
+        <option value="subdomains">该站点及子域</option>
+        <option value="all">全部站点</option>
+      </select>
+    </label>
+    <label>站点主机
+      <input type="text" id="hostIn" placeholder="example.com（仅精确/子域模式需要）">
+    </label>
+    <label>仅清理此时间之后的访问（毫秒，0=不限）
+      <input type="text" id="sinceIn" value="0">
+    </label>
+    <label>数据类型
+      <select id="typesSel">
+        <option value="all">全部类型</option>
+        <option value="cookies">Cookies</option>
+        <option value="localstorage">Local Storage</option>
+        <option value="indexeddb">IndexedDB</option>
+        <option value="cachestorage">Cache Storage</option>
+        <option value="serviceworkers">Service Workers</option>
+      </select>
+    </label>
+    <button id="btnPlan">生成清理计划</button>
+    <button class="danger" id="btnExecute" disabled>执行计划</button>
+    <button class="ghost" id="btnAudit">查看审计</button>
+  </div>
+  <div class="msg" id="planMsg"></div>
+  <table id="planTable">
+    <thead><tr><th>站点</th><th>类型</th><th>字节</th></tr></thead>
+    <tbody id="planBody"></tbody>
+  </table>
+  <div class="empty" id="planEmpty">尚未生成计划。清理会先出计划、等你确认，再执行。</div>
+  <details id="auditDetails" style="margin-top:12px">
+    <summary>清理审计记录（最多保留 200 条）</summary>
+    <table>
+      <thead><tr><th>时间</th><th>模式</th><th>站点</th><th>目标数</th><th>字节</th></tr></thead>
+      <tbody id="auditBody"></tbody>
+    </table>
+  </details>
+</div>
+
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+const invoke = (ch, payload) => window.electronAPI.invoke(ch, payload);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g,
+  (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+
+let state = { unlocked: false, passwordMode: false, storageAvailable: true, hasVault: false, entries: [] };
+let lastPlan = null;
+
+function fmtBytes(n) {
+  n = Number(n) || 0;
+  if (n >= 1048576) return (n / 1048576).toFixed(1) + ' MB';
+  if (n >= 1024) return (n / 1024).toFixed(1) + ' KB';
+  return n + ' B';
+}
+
+function msg(text, ok) {
+  const el = $('vaultMsg');
+  el.textContent = text || '';
+  el.className = 'msg' + (ok ? ' ok' : '');
+}
+
+async function refreshStatus() {
+  const r = await invoke('vault-status');
+  if (!r || !r.success) return;
+  state = r;
+  const unlocked = !!r.unlocked;
+  $('dot').className = 'dot' + (unlocked ? '' : (r.hasVault ? ' bad' : ' off'));
+  $('stateText').textContent = unlocked
+    ? '已解锁（' + (r.passwordMode ? '主密码模式' : '系统安全存储模式') + '） · ' + r.entries.length + ' 条条目'
+    : (r.hasVault ? '已锁定 —— 输入主密码解锁' : '未创建保险库');
+  $('noKeychainWarn').style.display = r.storageAvailable ? 'none' : 'block';
+  $('unlockCard').style.display = unlocked ? 'none' : 'block';
+  $('entryCard').style.display = unlocked ? 'block' : 'none';
+  renderEntries();
+}
+
+function renderEntries() {
+  const body = $('entryBody');
+  body.innerHTML = '';
+  $('entryCount').textContent = '(' + state.entries.length + ')';
+  if (!state.unlocked) return;
+  if (state.entries.length === 0) {
+    body.innerHTML = '<tr><td colspan="4" class="empty">空保险库，写入第一条吧。</td></tr>';
+    return;
+  }
+  for (const e of state.entries) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + esc(e.kind) + '</td><td>' + esc(e.label) + '</td>'
+      + '<td class="mono">' + esc(new Date(e.u).toLocaleString()) + '</td>'
+      + '<td><button class="ghost" data-get="' + esc(e.id) + '">查看</button> '
+      + '<button class="ghost" data-del="' + esc(e.id) + '">删除</button></td>';
+    body.appendChild(tr);
+  }
+}
+
+async function addEntry() {
+  const kind = $('kindSel').value;
+  const label = $('labelIn').value.trim();
+  const raw = $('payloadIn').value.trim();
+  if (!label) return msg('请填写标签');
+  let payload;
+  try { payload = raw ? JSON.parse(raw) : {}; }
+  catch { return msg('内容不是合法 JSON（想存纯文本请写成 "..." 带引号字符串）'); }
+  const r = await invoke('vault-set', { kind, label, payload });
+  if (!r || !r.ok) return msg('写入失败：' + (r && r.reason || '未知'));
+  msg('已写入条目「' + label + '」', true);
+  $('payloadIn').value = '';
+  await refreshStatus();
+}
+
+async function makePlan() {
+  const mode = $('modeSel').value;
+  const host = $('hostIn').value.trim();
+  const since = Number($('sinceIn').value) || 0;
+  const types = $('typesSel').value;
+  const storageTypes = types === 'all' ? [] : [types];
+  const actions = types === 'all' ? ['all'] : [types];
+  const r = await invoke('cleaner-plan', { matchMode: mode, host, since, storageTypes, actions });
+  if (!r || !r.success) {
+    msg('生成计划失败：' + (r && r.reason || '未知'));
+    return;
+  }
+  lastPlan = { targets: r.targets, actions, mode, host, since,
+    sites: r.sites, targetCount: r.targetCount, totalBytes: r.totalBytes,
+    storageTypes };
+  const body = $('planBody');
+  body.innerHTML = '';
+  $('planEmpty').style.display = 'none';
+  if (!r.targets || r.targets.length === 0) {
+    body.innerHTML = '<tr><td colspan="3" class="empty">没有匹配条目。</td></tr>';
+  } else {
+    for (const t of r.targets.slice(0, 200)) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td class="mono">' + esc(t.origin) + '</td><td>' + esc(t.storageType)
+        + '</td><td>' + fmtBytes(t.bytes) + '</td>';
+      body.appendChild(tr);
+    }
+  }
+  $('planMsg').textContent = '计划：' + r.sites + ' 个站点 / ' + r.targetCount + ' 个目标 / '
+    + fmtBytes(r.totalBytes) + '（类型：' + (types === 'all' ? '全部' : types) + '，仅显示前 200 行）';
+  $('planMsg').className = 'msg ok';
+  $('btnExecute').disabled = false;
+}
+
+async function executePlan() {
+  if (!lastPlan) return;
+  if (!confirm('确认执行清理计划：' + lastPlan.sites + ' 个站点 / ' + lastPlan.targetCount
+    + ' 个目标 / ' + fmtBytes(lastPlan.totalBytes) + ' ？此操作不可撤销。')) return;
+  $('btnExecute').disabled = true;
+  const r = await invoke('cleaner-execute', lastPlan);
+  if (!r || !r.ok) {
+    msg('执行失败：' + (r && r.reason || '未知'));
+    $('btnExecute').disabled = false;
+    return;
+  }
+  msg('已清理 ' + r.cleaned + ' 个目标' + (r.failed && r.failed.length ? '，失败 ' + r.failed.length + ' 个' : ''), true);
+  lastPlan = null;
+  $('planBody').innerHTML = '';
+  $('planEmpty').style.display = 'block';
+}
+
+async function loadAudit() {
+  const r = await invoke('cleaner-audit');
+  if (!r || !r.success) return;
+  const body = $('auditBody');
+  body.innerHTML = '';
+  if (!r.entries || r.entries.length === 0) {
+    body.innerHTML = '<tr><td colspan="5" class="empty">暂无清理记录。</td></tr>';
+    return;
+  }
+  for (const e of r.entries.slice().reverse()) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td class="mono">' + esc(new Date(e.at).toLocaleString()) + '</td>'
+      + '<td>' + esc(e.mode) + (e.host ? ' (' + esc(e.host) + ')' : '') + '</td>'
+      + '<td>' + esc(e.sites) + '</td><td>' + esc(e.targetCount) + '</td><td>' + fmtBytes(e.bytes) + '</td>';
+    body.appendChild(tr);
+  }
+}
+
+$('btnUnlock').addEventListener('click', async () => {
+  const pw = $('masterPw').value;
+  if (!pw) return msg('请输入主密码');
+  const r = await invoke('vault-unlock', { masterPassword: pw });
+  msg(!r.ok ? ('解锁失败：' + (r.reason || '未知')) : '已解锁', r.ok);
+  if (r.ok) $('masterPw').value = '';
+  await refreshStatus();
+});
+
+$('btnCreate').addEventListener('click', async () => {
+  if (state.hasVault && !confirm('保险库已存在。重建会丢弃全部现有条目，确定吗？')) return;
+  const pw = $('masterPw').value;
+  const r = await invoke('vault-create', { masterPassword: pw });
+  msg(!r.ok ? ('创建失败：' + (r.reason || '未知')) : (pw ? '已用主密码创建并解锁' : '已用系统安全存储创建并解锁'), r.ok);
+  if (r.ok) $('masterPw').value = '';
+  await refreshStatus();
+});
+
+$('btnLock').addEventListener('click', async () => {
+  await invoke('vault-lock');
+  await refreshStatus();
+});
+
+$('btnAdd').addEventListener('click', addEntry);
+
+$('entryBody').addEventListener('click', async (ev) => {
+  const get = ev.target.getAttribute && ev.target.getAttribute('data-get');
+  const del = ev.target.getAttribute && ev.target.getAttribute('data-del');
+  if (get) {
+    const r = await invoke('vault-get', get);
+    if (!r || !r.success) return msg('读取失败：' + (r && r.reason || '未知'));
+    msg('条目内容：' + JSON.stringify(r.payload));
+  }
+  if (del) {
+    if (!confirm('删除该条目？')) return;
+    const r = await invoke('vault-delete', del);
+    msg(r.ok ? '已删除' : ('删除失败：' + (r.reason || '未知')), r.ok);
+    await refreshStatus();
+  }
+});
+
+$('btnPlan').addEventListener('click', makePlan);
+$('btnExecute').addEventListener('click', executePlan);
+$('btnAudit').addEventListener('click', loadAudit);
+
+// 改密 / 备份
+$('btnRekey').addEventListener('click', () => {
+  $('rekeyRow').style.display = $('rekeyRow').style.display === 'none' ? 'flex' : 'none';
+});
+$('btnRekeyGo').addEventListener('click', async () => {
+  const pw = $('rekeyPw').value;
+  if (!confirm('修改主密码会用新密码重新加密全部条目，确定吗？')) return;
+  const r = await invoke('vault-rekey', { masterPassword: pw });
+  msg(!r.ok ? ('改密失败：' + (r.reason || '未知')) : ('改密完成：' + r.entries + ' 条已重加密'), r.ok);
+  if (r.ok) { $('rekeyPw').value = ''; $('rekeyRow').style.display = 'none'; }
+  await refreshStatus();
+});
+$('btnExport').addEventListener('click', async () => {
+  const r = await invoke('vault-export-backup');
+  if (!r || !r.success) return msg('导出失败：' + (r && r.reason || '未知'));
+  $('backupText').value = r.backup;
+  $('backupBox').style.display = 'block';
+  msg('已导出密文备份。请自行保存该文本；它不包含主密钥与明文。', true);
+});
+$('btnBackupCopy').addEventListener('click', async () => {
+  const t = $('backupText').value;
+  if (!t) return;
+  try { await navigator.clipboard.writeText(t); msg('已复制', true); }
+  catch { msg('复制失败，请手动全选复制'); }
+});
+$('btnImport').addEventListener('click', () => {
+  $('backupBox').style.display = $('backupBox').style.display === 'none' ? 'block' : 'none';
+});
+$('btnImportGo').addEventListener('click', async () => {
+  const t = $('backupText').value.trim();
+  if (!t) return msg('请先粘贴备份 JSON 文本');
+  if (!confirm('将备份条目合并进当前保险库（id 冲突自动跳过）？')) return;
+  const r = await invoke('vault-import-backup', t);
+  msg(!r.ok ? ('导入失败：' + (r.reason || '未知'))
+    : ('已合并 ' + r.merged + ' 条，跳过 ' + r.skipped + ' 条'), r.ok);
+  if (r.ok) { $('backupText').value = ''; $('backupBox').style.display = 'none'; }
+  await refreshStatus();
+});
+
+// 暗色模式跟随
+const dark = () => document.documentElement.setAttribute('data-theme', 'dark');
+if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) dark();
+window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').addEventListener
+  && window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+    if (e.matches) dark(); else document.documentElement.removeAttribute('data-theme');
+  });
+
+refreshStatus();
+</script>
+</body>
+</html>
