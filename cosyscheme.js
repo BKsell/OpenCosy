@@ -46,6 +46,7 @@ const COSY_PAGES = Object.freeze({
   blockrules: 'blockrules.html',
   vault: 'vault.html',
   privacy: 'privacy.html',
+  network: 'network.html',
 });
 const DEFAULT_PAGE = 'newtab.html';
 

@@ -2844,6 +2844,7 @@ document.addEventListener('keydown', (e) => {
     { label: '打开拦截规则', kw: 'block rules lanjie guize tracker', run: () => tabManager.createNewTab('cosy://blockrules') },
     { label: '打开保险库与数据清理', kw: 'vault baoxianku cleaner qingli site data', run: () => tabManager.createNewTab('cosy://vault') },
     { label: '打开隐私与网络（UA 覆盖 / 下载限速）', kw: 'privacy yinsi ua user agent xian su download', run: () => tabManager.createNewTab('cosy://privacy') },
+    { label: '打开网络状态与连接安全', kw: 'network wangluo zhuangtai lianjie doh', run: () => tabManager.createNewTab('cosy://network') },
     { label: '清除浏览数据', kw: 'clear data qingchu shuju', run: () => tabManager.showClearDataDialog() },
     { label: '后退', kw: 'back houtui', run: () => tabManager.goBack() },
     { label: '前进', kw: 'forward qianjin', run: () => tabManager.goForward() },

@@ -127,6 +127,7 @@ const COSY_ONLY_CHANNELS = new Set([
   'set-ua-policy',
   'reset-ua-policy',
   'set-download-rate-limit',
+  'set-search-provider',
 ]);
 
 // 通用浏览能力：受信帧（外壳 / cosy 内置页 / 证书错误页）都可调用。只登记“读”与
@@ -180,8 +181,9 @@ const GENERAL_CHANNELS = new Set([
   'list-pna-blocks', 'get-pna-block-stats',
   'list-fingerprint-entries', 'get-fingerprint-stats',
   'get-doh-status', 'list-download-risks',
-  // UA 策略 / 下载限速的只读快照（写通道在 cosy-only）。
+  // UA 策略 / 下载限速 / 搜索引擎的只读快照（写通道在 cosy-only）。
   'get-ua-policy', 'get-download-rate-limit',
+  'get-search-provider', 'get-search-suggestions',
 ]);
 
 /**

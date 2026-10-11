@@ -144,6 +144,8 @@ const allowedInvokeChannels = new Set([
   'hash-local-file',
   'print-current-tab',
   'get-search-suggestions',
+  'get-search-provider',
+  'set-search-provider',
   'discard-tab',
   'discard-background-tabs',
   'get-memory-saver',

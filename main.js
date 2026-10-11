@@ -35,6 +35,7 @@ const readerCore = require('./reader');
 const vaultCore = require('./vault');
 const cleanerCore = require('./cleaner');
 const uaPolicyCore = require('./uapolicy');
+const searchProvider = require('./searchprovider');
 const containerGuard = require('./container');
 const schemeOrigin = require('./schemeorigin');
 const webviewHarden = require('./webviewharden');
@@ -6141,7 +6142,12 @@ function loadTabContent(tab) {
         menu.append(new MenuItem({ label: '复制', role: 'copy' }));
         menu.append(new MenuItem({
           label: '搜索所选内容',
-          click: () => createNewTab('https://www.bing.com/search?q=' + encodeURIComponent(mp.selectionText))
+          click: () => {
+            // r56：搜索动作跟随用户选择的默认搜索引擎（内核级模板白名单校验），
+            // 不再写死 Bing，也不接受 renderer 传入的模板。
+            const url = searchProvider.buildSearchUrl(searchProviderId, mp.selectionText);
+            createNewTab(url || ('https://www.bing.com/search?q=' + encodeURIComponent(mp.selectionText)));
+          }
         }));
       }
       if (mp.hasSelection && mp.isEditable) menu.append(new MenuItem({ label: '剪切', role: 'cut' }));
@@ -7237,6 +7243,7 @@ app.whenReady().then(async () => {
   spellcheckEnabled = persisted.spellcheckEnabled !== false;
   spellcheckLanguages = sanitizeSpellcheckLanguages(persisted.spellcheckLanguages);
   applySpellcheckSettings();
+  searchProviderId = searchProvider.sanitizeProviderChoice(persisted.searchEngine);
   loadUaPolicyStateFromDisk();
   applyUaPolicyToSession(session.defaultSession);
   createWindow();
@@ -8328,7 +8335,7 @@ const ALLOWED_SETTING_KEYS = {
   defaultTab: v => ['bing', 'custom', 'newtab'].includes(v),
   customUrl: v => typeof v === 'string' && isSafeUrl(v),
   tabLayout: v => ['horizontal', 'vertical'].includes(v),
-  searchEngine: v => ['bing', 'google', 'baidu'].includes(v),
+  searchEngine: v => typeof v === 'string' && searchProvider.providerById(v) !== null,
   memorySaver: v => typeof v === 'boolean',
   clearOnExit: v => typeof v === 'boolean',
   confirmCloseMultiple: v => typeof v === 'boolean',
@@ -8387,6 +8394,7 @@ ipcMain.on('save-settings', (event, settings) => {
     blockHyperlinkPing = clean.blockHyperlinkPing !== false;
     stripAcceptCh = clean.stripAcceptCh !== false;
     if ('allowPictureInPicture' in clean) allowPictureInPicture = !!clean.allowPictureInPicture;
+    if ('searchEngine' in clean) searchProviderId = searchProvider.sanitizeProviderChoice(clean.searchEngine);
     if ('webrtcMode' in clean) webrtcMode = fpGuard.normalizeWebRtcMode(clean.webrtcMode);
     applyWebRtcPolicy();
     if ('dohMode' in clean) dohMode = dohGuard.normalizeMode(clean.dohMode);
@@ -9366,16 +9374,23 @@ ipcMain.handle('print-current-tab', (event) => {
   }
 });
 
-// 地址栏搜索建议：固定走 Bing OpenSearch 建议接口（osjson），不接受 renderer
-// 传入的任意 URL，避免被当成 SSRF 跳板。返回严格限定为字符串数组并限量。
-const SUGGEST_ENDPOINT = 'https://api.bing.com/osjson.aspx?query=';
+// 地址栏搜索建议：端点来自 searchprovider 内置白名单（随默认搜索引擎切换），
+// 不接受 renderer 传入的任意 URL，避免被当成 SSRF 跳板。返回严格限定为
+// 字符串数组并限量。
 const SUGGEST_MAX_CHARS = 200;
 const SUGGEST_MAX_ITEMS = 8;
 const SUGGEST_TIMEOUT_MS = 2500;
 
+// 当前生效的默认搜索引擎 id；随 cosySettings.searchEngine 加载/保存，未知值
+// 一律回落内核默认（bing）。
+let searchProviderId = searchProvider.DEFAULT_PROVIDER_ID;
+
 function fetchSearchSuggestions(query) {
   return new Promise((resolve) => {
-    const url = SUGGEST_ENDPOINT + encodeURIComponent(query);
+    // 模板经内核校验；buildSuggestUrl 返回 null（provider 无建议接口 / 校验失败）
+    // 时静默回落空列表，绝不拼接裸 query 构造 URL。
+    const url = searchProvider.buildSuggestUrl(searchProviderId, query);
+    if (!url) return resolve([]);
     let settled = false;
     let request;
     try {
@@ -9441,4 +9456,37 @@ ipcMain.handle('get-search-suggestions', async (event, payload = {}) => {
   if (/^[a-z][a-z0-9+.-]*:/i.test(q) || q.startsWith('//')) return { success: true, suggestions: [] };
   const suggestions = await fetchSearchSuggestions(q);
   return { success: true, suggestions };
+});
+
+// —— 默认搜索引擎（searchprovider 内核）——
+ipcMain.handle('get-search-provider', (event) => {
+  if (!isMainSender(event)) return { success: false };
+  return {
+    success: true,
+    providerId: searchProviderId,
+    providers: searchProvider.providerSummary(),
+    defaultId: searchProvider.DEFAULT_PROVIDER_ID,
+  };
+});
+
+ipcMain.handle('set-search-provider', (event, payload = {}) => {
+  if (!isMainSender(event)) return { success: false };
+  const id = typeof payload === 'string' ? payload : (payload && payload.providerId);
+  const chosen = searchProvider.sanitizeProviderChoice(id);
+  // 未知 id 被收敛回默认：此时不落盘（脏数据不污染设置），仅返回当前值。
+  if (chosen === id || id === searchProvider.DEFAULT_PROVIDER_ID) {
+    searchProviderId = chosen;
+    try {
+      const settingsPath = path.join(app.getPath('userData'), 'cosySettings.json');
+      const cur = ledgerStore.readJSONStore(settingsPath, {});
+      const clean = sanitizeSettings(Object.assign({}, cur, { searchEngine: chosen }));
+      ledgerStore.writeJSONStore(settingsPath, clean, { pretty: true });
+      recordSecurityEvent('settings-search-provider', 'info',
+        `默认搜索引擎切换为 ${chosen}`, 'main');
+    } catch (e) {
+      recordSecurityEvent('settings-search-provider', 'warn',
+        `搜索引擎设置落盘失败: ${e.message}`, 'main');
+    }
+  }
+  return { success: true, providerId: searchProviderId };
 });
