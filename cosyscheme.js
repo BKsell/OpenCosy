@@ -43,6 +43,8 @@ const COSY_PAGES = Object.freeze({
   taskmanager: 'taskmanager.html',
   reader: 'reader.html',
   httpsonly: 'httpsonly.html',
+  blockrules: 'blockrules.html',
+  vault: 'vault.html',
 });
 const DEFAULT_PAGE = 'newtab.html';
 
