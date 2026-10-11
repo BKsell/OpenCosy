@@ -25,11 +25,26 @@ h1{font-size:20px;margin-bottom:4px;}
 .row-sec{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;}
 .chip{display:inline-block;padding:4px 12px;border:1px solid var(--border);border-radius:16px;background:var(--card);color:var(--text);font-size:12px;}
 .chip.on{background:var(--accent);color:#fff;border-color:var(--accent);}
+.toolrow{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;}
+button{font-family:inherit;cursor:pointer;}
+.btn{padding:8px 14px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font-size:13px;}
+.btn:hover{border-color:var(--accent);}
+.sev{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;margin-right:6px;}
+.sev.critical{background:#c42b1c;color:#fff;}
+.sev.warn{background:#b06000;color:#fff;}
+.sev.info{background:var(--border);color:var(--sub);}
+.sevline{display:flex;gap:6px;align-items:center;padding:5px 0;border-bottom:1px dashed var(--border);font-size:12px;}
+.sevline:last-child{border-bottom:none;}
+.sevtime{color:var(--sub);flex:none;min-width:84px;}
 </style>
 </head>
 <body>
 <h1>关于 OpenCosy</h1>
 <div class="tip">版本与运行环境信息。此页仅供诊断与安全检查使用，不会上传任何数据。</div>
+<div class="toolrow">
+  <button class="btn" id="copy-btn" type="button">复制诊断信息</button>
+  <button class="btn" id="export-btn" type="button">导出诊断 JSON</button>
+</div>
 <div id="root"><div class="card">加载中…</div></div>
 <script>
 (function () {
@@ -78,9 +93,14 @@ h1{font-size:20px;margin-bottom:4px;}
     root.appendChild(card('安全状态', [
       kv('HTTPS-Only 模式', info.httpsOnly, true),
       kv('自动阻止不安全内容', info.httpsOnlyBlockInsecure, true),
+      kv('HTTPS 例外站点数', info.httpsExceptions),
       kv('Do Not Track 透传', info.dnt, true),
       kv('禁用 WebRTC 泄露', info.disableWebRTC, true),
       kv('扩展权限白名单', '仅允许安全 API（危险权限一律拒绝）', true),
+    ]));
+    root.appendChild(card('当前会话', [
+      kv('标签页数', info.tabCount),
+      kv('书签数', info.bookmarkCount),
     ]));
     root.appendChild(card('连接台账（跨主机统计）', [
       kv('记录主机数', info.stats.hosts),
@@ -89,10 +109,75 @@ h1{font-size:20px;margin-bottom:4px;}
       kv('后台跨主机请求', info.stats.backgroundHosts),
       kv('不安全 HTTP 请求', info.stats.insecureHosts),
     ]));
+    if (info.security) {
+      var sevRows = [
+        kv('安全事件总数', info.security.total),
+        kv('严重（critical）', info.security.critical),
+        kv('警告（warn）', info.security.warn),
+        kv('提示（info）', info.security.info),
+      ];
+      var sevCard = card('安全事件台账', sevRows);
+      if (info.security.latest && info.security.latest.length) {
+        var head = el('div', 'row-sec');
+        info.security.latest.forEach(function (e) {
+          var line = el('div', 'sevline');
+          var st = el('span', 'sev ' + e.severity, e.severity);
+          var tm = el('span', 'sevtime', fmtTime(e.time));
+          var tx = el('span', '', e.type + '：' + e.detail);
+          line.appendChild(st); line.appendChild(tm); line.appendChild(tx);
+          head.appendChild(line);
+        });
+        sevCard.appendChild(head);
+      }
+      root.appendChild(sevCard);
+    }
+  }
+
+  function fmtTime(ts) {
+    var d = new Date(Number(ts));
+    if (isNaN(d.getTime())) return '';
+    var pad = function (n) { return n < 10 ? '0' + n : String(n); };
+    return pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  function collectDiagnostics(info) {
+    return {
+      app: { name: info.appName, version: info.appVersion, userDataPath: info.userDataPath },
+      runtime: { electron: info.electronVersion, chromium: info.chromiumVersion, node: info.nodeVersion, v8: info.v8Version, platform: info.platform, arch: info.arch },
+      security: { httpsOnly: info.httpsOnly, httpsExceptions: info.httpsExceptions, dnt: info.dnt, webrtc: info.webrtcMode },
+      session: { tabs: info.tabCount, bookmarks: info.bookmarkCount, internalPages: info.internalPages },
+      connections: info.stats,
+      securityEvents: info.security,
+      collectedAt: new Date().toISOString(),
+    };
+  }
+
+  var lastInfo = null;
+  function wire(info) {
+    lastInfo = info;
+    var copyBtn = document.getElementById('copy-btn');
+    var exportBtn = document.getElementById('export-btn');
+    copyBtn.onclick = function () {
+      if (!lastInfo) return;
+      var text = JSON.stringify(collectDiagnostics(lastInfo), null, 2);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { copyBtn.textContent = '已复制'; }).catch(function () {});
+      }
+    };
+    exportBtn.onclick = function () {
+      if (!lastInfo) return;
+      var payload = collectDiagnostics(lastInfo);
+      window.electronAPI.invoke('about-export-diagnostics', { text: JSON.stringify(payload, null, 2) })
+        .then(function (r) {
+          if (!r || !r.ok) { exportBtn.textContent = '导出失败'; return; }
+          exportBtn.textContent = '已导出';
+        })
+        .catch(function () { exportBtn.textContent = '导出失败'; });
+    };
   }
   if (window.electronAPI && window.electronAPI.invoke) {
     window.electronAPI.invoke('about-snapshot', {})
-      .then(function (r) { render(r && r.ok ? r.info : null); })
+      .then(function (r) { render(r && r.ok ? r.info : null); wire(r && r.ok ? r.info : null); })
       .catch(function () { render(null); });
   } else {
     render(null);
