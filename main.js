@@ -168,6 +168,10 @@ function allowPopupForTab(tabId) {
 // onBeforeRequest 据此决定是否把 http:// 升级成 https://。
 let httpsOnlyEnabled = true;
 
+// bookmarkBarVisible：顶栏书签栏显隐（Ctrl+Shift+B 切换）。持久化在 cosySettings.json，
+// 跨重启保留用户偏好，与书签管理面板（始终可开）互不影响。
+let bookmarkBarVisible = true;
+
 // blockTrackers：第三方追踪/广告请求拦截（隐私），默认开启。
 // 只拦“子资源”请求（脚本/图片/xhr/ping 等），从不拦 mainFrame 顶层导航，
 // 所以即使域名误判，用户手动点开对应网站也不会被挡。
@@ -6755,6 +6759,7 @@ app.whenReady().then(async () => {
   const stored = readStoredSettings();
   applyDarkMode(!!stored.darkMode);
   httpsOnlyEnabled = stored.httpsOnly !== false;
+  bookmarkBarVisible = stored.bookmarkBarVisible !== false;
   loadHttpsExceptions();
   blockTrackers = stored.blockTrackers !== false;
   blockThirdPartyCookies = stored.blockThirdPartyCookies !== false;
@@ -7807,9 +7812,93 @@ ipcMain.on('show-context-menu', (event, data) => {
   menu.popup();
 });
 
+// ===== 标签页右键菜单（原生 Tab 菜单）=====
+// 渲染层在标签元素上右键时只上报内部 tabId；这里基于主进程维护的 tab 状态构建
+// 原生菜单。菜单项的 URL / 标题全部来自本机 tabs 数据（非网页注入），复制走
+// clipboard 仅写入受控文本，杜绝自绘菜单的样式/事件注入面。
+ipcMain.on('show-tab-context-menu', (event, payload) => {
+  if (!isMainSender(event)) return;
+  const tabId = payload && payload.tabId;
+  const idx = findTabIndexById(tabId);
+  if (idx < 0) return;
+  const tab = tabs[idx];
+  const safeUrl = (typeof tab.url === 'string' && tab.url.length <= 2048) ? tab.url : '';
+  const safeTitle = (typeof tab.title === 'string' && tab.title.length <= 300) ? tab.title : '';
+  const menu = new Menu();
+  menu.append(new MenuItem({
+    label: '在新标签页中打开',
+    enabled: Boolean(safeUrl),
+    click: () => { if (safeUrl) createNewTab(safeUrl); }
+  }));
+  menu.append(new MenuItem({
+    label: '复制链接地址',
+    enabled: Boolean(safeUrl),
+    click: () => { if (safeUrl) clipboard.writeText(safeUrl); }
+  }));
+  menu.append(new MenuItem({
+    label: '复制标题',
+    enabled: Boolean(safeTitle),
+    click: () => { if (safeTitle) clipboard.writeText(safeTitle); }
+  }));
+  menu.append(new MenuItem({ type: 'separator' }));
+  menu.append(new MenuItem({
+    label: '重新加载',
+    click: () => { if (tab.view && tab.view.webContents) tab.view.webContents.reload(); }
+  }));
+  menu.append(new MenuItem({ type: 'separator' }));
+  menu.append(new MenuItem({
+    label: tab.pinned ? '取消固定标签页' : '固定标签页',
+    click: () => toggleTabPinned(tab.id)
+  }));
+  menu.append(new MenuItem({
+    label: tab.muted ? '取消静音标签页' : '静音标签页',
+    click: () => {
+      if (!tab.view || !tab.view.webContents) return;
+      tab.muted = !tab.muted;
+      tab.view.webContents.setAudioMuted(tab.muted);
+      try { tab.audible = !!tab.view.webContents.isCurrentlyAudible(); } catch {}
+      sendToRenderer('tab-audio-changed', { id: tab.id, audible: tab.audible, muted: tab.muted });
+    }
+  }));
+  menu.append(new MenuItem({ type: 'separator' }));
+  menu.append(new MenuItem({
+    label: '关闭标签页',
+    click: () => closeTab(idx)
+  }));
+  menu.append(new MenuItem({
+    label: '关闭其他标签页',
+    click: () => { planAndCloseTabs('others', tab.id); }
+  }));
+  menu.popup({ window: mainWindow });
+});
+
+// ===== 书签栏显隐的查询与持久化 =====
+// 顶栏书签栏的显隐是用户偏好：切换后写回 cosySettings.json（复用 sanitizeSettings
+// 白名单校验），启动时恢复。查询走 invoke（渲染层只读），切换走 send（受信帧）。
+ipcMain.handle('get-bookmark-bar-visible', (event) => {
+  if (!isMainSender(event)) return { success: false };
+  return { success: true, visible: bookmarkBarVisible };
+});
+
+ipcMain.on('set-bookmark-bar-visible', (event, payload) => {
+  if (!isMainSender(event)) return;
+  const next = !!(payload && payload.visible);
+  if (next === bookmarkBarVisible) return;
+  bookmarkBarVisible = next;
+  try {
+    const settingsPath = path.join(app.getPath('userData'), 'cosySettings.json');
+    const cur = readStoredSettings();
+    cur.bookmarkBarVisible = next;
+    ledgerStore.writeJSONStore(settingsPath, sanitizeSettings(cur), { pretty: true });
+  } catch (e) {
+    console.error('保存书签栏显隐失败:', e);
+  }
+});
+
 const ALLOWED_SETTING_KEYS = {
   darkMode: v => typeof v === 'boolean',
   httpsOnly: v => typeof v === 'boolean',
+  bookmarkBarVisible: v => typeof v === 'boolean',
   blockTrackers: v => typeof v === 'boolean',
   blockThirdPartyCookies: v => typeof v === 'boolean',
   hardenCookies: v => typeof v === 'boolean',
@@ -7882,6 +7971,7 @@ ipcMain.on('save-settings', (event, settings) => {
     // 立即把 darkMode / httpsOnly / memorySaver 应用到运行时
     applyDarkMode(clean.darkMode);
     httpsOnlyEnabled = clean.httpsOnly !== false;
+    bookmarkBarVisible = clean.bookmarkBarVisible !== false;
     blockTrackers = clean.blockTrackers !== false;
     blockThirdPartyCookies = clean.blockThirdPartyCookies !== false;
     hardenCookies = clean.hardenCookies !== false;
