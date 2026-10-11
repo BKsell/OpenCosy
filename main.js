@@ -5365,6 +5365,38 @@ function isShortcutsFrameSender(event) {
   return u.protocol === 'cosy:' && u.hostname === 'shortcuts';
 }
 
+// 内部页导航帧守卫：只放行 cosy://pages 内置帧（主窗口外壳也可直达）。
+function isPagesFrameSender(event) {
+  if (isMainSender(event)) return true;
+  const frame = event && event.senderFrame;
+  if (!frame || typeof frame.url !== 'string') return false;
+  let u;
+  try { u = new URL(frame.url); } catch { return false; }
+  return u.protocol === 'cosy:' && u.hostname === 'pages';
+}
+
+// 内部页登记表：cosy://<name> → 标题 + 说明。供 cosy://pages 导航渲染；
+// 说明仅作静态文案，不携带任何会话数据。
+const INTERNAL_PAGES = {
+  'setting': { title: '设置', desc: '外观、隐私与安全、WebRTC 与广告信号等浏览器全局选项。' },
+  'newtab': { title: '新标签页', desc: '空白新标签页，常去网站快速入口。' },
+  'extensions': { title: '扩展程序', desc: '查看与卸载已安装扩展；危险权限扩展一律拒绝安装。' },
+  'version': { title: '版本信息', desc: 'OpenCosy、Electron 与 Chromium 版本号。' },
+  'sitedata': { title: '站点数据', desc: 'Cookie、存储与站点数据的分站点管理与清除。' },
+  'permissions': { title: '站点权限', desc: '各站点摄像头 / 麦克风 / 定位等权限授予记录。' },
+  'security': { title: '安全中心', desc: '请求日志、品牌仿冒命中、CSP 报告与响应头评分。' },
+  'hashes': { title: '哈希校验', desc: '下载文件的 SHA-256 校验记录。' },
+  'downloadlist': { title: '下载中心', desc: '下载历史、进度与已下载文件的完整性校验。' },
+  'taskmanager': { title: '任务管理器', desc: '当前标签页的进程内存占用概览。' },
+  'taboverview': { title: '标签页概览', desc: '网格浏览全部标签页，分组过滤与快速切换。' },
+  'history': { title: '历史记录', desc: '完整浏览历史：搜索、按站点过滤、单条删除与清空。' },
+  'bookmarks': { title: '书签管理器', desc: '搜索、重命名与删除全部书签。' },
+  'about': { title: '关于', desc: '版本、运行时与安全状态总览。' },
+  'shortcuts': { title: '快捷键', desc: '全部键盘快捷键速查表。' },
+  'reader': { title: '阅读模式', desc: '当前页面的纯净阅读视图。' },
+  'httpsonly': { title: 'HTTPS-Only', desc: '强制 HTTPS 开关与站点例外管理。' },
+};
+
 // tabOverviewItem 输出单标签的概览数据。字段做类型收口，避免脏标题 / 长 URL
 // 破坏网格布局；分组信息从 tabGroupModel 实时取，标签被改组后概览自动跟随。
 function tabOverviewItem(tab, index) {
@@ -5731,6 +5763,7 @@ function loadTabContent(tab) {
         'bookmarks': 'src/bookmarks.html',
         'about': 'src/about.html',
         'shortcuts': 'src/shortcuts.html',
+        'pages': 'src/pages.html',
         'reader': 'src/reader.html',
         'httpsonly': 'src/httpsonly.html'
       };
@@ -8108,6 +8141,28 @@ ipcMain.handle('shortcuts-snapshot', (event) => {
     alt: r.alt === true ? 1 : r.alt === false ? 0 : null,
   }));
   return { ok: true, rules };
+});
+
+// 内部页导航快照：返回全部已登记内部页（名称 / 标题 / 说明），供 cosy://pages
+// 渲染。只放行内置帧；标题说明为静态文案，名称经白名单校验后才可用于打开。
+ipcMain.handle('pages-snapshot', (event) => {
+  if (!isPagesFrameSender(event)) return { ok: false, error: 'denied', pages: [] };
+  const pages = Object.keys(INTERNAL_PAGES).map(name => ({
+    name,
+    title: INTERNAL_PAGES[name].title,
+    desc: INTERNAL_PAGES[name].desc,
+  }));
+  return { ok: true, pages };
+});
+
+// 内部页导航打开：只接受登记表内存在的页面名，白名单外一律拒绝（防止把任意
+// 字符串拼进 cosy:// 后跳转到未注册地址）。新标签打开。
+ipcMain.handle('pages-open', (event, payload = {}) => {
+  if (!isPagesFrameSender(event)) return { ok: false, error: 'denied' };
+  const name = typeof payload.name === 'string' ? payload.name : '';
+  if (!INTERNAL_PAGES[name]) return { ok: false, error: 'unknown-page' };
+  const tab = createNewTab('cosy://' + name);
+  return { ok: true, id: tab.id, name };
 });
 
 ipcMain.handle('get-https-only', (event) => {
