@@ -482,6 +482,37 @@ body {
     background: var(--bg-primary);
 }
 
+/* ===== 标签分组（Tab Groups）=====
+   属于某分组的标签顶部显示一条组色顶条（颜色由主进程 tab-groups-changed 广播写
+   入 --tab-group-color 自定义属性，样式层只消费、不自行配色）。分组标签与固定
+   标签互斥：固定标签永远不贴色条。 */
+.tab.in-tab-group {
+    position: relative;
+    overflow: hidden;
+}
+
+.tab.in-tab-group::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--tab-group-color, #777);
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    pointer-events: none;
+}
+
+.tab.pinned.in-tab-group::before {
+    display: none;
+}
+
+/* 折叠分组：主进程广播 collapsed 后渲染层不在标签栏贴色条（组还在，只是视觉
+   上收进组头）。这里只是样式兜底，数据折叠判定在 tabgroups 内核。 */
+.tab.in-tab-group.group-collapsed::before {
+    opacity: 0.4;
+}
+
 .new-tab-button {
     width: 31px;
     height: 31px;
