@@ -37,6 +37,14 @@ td.num{color:var(--sub);font-variant-numeric:tabular-nums;white-space:nowrap;}
   font-size:12.5px;line-height:1.6;margin-bottom:16px;}
 .msg{font-size:12.5px;color:var(--danger);min-height:18px;margin-top:8px;}
 .count{color:var(--sub);font-size:12.5px;margin-left:8px;}
+.toolrow{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;}
+input.search{flex:1;min-width:200px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;
+  background:var(--bg);color:var(--text);font-size:13px;outline:none;}
+input.search:focus{border-color:var(--accent);}
+.batchbar{display:flex;gap:10px;align-items:center;margin-bottom:10px;padding:8px 12px;border:1px solid var(--border);
+  border-radius:8px;background:var(--card);font-size:12px;}
+.batchbar .info{color:var(--accent);font-weight:600;}
+.sel{width:16px;height:16px;accent-color:var(--accent);}
 </style>
 </head>
 <body>
@@ -65,10 +73,20 @@ td.num{color:var(--sub);font-variant-numeric:tabular-nums;white-space:nowrap;}
 </div>
 
 <div class="card">
-  <h2>已允许使用 HTTP 的站点<span class="count" id="count"></span></h2>
+  <h2>已允许使用 HTTP 的站点<span class="count" id="count"></span><span class="count" id="capText"></span></h2>
+  <div class="toolrow">
+    <input class="search" id="search" type="text" placeholder="搜索例外主机…" autocomplete="off" spellcheck="false">
+    <button class="ghost" id="copyBtn" type="button">复制列表</button>
+  </div>
+  <div class="batchbar" id="batchbar" style="display:none;">
+    <input type="checkbox" class="sel" id="selAll" title="全选当前结果">
+    <span>全选</span>
+    <span class="info" id="selInfo"></span>
+    <button class="ghost" id="seldelBtn" type="button" style="color:var(--danger);">移除选中</button>
+  </div>
   <table>
-    <thead><tr><th>主机</th><th>添加时间</th><th></th></tr></thead>
-    <tbody id="rows"><tr><td colspan="3" class="empty">加载中…</td></tr></tbody>
+    <thead><tr><th style="width:36px;"></th><th>主机</th><th>添加时间</th><th></th></tr></thead>
+    <tbody id="rows"><tr><td colspan="4" class="empty">加载中…</td></tr></tbody>
   </table>
   <div class="row" style="margin-top:12px;">
     <button class="danger" id="clearBtn" disabled>全部清空</button>
@@ -87,7 +105,25 @@ td.num{color:var(--sub);font-variant-numeric:tabular-nums;white-space:nowrap;}
   var addMsg = document.getElementById('addMsg');
   var dotEl = document.getElementById('dot');
   var stateTextEl = document.getElementById('stateText');
+  var searchEl = document.getElementById('search');
+  var capTextEl = document.getElementById('capText');
+  var copyBtn = document.getElementById('copyBtn');
+  var batchbar = document.getElementById('batchbar');
+  var selAll = document.getElementById('selAll');
+  var selInfo = document.getElementById('selInfo');
+  var selDelBtn = document.getElementById('seldel-btn');
   var currentHosts = [];
+  var selected = {};
+
+  function updateBatch() {
+    var n = Object.keys(selected).length;
+    if (n === 0) { batchbar.style.display = 'none'; return; }
+    batchbar.style.display = 'flex';
+    selInfo.textContent = '已选 ' + n + ' 条';
+    var q = String(searchEl.value || '').trim().toLowerCase();
+    var vis = currentHosts.filter(function (item) { return !q || item.host.indexOf(q) >= 0; });
+    selAll.checked = vis.length > 0 && vis.every(function (item) { return selected[item.host]; });
+  }
 
   function fmtTime(ts) {
     var n = Number(ts);
@@ -111,19 +147,40 @@ td.num{color:var(--sub);font-variant-numeric:tabular-nums;white-space:nowrap;}
     currentHosts = hosts;
     dotEl.className = 'dot' + (enabled ? '' : ' off');
     stateTextEl.textContent = enabled ? 'HTTPS-Only 已开启' : 'HTTPS-Only 已关闭';
+    if (payload && Number(payload.capacity) > 0) {
+      capTextEl.textContent = '（' + hosts.length + ' / ' + payload.capacity + '）';
+    } else {
+      capTextEl.textContent = '';
+    }
 
+    var q = String(searchEl.value || '').trim().toLowerCase();
+    var visible = hosts.filter(function (item) {
+      return !q || String(item.host || '').toLowerCase().indexOf(q) >= 0;
+    });
     rowsEl.textContent = '';
-    if (!hosts.length) {
+    if (!visible.length) {
       var tr = document.createElement('tr');
       var td = document.createElement('td');
-      td.colSpan = 3;
+      td.colSpan = 4;
       td.className = 'empty';
-      td.textContent = '暂无例外站点';
+      td.textContent = hosts.length ? '没有匹配的例外站点' : '暂无例外站点';
       tr.appendChild(td);
       rowsEl.appendChild(tr);
     } else {
-      hosts.forEach(function (item) {
+      visible.forEach(function (item) {
         var tr = document.createElement('tr');
+
+        var tdSel = document.createElement('td');
+        var chk = document.createElement('input');
+        chk.type = 'checkbox';
+        chk.className = 'sel';
+        chk.checked = !!selected[item.host];
+        chk.addEventListener('change', function () {
+          if (chk.checked) selected[item.host] = true;
+          else delete selected[item.host];
+          updateBatch();
+        });
+        tdSel.appendChild(chk);
 
         var tdHost = document.createElement('td');
         tdHost.textContent = item.host;
@@ -141,6 +198,7 @@ td.num{color:var(--sub);font-variant-numeric:tabular-nums;white-space:nowrap;}
         rm.addEventListener('click', function () { removeHost(item.host); });
         tdOp.appendChild(rm);
 
+        tr.appendChild(tdSel);
         tr.appendChild(tdHost);
         tr.appendChild(tdTime);
         tr.appendChild(tdOp);
@@ -149,6 +207,7 @@ td.num{color:var(--sub);font-variant-numeric:tabular-nums;white-space:nowrap;}
     }
     countEl.textContent = hosts.length ? '（' + hosts.length + '）' : '';
     clearBtn.disabled = !hosts.length;
+    updateBatch();
   }
 
   function refresh() {
@@ -192,6 +251,37 @@ td.num{color:var(--sub);font-variant-numeric:tabular-nums;white-space:nowrap;}
     if (e.key === 'Enter') addHost();
   });
   clearBtn.addEventListener('click', clearAll);
+  searchEl.addEventListener('input', function () { render({ enabled: true, hosts: currentHosts }); });
+  copyBtn.addEventListener('click', function () {
+    var text = currentHosts.map(function (item) { return item.host; }).join('\n');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () {
+        copyBtn.textContent = '已复制';
+        setTimeout(function () { copyBtn.textContent = '复制列表'; }, 1200);
+      }).catch(function () {});
+    }
+  });
+  selAll.addEventListener('change', function () {
+    var q = String(searchEl.value || '').trim().toLowerCase();
+    var vis = currentHosts.filter(function (item) { return !q || item.host.indexOf(q) >= 0; });
+    if (selAll.checked) vis.forEach(function (item) { selected[item.host] = true; });
+    else vis.forEach(function (item) { delete selected[item.host]; });
+    updateBatch();
+    render({ enabled: true, hosts: currentHosts });
+  });
+  selDelBtn.addEventListener('click', function () {
+    var hosts = Object.keys(selected);
+    if (!hosts.length) return;
+    if (!window.confirm('移除选中的 ' + hosts.length + ' 个例外站点？')) return;
+    var done = 0;
+    hosts.forEach(function (h) {
+      api.invoke('remove-https-exception', { host: h }).then(function () {
+        done++;
+        delete selected[h];
+        if (done >= hosts.length) refresh();
+      }).catch(function () { done++; });
+    });
+  });
 
   if (api && api.on) {
     api.on('https-exceptions-updated', function () { refresh(); });
