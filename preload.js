@@ -207,6 +207,7 @@ const allowedInvokeChannels = new Set([
   'get-ua-policy',
   'set-ua-policy',
   'reset-ua-policy',
+  'preview-random-ua',
   'get-download-rate-limit',
   'set-download-rate-limit',
 ]);
