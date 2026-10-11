@@ -8809,6 +8809,18 @@ ipcMain.handle('readinglist-clear', (event) => {
 ipcMain.handle('about-snapshot', (event) => {
   if (!isAboutFrameSender(event)) return { ok: false, error: 'denied' };
   const stats = getRequestLogStats();
+  const secEvents = listSecurityEvents('', 500);
+  const secStats = { total: 0, critical: 0, warn: 0, info: 0, latest: [] };
+  for (const e of secEvents) {
+    secStats.total++;
+    if (e.severity === 'critical') secStats.critical++;
+    else if (e.severity === 'warn') secStats.warn++;
+    else secStats.info++;
+  }
+  secStats.latest = secEvents.slice(0, 5).map(e => ({
+    time: e.time, type: String(e.type || ''), severity: String(e.severity || 'info'),
+    detail: String(e.detail || '').slice(0, 160),
+  }));
   return {
     ok: true,
     info: {
@@ -8827,6 +8839,9 @@ ipcMain.handle('about-snapshot', (event) => {
       dnt: true,
       disableWebRTC: webrtcMode !== 'legacy',
       webrtcMode,
+      httpsExceptions: typeof httpsExceptions.size === 'function' ? httpsExceptions.size() : 0,
+      tabCount: Array.isArray(tabs) ? tabs.length : 0,
+      bookmarkCount: Array.isArray(bookmarks) ? bookmarks.length : 0,
       stats: {
         hosts: Number(stats.hosts) || 0,
         requests: Number(stats.requests) || 0,
@@ -8834,6 +8849,7 @@ ipcMain.handle('about-snapshot', (event) => {
         backgroundHosts: Number(stats.backgroundHosts) || 0,
         insecureHosts: Number(stats.insecureHosts) || 0,
       },
+      security: secStats,
     },
   };
 });
