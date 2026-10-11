@@ -30,6 +30,10 @@ button{font-family:inherit;cursor:pointer;}
 .row .btn-sm:hover{border-color:var(--accent);color:var(--accent);}
 .row .btn-sm.del:hover{border-color:var(--danger);color:var(--danger);}
 .empty-page{padding:40px;text-align:center;color:var(--sub);}
+.row .sel{width:18px;height:18px;accent-color:var(--accent);flex:none;}
+select.sort{padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font-size:13px;outline:none;}
+.batchbar{display:flex;gap:10px;align-items:center;margin-bottom:10px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--card);font-size:12px;}
+.batchbar .info{color:var(--accent);font-weight:600;}
 </style>
 </head>
 <body>
@@ -37,18 +41,48 @@ button{font-family:inherit;cursor:pointer;}
 <div class="tip">把暂时没空看的页面收进列表：在任意页面右键链接选择“加入稍后读”，或点地址栏旁的稍后读图标。点击条目在新标签页打开，“删除”移出列表，“清空”清掉全部。列表只存本机，不跟随同步。</div>
 <div class="bar">
   <input class="search" id="search" type="text" placeholder="搜索稍后读条目（标题或网址）…" autofocus>
+  <select class="sort" id="sort">
+    <option value="added">按添加时间排序</option>
+    <option value="title">按标题排序</option>
+    <option value="host">按站点排序</option>
+  </select>
   <button class="btn danger" id="clearAll" type="button">清空全部</button>
   <span class="count" id="count"></span>
+</div>
+<div class="batchbar" id="batchbar" style="display:none;">
+  <input type="checkbox" class="sel" id="selAll" title="全选当前结果">
+  <span>全选</span>
+  <span class="info" id="selInfo"></span>
+  <button class="btn" id="seldel-btn" type="button" style="color:var(--danger);">删除选中</button>
 </div>
 <div id="list"></div>
 <script>
 (function () {
   'use strict';
   var searchEl = document.getElementById('search');
+  var sortEl = document.getElementById('sort');
   var countEl = document.getElementById('count');
   var listEl = document.getElementById('list');
   var clearAllEl = document.getElementById('clearAll');
+  var batchbar = document.getElementById('batchbar');
+  var selInfo = document.getElementById('selInfo');
+  var selAll = document.getElementById('selAll');
+  var selDelBtn = document.getElementById('seldel-btn');
   var items = [];
+  var selected = {};
+
+  function hostOf(url) {
+    try { return new URL(String(url)).host; } catch (e) { return ''; }
+  }
+
+  function updateBatch() {
+    var n = Object.keys(selected).length;
+    if (n === 0) { batchbar.style.display = 'none'; return; }
+    batchbar.style.display = 'flex';
+    setText(selInfo, '已选 ' + n + ' 条');
+    var list = filteredList();
+    selAll.checked = list.length > 0 && list.every(function (b) { return selected[b.url]; });
+  }
 
   function el(tag, cls, text) {
     var e = document.createElement(tag);
@@ -65,11 +99,17 @@ button{font-family:inherit;cursor:pointer;}
 
   function filteredList() {
     var q = String(searchEl.value || '').trim().toLowerCase();
-    if (!q) return items.slice();
-    return items.filter(function (b) {
+    var list;
+    if (!q) list = items.slice();
+    else list = items.filter(function (b) {
       return String(b.title || '').toLowerCase().indexOf(q) >= 0
         || String(b.url || '').toLowerCase().indexOf(q) >= 0;
     });
+    var mode = sortEl.value;
+    if (mode === 'title') list.sort(function (a, b) { return String(a.title || '').localeCompare(String(b.title || '')); });
+    else if (mode === 'host') list.sort(function (a, b) { return hostOf(a.url).localeCompare(hostOf(b.url)); });
+    else list.sort(function (a, b) { return String(b.addedDate || '').localeCompare(String(a.addedDate || '')); });
+    return list;
   }
 
   function render() {
@@ -82,6 +122,16 @@ button{font-family:inherit;cursor:pointer;}
     }
     list.forEach(function (b) {
       var row = el('div', 'row');
+      var chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.className = 'sel';
+      chk.checked = !!selected[b.url];
+      chk.addEventListener('change', function () {
+        if (chk.checked) selected[b.url] = true;
+        else delete selected[b.url];
+        updateBatch();
+      });
+      row.appendChild(chk);
       row.appendChild(el('div', 't-title', b.title || b.url || ''));
       row.appendChild(el('div', 't-url', b.url || ''));
       row.appendChild(el('div', 't-date', dateText(b.addedDate)));
@@ -93,6 +143,18 @@ button{font-family:inherit;cursor:pointer;}
         window.electronAPI.invoke('readinglist-open-url', b.url).catch(function () {});
       });
       acts.appendChild(openBtn);
+      var copyBtn = el('button', 'btn-sm', '复制链接');
+      copyBtn.type = 'button';
+      copyBtn.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(b.url).then(function () {
+            copyBtn.textContent = '已复制';
+            setTimeout(function () { copyBtn.textContent = '复制链接'; }, 1200);
+          }).catch(function () {});
+        }
+      });
+      acts.appendChild(copyBtn);
       var delBtn = el('button', 'btn-sm del', '删除');
       delBtn.type = 'button';
       delBtn.addEventListener('click', function (ev) {
@@ -101,7 +163,9 @@ button{font-family:inherit;cursor:pointer;}
           .then(function (r) {
             if (!r || !r.ok) return;
             items = items.filter(function (x) { return x.url !== b.url; });
+            delete selected[b.url];
             render();
+            updateBatch();
           })
           .catch(function () {});
       });
@@ -117,6 +181,32 @@ button{font-family:inherit;cursor:pointer;}
   function setText(el2, t) { el2.textContent = String(t); }
 
   searchEl.addEventListener('input', function () { render(); });
+  sortEl.addEventListener('change', function () { render(); });
+  selAll.addEventListener('change', function () {
+    var list = filteredList();
+    if (selAll.checked) list.forEach(function (b) { selected[b.url] = true; });
+    else list.forEach(function (b) { delete selected[b.url]; });
+    updateBatch();
+    render();
+  });
+  selDelBtn.addEventListener('click', function () {
+    var urls = Object.keys(selected);
+    if (urls.length === 0) return;
+    if (!confirm('删除选中的 ' + urls.length + ' 条稍后读条目？')) return;
+    var done = 0;
+    urls.forEach(function (u) {
+      window.electronAPI.invoke('readinglist-remove', { url: u })
+        .then(function (r) {
+          done++;
+          if (r && r.ok) {
+            items = items.filter(function (x) { return x.url !== u; });
+            delete selected[u];
+          }
+          if (done >= urls.length) { render(); updateBatch(); }
+        })
+        .catch(function () { done++; });
+    });
+  });
 
   clearAllEl.addEventListener('click', function () {
     if (items.length === 0) return;
