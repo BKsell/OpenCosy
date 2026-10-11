@@ -125,6 +125,16 @@ test('Shift+Esc 打开任务管理器；纯 Esc / Ctrl+Shift+Esc 仍是退出全
   assert.strictEqual(describeAccelerator(ACTION.OPEN_TASK_MANAGER), 'Shift+Esc');
 });
 
+test('Ctrl+Shift+E 打开标签页概览；普通 Ctrl+E 不劫持', () => {
+  assert.strictEqual(matchShortcut(mk('e', { control: true, shift: true })), ACTION.OPEN_TAB_OVERVIEW);
+  assert.strictEqual(matchShortcut(mk('e', { control: true, shift: true, alt: false })), ACTION.OPEN_TAB_OVERVIEW);
+  // 普通 Ctrl+E（无 shift）不命中概览。
+  assert.strictEqual(matchShortcut(mk('e', { control: true })), null);
+  // 带 meta 等价于 ctrl，命中。
+  assert.strictEqual(matchShortcut(mk('e', { meta: true, shift: true })), ACTION.OPEN_TAB_OVERVIEW);
+  assert.strictEqual(describeAccelerator(ACTION.OPEN_TAB_OVERVIEW), 'Ctrl+Shift+E');
+});
+
 test('Ctrl+Alt+R 进入阅读模式，且不劫持刷新三连', () => {
   assert.strictEqual(matchShortcut(mk('r', { control: true, alt: true })), ACTION.ENTER_READER);
   assert.strictEqual(matchShortcut(mk('r', { control: true, alt: true, shift: false })), ACTION.ENTER_READER);
