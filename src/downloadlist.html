@@ -653,6 +653,91 @@
         function getStatusText(s) {
             return { pending: '等待中', downloading: '下载中', paused: '已暂停', complete: '已完成', error: '失败', cancelled: '已取消' }[s] || s;
         }
+
+        // ===== 下载记录导出 CSV 与状态统计 =====
+        // 纯前端增强：把当前可见下载记录导出为 CSV 并复制到剪贴板，
+        // 另在页面顶部渲染一条完成/失败/进行中状态统计。
+        function exportDownloadsCsv() {
+            if (!Array.isArray(downloads) || downloads.length === 0) {
+                alert('没有可导出的下载记录');
+                return;
+            }
+            const esc = function(s) {
+                s = String(s == null ? '' : s);
+                return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+            };
+            const rows = [
+                ['文件名', '来源URL', '大小', '状态', '完成时间'].join(',')
+            ];
+            downloads.forEach(function(dl) {
+                rows.push([
+                    esc(dl.filename || ''),
+                    esc(dl.url || ''),
+                    esc(formatSize(dl.sizeBytes || dl.size || 0)),
+                    esc(getStatusText(dl.status)),
+                    esc(dl.endTime || dl.finishedAt || '')
+                ].join(','));
+            });
+            const csv = '\ufeff' + rows.join('\r\n');
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(csv).then(function() {
+                    alert('已复制 ' + downloads.length + ' 条下载记录（CSV）到剪贴板');
+                }).catch(function() { alert('复制失败，请手动重试'); });
+            } else {
+                alert('当前环境不支持剪贴板写入');
+            }
+        }
+
+        function renderStatusStrip() {
+            if (!Array.isArray(downloads)) return;
+            let strip = document.getElementById('dl-status-strip');
+            if (!strip) {
+                strip = document.createElement('div');
+                strip.id = 'dl-status-strip';
+                strip.style.cssText = 'margin:8px 16px 4px;font-size:12px;color:var(--text-secondary);';
+                const toolbar = document.querySelector('.toolbar, .dl-toolbar, header');
+                if (toolbar) toolbar.parentNode.insertBefore(strip, toolbar.nextSibling);
+                else document.body.appendChild(strip);
+            }
+            const done = downloads.filter(function(d) { return d.status === 'complete'; }).length;
+            const failed = downloads.filter(function(d) { return d.status === 'error' || d.status === 'cancelled'; }).length;
+            const active = downloads.filter(function(d) { return d.status === 'downloading' || d.status === 'paused' || d.status === 'pending'; }).length;
+            strip.textContent = '共 ' + downloads.length + ' 条 · 已完成 ' + done + ' · 失败/取消 ' + failed + ' · 进行中 ' + active;
+        }
+
+        // 把导出按钮挂到页面工具栏；找不到工具栏则右上角浮动按钮。
+        document.addEventListener('DOMContentLoaded', function() {
+            renderStatusStrip();
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = '导出 CSV';
+            btn.style.cssText = 'padding:6px 14px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-secondary);color:var(--text-primary);font-size:13px;cursor:pointer;';
+            btn.addEventListener('click', exportDownloadsCsv);
+            const toolbar = document.querySelector('.toolbar, .dl-toolbar, header');
+            if (toolbar) toolbar.appendChild(btn);
+            else {
+                btn.style.cssText += ';position:fixed;top:12px;right:16px;z-index:10;';
+                document.body.appendChild(btn);
+            }
+            // downloads 列表每次到达时刷新统计（监听与既有渲染共用事件总线）
+            const origOnList = window.electronAPI.on;
+            if (origOnList) {
+                try {
+                    const wrapped = origOnList.bind(window.electronAPI);
+                    window.electronAPI.on = function(channel, cb) {
+                        if (channel === 'downloads-list') {
+                            wrapped(channel, function(data) {
+                                downloads = data || [];
+                                renderStatusStrip();
+                                if (cb) cb(data);
+                            });
+                        } else {
+                            wrapped(channel, cb);
+                        }
+                    };
+                } catch { /* 保持原监听 */ }
+            }
+        });
     </script>
 </body>
 </html>
