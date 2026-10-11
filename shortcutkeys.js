@@ -39,6 +39,7 @@ const ACTION = Object.freeze({
   RELOAD_BYPASSING_CACHE: 'reload-bypassing-cache',
   TOGGLE_DEVTOOLS: 'toggle-devtools',
   OPEN_TASK_MANAGER: 'open-task-manager',
+  OPEN_TAB_OVERVIEW: 'open-tab-overview',
   ENTER_READER: 'enter-reader',
   EXIT_FULLSCREEN: 'exit-fullscreen',
   ZOOM_IN: 'zoom-in',
@@ -95,6 +96,9 @@ const SHORTCUT_RULES = Object.freeze([
   // Shift+Esc 打开任务管理器，必须排在通吃的纯 Esc 退出全屏规则之前；
   // 纯 Esc（shift 未按）不命中本条，Ctrl+Shift+Esc 因要求 ctrl:false 也落到退出全屏。
   { action: ACTION.OPEN_TASK_MANAGER, key: 'escape', ctrl: false, shift: true, alt: false },
+  // Ctrl+Shift+E 打开标签页概览网格。排在 Ctrl+E 无绑定、且不与地址栏等冲突的位置；
+  // 显式要求 shift 按下，普通 Ctrl+E 不命中。
+  { action: ACTION.OPEN_TAB_OVERVIEW, key: 'e', ctrl: true, shift: true, alt: false },
   { action: ACTION.EXIT_FULLSCREEN, key: 'escape', ctrl: null, shift: null, alt: null },
   { action: ACTION.ZOOM_IN, key: '=', ctrl: true, shift: null, alt: null },
   { action: ACTION.ZOOM_OUT, key: '-', ctrl: true, shift: null, alt: null },
@@ -172,6 +176,7 @@ const PRIMARY_ACCELERATOR = Object.freeze({
   [ACTION.RELOAD_BYPASSING_CACHE]: 'Ctrl+Shift+R',
   [ACTION.TOGGLE_DEVTOOLS]: 'F12',
   [ACTION.OPEN_TASK_MANAGER]: 'Shift+Esc',
+  [ACTION.OPEN_TAB_OVERVIEW]: 'Ctrl+Shift+E',
   [ACTION.ENTER_READER]: 'Ctrl+Alt+R',
   [ACTION.EXIT_FULLSCREEN]: 'Esc',
   [ACTION.ZOOM_IN]: 'Ctrl+=',
