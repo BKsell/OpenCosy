@@ -18,6 +18,7 @@ const fpGuard = require('./fpguard');
 const requestPipeline = require('./requestpipeline');
 const downloadAdmission = require('./downloadadmission');
 const downloadNotify = require('./downloadnotify');
+const downloadShelf = require('./downloadshelf');
 const extensionStore = require('./extensionstore');
 const suggestionGuard = require('./suggestionguard');
 const hostMatch = require('./hostmatch');
@@ -672,31 +673,16 @@ function sendToRenderer(channel, ...args) {
 // ===== 底部下载栏（download shelf）=====
 // 现代浏览器在窗口底部用一条 shelf 展示下载进度，不必每次下载都新开标签页打断浏览。
 // 主进程只推送可序列化的快照给主界面；DownloadItem 等 Electron 对象绝不跨进程暴露。
+// 快照构建与字段净化收口到 downloadshelf 内核：剥控制字符/ANSI、按字节截断、
+// 状态白名单、进度 clamp、savePath 只留存在性标记、附带整张台账的统计角标。
 const MAX_SHELF_ITEMS = 3;
 
 function shelfSnapshot() {
-  const items = [];
-  for (let i = downloads.length - 1; i >= 0 && items.length < MAX_SHELF_ITEMS; i--) {
-    const d = downloads[i];
-    items.push({
-      id: d.id,
-      filename: d.filename,
-      url: d.url,
-      totalBytes: d.totalBytes || 0,
-      receivedBytes: d.receivedBytes || 0,
-      progress: Number(d.progress) || 0,
-      speed: d.speed || '0 B/s',
-      status: d.status || 'pending',
-      savePath: d.savePath || null,
-      startTime: d.startTime || null,
-      errorMessage: d.errorMessage || null,
-    });
-  }
-  return items;
+  return downloadShelf.buildShelfSnapshot(downloads, downloadShelf.ShelfLimits).items;
 }
 
 function sendShelf() {
-  sendToRenderer('download-shelf', shelfSnapshot());
+  sendToRenderer('download-shelf', downloadShelf.buildShelfSnapshot(downloads, downloadShelf.ShelfLimits));
 }
 
 // ===== 下载系统通知（downloadnotify 内核的 Electron 接线）=====

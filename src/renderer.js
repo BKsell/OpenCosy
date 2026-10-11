@@ -3002,6 +3002,7 @@ document.addEventListener('keydown', (e) => {
 
   let bar = null;
   let listEl = null;
+  let statsEl = null;
   let state = new Map();
 
   function bytes(n) {
@@ -3027,6 +3028,9 @@ document.addEventListener('keydown', (e) => {
     const title = document.createElement('span');
     title.textContent = '下载';
     title.style.cssText = 'font-weight:600;color:#333;';
+    statsEl = document.createElement('span');
+    statsEl.style.cssText = 'font-size:11px;color:#888;margin-left:8px;font-weight:400;';
+    title.appendChild(statsEl);
     const actions = document.createElement('div');
     actions.style.cssText = 'display:flex;gap:10px;align-items:center;';
     const showAll = document.createElement('button');
@@ -3119,8 +3123,14 @@ document.addEventListener('keydown', (e) => {
     });
   }
 
-  api.on('download-shelf', (items) => {
-    state = new Map((items || []).map(d => [d.id, d]));
+  api.on('download-shelf', (payload) => {
+    // 主进程推送的是 {items, stats}（downloadshelf 内核产出）；旧版数组也兼容。
+    const items = Array.isArray(payload) ? payload : ((payload && payload.items) || []);
+    const stats = payload && payload.stats;
+    if (statsEl && stats) {
+      statsEl.textContent = `${stats.active} 进行中 · ${stats.completed} 完成`;
+    }
+    state = new Map(items.map(d => [d.id, d]));
     paint(items);
   });
 
@@ -3133,8 +3143,9 @@ document.addEventListener('keydown', (e) => {
       bar.style.display = 'none';
       return;
     }
-    api.invoke('get-download-shelf').then(items => {
-      if (Array.isArray(items) && items.length) paint(items);
+    api.invoke('get-download-shelf').then(payload => {
+      const items = Array.isArray(payload) ? payload : ((payload && payload.items) || []);
+      if (items.length) paint(items);
       else api.send('shelf-show-all');
     }).catch(() => api.send('shelf-show-all'));
   });
