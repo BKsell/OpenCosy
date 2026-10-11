@@ -28,28 +28,74 @@ button.end{background:transparent;border:1px solid var(--danger);color:var(--dan
 button.end:hover{background:var(--danger);color:#fff;}
 .badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;background:var(--border);color:var(--sub);}
 .empty{padding:30px;text-align:center;color:var(--sub);}
+.controls{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;}
+input.search{flex:1;min-width:180px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font-size:13px;outline:none;}
+input.search:focus{border-color:var(--accent);}
+select.sortsel{padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font-size:13px;outline:none;}
+.filterchips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+.fchip{display:inline-block;padding:4px 12px;border:1px solid var(--border);border-radius:16px;background:var(--card);color:var(--text);font-size:12px;cursor:pointer;}
+.fchip.on{background:var(--accent);color:#fff;border-color:var(--accent);}
+.modal-mask{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);align-items:center;justify-content:center;z-index:100;}
+.modal-mask.show{display:flex;}
+.modal{background:var(--card);border:1px solid var(--border);border-radius:12px;max-width:420px;width:100%;padding:20px;}
+.modal h3{font-size:15px;margin-bottom:10px;}
+.modal p{font-size:13px;color:var(--sub);line-height:1.7;margin-bottom:16px;}
+.modal .mfoot{display:flex;gap:10px;justify-content:flex-end;}
+button.btn{padding:8px 14px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font-size:13px;cursor:pointer;font-family:inherit;}
+button.btn:hover{border-color:var(--accent);}
+button.end{background:transparent;border:1px solid var(--danger);color:var(--danger);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;}
+button.end:hover{background:var(--danger);color:#fff;}
+button.confirm{background:var(--danger);color:#fff;border:1px solid var(--danger);}
 </style>
 </head>
 <body>
 <h1>任务管理器</h1>
-<div class="tip">显示浏览器各进程的内存与 CPU 占用。仅可结束关联到具体标签页的进程（会正常关闭该标签），系统进程不提供结束入口。数据每 2 秒刷新。</div>
+<div class="tip">显示浏览器各进程的内存与 CPU 占用。仅可结束关联到具体标签页的进程（会正常关闭该标签），系统进程不提供结束入口。支持搜索、按类型过滤与内存 / CPU / PID 排序，页面不可见时自动暂停刷新。</div>
 <div class="summary">
   <div class="stat"><div class="k">进程数</div><div class="v" id="s-count">-</div></div>
   <div class="stat"><div class="k">总内存</div><div class="v" id="s-mem">-</div></div>
   <div class="stat"><div class="k">总 CPU</div><div class="v" id="s-cpu">-</div></div>
 </div>
+<div class="controls">
+  <input class="search" id="search" type="text" placeholder="搜索进程名 / PID…">
+  <select class="sortsel" id="sort">
+    <option value="mem">按内存排序</option>
+    <option value="cpu">按 CPU 排序</option>
+    <option value="pid">按 PID 排序</option>
+    <option value="kind">按类型排序</option>
+  </select>
+</div>
+<div class="filterchips" id="fchips"></div>
 <div class="kinds" id="kinds"></div>
 <table>
   <thead><tr><th>进程</th><th>类型</th><th class="num">内存</th><th class="num">CPU</th><th>PID</th><th></th></tr></thead>
   <tbody id="rows"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
 </table>
+
+<div class="modal-mask" id="confirmMask">
+  <div class="modal">
+    <h3 id="confirmTitle">结束进程</h3>
+    <p id="confirmText"></p>
+    <div class="mfoot">
+      <button class="btn" id="cancelBtn" type="button">取消</button>
+      <button class="btn confirm" id="okBtn" type="button">结束进程</button>
+    </div>
+  </div>
+</div>
 <script>
 (function () {
   'use strict';
   var KIND_LABEL = { browser:'浏览器主进程', tab:'标签页 / 渲染器', gpu:'GPU', utility:'系统服务', other:'其它' };
   var rowsEl = document.getElementById('rows');
   var kindsEl = document.getElementById('kinds');
+  var searchEl = document.getElementById('search');
+  var sortEl = document.getElementById('sort');
+  var fchipsEl = document.getElementById('fchips');
+  var confirmMask = document.getElementById('confirmMask');
   var pollTimer = null;
+  var lastData = null;
+  var kindFilter = '';
+  var pendingKill = null;
 
   function fmtMem(kb) {
     kb = Number(kb) || 0;
@@ -81,23 +127,52 @@ button.end:hover{background:var(--danger);color:#fff;}
     });
   }
 
+  function renderChips() {
+    fchipsEl.textContent = '';
+    var kinds = ['', 'browser', 'tab', 'gpu', 'utility', 'other'];
+    kinds.forEach(function (k) {
+      var c = el('span', 'fchip' + (kindFilter === k ? ' on' : ''), k === '' ? '全部类型' : (KIND_LABEL[k] || k));
+      c.addEventListener('click', function () { kindFilter = k; renderChips(); render(lastData); });
+      fchipsEl.appendChild(c);
+    });
+  }
+
+  function sortRows(rows) {
+    var mode = sortEl.value;
+    var copy = rows.slice();
+    if (mode === 'cpu') copy.sort(function (a, b) { return (Number(b.cpu) || 0) - (Number(a.cpu) || 0); });
+    else if (mode === 'pid') copy.sort(function (a, b) { return Number(a.pid) - Number(b.pid); });
+    else if (mode === 'kind') copy.sort(function (a, b) { return String(a.kind).localeCompare(String(b.kind)); });
+    else copy.sort(function (a, b) { return (Number(b.memoryKB) || 0) - (Number(a.memoryKB) || 0); });
+    return copy;
+  }
+
   function render(data) {
     if (!data || !Array.isArray(data.rows)) return;
+    lastData = data;
     var t = data.total || { count:0, memoryKB:0, cpu:0 };
     setText(document.getElementById('s-count'), t.count);
     setText(document.getElementById('s-mem'), fmtMem(t.memoryKB));
     setText(document.getElementById('s-cpu'), (Number(t.cpu) || 0) + ' %');
     renderKinds(data.byKind);
+    var q = String(searchEl.value || '').trim().toLowerCase();
+    var rows = data.rows.filter(function (r) {
+      if (kindFilter && r.kind !== kindFilter) return false;
+      if (!q) return true;
+      var name = String(r.title || r.name || '').toLowerCase();
+      return name.indexOf(q) >= 0 || String(r.pid).indexOf(q) >= 0;
+    });
+    rows = sortRows(rows);
     rowsEl.textContent = '';
-    if (data.rows.length === 0) {
+    if (rows.length === 0) {
       var tr = el('tr');
-      var td = el('td', 'empty', '暂无进程数据');
+      var td = el('td', 'empty', '没有匹配的进程');
       td.colSpan = 6;
       tr.appendChild(td);
       rowsEl.appendChild(tr);
       return;
     }
-    data.rows.forEach(function (row) {
+    rows.forEach(function (row) {
       var tr = document.createElement('tr');
       var name = row.title || row.name || KIND_LABEL[row.kind] || '进程';
       var c1 = el('td', null, name);
@@ -111,10 +186,11 @@ button.end:hover{background:var(--danger);color:#fff;}
         var btn = el('button', 'end', '结束');
         btn.type = 'button';
         btn.addEventListener('click', function () {
-          btn.disabled = true;
-          window.electronAPI.invoke('end-task-manager-tab', { id: row.tabId })
-            .then(function (r) { if (!r || !r.ok) { btn.disabled = false; } })
-            .catch(function () { btn.disabled = false; });
+          pendingKill = row;
+          setText(document.getElementById('confirmTitle'), '结束进程');
+          setText(document.getElementById('confirmText'),
+            '确定结束「' + name + '」（PID ' + row.pid + '）吗？该标签页将被关闭，未保存的页面状态可能丢失。');
+          confirmMask.classList.add('show');
         });
         c6.appendChild(btn);
       }
@@ -123,14 +199,38 @@ button.end:hover{background:var(--danger);color:#fff;}
     });
   }
 
+  document.getElementById('cancelBtn').addEventListener('click', function () {
+    confirmMask.classList.remove('show');
+    pendingKill = null;
+  });
+  document.getElementById('okBtn').addEventListener('click', function () {
+    confirmMask.classList.remove('show');
+    if (!pendingKill) return;
+    var row = pendingKill;
+    pendingKill = null;
+    window.electronAPI.invoke('end-task-manager-tab', { id: row.tabId })
+      .then(function (r) { if (!r || !r.ok) { render(lastData); } })
+      .catch(function () {});
+  });
+  confirmMask.addEventListener('click', function (e) {
+    if (e.target === confirmMask) confirmMask.classList.remove('show');
+  });
+  searchEl.addEventListener('input', function () { render(lastData); });
+  sortEl.addEventListener('change', function () { render(lastData); });
+
   function poll() {
+    if (document.hidden) return;
     if (!window.electronAPI || !window.electronAPI.invoke) return;
     window.electronAPI.invoke('get-task-manager-processes', {})
       .then(render)
       .catch(function () {});
   }
+  renderChips();
   poll();
   pollTimer = setInterval(poll, 2000);
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) poll();
+  });
   window.addEventListener('beforeunload', function () { if (pollTimer) clearInterval(pollTimer); });
 })();
 </script>
