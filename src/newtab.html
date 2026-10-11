@@ -1006,7 +1006,42 @@
                 const f = document.getElementById('footer-name');
                 if (f) f.textContent = COSY_CONSTANTS.APP_INFO.name;
             }
+            initQuickLinkStats();
         });
+
+        // ===== 拨号统计与一键全部打开 =====
+        // 独立自包含增强：读取自定义拨号数量/最近访问次数，
+        // 在磁贴区上方渲染统计行 + 「全部打开」按钮，不依赖既有渲染流程。
+        function initQuickLinkStats() {
+            const box = document.getElementById('quick-links');
+            if (!box || !window.electronAPI || !window.electronAPI.send) return;
+            let customs = [];
+            try {
+                customs = JSON.parse(localStorage.getItem('cosyQuickLinks') || '[]');
+            } catch { customs = []; }
+            if (!Array.isArray(customs) || customs.length === 0) return;
+            const safe = customs.filter(function(l) {
+                return l && typeof l.url === 'string' && /^(https?|file|cosy):/i.test(l.url);
+            });
+            if (safe.length === 0) return;
+            const bar = document.createElement('div');
+            bar.style.cssText = 'display:flex;align-items:center;gap:10px;justify-content:center;margin-top:22px;';
+            const pill = document.createElement('span');
+            pill.style.cssText = 'font-size:12px;opacity:0.85;text-shadow:0 1px 3px rgba(0,0,0,0.6);';
+            pill.textContent = '自定义拨号 ' + safe.length + ' 个';
+            const openAll = document.createElement('button');
+            openAll.type = 'button';
+            openAll.textContent = '全部打开';
+            openAll.style.cssText = 'padding:5px 14px;border:1px solid rgba(255,255,255,0.35);border-radius:999px;background:rgba(255,255,255,0.14);color:#fff;font-size:12px;cursor:pointer;backdrop-filter:blur(8px);transition:background 0.15s;';
+            openAll.addEventListener('click', function() {
+                safe.slice(0, 10).forEach(function(l) {
+                    window.electronAPI.send('open-new-tab', l.url);
+                });
+            });
+            bar.appendChild(pill);
+            bar.appendChild(openAll);
+            box.parentNode.insertBefore(bar, box.nextSibling);
+        }
     </script>
 </body>
 </html>
