@@ -209,6 +209,28 @@
             color: var(--text-secondary);
         }
 
+        .toolrow {
+            display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px;
+        }
+
+        .chip {
+            padding: 6px 14px; border: 1px solid var(--border-color, #d0d0d0); border-radius: 16px;
+            background: transparent; color: var(--text-secondary); font-size: 12px; cursor: pointer;
+        }
+
+        .chip.active {
+            border-color: var(--accent, #0078d4); color: var(--accent, #0078d4);
+        }
+
+        .batchbar {
+            display: flex; gap: 10px; align-items: center; margin-bottom: 12px; padding: 8px 12px;
+            border: 1px solid var(--border-color, #d0d0d0); border-radius: 8px; font-size: 12px;
+        }
+
+        .batchbar .info { color: var(--accent, #0078d4); font-weight: 600; }
+
+        .sel { width: 16px; height: 16px; accent-color: #0078d4; flex-shrink: 0; }
+
         .empty-icon {
             font-size: 48px;
             margin-bottom: 20px;
@@ -281,6 +303,19 @@
         </div>
         <div class="extensions-section">
             <h2 class="section-title">已安装的插件</h2>
+            <div class="toolrow">
+                <input type="text" class="folder-input" id="ext-search" placeholder="搜索插件名称或描述…" style="flex:1;min-width:200px;">
+                <button class="chip active" data-f="all" type="button">全部</button>
+                <button class="chip" data-f="on" type="button">已启用</button>
+                <button class="chip" data-f="off" type="button">已禁用</button>
+            </div>
+            <div class="batchbar" id="batchbar" style="display:none;">
+                <input type="checkbox" id="selAll" class="sel" title="全选当前结果">
+                <span>全选</span>
+                <span class="info" id="selInfo"></span>
+                <button class="browse-button" id="selToggleBtn">批量启用/禁用</button>
+                <button class="remove-button" id="selRemoveBtn">批量移除</button>
+            </div>
             <div id="extensions-list"></div>
         </div>
     </div>
@@ -288,6 +323,8 @@
         const DEFAULT_ICON = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjQ4IiBoZWlnaHQ9IjQ4IiBmaWxsPSIjMDA3OGQ0IiByeD0iOCIvPgo8dGV4dCB4PSI1MCUiIHk9IjUwJSIgZG9taW5hbnQtYmFzZWxpbmU9Im1pZGRsZSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0id2hpdGUiIGZvbnQtc2l6ZT0iMjAiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiI+RTwvdGV4dD4KPC9zdmc+';
 
         let extensions = [];
+        let extFilter = 'all';
+        const selectedSet = new Set();
 
         function isSafeUrl(url) {
             if (!url) return false;
@@ -384,25 +421,57 @@
             }
         }
 
+        function visibleExtensions() {
+            const q = (document.getElementById('ext-search').value || '').trim().toLowerCase();
+            return extensions.filter(ext => {
+                if (extFilter === 'on' && !ext.enabled) return false;
+                if (extFilter === 'off' && ext.enabled) return false;
+                if (!q) return true;
+                return (String(ext.name || '') + ' ' + String(ext.description || '')).toLowerCase().indexOf(q) >= 0;
+            });
+        }
+
+        function updateBatch() {
+            const bar = document.getElementById('batchbar');
+            if (selectedSet.size === 0) { bar.style.display = 'none'; return; }
+            bar.style.display = 'flex';
+            document.getElementById('selInfo').textContent = '已选 ' + selectedSet.size + ' 个';
+            const vis = visibleExtensions();
+            document.getElementById('selAll').checked = vis.length > 0 && vis.every(ext => selectedSet.has(ext.id));
+        }
+
         function renderExtensions() {
             const container = document.getElementById('extensions-list');
-            if (extensions.length === 0) {
+            const vis = visibleExtensions();
+            if (vis.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
                         <div class="empty-icon">🔌</div>
-                        <p>暂无安装的插件</p>
-                        <p style="font-size: 14px; margin-top: 10px;">点击上方"浏览文件夹"按钮添加您的第一个插件</p>
+                        <p>${extensions.length ? '没有匹配的插件' : '暂无安装的插件'}</p>
+                        <p style="font-size: 14px; margin-top: 10px;">${extensions.length ? '换个关键词或筛选条件试试' : '点击上方"浏览文件夹"按钮添加您的第一个插件'}</p>
                     </div>
                 `;
                 return;
             }
             container.innerHTML = '';
-            extensions.forEach(ext => {
+            vis.forEach(ext => {
                 const card = document.createElement('div');
                 card.className = 'extension-card';
 
                 const header = document.createElement('div');
                 header.className = 'extension-header';
+
+                const chk = document.createElement('input');
+                chk.type = 'checkbox';
+                chk.className = 'sel';
+                chk.title = '选择此插件';
+                chk.checked = selectedSet.has(ext.id);
+                chk.addEventListener('change', () => {
+                    if (chk.checked) selectedSet.add(ext.id);
+                    else selectedSet.delete(ext.id);
+                    updateBatch();
+                });
+                header.appendChild(chk);
 
                 const icon = document.createElement('img');
                 icon.className = 'extension-icon';
@@ -452,6 +521,60 @@
                 container.appendChild(card);
             });
         }
+
+        async function batchToggle(enabled) {
+            const ids = Array.from(selectedSet);
+            if (!ids.length) return;
+            let okCount = 0;
+            for (const id of ids) {
+                try {
+                    const result = await window.electronAPI.invoke('toggle-extension', { id, enabled });
+                    if (result.success) okCount++;
+                } catch (e) {}
+            }
+            if (okCount > 0) showMessage('已' + (enabled ? '启用' : '禁用') + ' ' + okCount + ' 个插件，重启浏览器后生效');
+            selectedSet.clear();
+            loadExtensions();
+        }
+
+        async function batchRemove() {
+            const ids = Array.from(selectedSet);
+            if (!ids.length) return;
+            if (!confirm('确定要移除选中的 ' + ids.length + ' 个插件吗？')) return;
+            let okCount = 0;
+            for (const id of ids) {
+                try {
+                    const result = await window.electronAPI.invoke('remove-extension', id);
+                    if (result.success) okCount++;
+                } catch (e) {}
+            }
+            if (okCount > 0) showMessage('已移除 ' + okCount + ' 个插件');
+            selectedSet.clear();
+            loadExtensions();
+        }
+
+        document.getElementById('ext-search').addEventListener('input', renderExtensions);
+        document.querySelectorAll('.chip').forEach(chip => {
+            chip.addEventListener('click', () => {
+                document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+                chip.classList.add('active');
+                extFilter = chip.getAttribute('data-f') || 'all';
+                renderExtensions();
+            });
+        });
+        document.getElementById('selAll').addEventListener('change', () => {
+            const vis = visibleExtensions();
+            if (document.getElementById('selAll').checked) vis.forEach(ext => selectedSet.add(ext.id));
+            else vis.forEach(ext => selectedSet.delete(ext.id));
+            updateBatch();
+            renderExtensions();
+        });
+        document.getElementById('selToggleBtn').addEventListener('click', () => {
+            const vis = visibleExtensions();
+            const anyOff = vis.some(ext => !ext.enabled);
+            batchToggle(anyOff);
+        });
+        document.getElementById('selRemoveBtn').addEventListener('click', batchRemove);
 
         async function toggleExtension(extensionId, enabled) {
             try {
