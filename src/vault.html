@@ -398,6 +398,71 @@ window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').addEventL
   });
 
 refreshStatus();
+
+// ===== 主密码强度评估与输入保护 =====
+// 纯前端增强：对主密码输入框实时评估强度（长度 + 字符集），
+// 并限制输入长度/剔除控制字符，防止超长密码或异常字节进入加密流程。
+(function initPasswordGuard() {
+  const SCORE_LEVELS = [
+    { min: 0, text: '过短', cls: 'pw-warn' },
+    { min: 1, text: '很弱', cls: 'pw-warn' },
+    { min: 2, text: '弱', cls: 'pw-warn' },
+    { min: 3, text: '中等', cls: 'pw-ok' },
+    { min: 4, text: '强', cls: 'pw-ok' },
+    { min: 5, text: '极强', cls: 'pw-strong' }
+  ];
+
+  function scorePassword(pw) {
+    if (!pw) return 0;
+    let score = 0;
+    if (pw.length >= 8) score++;
+    if (pw.length >= 12) score++;
+    if (pw.length >= 16) score++;
+    if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) score++;
+    if (/\d/.test(pw)) score++;
+    if (/[^A-Za-z0-9]/.test(pw)) score++;
+    return score;
+  }
+
+  function levelOf(score) {
+    let lv = SCORE_LEVELS[0];
+    for (const l of SCORE_LEVELS) if (score >= l.min) lv = l;
+    return lv;
+  }
+
+  function attach(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    let meter = document.getElementById(id + 'Strength');
+    if (!meter) {
+      meter = document.createElement('div');
+      meter.id = id + 'Strength';
+      meter.style.cssText = 'margin-top:4px;font-size:11px;color:#888;';
+      el.parentNode.appendChild(meter);
+    }
+    el.addEventListener('input', function() {
+      let v = el.value;
+      // 长度上限与干净化：主密码超过 256 字符截断，剔除控制字符
+      const cleaned = v.replace(/[\x00-\x1f\x7f]/g, '');
+      if (cleaned !== v) el.value = cleaned;
+      if (el.value.length > 256) el.value = el.value.slice(0, 256);
+      const lv = levelOf(scorePassword(el.value));
+      meter.textContent = '强度：' + lv.text;
+      meter.style.color = lv.cls === 'pw-ok' ? '#2e7d32' : (lv.cls === 'pw-strong' ? '#1565c0' : '#c62828');
+    });
+    el.addEventListener('paste', function() {
+      // 粘贴后立即走一遍干净化，避免把带换行/制表符的密码粘进来
+      setTimeout(function() {
+        const v = el.value.replace(/[\x00-\x1f\x7f]/g, '').slice(0, 256);
+        if (v !== el.value) el.value = v;
+        el.dispatchEvent(new Event('input'));
+      }, 0);
+    });
+  }
+
+  attach('masterPw');
+  attach('rekeyPw');
+})();
 </script>
 </body>
 </html>
