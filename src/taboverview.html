@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: file:;">
 <title>标签页概览 - OpenCosy</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -12,10 +12,13 @@
 body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);padding:24px;transition:.3s;}
 h1{font-size:20px;margin-bottom:4px;}
 .tip{color:var(--sub);font-size:13px;margin-bottom:16px;}
-.bar{display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap;}
+.bar{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;}
 input.search{flex:1;min-width:200px;padding:9px 14px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font-size:14px;outline:none;}
 input.search:focus{border-color:var(--accent);}
 .count{font-size:12px;color:var(--sub);}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+.chip{display:inline-block;padding:4px 12px;border:1px solid var(--border);border-radius:16px;background:var(--card);color:var(--text);font-size:12px;cursor:pointer;}
+.chip.on{background:var(--accent);color:#fff;border-color:var(--accent);}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;}
 .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;cursor:pointer;position:relative;overflow:hidden;transition:box-shadow .15s,transform .1s;}
 .card:hover{box-shadow:0 4px 14px rgba(0,0,0,.12);}
@@ -40,11 +43,13 @@ input.search:focus{border-color:var(--accent);}
 </head>
 <body>
 <h1>标签页概览</h1>
-<div class="tip">按网格浏览当前窗口的全部标签页。点击卡片切换到该标签，悬停右上角可关闭；输入关键词过滤，↑↓ 选择、Enter 切换、Delete 关闭。F5 刷新缩略图。</div>
+<div class="tip">按网格浏览当前窗口的全部标签页。点击卡片切换到该标签，悬停右上角可关闭；输入关键词过滤，↑↓ 选择、Enter 切换、Delete 关闭。F5 刷新缩略图。按分组色条 / 徽标过滤：点击顶部分组标签只看该组；Alt+F 切换全屏。</div>
 <div class="bar">
   <input class="search" id="search" type="text" placeholder="过滤标签页（标题或网址）…" autofocus>
+  <button class="chip" id="fullscreen-btn" type="button" title="Alt+F 切换全屏">全屏</button>
   <span class="count" id="count"></span>
 </div>
+<div class="filters" id="filters"></div>
 <div class="grid" id="grid"><div class="empty-page">加载中…</div></div>
 <script>
 (function () {
@@ -52,9 +57,12 @@ input.search:focus{border-color:var(--accent);}
   var gridEl = document.getElementById('grid');
   var countEl = document.getElementById('count');
   var searchEl = document.getElementById('search');
+  var filtersEl = document.getElementById('filters');
+  var fullscreenBtn = document.getElementById('fullscreen-btn');
   var items = [];
   var selected = 0;
   var thumbCache = {};
+  var groupFilter = '';
 
   function setText(el, text) { el.textContent = String(text); }
 
@@ -68,6 +76,49 @@ input.search:focus{border-color:var(--accent);}
   function groupStyle(groupId, color) {
     return { '--group-color': String(color || '#0078d4') };
   }
+
+  // 分组过滤条：按出现的组名生成 chip，点击只显示该组标签；再次点击取消。
+  function renderFilters() {
+    filtersEl.textContent = '';
+    var seen = {};
+    var order = [];
+    for (var i = 0; i < items.length; i++) {
+      var g = items[i].groupName;
+      if (!g || seen[g]) continue;
+      seen[g] = true;
+      order.push(g);
+    }
+    if (order.length === 0) return;
+    var all = el('button', 'chip' + (groupFilter === '' ? ' on' : ''), '全部');
+    all.type = 'button';
+    all.addEventListener('click', function () { groupFilter = ''; render(); });
+    filtersEl.appendChild(all);
+    order.forEach(function (g) {
+      var c = el('button', 'chip' + (groupFilter === g ? ' on' : ''), g);
+      c.type = 'button';
+      c.addEventListener('click', function () {
+        groupFilter = groupFilter === g ? '' : g;
+        render();
+      });
+      filtersEl.appendChild(c);
+    });
+  }
+
+  function toggleFullscreen() {
+    var doc = document;
+    if (!doc.fullscreenElement) {
+      if (doc.documentElement.requestFullscreen) doc.documentElement.requestFullscreen().catch(function () {});
+      else if (doc.webkitRequestFullscreen) doc.webkitRequestFullscreen();
+    } else {
+      if (doc.exitFullscreen) doc.exitFullscreen().catch(function () {});
+      else if (doc.webkitExitFullscreen) doc.webkitExitFullscreen();
+    }
+  }
+
+  fullscreenBtn.addEventListener('click', function () { toggleFullscreen(); });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.altKey && (ev.key === 'f' || ev.key === 'F')) { toggleFullscreen(); ev.preventDefault(); }
+  });
 
   function cardFor(tab, index) {
     var card = el('div', 'card' + (tab.active ? ' active' : '') + (tab.groupId ? ' grouped' : ''));
@@ -131,15 +182,22 @@ input.search:focus{border-color:var(--accent);}
     return card;
   }
 
-  function render() {
+  function filterList() {
     var q = String(searchEl.value || '').trim().toLowerCase();
     var list = [];
     for (var i = 0; i < items.length; i++) {
       var t = items[i];
+      if (groupFilter && t.groupName !== groupFilter) continue;
       if (q && String(t.title || '').toLowerCase().indexOf(q) < 0
         && String(t.url || '').toLowerCase().indexOf(q) < 0) continue;
       list.push(t);
     }
+    return list;
+  }
+
+  function render() {
+    var list = filterList();
+    renderFilters();
     setText(countEl, list.length + ' / ' + items.length + ' 个标签页');
     gridEl.textContent = '';
     if (list.length === 0) {
@@ -165,34 +223,21 @@ input.search:focus{border-color:var(--accent);}
   }
 
   function activateSelected() {
-    var q = String(searchEl.value || '').trim().toLowerCase();
-    var list = [];
-    for (var i = 0; i < items.length; i++) {
-      var t = items[i];
-      if (q && String(t.title || '').toLowerCase().indexOf(q) < 0
-        && String(t.url || '').toLowerCase().indexOf(q) < 0) continue;
-      list.push(t);
-    }
+    var list = filterList();
     if (list[selected]) {
       window.electronAPI.invoke('tab-overview-activate', { id: list[selected].id }).catch(function () {});
     }
   }
 
   function closeSelected() {
-    var q = String(searchEl.value || '').trim().toLowerCase();
-    var list = [];
-    for (var i = 0; i < items.length; i++) {
-      var t = items[i];
-      if (q && String(t.title || '').toLowerCase().indexOf(q) < 0
-        && String(t.url || '').toLowerCase().indexOf(q) < 0) continue;
-      list.push(t);
-    }
+    var list = filterList();
     if (list[selected]) {
       window.electronAPI.invoke('tab-overview-close', { id: list[selected].id }).catch(function () {});
     }
   }
 
   document.addEventListener('keydown', function (ev) {
+    if (ev.altKey && (ev.key === 'f' || ev.key === 'F')) return;
     if (ev.key === 'ArrowDown') { selected++; if (selected >= gridEl.querySelectorAll('.card').length) selected = 0; highlight(); ev.preventDefault(); }
     else if (ev.key === 'ArrowUp') { selected--; if (selected < 0) selected = gridEl.querySelectorAll('.card').length - 1; highlight(); ev.preventDefault(); }
     else if (ev.key === 'Enter') { activateSelected(); ev.preventDefault(); }
