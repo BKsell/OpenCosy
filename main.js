@@ -682,7 +682,53 @@ function shelfSnapshot() {
 }
 
 function sendShelf() {
+  persistDownloads();
   sendToRenderer('download-shelf', downloadShelf.buildShelfSnapshot(downloads, downloadShelf.ShelfLimits));
+}
+
+// ===== 下载记录持久化（downloads.json）=====
+// 下载台账此前只活在内存里，重启即丢。这里落盘到 userData/downloads.json：
+// 写入前每条记录过 downloadshelf 内核净化（剥控制字符/ANSI、字段白名单、
+// savePath 显式校验），读取时同源净化并约束条数，防止被外部程序写坏的
+// 文件把危险字段灌回运行时。落盘走 ledgerStore 原子写，失败只记审计事件，
+// 不阻断下载流程。
+const MAX_PERSISTED_DOWNLOADS = 500;
+
+function downloadsStorePath() {
+  return path.join(app.getPath('userData'), 'downloads.json');
+}
+
+function persistDownloads() {
+  try {
+    const items = (downloads || []).slice(0, MAX_PERSISTED_DOWNLOADS)
+      .map(d => downloadShelf.sanitizeDownloadRecord(d, downloadShelf.ShelfLimits));
+    ledgerStore.writeJSONStore(downloadsStorePath(), items, { pretty: true });
+  } catch (e) {
+    recordSecurityEvent('downloads-persist', 'error',
+      '下载台账落盘失败: ' + String((e && e.message) || e).slice(0, 160), '');
+  }
+}
+
+function loadDownloads() {
+  try {
+    const p = downloadsStorePath();
+    if (!fsSync.existsSync(p)) return;
+    const parsed = ledgerStore.readJSONStore(p, null);
+    if (!Array.isArray(parsed)) {
+      recordSecurityEvent('downloads-load', 'warn', '下载台账文件结构非法，已忽略', '');
+      return;
+    }
+    const clean = [];
+    for (const raw of parsed.slice(0, MAX_PERSISTED_DOWNLOADS)) {
+      const rec = downloadShelf.sanitizeDownloadRecord(raw, downloadShelf.ShelfLimits);
+      if (rec && rec.id != null) clean.push(rec);
+    }
+    downloads.length = 0;
+    downloads.push(...clean);
+  } catch (e) {
+    recordSecurityEvent('downloads-load', 'error',
+      '下载台账读取失败: ' + String((e && e.message) || e).slice(0, 160), '');
+  }
 }
 
 // ===== 下载系统通知（downloadnotify 内核的 Electron 接线）=====
@@ -7142,6 +7188,7 @@ app.whenReady().then(async () => {
   loadZoomFactors();
   loadCustomRulesFromDisk(path.join(app.getPath('userData'), 'blockrules.json'));
   initVaultOnStartup();
+  loadDownloads();
 
   // 启动时还原 darkMode / httpsOnly / memorySaver 等运行时状态
   const stored = readStoredSettings();
