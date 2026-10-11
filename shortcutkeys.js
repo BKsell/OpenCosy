@@ -49,6 +49,7 @@ const ACTION = Object.freeze({
   FORWARD: 'forward',
   TOGGLE_BOOKMARK: 'toggle-bookmark',
   OPEN_HISTORY: 'open-history',
+  OPEN_HISTORY_PAGE: 'open-history-page',
   CLEAR_BROWSING_DATA: 'clear-browsing-data',
   TOGGLE_PINNED_TAB: 'toggle-pinned-tab',
 });
@@ -106,6 +107,9 @@ const SHORTCUT_RULES = Object.freeze([
   { action: ACTION.BACK, key: 'arrowleft', ctrl: null, shift: null, alt: true },
   { action: ACTION.FORWARD, key: 'arrowright', ctrl: null, shift: null, alt: null },
   { action: ACTION.TOGGLE_BOOKMARK, key: 'd', ctrl: true, shift: false, alt: null },
+  // 完整历史页：Ctrl+Shift+H。它必须排在 Ctrl+H（OPEN_HISTORY，shift 不限）之前，
+  // 因为 matchShortcut 取第一条命中；shift 限定规则在前才不会让宽松规则抢先。
+  { action: ACTION.OPEN_HISTORY_PAGE, key: 'h', ctrl: true, shift: true, alt: false },
   { action: ACTION.OPEN_HISTORY, key: 'h', ctrl: true, shift: null, alt: null },
   { action: ACTION.CLEAR_BROWSING_DATA, key: 'delete', ctrl: true, shift: true, alt: null },
   // 固定 / 取消固定当前标签。用 Alt+Shift+P 而不是 Ctrl+Shift+P：Ctrl+P 已绑打印，
@@ -186,6 +190,7 @@ const PRIMARY_ACCELERATOR = Object.freeze({
   [ACTION.FORWARD]: 'Alt+Right',
   [ACTION.TOGGLE_BOOKMARK]: 'Ctrl+D',
   [ACTION.OPEN_HISTORY]: 'Ctrl+H',
+  [ACTION.OPEN_HISTORY_PAGE]: 'Ctrl+Shift+H',
   [ACTION.CLEAR_BROWSING_DATA]: 'Ctrl+Shift+Delete',
   [ACTION.TOGGLE_PINNED_TAB]: 'Alt+Shift+P',
 });
