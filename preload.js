@@ -78,6 +78,8 @@ const allowedInvokeChannels = new Set([
   'clear-history',
   'history-snapshot',
   'history-delete-entry',
+  'history-delete-entries',
+  'history-export-json',
   'history-clear-all',
   'history-open-url',
   'bookmarks-snapshot',
