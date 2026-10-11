@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: file:;">
+<title>书签管理器 - OpenCosy</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+:root{--bg:#f3f3f3;--card:#fff;--text:#222;--sub:#666;--border:#dfe4e1;--accent:#0078d4;--danger:#dc3545;--hover:#eef3f8;}
+[data-theme="dark"]{--bg:#1a1a1a;--card:#2d2d2d;--text:#e6e6e6;--sub:#9a9a9a;--border:#444;--hover:#3a3a3a;}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);padding:24px;transition:.3s;max-width:960px;margin:0 auto;}
+h1{font-size:20px;margin-bottom:4px;}
+.tip{color:var(--sub);font-size:13px;margin-bottom:16px;}
+.bar{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;}
+input.search{flex:1;min-width:200px;padding:9px 14px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font-size:14px;outline:none;}
+input.search:focus{border-color:var(--accent);}
+button{font-family:inherit;cursor:pointer;}
+.btn{padding:8px 14px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font-size:13px;}
+.btn:hover{border-color:var(--accent);}
+.count{font-size:12px;color:var(--sub);}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+.chip{display:inline-block;padding:4px 12px;border:1px solid var(--border);border-radius:16px;background:var(--card);color:var(--text);font-size:12px;cursor:pointer;}
+.chip.on{background:var(--accent);color:#fff;border-color:var(--accent);}
+.row{display:flex;gap:10px;align-items:center;padding:9px 12px;border-bottom:1px solid var(--border);cursor:pointer;}
+.row:hover{background:var(--hover);}
+.row img.fav{width:16px;height:16px;flex:none;}
+.row .t-title{flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.row .t-url{flex:1.2;font-size:11px;color:var(--sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.row .t-date{font-size:11px;color:var(--sub);flex:none;min-width:80px;text-align:right;}
+.row .act{flex:none;display:flex;gap:4px;}
+.row .btn-sm{padding:3px 9px;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--sub);font-size:12px;}
+.row .btn-sm:hover{border-color:var(--accent);color:var(--accent);}
+.row .btn-sm.del:hover{border-color:var(--danger);color:var(--danger);}
+input.rename{flex:1;font-size:13px;padding:4px 8px;border:1px solid var(--accent);border-radius:6px;background:var(--card);color:var(--text);outline:none;}
+.empty-page{padding:40px;text-align:center;color:var(--sub);}
+</style>
+</head>
+<body>
+<h1>书签管理器</h1>
+<div class="tip">管理本机全部书签：搜索标题 / 网址，点击条目在新标签页打开，“重命名”就地改标题，“删除”移除书签。Ctrl+D 在任意页面添加 / 移除当前页书签。</div>
+<div class="bar">
+  <input class="search" id="search" type="text" placeholder="搜索书签（标题或网址）…" autofocus>
+  <span class="count" id="count"></span>
+</div>
+<div class="filters" id="filters"></div>
+<div id="list"></div>
+<script>
+(function () {
+  'use strict';
+  var searchEl = document.getElementById('search');
+  var countEl = document.getElementById('count');
+  var listEl = document.getElementById('list');
+  var filtersEl = document.getElementById('filters');
+  var items = [];
+  var hostFilter = '';
+  var editingUrl = null;
+
+  function setText(el, text) { el.textContent = String(text); }
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) setText(e, text);
+    return e;
+  }
+
+  function hostOf(url) {
+    try { return new URL(String(url)).host; } catch (e) { return ''; }
+  }
+
+  function dateText(ds) {
+    var d = new Date(String(ds || ''));
+    if (isNaN(d.getTime())) return '';
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  // 主机聚合 chip：点击过滤某个站点，再次点击取消。
+  function renderFilters() {
+    filtersEl.textContent = '';
+    var byHost = {};
+    for (var i = 0; i < items.length; i++) {
+      var h = hostOf(items[i].url);
+      if (!h) continue;
+      if (!byHost[h]) byHost[h] = 0;
+      byHost[h]++;
+    }
+    var hosts = Object.keys(byHost).sort(function (a, b) { return byHost[b] - byHost[a]; });
+    var all = el('button', 'chip' + (hostFilter === '' ? ' on' : ''), '全部站点');
+    all.type = 'button';
+    all.addEventListener('click', function () { hostFilter = ''; renderFilters(); render(); });
+    filtersEl.appendChild(all);
+    hosts.slice(0, 12).forEach(function (h) {
+      var c = el('button', 'chip' + (hostFilter === h ? ' on' : ''), h + '（' + byHost[h] + '）');
+      c.type = 'button';
+      c.addEventListener('click', function () {
+        hostFilter = hostFilter === h ? '' : h;
+        renderFilters();
+        render();
+      });
+      filtersEl.appendChild(c);
+    });
+  }
+
+  function filteredList() {
+    var q = String(searchEl.value || '').trim().toLowerCase();
+    var list = [];
+    for (var i = 0; i < items.length; i++) {
+      var b = items[i];
+      if (hostFilter && hostOf(b.url) !== hostFilter) continue;
+      if (q && String(b.title || '').toLowerCase().indexOf(q) < 0
+        && String(b.url || '').toLowerCase().indexOf(q) < 0) continue;
+      list.push(b);
+    }
+    return list;
+  }
+
+  function render() {
+    var list = filteredList();
+    setText(countEl, items.length + ' 条书签' + (list.length !== items.length ? '，筛出 ' + list.length + ' 条' : ''));
+    listEl.textContent = '';
+    if (list.length === 0) {
+      listEl.appendChild(el('div', 'empty-page', '没有匹配的书签'));
+      return;
+    }
+    list.forEach(function (b) {
+      var row = el('div', 'row');
+      var fav = document.createElement('img');
+      fav.className = 'fav'; fav.alt = '';
+      var h = hostOf(b.url);
+      if (h) fav.src = 'https://' + h + '/favicon.ico';
+      else fav.style.opacity = '0.25';
+      row.appendChild(fav);
+
+      if (editingUrl === b.url) {
+        var inp = document.createElement('input');
+        inp.className = 'rename';
+        inp.value = String(b.title || '');
+        inp.maxLength = 300;
+        inp.addEventListener('keydown', function (ev) {
+          if (ev.key === 'Enter') { saveRename(b, inp.value); ev.preventDefault(); }
+          else if (ev.key === 'Escape') { editingUrl = null; render(); ev.preventDefault(); }
+        });
+        row.appendChild(inp);
+        inp.addEventListener('blur', function () { if (editingUrl === b.url) saveRename(b, inp.value); });
+        row.appendChild(el('div', 't-date', dateText(b.addedDate)));
+      } else {
+        row.appendChild(el('div', 't-title', b.title || b.url || ''));
+        row.appendChild(el('div', 't-url', b.url || ''));
+        row.appendChild(el('div', 't-date', dateText(b.addedDate)));
+      }
+
+      var acts = el('div', 'act');
+      var openBtn = el('button', 'btn-sm', '打开');
+      openBtn.type = 'button';
+      openBtn.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        window.electronAPI.invoke('bookmarks-open-url', b.url).catch(function () {});
+      });
+      acts.appendChild(openBtn);
+      if (editingUrl !== b.url) {
+        var renBtn = el('button', 'btn-sm', '重命名');
+        renBtn.type = 'button';
+        renBtn.addEventListener('click', function (ev) {
+          ev.stopPropagation();
+          editingUrl = b.url;
+          render();
+        });
+        acts.appendChild(renBtn);
+      }
+      var delBtn = el('button', 'btn-sm del', '删除');
+      delBtn.type = 'button';
+      delBtn.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        window.electronAPI.invoke('bookmarks-remove', { url: b.url })
+          .then(function (r) {
+            if (!r || !r.ok) return;
+            items = items.filter(function (x) { return x.url !== b.url; });
+            if (editingUrl === b.url) editingUrl = null;
+            renderFilters();
+            render();
+          })
+          .catch(function () {});
+      });
+      acts.appendChild(delBtn);
+      row.appendChild(acts);
+
+      row.addEventListener('click', function () {
+        window.electronAPI.invoke('bookmarks-open-url', b.url).catch(function () {});
+      });
+      listEl.appendChild(row);
+    });
+  }
+
+  function saveRename(b, title) {
+    var t = String(title || '').trim();
+    if (!t) { editingUrl = null; render(); return; }
+    window.electronAPI.invoke('bookmarks-rename', { url: b.url, title: t })
+      .then(function (r) {
+        if (!r || !r.ok) return;
+        b.title = t;
+        editingUrl = null;
+        render();
+      })
+      .catch(function () { editingUrl = null; render(); });
+  }
+
+  searchEl.addEventListener('input', function () { render(); });
+
+  function load() {
+    if (!window.electronAPI || !window.electronAPI.invoke) return;
+    window.electronAPI.invoke('bookmarks-snapshot', {})
+      .then(function (r) {
+        if (!r || !r.ok || !Array.isArray(r.items)) return;
+        items = r.items;
+        renderFilters();
+        render();
+      })
+      .catch(function () { listEl.textContent = ''; listEl.appendChild(el('div', 'empty-page', '书签数据加载失败')); });
+  }
+  load();
+})();
+</script>
+</body>
+</html>
