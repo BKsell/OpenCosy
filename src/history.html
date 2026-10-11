@@ -234,7 +234,7 @@ button{font-family:inherit;cursor:pointer;}
       var fav = document.createElement('img');
       fav.className = 'fav'; fav.alt = '';
       var h = hostOf(it.url);
-      if (h) fav.src = 'https://' + h + '/favicon.ico';
+      if (h) { fav.src = 'https://' + h + '/favicon.ico'; fav.onerror = function () { fav.style.visibility = 'hidden'; }; }
       else fav.style.opacity = '0.25';
       row.appendChild(fav);
       row.appendChild(el('div', 't-title', it.title || it.url || ''));
@@ -301,6 +301,38 @@ button{font-family:inherit;cursor:pointer;}
         applyFilter();
       })
       .catch(function () {});
+  });
+
+  // 导出选中项（复用现有 history-export-json IPC，载荷按选中键回查原文）。
+  var selExportBtn = document.createElement('button');
+  selExportBtn.className = 'btn';
+  selExportBtn.type = 'button';
+  selExportBtn.textContent = '导出选中';
+  selExportBtn.title = '导出当前选中的历史记录为 JSON';
+  selBar.appendChild(selExportBtn);
+  selExportBtn.addEventListener('click', function () {
+    var keys = Object.keys(state.selected);
+    if (keys.length === 0) return;
+    var payload = keys.map(function (k) {
+      var p = k.indexOf('|');
+      var url = p > 0 ? k.slice(0, p) : k;
+      var ts = p > 0 ? Number(k.slice(p + 1)) || 0 : 0;
+      var it = null;
+      for (var i = 0; i < state.items.length; i++) {
+        if (state.items[i].url === url && (Number(state.items[i].timestamp) || 0) === ts) { it = state.items[i]; break; }
+      }
+      return { url: url, title: it ? String(it.title || '') : '', timestamp: ts };
+    });
+    var stamp = new Date().toISOString().slice(0, 10);
+    window.electronAPI.invoke('history-export-json', {
+      name: 'open-cosy-history-selected-' + stamp + '.json',
+      text: JSON.stringify(payload, null, 2),
+    })
+      .then(function (r) {
+        if (!r || !r.ok) { window.alert('导出失败：' + ((r && r.error) || '未知错误')); return; }
+        window.alert('已导出 ' + payload.length + ' 条选中记录到 ' + (r.path || '下载目录'));
+      })
+      .catch(function () { window.alert('导出失败：IPC 调用错误'); });
   });
 
   exportBtn.addEventListener('click', function () {
