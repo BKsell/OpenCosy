@@ -164,6 +164,11 @@
         .search-input:focus { outline: none; border-color: var(--theme-color); }
         .count-badge { font-size: 13px; color: var(--text-secondary); white-space: nowrap; }
         .error-detail { font-size: 12px; color: var(--danger-color); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .detail-panel { grid-column: 1 / -1; background: var(--bg-elevated, rgba(30,30,40,0.6)); border: 1px solid var(--border-color, rgba(255,255,255,0.12)); border-radius: 8px; padding: 10px 12px; margin-top: 8px; }
+        .detail-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .detail-table th { text-align: left; color: var(--muted-color, rgba(255,255,255,0.6)); width: 120px; padding: 3px 8px 3px 0; vertical-align: top; font-weight: 500; }
+        .detail-table td { color: var(--text-color, #fff); padding: 3px 0; word-break: break-all; white-space: pre-wrap; }
+        .detail-panel .action-btn { margin-top: 8px; }
         .sort-select {
             padding: 6px 10px; border: 1px solid var(--border-color); border-radius: 16px;
             background: var(--bg-secondary); color: var(--text-secondary); font-size: 13px; cursor: pointer; outline: none;
@@ -452,22 +457,87 @@
                 actions.appendChild(btn('打开', 'btn-primary', () => openFile(dl.savePath)));
                 actions.appendChild(btn('文件夹', 'btn-secondary', () => openFolder(dl.savePath)));
                 actions.appendChild(btn('复制链接', 'btn-secondary', () => copyLink(dl.url)));
+                actions.appendChild(btn('来源页', 'btn-secondary', () => openSource(dl.url)));
+                actions.appendChild(btn('详情', 'btn-secondary', () => toggleDetail(dl)));
                 actions.appendChild(btn('删除', 'btn-danger', () => removeDownload(dl.id)));
             } else if (dl.status === 'pending') {
                 const b = btn('等待中', 'btn-secondary', null);
                 b.disabled = true;
                 actions.appendChild(b);
+                actions.appendChild(btn('详情', 'btn-secondary', () => toggleDetail(dl)));
             } else if (dl.status === 'downloading') {
                 actions.appendChild(btn('暂停', 'btn-secondary', () => pauseDownload(dl.id)));
                 actions.appendChild(btn('取消', 'btn-danger', () => cancelDownload(dl.id)));
+                actions.appendChild(btn('详情', 'btn-secondary', () => toggleDetail(dl)));
             } else if (dl.status === 'paused') {
                 actions.appendChild(btn('继续', 'btn-primary', () => resumeDownload(dl.id)));
                 actions.appendChild(btn('取消', 'btn-danger', () => cancelDownload(dl.id)));
+                actions.appendChild(btn('详情', 'btn-secondary', () => toggleDetail(dl)));
             } else if (dl.status === 'error') {
                 actions.appendChild(btn('重试', 'btn-secondary', () => retryDownload(dl.id)));
                 actions.appendChild(btn('复制链接', 'btn-secondary', () => copyLink(dl.url)));
+                actions.appendChild(btn('来源页', 'btn-secondary', () => openSource(dl.url)));
+                actions.appendChild(btn('详情', 'btn-secondary', () => toggleDetail(dl)));
                 actions.appendChild(btn('删除', 'btn-danger', () => removeDownload(dl.id)));
             }
+        }
+
+        function openSource(url) {
+            if (typeof url !== 'string' || !/^https?:/i.test(url)) return;
+            if (window.electronAPI && window.electronAPI.invoke) {
+                window.electronAPI.invoke('create-tab', url).catch(() => {});
+            }
+        }
+
+        function detailOf(dl) {
+            const rows = [];
+            const push = (k, v) => rows.push({ k, v });
+            push('状态', getStatusText(dl.status));
+            push('文件名', String(dl.filename || ''));
+            if (typeof dl.url === 'string' && dl.url) push('下载地址', dl.url);
+            if (typeof dl.savePath === 'string' && dl.savePath) push('保存位置', dl.savePath);
+            if (Number(dl.startTime) > 0) push('开始时间', formatDate(dl.startTime));
+            if (Number(dl.totalBytes) > 0) push('文件大小', formatSize(dl.totalBytes));
+            if (dl.status === 'downloading' || dl.status === 'paused') {
+                push('已下载', `${formatSize(dl.receivedBytes)} / ${formatSize(dl.totalBytes)} (${dl.progress || 0}%)`);
+                if (dl.speed) push('速度', String(dl.speed));
+            }
+            if (typeof dl.errorMessage === 'string' && dl.errorMessage) {
+                push('错误信息', dl.errorMessage.replace(/[\u0000-\u001f\u007f]/g, ''));
+            }
+            return rows;
+        }
+
+        function toggleDetail(dl) {
+            const item = document.querySelector(`.download-item[data-id="${dl.id}"]`);
+            if (!item) return;
+            let panel = item.querySelector('.detail-panel');
+            if (panel) { panel.remove(); return; }
+            panel = document.createElement('div');
+            panel.className = 'detail-panel';
+            const rows = detailOf(dl);
+            const table = document.createElement('table');
+            table.className = 'detail-table';
+            for (const r of rows) {
+                const tr = document.createElement('tr');
+                const th = document.createElement('th');
+                th.textContent = r.k;
+                const td = document.createElement('td');
+                td.textContent = r.v;
+                td.title = r.v;
+                tr.appendChild(th);
+                tr.appendChild(td);
+                table.appendChild(tr);
+            }
+            panel.appendChild(table);
+            const copyPath = document.createElement('button');
+            copyPath.className = 'action-btn btn-secondary';
+            copyPath.textContent = '复制完整路径';
+            copyPath.addEventListener('click', () => {
+                if (window.electronAPI) window.electronAPI.send('copy-text', String(dl.savePath || ''));
+            });
+            panel.appendChild(copyPath);
+            item.appendChild(panel);
         }
 
         function copyLink(url) {
