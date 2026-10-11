@@ -1053,3 +1053,51 @@ body {
     color: var(--text-secondary);
     text-align: right;
 }
+
+/* ===== 顶栏书签栏（bookmarks bar）===== */
+/* 常驻书签栏：插在标签栏之前，横向排列，条目只显示安全书签（renderer 端
+   bookmarkbar 内核二次净化）。短标题按钮 + hover 高亮 + 溢出「更多」折叠。 */
+.bookmark-bar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px 8px;
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border-light);
+    overflow: hidden;
+    min-height: 26px;
+    user-select: none;
+}
+.bookmark-bar-item {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 180px;
+    height: 20px;
+    padding: 0 8px;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-primary);
+    font: 12px/20px system-ui, sans-serif;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+}
+.bookmark-bar-item:hover {
+    background: var(--bg-hover);
+}
+.bookmark-bar-item:focus-visible {
+    outline: 2px solid var(--theme-color);
+    outline-offset: -1px;
+}
+.bookmark-bar-more {
+    flex: 0 0 auto;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+.bookmark-bar-more:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
