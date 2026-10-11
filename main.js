@@ -8922,6 +8922,8 @@ ipcMain.handle('get-https-only', (event) => {
 ipcMain.handle('list-https-exceptions', () => ({
   enabled: httpsOnlyEnabled,
   hosts: httpsExceptions.hosts(),
+  size: typeof httpsExceptions.size === 'function' ? httpsExceptions.size() : 0,
+  capacity: httpsExceptions.capacity || 0,
 }));
 
 ipcMain.handle('add-https-exception', (event, payload = {}) => {
