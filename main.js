@@ -140,6 +140,8 @@ let downloads = [];
 let currentDownloadInfo = null;
 let isTabBarCollapsed = false;
 let bookmarks = [];
+// 稍后读列表：{ url, title, addedDate }，纯本机数据，不参与同步。
+let readingList = [];
 let history = [];
 let recentlyClosedTabs = [];
 
@@ -862,6 +864,31 @@ function loadBookmarks() {
     }
   } catch (e) {
     console.error('读取书签失败:', e);
+  }
+}
+
+// saveReadingList 写稍后读列表：复用 bookmarkGuard 的净化口径（仅 http/https、
+// title 去控制字符并限长、按 url 去重），与书签同款有界落盘。
+function saveReadingList() {
+  const rlPath = path.join(app.getPath('userData'), 'readinglist.json');
+  try {
+    const cleaned = bookmarkGuard.sanitizeBookmarkList(readingList, Date.now());
+    readingList = cleaned.items;
+    ledgerStore.writeJSONStore(rlPath, readingList, { pretty: true });
+  } catch (e) {
+    console.error('保存稍后读失败:', e);
+  }
+}
+
+function loadReadingList() {
+  const rlPath = path.join(app.getPath('userData'), 'readinglist.json');
+  try {
+    if (fsSync.existsSync(rlPath)) {
+      const parsed = ledgerStore.readJSONStore(rlPath, null);
+      if (parsed !== null) readingList = bookmarkGuard.sanitizeBookmarkList(parsed, Date.now()).items;
+    }
+  } catch (e) {
+    console.error('读取稍后读失败:', e);
   }
 }
 
@@ -5345,6 +5372,16 @@ function isBookmarksFrameSender(event) {
   return u.protocol === 'cosy:' && u.hostname === 'bookmarks';
 }
 
+// 稍后读帧守卫：只放行 cosy://readinglist 内置帧（主窗口外壳也可直达）。
+function isReadingListFrameSender(event) {
+  if (isMainSender(event)) return true;
+  const frame = event && event.senderFrame;
+  if (!frame || typeof frame.url !== 'string') return false;
+  let u;
+  try { u = new URL(frame.url); } catch { return false; }
+  return u.protocol === 'cosy:' && u.hostname === 'readinglist';
+}
+
 // 关于页帧守卫：只放行 cosy://about 内置帧（主窗口外壳也可直达）。
 function isAboutFrameSender(event) {
   if (isMainSender(event)) return true;
@@ -5391,6 +5428,7 @@ const INTERNAL_PAGES = {
   'taboverview': { title: '标签页概览', desc: '网格浏览全部标签页，分组过滤与快速切换。' },
   'history': { title: '历史记录', desc: '完整浏览历史：搜索、按站点过滤、单条删除与清空。' },
   'bookmarks': { title: '书签管理器', desc: '搜索、重命名与删除全部书签。' },
+  'readinglist': { title: '稍后读', desc: '收藏待读页面：右键链接即可加入，本地持久化。' },
   'about': { title: '关于', desc: '版本、运行时与安全状态总览。' },
   'shortcuts': { title: '快捷键', desc: '全部键盘快捷键速查表。' },
   'reader': { title: '阅读模式', desc: '当前页面的纯净阅读视图。' },
@@ -5710,6 +5748,10 @@ function loadTabContent(tab) {
       }
       if (mp.canUseLink && mp.linkUrl) {
         menu.append(new MenuItem({ label: '在新标签页中打开', click: () => createNewTab(mp.linkUrl) }));
+        menu.append(new MenuItem({
+          label: '加入稍后读',
+          click: () => addToReadingList(mp.linkUrl, mp.selectionText || '')
+        }));
         menu.append(new MenuItem({ label: '复制链接地址', click: () => clipboard.writeText(mp.linkUrl) }));
         menu.append(new MenuItem({ type: 'separator' }));
       }
@@ -5761,6 +5803,7 @@ function loadTabContent(tab) {
         'taboverview': 'src/taboverview.html',
         'history': 'src/history.html',
         'bookmarks': 'src/bookmarks.html',
+        'readinglist': 'src/readinglist.html',
         'about': 'src/about.html',
         'shortcuts': 'src/shortcuts.html',
         'pages': 'src/pages.html',
@@ -6701,6 +6744,7 @@ app.on('open-file', (event, filePath) => {
 app.whenReady().then(async () => {
   loadHistory();
   loadBookmarks();
+  loadReadingList();
   loadZoomFactors();
 
   // 启动时还原 darkMode / httpsOnly / memorySaver 等运行时状态
@@ -8093,6 +8137,64 @@ ipcMain.handle('bookmarks-rename', (event, payload = {}) => {
   saveBookmarks();
   sendToRenderer('bookmarks-updated', bookmarks);
   return { ok: true, title };
+});
+
+// 稍后读快照：返回全量条目（拷贝防外部篡改，标题/URL 长度收口，与书签同款净化）。
+ipcMain.handle('readinglist-snapshot', (event) => {
+  if (!isReadingListFrameSender(event)) return { ok: false, error: 'denied', items: [] };
+  const items = readingList.map(b => ({
+    url: typeof b.url === 'string' ? b.url.slice(0, 8192) : '',
+    title: typeof b.title === 'string' ? b.title.slice(0, 300) : '',
+    addedDate: typeof b.addedDate === 'string' ? b.addedDate : '',
+  }));
+  return { ok: true, items };
+});
+
+// 稍后读新增（右键菜单“加入稍后读”/页面内部调用）：URL 必须经 isSafeUrl 校验
+// （http/https），标题去控制字符并限长。已存在的同 URL 条目忽略（幂等）。
+function addToReadingList(url, title) {
+  if (!isSafeUrl(url)) return { ok: false, error: 'bad-url' };
+  let t = typeof title === 'string' ? title : '';
+  t = t.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 300).trim();
+  if (readingList.some(b => String(b.url || '') === url)) return { ok: true, added: false };
+  readingList.push({ url, title: t || url, addedDate: new Date().toISOString() });
+  saveReadingList();
+  return { ok: true, added: true };
+}
+
+ipcMain.handle('readinglist-add', (event, payload = {}) => {
+  if (!isReadingListFrameSender(event) && !isMainSender(event)) return { ok: false, error: 'denied' };
+  const url = typeof payload.url === 'string' ? payload.url : '';
+  return addToReadingList(url, payload.title);
+});
+
+// 稍后读打开：经 isSafeUrl 校验（含 cosy:// 内部页），新标签打开。
+ipcMain.handle('readinglist-open-url', (event, url) => {
+  if (!isReadingListFrameSender(event)) return { ok: false, error: 'denied' };
+  if (!isSafeUrl(url) && !(typeof url === 'string' && url.startsWith('cosy://'))) {
+    return { ok: false, error: 'bad-url' };
+  }
+  const tab = createNewTab(url);
+  return { ok: true, id: tab.id, index: tabs.length - 1 };
+});
+
+// 稍后读删除：按 url 精确匹配，删除后落盘。
+ipcMain.handle('readinglist-remove', (event, payload = {}) => {
+  if (!isReadingListFrameSender(event)) return { ok: false, error: 'denied' };
+  const url = typeof payload.url === 'string' ? payload.url : '';
+  const before = readingList.length;
+  readingList = readingList.filter(b => !(String(b.url || '') === url));
+  if (readingList.length !== before) saveReadingList();
+  return { ok: true, removed: before - readingList.length };
+});
+
+// 稍后读清空：整表清空并落盘。
+ipcMain.handle('readinglist-clear', (event) => {
+  if (!isReadingListFrameSender(event)) return { ok: false, error: 'denied' };
+  const before = readingList.length;
+  readingList = [];
+  if (before > 0) saveReadingList();
+  return { ok: true, removed: before };
 });
 
 // 关于页快照：版本 / 运行时 / 安全开关 / 跨主机连接台账汇总。
