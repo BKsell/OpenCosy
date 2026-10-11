@@ -5355,6 +5355,16 @@ function isAboutFrameSender(event) {
   return u.protocol === 'cosy:' && u.hostname === 'about';
 }
 
+// 快捷键速查页帧守卫：只放行 cosy://shortcuts 内置帧（主窗口外壳也可直达）。
+function isShortcutsFrameSender(event) {
+  if (isMainSender(event)) return true;
+  const frame = event && event.senderFrame;
+  if (!frame || typeof frame.url !== 'string') return false;
+  let u;
+  try { u = new URL(frame.url); } catch { return false; }
+  return u.protocol === 'cosy:' && u.hostname === 'shortcuts';
+}
+
 // tabOverviewItem 输出单标签的概览数据。字段做类型收口，避免脏标题 / 长 URL
 // 破坏网格布局；分组信息从 tabGroupModel 实时取，标签被改组后概览自动跟随。
 function tabOverviewItem(tab, index) {
@@ -5720,6 +5730,7 @@ function loadTabContent(tab) {
         'history': 'src/history.html',
         'bookmarks': 'src/bookmarks.html',
         'about': 'src/about.html',
+        'shortcuts': 'src/shortcuts.html',
         'reader': 'src/reader.html',
         'httpsonly': 'src/httpsonly.html'
       };
@@ -8083,6 +8094,20 @@ ipcMain.handle('about-snapshot', (event) => {
       },
     },
   };
+});
+
+// 快捷键速查页快照：导出规则表（动作 id + 键位 + 修饰键），供 cosy://shortcuts
+// 渲染。只放行内置帧；规则键值全部标量化，避免把内部对象引用暴露给页面。
+ipcMain.handle('shortcuts-snapshot', (event) => {
+  if (!isShortcutsFrameSender(event)) return { ok: false, error: 'denied', rules: [] };
+  const rules = shortcutKeys.SHORTCUT_RULES.map(r => ({
+    action: String(r.action || ''),
+    key: String(r.key || ''),
+    ctrl: r.ctrl === true ? 1 : r.ctrl === false ? 0 : null,
+    shift: r.shift === true ? 1 : r.shift === false ? 0 : null,
+    alt: r.alt === true ? 1 : r.alt === false ? 0 : null,
+  }));
+  return { ok: true, rules };
 });
 
 ipcMain.handle('get-https-only', (event) => {
