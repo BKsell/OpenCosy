@@ -51,6 +51,15 @@
         .suggest-chip .sc-add:hover { background: #4ade80; color: #10331c; }
         .suggest-chip .sc-skip { width: 18px; height: 18px; border-radius: 50%; background: transparent; color: rgba(255,255,255,0.6); font-size: 13px; line-height: 16px; text-align: center; cursor: pointer; flex-shrink: 0; }
         .suggest-chip .sc-skip:hover { background: rgba(255,255,255,0.25); color: #fff; }
+        .recent-wrap { margin: 18px auto 0; max-width: 600px; }
+        .recent-title { font-size: 12px; opacity: 0.75; margin-bottom: 10px; text-shadow: 0 1px 3px rgba(0,0,0,0.6); letter-spacing: 1px; }
+        .recent-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+        .recent-row:empty { display: none; }
+        .recent-chip { display: inline-flex; align-items: center; gap: 8px; padding: 5px 8px 5px 6px; border-radius: 999px; background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.18); backdrop-filter: blur(8px); font-size: 12px; cursor: pointer; transition: background 0.15s; }
+        .recent-chip:hover { background: rgba(255,255,255,0.24); }
+        .recent-chip .rc-letter { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; flex-shrink: 0; }
+        .recent-chip .rc-name { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-shadow: 0 1px 3px rgba(0,0,0,0.6); }
+        .recent-chip .rc-host { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.65; font-size: 11px; }
         .footer { position: absolute; bottom: 20px; font-size: 12px; opacity: 0.7; z-index: 2; text-shadow: 0 1px 3px rgba(0,0,0,0.5); display: flex; gap: 14px; align-items: center; }
         .net-pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-size: 11px; background: rgba(255,255,255,0.15); backdrop-filter: blur(6px); }
         .net-dot { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 6px #4ade80; }
@@ -96,6 +105,10 @@
         <div class="suggest-wrap" id="suggest-wrap" style="display:none;">
             <div class="suggest-title">根据浏览历史推荐 · 点 + 固定为磁贴</div>
             <div class="suggest-row" id="suggest-row"></div>
+        </div>
+        <div class="recent-wrap" id="recent-wrap" style="display:none;">
+            <div class="recent-title">最近关闭 · 点击恢复</div>
+            <div class="recent-row" id="recent-row"></div>
         </div>
     </div>
     <div class="footer" id="footer">
@@ -855,6 +868,51 @@
             }
         }
 
+        // ---- 最近关闭 ----
+        // 数据来自 get-recently-closed（主进程已净化字段并过 isSafeUrl 白名单），
+        // 这里只做 DOM 渲染（textContent，无 HTML 注入面），点击走受控通道恢复。
+        async function renderRecentlyClosed() {
+            const wrap = document.getElementById('recent-wrap');
+            const row = document.getElementById('recent-row');
+            if (!wrap || !row || !window.electronAPI || !window.electronAPI.invoke) return;
+            let items = [];
+            try {
+                const res = await window.electronAPI.invoke('get-recently-closed');
+                if (res && res.success && Array.isArray(res.items)) items = res.items;
+            } catch { items = []; }
+            row.innerHTML = '';
+            if (!items.length) { wrap.style.display = 'none'; return; }
+            wrap.style.display = 'block';
+            for (const it of items.slice(0, 6)) {
+                if (!it || typeof it.url !== 'string' || !isSafeUrl(it.url)) continue;
+                const host = hostOf(it.url);
+                const name = String(it.title || host).slice(0, 60) || host;
+                const chip = document.createElement('span');
+                chip.className = 'recent-chip';
+                chip.title = it.url;
+                const letter = document.createElement('span');
+                letter.className = 'rc-letter';
+                letter.style.background = guessColor(it.url);
+                letter.textContent = name.charAt(0).toUpperCase();
+                const nm = document.createElement('span');
+                nm.className = 'rc-name';
+                nm.textContent = name;
+                const hst = document.createElement('span');
+                hst.className = 'rc-host';
+                hst.textContent = host;
+                chip.addEventListener('click', () => {
+                    if (window.electronAPI && window.electronAPI.send) {
+                        window.electronAPI.send('reopen-tab-url', it.url);
+                    }
+                });
+                chip.appendChild(letter);
+                chip.appendChild(nm);
+                chip.appendChild(hst);
+                row.appendChild(chip);
+            }
+            if (!row.children.length) wrap.style.display = 'none';
+        }
+
         document.addEventListener('DOMContentLoaded', async function() {
             renderQuickLinks();
             setupTileKeyboard();
@@ -863,6 +921,7 @@
             setupSettingsPanel();
             await fetchHistory();
             renderSuggestions();
+            renderRecentlyClosed();
             window.addEventListener('online', updateNetworkPill);
             window.addEventListener('offline', updateNetworkPill);
             window.addEventListener('keydown', e => {

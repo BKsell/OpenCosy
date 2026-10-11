@@ -144,6 +144,7 @@ const GENERAL_CHANNELS = new Set([
   'dissolve-tab-group',
   'close-current-tab', 'navigate-to-url', 'reload-tab-by-id', 'reopen-tab-url',
   'get-current-tab', 'get-all-tabs', 'search-tabs', 'print-current-tab',
+  'get-recently-closed',
   // 外观 / 标签栏（非持久化敏感配置）
   'toggle-tabbar-collapse',
   // 地址栏 / 查找 / 缩放

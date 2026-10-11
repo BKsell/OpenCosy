@@ -7351,6 +7351,24 @@ ipcMain.handle('reopen-closed-tab', (event) => {
   return { success: false, empty: true };
 });
 
+// get-recently-closed 供新标签页的“最近关闭”区块拉取（只读、不弹栈）：
+// 快照字段经 downloadshelf 内核净化（剥控制字符/ANSI、限长），url 再走
+// isSafeUrl 白名单，cosy:// 与危险协议绝不外泄。
+ipcMain.handle('get-recently-closed', (event) => {
+  if (!isMainSender(event)) return { success: false };
+  const items = [];
+  for (let i = recentlyClosedTabs.length - 1; i >= 0 && items.length < 8; i--) {
+    const t = recentlyClosedTabs[i];
+    if (!t || !t.url || !isSafeUrl(t.url) || String(t.url).startsWith('cosy://')) continue;
+    items.push({
+      url: downloadShelf.truncateRunes(downloadShelf.stripControlChars(String(t.url)), 800),
+      title: downloadShelf.truncateRunes(downloadShelf.stripControlChars(String(t.title || '')), 120),
+      closedAt: Number.isFinite(Number(t.closedAt)) ? Number(t.closedAt) : null,
+    });
+  }
+  return { success: true, items };
+});
+
 ipcMain.handle('create-tab', (event, url) => {
   if (!isMainSender(event)) return { success: false };
   if (!isSafeUrl(url)) url = 'cosy://newtab';

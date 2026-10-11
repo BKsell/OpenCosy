@@ -47,6 +47,7 @@ const allowedInvokeChannels = new Set([
   'stop-loading',
   'duplicate-tab',
   'reopen-closed-tab',
+  'get-recently-closed',
   'set-tab-muted',
   'set-tab-pinned',
   'toggle-tab-pinned',
