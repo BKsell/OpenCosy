@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: file:;">
+<title>历史记录 - OpenCosy</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+:root{--bg:#f3f3f3;--card:#fff;--text:#222;--sub:#666;--border:#dfe4e1;--accent:#0078d4;--danger:#dc3545;--hover:#eef3f8;}
+[data-theme="dark"]{--bg:#1a1a1a;--card:#2d2d2d;--text:#e6e6e6;--sub:#9a9a9a;--border:#444;--hover:#3a3a3a;}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);padding:24px;transition:.3s;max-width:960px;margin:0 auto;}
+h1{font-size:20px;margin-bottom:4px;}
+.tip{color:var(--sub);font-size:13px;margin-bottom:16px;}
+.bar{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;}
+input.search{flex:1;min-width:200px;padding:9px 14px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font-size:14px;outline:none;}
+input.search:focus{border-color:var(--accent);}
+button{font-family:inherit;cursor:pointer;}
+.btn{padding:8px 14px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font-size:13px;}
+.btn:hover{border-color:var(--accent);}
+.btn.danger:hover{border-color:var(--danger);color:var(--danger);}
+.count{font-size:12px;color:var(--sub);}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+.chip{display:inline-block;padding:4px 12px;border:1px solid var(--border);border-radius:16px;background:var(--card);color:var(--text);font-size:12px;cursor:pointer;}
+.chip.on{background:var(--accent);color:#fff;border-color:var(--accent);}
+.groups{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;}
+.gitem{display:flex;gap:8px;align-items:center;padding:8px 12px;border:1px solid var(--border);border-radius:10px;background:var(--card);font-size:13px;}
+.gitem b{color:var(--accent);}
+.gitem span{color:var(--sub);font-size:11px;}
+.row{display:flex;gap:10px;align-items:center;padding:9px 12px;border-bottom:1px solid var(--border);cursor:pointer;}
+.row:hover{background:var(--hover);}
+.row img.fav{width:16px;height:16px;flex:none;}
+.row .t-title{flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.row .t-url{flex:1.2;font-size:11px;color:var(--sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.row .t-time{font-size:11px;color:var(--sub);flex:none;min-width:64px;text-align:right;}
+.row .del{width:24px;height:24px;border:none;border-radius:50%;background:transparent;color:var(--sub);font-size:15px;line-height:1;flex:none;}
+.row .del:hover{background:var(--danger);color:#fff;}
+.day{font-size:12px;color:var(--sub);margin:14px 0 6px;font-weight:600;}
+.pager{display:flex;gap:10px;align-items:center;margin-top:16px;justify-content:center;}
+.pager .pageinfo{font-size:12px;color:var(--sub);}
+.empty-page{padding:40px;text-align:center;color:var(--sub);}
+</style>
+</head>
+<body>
+<h1>历史记录</h1>
+<div class="tip">本机浏览器历史：搜索标题 / 网址，按站点过滤；点击条目在新标签页打开，悬停右侧 × 删除单条。Ctrl+Shift+Delete 可一键清空全部历史。顶部数字为按日分组的访问量。</div>
+<div class="bar">
+  <input class="search" id="search" type="text" placeholder="搜索历史（标题或网址）…" autofocus>
+  <span class="count" id="count"></span>
+  <button class="btn danger" id="clear-btn" type="button">清空全部历史</button>
+</div>
+<div class="filters" id="filters"></div>
+<div class="groups" id="groups"></div>
+<div id="list"></div>
+<div class="pager">
+  <button class="btn" id="prev-btn" type="button">← 上一页</button>
+  <span class="pageinfo" id="pageinfo"></span>
+  <button class="btn" id="next-btn" type="button">下一页 →</button>
+</div>
+<script>
+(function () {
+  'use strict';
+  var searchEl = document.getElementById('search');
+  var countEl = document.getElementById('count');
+  var listEl = document.getElementById('list');
+  var filtersEl = document.getElementById('filters');
+  var groupsEl = document.getElementById('groups');
+  var clearBtn = document.getElementById('clear-btn');
+  var prevBtn = document.getElementById('prev-btn');
+  var nextBtn = document.getElementById('next-btn');
+  var pageInfoEl = document.getElementById('pageinfo');
+  var PAGE_SIZE = 50;
+  var state = { items: [], groups: [], filtered: [], hostFilter: '', query: '', page: 0 };
+
+  function setText(el, text) { el.textContent = String(text); }
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) setText(e, text);
+    return e;
+  }
+
+  function hostOf(url) {
+    try { return new URL(String(url)).host; } catch (e) { return ''; }
+  }
+
+  function timeText(ts) {
+    var d = new Date(Number(ts));
+    if (isNaN(d.getTime())) return '';
+    var pad = function (n) { return n < 10 ? '0' + n : String(n); };
+    return pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  function dayLabel(ts) {
+    var d = new Date(Number(ts));
+    var today = new Date();
+    var yest = new Date(today.getTime() - 86400000);
+    var same = function (a, b) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); };
+    if (same(d, today)) return '今天';
+    if (same(d, yest)) return '昨天';
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  // 站点聚合条：按主机名汇总访问量，点击作为过滤 chip。
+  function renderGroups() {
+    groupsEl.textContent = '';
+    var byHost = {};
+    for (var i = 0; i < state.items.length; i++) {
+      var h = hostOf(state.items[i].url);
+      if (!h) continue;
+      if (!byHost[h]) byHost[h] = 0;
+      byHost[h]++;
+    }
+    var hosts = Object.keys(byHost).sort(function (a, b) { return byHost[b] - byHost[a]; });
+    if (hosts.length === 0) return;
+    hosts.slice(0, 12).forEach(function (h) {
+      var g = el('div', 'gitem');
+      g.appendChild(el('b', '', h));
+      g.appendChild(el('span', '', byHost[h] + ' 次'));
+      g.style.cursor = 'pointer';
+      g.addEventListener('click', function () {
+        state.hostFilter = state.hostFilter === h ? '' : h;
+        renderChips();
+        applyFilter();
+      });
+      groupsEl.appendChild(g);
+    });
+  }
+
+  function renderChips() {
+    filtersEl.textContent = '';
+    var all = el('button', 'chip' + (state.hostFilter === '' ? ' on' : ''), '全部站点');
+    all.type = 'button';
+    all.addEventListener('click', function () { state.hostFilter = ''; renderChips(); applyFilter(); });
+    filtersEl.appendChild(all);
+    if (state.hostFilter) {
+      var c = el('button', 'chip on', state.hostFilter);
+      c.type = 'button';
+      c.addEventListener('click', function () { state.hostFilter = ''; renderChips(); applyFilter(); });
+      filtersEl.appendChild(c);
+    }
+  }
+
+  function applyFilter() {
+    var q = state.query.toLowerCase();
+    state.filtered = [];
+    for (var i = 0; i < state.items.length; i++) {
+      var it = state.items[i];
+      if (state.hostFilter && hostOf(it.url) !== state.hostFilter) continue;
+      if (q && String(it.title || '').toLowerCase().indexOf(q) < 0
+        && String(it.url || '').toLowerCase().indexOf(q) < 0) continue;
+      state.filtered.push(it);
+    }
+    state.page = 0;
+    render();
+  }
+
+  function render() {
+    setText(countEl, state.items.length + ' 条记录' + (state.filtered.length !== state.items.length ? '，筛出 ' + state.filtered.length + ' 条' : ''));
+    listEl.textContent = '';
+    if (state.filtered.length === 0) {
+      listEl.appendChild(el('div', 'empty-page', '没有匹配的历史记录'));
+      pageInfoEl.textContent = '';
+      return;
+    }
+    var totalPages = Math.max(1, Math.ceil(state.filtered.length / PAGE_SIZE));
+    if (state.page >= totalPages) state.page = totalPages - 1;
+    var start = state.page * PAGE_SIZE;
+    var slice = state.filtered.slice(start, start + PAGE_SIZE);
+    var lastDay = '';
+    slice.forEach(function (it) {
+      var day = dayLabel(it.timestamp);
+      if (day !== lastDay) { lastDay = day; listEl.appendChild(el('div', 'day', day)); }
+      var row = el('div', 'row');
+      var fav = document.createElement('img');
+      fav.className = 'fav'; fav.alt = '';
+      var h = hostOf(it.url);
+      if (h) fav.src = 'https://' + h + '/favicon.ico';
+      else fav.style.opacity = '0.25';
+      row.appendChild(fav);
+      row.appendChild(el('div', 't-title', it.title || it.url || ''));
+      row.appendChild(el('div', 't-url', it.url || ''));
+      row.appendChild(el('div', 't-time', timeText(it.timestamp)));
+      var del = el('button', 'del', '×');
+      del.type = 'button';
+      del.title = '删除该条记录';
+      del.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        window.electronAPI.invoke('history-delete-entry', { url: it.url, timestamp: it.timestamp })
+          .then(function (r) {
+            if (!r || !r.ok) return;
+            state.items = state.items.filter(function (x) { return x !== it; });
+            applyFilter();
+          })
+          .catch(function () {});
+      });
+      row.appendChild(del);
+      row.addEventListener('click', function () {
+        window.electronAPI.invoke('history-open-url', it.url).catch(function () {});
+      });
+      listEl.appendChild(row);
+    });
+    setText(pageInfoEl, '第 ' + (state.page + 1) + ' / ' + totalPages + ' 页');
+    prevBtn.disabled = state.page <= 0;
+    nextBtn.disabled = state.page >= totalPages - 1;
+  }
+
+  prevBtn.addEventListener('click', function () { if (state.page > 0) { state.page--; render(); } });
+  nextBtn.addEventListener('click', function () { state.page++; render(); });
+  searchEl.addEventListener('input', function () { state.query = String(searchEl.value || '').trim(); applyFilter(); });
+  clearBtn.addEventListener('click', function () {
+    if (!window.confirm('确定清空全部历史记录？此操作不可撤销。')) return;
+    window.electronAPI.invoke('history-clear-all')
+      .then(function (r) {
+        if (!r || !r.ok) return;
+        state.items = []; applyFilter();
+      })
+      .catch(function () {});
+  });
+
+  function load() {
+    if (!window.electronAPI || !window.electronAPI.invoke) return;
+    window.electronAPI.invoke('history-snapshot', {})
+      .then(function (r) {
+        if (!r || !r.ok || !Array.isArray(r.items)) return;
+        state.items = r.items;
+        renderGroups();
+        renderChips();
+        applyFilter();
+      })
+      .catch(function () { listEl.textContent = ''; listEl.appendChild(el('div', 'empty-page', '历史数据加载失败')); });
+  }
+  load();
+})();
+</script>
+</body>
+</html>
