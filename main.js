@@ -65,6 +65,8 @@ const cursorGuard = require('./cursorguard');
 const entryGuard = require('./entryguard');
 const pinTabs = require('./pintabs');
 const tabSearch = require('./tabsearch');
+const tabGroups = require('./tabgroups');
+const tabOrderDiff = require('./taborderdiff');
 // r33：意外原生子窗口 / iframe 生命周期 / 屏幕捕获状态 / DevTools 开关 / 右键参数 /
 // IPC 入参形状，六个此前 0 接线的收口内核。
 const childWindowGuard = require('./childwindowguard');
@@ -4615,6 +4617,8 @@ function createWindow() {
       }
       // 固定标签独立持久化：会话恢复后补开缺失的固定页并重水合固定态。
       ensurePinnedTabsOpened();
+      // 标签分组独立持久化：会话恢复后按本次打开的标签重水合分组并重排标签栏。
+      rehydrateTabGroups();
     }
   });
 
@@ -4626,8 +4630,11 @@ function createWindow() {
       saveSession();
       // 同步写一次固定标签，防抖定时器在退出时可能来不及触发。
       savePinsNow();
+      // 同步写一次标签分组，防抖定时器在退出时可能来不及触发。
+      saveTabGroupsNow();
     } else {
       clearStoredPins();
+      clearStoredTabGroups();
     }
     mainWindow = null;
   });
@@ -5626,6 +5633,9 @@ function closeTab(tabIndex) {
     }
     addToRecentlyClosed(tab);
     popupOpenTimes.delete(tab.id);
+    // 标签分组同步：关闭的标签若在组内，移出成员；组因此变空则自动解散
+    // （与 Chrome 一致：最后一个标签关闭后组消失）。
+    tabGroupModel.onTabClosed(tab.id, true);
     if (tab.view) tab.view.webContents.destroy();
     tabs.splice(tabIndex, 1);
     if (tabs.length === 0) {
@@ -5635,6 +5645,7 @@ function closeTab(tabIndex) {
       currentTabIndex = tabs.length - 1;
     }
     if (tabs.length > 0) switchToTab(currentTabIndex);
+    persistTabGroups();
     sendToRenderer('tab-closed', tabIndex);
   }
 }
@@ -5809,6 +5820,237 @@ function planAndCloseTabs(mode, anchorId) {
   const closed = closeTabsByIds(plan.closeIds);
   return { success: true, closed, kept: plan.keepIds };
 }
+
+// ===== 标签分组（Tab Groups）=====
+// 权威分组集合由 tabgroups 纯内核维护；这里负责把分组状态落到 IPC / 磁盘、按分组
+// 重排标签栏、跨重启按当前标签重水合，以及把状态变化广播给渲染层。
+// 分组清单单独存 tabgroups.json：记录的是运行时标签 id，跨重启时用 rehydrate 按
+// “分组 id + 组内标签 id 集合”与当前打开的标签匹配（id 不跨重启，但组结构按顺序
+// 恢复，组内标签 id 会在启动后由渲染层按当前 id 重新归属）。
+const tabGroupModel = new tabGroups.TabGroupModel();
+const tabGroupStorePath = path.join(app.getPath('userData'), 'tabgroups.json');
+let tabGroupSaveTimer = null;
+
+// tabGroupIsPinned 判定标签是否固定：固定标签与分组互斥（内核同规则），
+// 固定优先，分组只作用于非固定区。
+function tabGroupIsPinned(tabId) {
+  const idx = findTabIndexById(tabId);
+  return idx >= 0 && !!tabs[idx].pinned;
+}
+
+function saveTabGroupsNow() {
+  try {
+    ledgerStore.writeJSONStore(tabGroupStorePath, {
+      version: 1,
+      groups: tabGroupModel.serialize(),
+    });
+  } catch (e) {
+    console.error('保存标签分组失败:', e);
+  }
+}
+
+function persistTabGroups() {
+  if (tabGroupSaveTimer) clearTimeout(tabGroupSaveTimer);
+  tabGroupSaveTimer = setTimeout(saveTabGroupsNow, 400);
+}
+
+function loadStoredTabGroups() {
+  try {
+    const data = ledgerStore.readJSONStore(tabGroupStorePath, null);
+    if (!data || typeof data !== 'object') return [];
+    return tabGroups.sanitizeStoredGroups(data.groups);
+  } catch (e) {
+    console.error('读取标签分组失败:', e);
+    return [];
+  }
+}
+
+function clearStoredTabGroups() {
+  try {
+    if (fsSync.existsSync(tabGroupStorePath)) fsSync.unlinkSync(tabGroupStorePath);
+  } catch (e) {
+    console.error('清除标签分组失败:', e);
+  }
+}
+
+// tabGroupOrder 依据内核 arrangeTabs 计算“目标标签 id 顺序”：固定区最前、
+// 已分组标签按组聚类、未分组标签保持原相对顺序垫后。渲染层按此顺序渲染。
+function tabGroupOrder() {
+  return tabGroups.arrangeTabs(
+    tabs.map(t => ({ id: t.id, pinned: !!t.pinned })),
+    tabGroupModel,
+    { isPinnedFn: tabGroupIsPinned }
+  );
+}
+
+// broadcastTabGroups 把分组快照（分组列表 + 编排后的标签顺序）推给渲染层。
+// 快照只含纯数据，绝不暴露 Tab 对象 / WebContents。
+function broadcastTabGroups() {
+  sendToRenderer('tab-groups-changed', {
+    groups: tabGroupModel.serialize(),
+    order: tabGroupOrder(),
+  });
+}
+
+// reorderTabsByGroupPlan 依据目标顺序对 tabs 数组做物理重排（Tab 对象挂在
+// Tab.view 上，随元素移动，无需重建视图），并修正当前标签索引。最后让渲染层
+// 按新顺序渲染。返回是否发生了顺序变化。
+function reorderTabsByGroupPlan(targetOrder) {
+  if (!Array.isArray(targetOrder) || targetOrder.length !== tabs.length) return false;
+  const byId = new Map(tabs.map(t => [t.id, t]));
+  const next = targetOrder.map(id => byId.get(id));
+  if (next.some(t => !t)) return false; // 目标顺序与当前标签不一致时不擅动
+  const currentTab = tabs[currentTabIndex];
+  for (let i = 0; i < tabs.length; i++) tabs[i] = next[i];
+  if (currentTab) {
+    const ni = tabs.indexOf(currentTab);
+    if (ni >= 0) currentTabIndex = ni;
+  }
+  return true;
+}
+
+// applyTabGroupArrangement 是“按分组重排标签栏”的唯一权威入口：用内核计算目标
+// 顺序，再用 taborderdiff 求出最小移动指令（只移动需要挪位的标签，已有序的原地
+// 不动），物理重排后广播。任何分组结构变化（建组 / 加标签 / 移出 / 解散 / 组间
+// 移动）都调用它，避免渲染层各自猜测顺序。
+function applyTabGroupArrangement() {
+  const target = tabGroupOrder();
+  const before = tabs.map(t => t.id);
+  const diff = tabOrderDiff.diffOrder(before, target);
+  if (!diff.ok) return;
+  if (diff.unchanged) return;
+  // 目标顺序与当前标签集合必须一致（diff 已确认 created/removed 为空才可重排）。
+  if (diff.created.length > 0 || diff.removed.length > 0) return;
+  if (reorderTabsByGroupPlan(target)) {
+    broadcastTabGroups();
+    sendToRenderer('pins-order-changed', { ids: pinModel.ids() });
+  }
+}
+
+// rehydrateTabGroups 在启动会话恢复出标签之后调用：读取磁盘分组清单，按“组内
+// 标签 id 与本次打开的非固定标签匹配”重水合模型（不匹配的组内标签剔除，变空的
+// 组丢弃），然后按分组重排一次标签栏。
+function rehydrateTabGroups() {
+  const stored = loadStoredTabGroups();
+  if (!stored.length) return 0;
+  const current = tabs.map(t => ({ id: t.id, pinned: !!t.pinned }));
+  const clean = tabGroups.rehydrateGroupsByTabs(stored, current);
+  tabGroupModel.loadStored(clean);
+  if (tabGroupModel.groupCount() > 0) {
+    applyTabGroupArrangement();
+    broadcastTabGroups();
+  }
+  return tabGroupModel.groupCount();
+}
+
+// tabGroupError 把内核拒绝原因转成渲染层可读的 { ok:false, reason }。
+function tabGroupError(r) {
+  return { ok: false, reason: r && r.reason ? tabGroups.describeReject(r.reason) : '分组操作失败' };
+}
+
+ipcMain.handle('get-tab-groups', (event) => {
+  if (!isMainSender(event)) return { groups: [], order: [] };
+  return { groups: tabGroupModel.serialize(), order: tabGroupOrder() };
+});
+
+ipcMain.handle('create-tab-group', (event, payload) => {
+  if (!isMainSender(event)) return { ok: false, reason: 'Unauthorized' };
+  const opts = payload || {};
+  // 入参全部由内核净化：标题 / 颜色 / 标签 id 列表 / 折叠态都走白名单校验，
+  // 固定标签会被剔除；脏输入不会进入模型或台账。
+  const r = tabGroupModel.createGroup({
+    title: opts.title,
+    color: opts.color,
+    tabIds: Array.isArray(opts.tabIds) ? opts.tabIds : [],
+    collapsed: opts.collapsed === true,
+  }, tabGroupIsPinned);
+  if (!r.ok) return tabGroupError(r);
+  persistTabGroups();
+  applyTabGroupArrangement();
+  return { ok: true, group: r.group };
+});
+
+ipcMain.handle('add-tabs-to-group', (event, payload) => {
+  if (!isMainSender(event)) return { ok: false, reason: 'Unauthorized' };
+  const r = tabGroupModel.addTabs(
+    payload && payload.groupId,
+    Array.isArray(payload && payload.tabIds) ? payload.tabIds : [],
+    tabGroupIsPinned
+  );
+  if (!r.ok) return tabGroupError(r);
+  persistTabGroups();
+  applyTabGroupArrangement();
+  return { ok: true, added: r.added, skippedPinned: r.skippedPinned };
+});
+
+ipcMain.handle('remove-tabs-from-group', (event, payload) => {
+  if (!isMainSender(event)) return { ok: false, reason: 'Unauthorized' };
+  const r = tabGroupModel.removeTabs(
+    Array.isArray(payload && payload.tabIds) ? payload.tabIds : []
+  );
+  if (!r.ok) return tabGroupError(r);
+  persistTabGroups();
+  applyTabGroupArrangement();
+  return { ok: true, removed: r.removed };
+});
+
+ipcMain.handle('move-tab-to-group', (event, payload) => {
+  if (!isMainSender(event)) return { ok: false, reason: 'Unauthorized' };
+  const r = tabGroupModel.moveTab(
+    payload && payload.tabId,
+    payload && payload.groupId,
+    tabGroupIsPinned
+  );
+  if (!r.ok) return tabGroupError(r);
+  persistTabGroups();
+  applyTabGroupArrangement();
+  return { ok: true, movedTo: r.movedTo || null };
+});
+
+ipcMain.handle('rename-tab-group', (event, payload) => {
+  if (!isMainSender(event)) return { ok: false, reason: 'Unauthorized' };
+  const r = tabGroupModel.renameGroup(payload && payload.groupId, payload && payload.title);
+  if (!r.ok) return tabGroupError(r);
+  persistTabGroups();
+  broadcastTabGroups();
+  return { ok: true, group: r.group };
+});
+
+ipcMain.handle('set-tab-group-color', (event, payload) => {
+  if (!isMainSender(event)) return { ok: false, reason: 'Unauthorized' };
+  const r = tabGroupModel.setGroupColor(payload && payload.groupId, payload && payload.color);
+  if (!r.ok) return tabGroupError(r);
+  persistTabGroups();
+  broadcastTabGroups();
+  return { ok: true, group: r.group };
+});
+
+ipcMain.handle('set-tab-group-collapsed', (event, payload) => {
+  if (!isMainSender(event)) return { ok: false, reason: 'Unauthorized' };
+  const r = tabGroupModel.setGroupCollapsed(payload && payload.groupId, !!(payload && payload.collapsed));
+  if (!r.ok) return tabGroupError(r);
+  persistTabGroups();
+  broadcastTabGroups();
+  return { ok: true, group: r.group };
+});
+
+ipcMain.handle('move-tab-group', (event, payload) => {
+  if (!isMainSender(event)) return { ok: false, reason: 'Unauthorized' };
+  const r = tabGroupModel.moveGroup(payload && payload.groupId, payload && payload.toGroupId);
+  if (!r.ok) return tabGroupError(r);
+  persistTabGroups();
+  applyTabGroupArrangement();
+  return { ok: true, order: r.order };
+});
+
+ipcMain.handle('dissolve-tab-group', (event, payload) => {
+  if (!isMainSender(event)) return { ok: false, reason: 'Unauthorized' };
+  const r = tabGroupModel.dissolveGroup(payload && payload.groupId);
+  if (!r.ok) return tabGroupError(r);
+  persistTabGroups();
+  applyTabGroupArrangement();
+  return { ok: true, freedTabs: r.freedTabs };
+});
 
 // sanitizeDownloadFilename 防 Content-Disposition 路径穿越与视觉伪装：
 // 服务端可能在 filename 里塞 "../../evil.exe"、RTL 反转符、结尾点空格或
