@@ -34,6 +34,10 @@ button{font-family:inherit;cursor:pointer;}
 .row .btn-sm.del:hover{border-color:var(--danger);color:var(--danger);}
 input.rename{flex:1;font-size:13px;padding:4px 8px;border:1px solid var(--accent);border-radius:6px;background:var(--card);color:var(--text);outline:none;}
 .empty-page{padding:40px;text-align:center;color:var(--sub);}
+.row .sel{width:18px;height:18px;accent-color:var(--accent);flex:none;}
+.batchbar{display:flex;gap:10px;align-items:center;margin-bottom:10px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--card);font-size:12px;}
+.batchbar .info{color:var(--accent);font-weight:600;}
+select.sort{padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font-size:13px;outline:none;}
 </style>
 </head>
 <body>
@@ -41,7 +45,19 @@ input.rename{flex:1;font-size:13px;padding:4px 8px;border:1px solid var(--accent
 <div class="tip">管理本机全部书签：搜索标题 / 网址，点击条目在新标签页打开，“重命名”就地改标题，“删除”移除书签。Ctrl+D 在任意页面添加 / 移除当前页书签。</div>
 <div class="bar">
   <input class="search" id="search" type="text" placeholder="搜索书签（标题或网址）…" autofocus>
+  <select class="sort" id="sort">
+    <option value="added">按添加时间排序</option>
+    <option value="title">按标题排序</option>
+    <option value="host">按站点排序</option>
+  </select>
   <span class="count" id="count"></span>
+  <button class="btn" id="export-btn" type="button">导出</button>
+</div>
+<div class="batchbar" id="batchbar" style="display:none;">
+  <input type="checkbox" class="sel" id="selAll" title="全选当前结果">
+  <span>全选</span>
+  <span class="info" id="selInfo"></span>
+  <button class="btn" id="seldel-btn" type="button" style="color:var(--danger);">删除选中</button>
 </div>
 <div class="filters" id="filters"></div>
 <div id="list"></div>
@@ -55,6 +71,22 @@ input.rename{flex:1;font-size:13px;padding:4px 8px;border:1px solid var(--accent
   var items = [];
   var hostFilter = '';
   var editingUrl = null;
+  var selected = {};
+  var searchEl2 = document.getElementById('search');
+  var sortEl = document.getElementById('sort');
+  var batchbar = document.getElementById('batchbar');
+  var selInfo = document.getElementById('selInfo');
+  var selAll = document.getElementById('selAll');
+  var exportBtn = document.getElementById('export-btn');
+  var selDelBtn = document.getElementById('seldel-btn');
+
+  function updateBatch() {
+    var n = Object.keys(selected).length;
+    if (n === 0) { batchbar.style.display = 'none'; return; }
+    batchbar.style.display = 'flex';
+    setText(selInfo, '已选 ' + n + ' 条');
+    selAll.checked = filteredList().every(function (b) { return selected[b.url]; });
+  }
 
   function setText(el, text) { el.textContent = String(text); }
 
@@ -103,7 +135,7 @@ input.rename{flex:1;font-size:13px;padding:4px 8px;border:1px solid var(--accent
   }
 
   function filteredList() {
-    var q = String(searchEl.value || '').trim().toLowerCase();
+    var q = String(searchEl2.value || '').trim().toLowerCase();
     var list = [];
     for (var i = 0; i < items.length; i++) {
       var b = items[i];
@@ -112,6 +144,10 @@ input.rename{flex:1;font-size:13px;padding:4px 8px;border:1px solid var(--accent
         && String(b.url || '').toLowerCase().indexOf(q) < 0) continue;
       list.push(b);
     }
+    var mode = sortEl.value;
+    if (mode === 'title') list.sort(function (a, b) { return String(a.title || '').localeCompare(String(b.title || '')); });
+    else if (mode === 'host') list.sort(function (a, b) { return hostOf(a.url).localeCompare(hostOf(b.url)); });
+    else list.sort(function (a, b) { return String(b.addedDate || '').localeCompare(String(a.addedDate || '')); });
     return list;
   }
 
@@ -125,6 +161,16 @@ input.rename{flex:1;font-size:13px;padding:4px 8px;border:1px solid var(--accent
     }
     list.forEach(function (b) {
       var row = el('div', 'row');
+      var chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.className = 'sel';
+      chk.checked = !!selected[b.url];
+      chk.addEventListener('change', function () {
+        if (chk.checked) selected[b.url] = true;
+        else delete selected[b.url];
+        updateBatch();
+      });
+      row.appendChild(chk);
       var fav = document.createElement('img');
       fav.className = 'fav'; fav.alt = '';
       var h = hostOf(b.url);
@@ -206,6 +252,40 @@ input.rename{flex:1;font-size:13px;padding:4px 8px;border:1px solid var(--accent
   }
 
   searchEl.addEventListener('input', function () { render(); });
+  sortEl.addEventListener('change', function () { render(); });
+  exportBtn.addEventListener('click', function () {
+    window.electronAPI.invoke('export-bookmarks', 'json').catch(function () {});
+  });
+  selAll.addEventListener('change', function () {
+    var list = filteredList();
+    if (selAll.checked) list.forEach(function (b) { selected[b.url] = true; });
+    else list.forEach(function (b) { delete selected[b.url]; });
+    updateBatch();
+    render();
+  });
+  selDelBtn.addEventListener('click', function () {
+    var urls = Object.keys(selected);
+    if (urls.length === 0) return;
+    if (!window.confirm('删除选中的 ' + urls.length + ' 条书签？')) return;
+    var done = 0;
+    urls.forEach(function (u) {
+      window.electronAPI.invoke('bookmarks-remove', { url: u })
+        .then(function (r) {
+          done++;
+          if (r && r.ok) {
+            items = items.filter(function (x) { return x.url !== u; });
+            delete selected[u];
+          }
+          if (done >= urls.length) {
+            if (editingUrl && !items.some(function (x) { return x.url === editingUrl; })) editingUrl = null;
+            renderFilters();
+            render();
+            updateBatch();
+          }
+        })
+        .catch(function () { done++; });
+    });
+  });
 
   function load() {
     if (!window.electronAPI || !window.electronAPI.invoke) return;
