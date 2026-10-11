@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+<title>标签页概览 - OpenCosy</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+:root{--bg:#f3f3f3;--card:#fff;--text:#222;--sub:#666;--border:#dfe4e1;--accent:#0078d4;--danger:#dc3545;}
+[data-theme="dark"]{--bg:#1a1a1a;--card:#2d2d2d;--text:#e6e6e6;--sub:#9a9a9a;--border:#444;}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);padding:24px;transition:.3s;}
+h1{font-size:20px;margin-bottom:4px;}
+.tip{color:var(--sub);font-size:13px;margin-bottom:16px;}
+.bar{display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap;}
+input.search{flex:1;min-width:200px;padding:9px 14px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font-size:14px;outline:none;}
+input.search:focus{border-color:var(--accent);}
+.count{font-size:12px;color:var(--sub);}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;cursor:pointer;position:relative;overflow:hidden;transition:box-shadow .15s,transform .1s;}
+.card:hover{box-shadow:0 4px 14px rgba(0,0,0,.12);}
+.card.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);}
+.card.grouped::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--group-color,#0078d4);}
+.thumb{width:100%;height:108px;border-radius:8px;background:var(--bg);border:1px solid var(--border);object-fit:cover;margin-bottom:8px;}
+.thumb.empty{display:flex;align-items:center;justify-content:center;color:var(--sub);font-size:12px;}
+.row1{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+.row1 img.fav{width:16px;height:16px;flex:none;}
+.t-title{font-size:13px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.t-url{font-size:11px;color:var(--sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:8px;}
+.badges{display:flex;gap:6px;flex-wrap:wrap;}
+.badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;background:var(--border);color:var(--sub);}
+.badge.pin{background:var(--accent);color:#fff;}
+.badge.mute{background:var(--border);color:var(--sub);}
+.badge.group{background:var(--group-color,#0078d4);color:#fff;}
+.btn-close{position:absolute;top:8px;right:8px;width:24px;height:24px;border:none;border-radius:50%;background:transparent;color:var(--sub);font-size:15px;line-height:1;cursor:pointer;display:none;align-items:center;justify-content:center;}
+.card:hover .btn-close{display:flex;}
+.btn-close:hover{background:var(--danger);color:#fff;}
+.empty-page{padding:40px;text-align:center;color:var(--sub);}
+</style>
+</head>
+<body>
+<h1>标签页概览</h1>
+<div class="tip">按网格浏览当前窗口的全部标签页。点击卡片切换到该标签，悬停右上角可关闭；输入关键词过滤，↑↓ 选择、Enter 切换、Delete 关闭。F5 刷新缩略图。</div>
+<div class="bar">
+  <input class="search" id="search" type="text" placeholder="过滤标签页（标题或网址）…" autofocus>
+  <span class="count" id="count"></span>
+</div>
+<div class="grid" id="grid"><div class="empty-page">加载中…</div></div>
+<script>
+(function () {
+  'use strict';
+  var gridEl = document.getElementById('grid');
+  var countEl = document.getElementById('count');
+  var searchEl = document.getElementById('search');
+  var items = [];
+  var selected = 0;
+  var thumbCache = {};
+
+  function setText(el, text) { el.textContent = String(text); }
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) setText(e, text);
+    return e;
+  }
+
+  function groupStyle(groupId, color) {
+    return { '--group-color': String(color || '#0078d4') };
+  }
+
+  function cardFor(tab, index) {
+    var card = el('div', 'card' + (tab.active ? ' active' : '') + (tab.groupId ? ' grouped' : ''));
+    var style = groupStyle(tab.groupId, tab.groupColor);
+    for (var k in style) card.style.setProperty(k, style[k]);
+    card.tabIndex = 0;
+
+    var thumb = document.createElement('div');
+    thumb.className = 'thumb empty';
+    setText(thumb, '加载缩略图…');
+    if (tab.id && thumbCache[tab.id]) {
+      thumb = document.createElement('img');
+      thumb.className = 'thumb';
+      thumb.alt = '';
+      thumb.src = thumbCache[tab.id];
+    } else if (tab.id) {
+      window.electronAPI.invoke('tab-overview-capture', { id: tab.id })
+        .then(function (r) {
+          if (!r || !r.ok || !r.dataUrl || thumbCache[tab.id]) return;
+          thumbCache[tab.id] = r.dataUrl;
+          thumb.className = 'thumb';
+          thumb.alt = '';
+          thumb.src = r.dataUrl;
+        })
+        .catch(function () { setText(thumb, '缩略图不可用'); });
+    }
+    card.appendChild(thumb);
+
+    var row1 = el('div', 'row1');
+    var fav = document.createElement('img');
+    fav.className = 'fav';
+    fav.alt = '';
+    if (tab.favicon) { fav.src = String(tab.favicon); } else { fav.style.opacity = '0.25'; }
+    row1.appendChild(fav);
+    row1.appendChild(el('div', 't-title', tab.title || '未命名标签页'));
+    card.appendChild(row1);
+    card.appendChild(el('div', 't-url', tab.url || ''));
+
+    var badges = el('div', 'badges');
+    if (tab.active) badges.appendChild(el('span', 'badge', '当前'));
+    if (tab.pinned) badges.appendChild(el('span', 'badge pin', '固定'));
+    if (tab.muted) badges.appendChild(el('span', 'badge mute', '静音'));
+    if (tab.groupName) badges.appendChild(el('span', 'badge group', tab.groupName));
+    if (badges.childNodes.length) card.appendChild(badges);
+
+    var closeBtn = el('button', 'btn-close', '×');
+    closeBtn.type = 'button';
+    closeBtn.title = '关闭标签页';
+    closeBtn.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      window.electronAPI.invoke('tab-overview-close', { id: tab.id }).catch(function () {});
+    });
+    card.appendChild(closeBtn);
+
+    card.addEventListener('click', function () {
+      window.electronAPI.invoke('tab-overview-activate', { id: tab.id }).catch(function () {});
+    });
+    card.addEventListener('mousedown', function (ev) {
+      if (ev.button === 1) { ev.preventDefault(); closeBtn.click(); }
+    });
+    return card;
+  }
+
+  function render() {
+    var q = String(searchEl.value || '').trim().toLowerCase();
+    var list = [];
+    for (var i = 0; i < items.length; i++) {
+      var t = items[i];
+      if (q && String(t.title || '').toLowerCase().indexOf(q) < 0
+        && String(t.url || '').toLowerCase().indexOf(q) < 0) continue;
+      list.push(t);
+    }
+    setText(countEl, list.length + ' / ' + items.length + ' 个标签页');
+    gridEl.textContent = '';
+    if (list.length === 0) {
+      gridEl.appendChild(el('div', 'empty-page', '没有匹配的标签页'));
+      return;
+    }
+    if (selected >= list.length) selected = 0;
+    if (selected < 0) selected = list.length - 1;
+    list.forEach(function (t, idx) {
+      var card = cardFor(t, idx);
+      if (idx === selected) card.classList.add('sel');
+      card.addEventListener('mouseenter', function () { selected = idx; highlight(); });
+      gridEl.appendChild(card);
+    });
+    highlight();
+  }
+
+  function highlight() {
+    var cards = gridEl.querySelectorAll('.card');
+    for (var i = 0; i < cards.length; i++) cards[i].classList.remove('sel');
+    if (cards[selected]) cards[selected].classList.add('sel');
+    if (cards[selected]) cards[selected].scrollIntoView({ block: 'nearest' });
+  }
+
+  function activateSelected() {
+    var q = String(searchEl.value || '').trim().toLowerCase();
+    var list = [];
+    for (var i = 0; i < items.length; i++) {
+      var t = items[i];
+      if (q && String(t.title || '').toLowerCase().indexOf(q) < 0
+        && String(t.url || '').toLowerCase().indexOf(q) < 0) continue;
+      list.push(t);
+    }
+    if (list[selected]) {
+      window.electronAPI.invoke('tab-overview-activate', { id: list[selected].id }).catch(function () {});
+    }
+  }
+
+  function closeSelected() {
+    var q = String(searchEl.value || '').trim().toLowerCase();
+    var list = [];
+    for (var i = 0; i < items.length; i++) {
+      var t = items[i];
+      if (q && String(t.title || '').toLowerCase().indexOf(q) < 0
+        && String(t.url || '').toLowerCase().indexOf(q) < 0) continue;
+      list.push(t);
+    }
+    if (list[selected]) {
+      window.electronAPI.invoke('tab-overview-close', { id: list[selected].id }).catch(function () {});
+    }
+  }
+
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'ArrowDown') { selected++; if (selected >= gridEl.querySelectorAll('.card').length) selected = 0; highlight(); ev.preventDefault(); }
+    else if (ev.key === 'ArrowUp') { selected--; if (selected < 0) selected = gridEl.querySelectorAll('.card').length - 1; highlight(); ev.preventDefault(); }
+    else if (ev.key === 'Enter') { activateSelected(); ev.preventDefault(); }
+    else if (ev.key === 'Delete' || ev.key === 'Backspace') { if (ev.target === searchEl && ev.key === 'Backspace') return; closeSelected(); ev.preventDefault(); }
+    else if (ev.key === 'F5') { thumbCache = {}; render(); ev.preventDefault(); }
+  });
+
+  searchEl.addEventListener('input', function () { selected = 0; render(); });
+
+  function load() {
+    if (!window.electronAPI || !window.electronAPI.invoke) return;
+    window.electronAPI.invoke('tab-overview-snapshot', {})
+      .then(function (r) {
+        if (!r || !r.ok || !Array.isArray(r.tabs)) return;
+        items = r.tabs;
+        render();
+      })
+      .catch(function () {
+        gridEl.textContent = '';
+        gridEl.appendChild(el('div', 'empty-page', '概览数据加载失败'));
+      });
+  }
+  load();
+  window.addEventListener('beforeunload', function () {});
+})();
+</script>
+</body>
+</html>
