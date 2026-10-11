@@ -61,6 +61,7 @@
 
   <div class="toolbar">
     <button id="btn-refresh">立即刷新</button>
+    <button id="btn-export">导出诊断快照</button>
     <button id="btn-privacy">前往隐私与网络设置</button>
   </div>
 
@@ -221,7 +222,41 @@
     }
   }
 
+  // 导出诊断快照：把当前页面上可见的网络状态整理成 JSON 下载，便于向
+  // 支持渠道反馈。只含状态类字段，不含任何 Cookie / 账号 / 本地路径。
+  function exportSnapshot() {
+    const pick = (id) => {
+      const el = document.getElementById(id);
+      if (!el) return '';
+      return String(el.textContent || el.value || '').replace(/\s+/g, ' ').trim().slice(0, 400);
+    };
+    const data = {
+      exportedAt: new Date().toISOString(),
+      online: pick('online-badge'),
+      ua: pick('ua-text'),
+      uaMode: pick('ua-mode'),
+      uaOverrides: pick('ua-count'),
+      engine: pick('engine-text'),
+      checks: Array.from(document.querySelectorAll('#checks .check')).map(c => ({
+        label: c.childNodes[1] ? c.childNodes[1].textContent : '',
+        on: c.querySelector('.dot') ? c.querySelector('.dot').className.includes('ok') : false,
+      })),
+      doh: Array.from(document.querySelectorAll('#doh-rows .row')).map(r => ({
+        k: r.querySelector('.k') ? r.querySelector('.k').textContent : '',
+        v: r.querySelector('.badge') ? r.querySelector('.badge').textContent : '',
+      })),
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'cosy-network-snapshot-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 800);
+  }
+
   $('btn-refresh').addEventListener('click', refresh);
+  $('btn-export').addEventListener('click', exportSnapshot);
   $('btn-privacy').addEventListener('click', () => window.location.href = 'cosy://privacy');
   window.electronAPI.on('network-status-changed', (e, data) => {
     if (data && typeof data.online === 'boolean') {
