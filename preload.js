@@ -87,6 +87,7 @@ const allowedInvokeChannels = new Set([
   'bookmarks-remove',
   'bookmarks-rename',
   'about-snapshot',
+  'about-export-diagnostics',
   'shortcuts-snapshot',
   'pages-snapshot',
   'pages-open',
