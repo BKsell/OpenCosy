@@ -5335,6 +5335,16 @@ function isHistoryFrameSender(event) {
   return u.protocol === 'cosy:' && u.hostname === 'history';
 }
 
+// 书签管理器帧守卫：只放行 cosy://bookmarks 内置帧（主窗口外壳也可直达）。
+function isBookmarksFrameSender(event) {
+  if (isMainSender(event)) return true;
+  const frame = event && event.senderFrame;
+  if (!frame || typeof frame.url !== 'string') return false;
+  let u;
+  try { u = new URL(frame.url); } catch { return false; }
+  return u.protocol === 'cosy:' && u.hostname === 'bookmarks';
+}
+
 // tabOverviewItem 输出单标签的概览数据。字段做类型收口，避免脏标题 / 长 URL
 // 破坏网格布局；分组信息从 tabGroupModel 实时取，标签被改组后概览自动跟随。
 function tabOverviewItem(tab, index) {
@@ -5698,6 +5708,7 @@ function loadTabContent(tab) {
         'taskmanager': 'src/taskmanager.html',
         'taboverview': 'src/taboverview.html',
         'history': 'src/history.html',
+        'bookmarks': 'src/bookmarks.html',
         'reader': 'src/reader.html',
         'httpsonly': 'src/httpsonly.html'
       };
@@ -7978,6 +7989,55 @@ ipcMain.handle('history-clear-all', (event) => {
   history = [];
   saveHistory();
   return { ok: true };
+});
+
+// 书签管理器快照：返回全量书签（拷贝防外部篡改，标题/URL 长度收口）。
+ipcMain.handle('bookmarks-snapshot', (event) => {
+  if (!isBookmarksFrameSender(event)) return { ok: false, error: 'denied', items: [] };
+  const items = bookmarks.map(b => ({
+    url: typeof b.url === 'string' ? b.url.slice(0, 8192) : '',
+    title: typeof b.title === 'string' ? b.title.slice(0, 300) : '',
+    addedDate: typeof b.addedDate === 'string' ? b.addedDate : '',
+  }));
+  return { ok: true, items };
+});
+
+// 书签管理器打开：经 isSafeUrl 校验（含 cosy:// 内部页），新标签打开。
+ipcMain.handle('bookmarks-open-url', (event, url) => {
+  if (!isBookmarksFrameSender(event)) return { ok: false, error: 'denied' };
+  if (!isSafeUrl(url) && !(typeof url === 'string' && url.startsWith('cosy://'))) {
+    return { ok: false, error: 'bad-url' };
+  }
+  const tab = createNewTab(url);
+  return { ok: true, id: tab.id, index: tabs.length - 1 };
+});
+
+// 书签管理器删除：按 url 精确匹配，删除后落盘并广播（书签栏同步）。
+ipcMain.handle('bookmarks-remove', (event, payload = {}) => {
+  if (!isBookmarksFrameSender(event)) return { ok: false, error: 'denied' };
+  const url = typeof payload.url === 'string' ? payload.url : '';
+  const before = bookmarks.length;
+  bookmarks = bookmarks.filter(b => !(String(b.url || '') === url));
+  if (bookmarks.length !== before) {
+    saveBookmarks();
+    sendToRenderer('bookmarks-updated', bookmarks);
+  }
+  return { ok: true, removed: before - bookmarks.length };
+});
+
+// 书签管理器重命名：标题经 300 字收口 + 控制字符清洗，防注入脏文本。
+ipcMain.handle('bookmarks-rename', (event, payload = {}) => {
+  if (!isBookmarksFrameSender(event)) return { ok: false, error: 'denied' };
+  const url = typeof payload.url === 'string' ? payload.url : '';
+  let title = typeof payload.title === 'string' ? payload.title : '';
+  title = title.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 300).trim();
+  if (!title) return { ok: false, error: 'bad-title' };
+  const b = bookmarks.find(x => String(x.url || '') === url);
+  if (!b) return { ok: false, error: 'not-found' };
+  b.title = title;
+  saveBookmarks();
+  sendToRenderer('bookmarks-updated', bookmarks);
+  return { ok: true, title };
 });
 
 ipcMain.handle('get-https-only', (event) => {
