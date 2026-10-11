@@ -110,6 +110,18 @@ const COSY_ONLY_CHANNELS = new Set([
   'remove-block-rule',
   'import-block-rules',
   'clear-block-rules',
+  // 保险库写通道（创建/解锁/写入/删除/改密/备份合并）：涉及主密钥与敏感条目，只允许内置页。
+  'vault-create',
+  'vault-unlock',
+  'vault-lock',
+  'vault-set',
+  'vault-update',
+  'vault-delete',
+  'vault-rekey',
+  'vault-import-backup',
+  // 清理执行 / 修剪审计：破坏性写，只允许内置页触发。
+  'cleaner-execute',
+  'cleaner-prune-audit',
 ]);
 
 // 通用浏览能力：受信帧（外壳 / cosy 内置页 / 证书错误页）都可调用。只登记“读”与
@@ -144,6 +156,9 @@ const GENERAL_CHANNELS = new Set([
   'get-https-only', 'list-https-exceptions', 'get-network-status', 'get-memory-saver', 'get-trackers',
   'get-block-rules', 'export-block-rules',
   'get-spellcheck-info',
+  // 保险库 / 清理中心只读快照（备份导出只回密文 JSON，不涉密钥）
+  'vault-status', 'vault-list', 'vault-get', 'vault-export-backup',
+  'cleaner-enumerate', 'cleaner-plan', 'cleaner-audit',
   // 任务管理器：进程指标只读；结束标签与 close-tab 同级（handler 内再限定只有
   // cosy://taskmanager 帧、且只能按稳定标签 id 关闭关联到标签的渲染进程）。
   'get-task-manager-processes', 'end-task-manager-tab',
