@@ -9227,6 +9227,16 @@ ipcMain.handle('reset-ua-policy', (event) => {
   return { success: true, ...uaPolicyCore.policyToPlain(uaPolicyState), effectiveUa: resolveEffectiveUa() };
 });
 
+// 随机预览一条 Chrome UA（只展示不改状态）：从内置池随机取。
+// 仅主窗口可调用。
+ipcMain.handle('preview-random-ua', (event) => {
+  if (!isMainSender(event)) return { success: false };
+  const pool = uaPolicyCore && Array.isArray(uaPolicyCore.COMMON_CHROME_UAS) ? uaPolicyCore.COMMON_CHROME_UAS : [];
+  if (pool.length === 0) return { success: false, reason: 'empty-pool' };
+  const ua = uaPolicyCore.pickRandomChromeUa();
+  return { success: true, ua: String(ua || '') };
+});
+
 // ===== 下载限速 IPC =====
 ipcMain.handle('get-download-rate-limit', (event) => {
   if (!isMainSender(event)) return { success: false };
