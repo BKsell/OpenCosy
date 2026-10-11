@@ -181,6 +181,23 @@ const allowedInvokeChannels = new Set([
   'add-https-exception',
   'remove-https-exception',
   'clear-https-exceptions',
+  'vault-status',
+  'vault-create',
+  'vault-unlock',
+  'vault-lock',
+  'vault-list',
+  'vault-get',
+  'vault-set',
+  'vault-update',
+  'vault-delete',
+  'vault-rekey',
+  'vault-export-backup',
+  'vault-import-backup',
+  'cleaner-enumerate',
+  'cleaner-plan',
+  'cleaner-execute',
+  'cleaner-audit',
+  'cleaner-prune-audit',
 ]);
 
 // 接收方向白名单：main -> renderer
