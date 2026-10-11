@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+<title>网络状态与连接安全 - OpenCosy</title>
+<style>
+  :root {
+    --bg: #f3f3f3; --card: #ffffff; --text: #1f1f1f; --muted: #616161;
+    --line: #e0e0e0; --ok: #188038; --bad: #d93025; --warn: #e37400;
+    --accent: #1a73e8;
+  }
+  [data-theme="dark"] {
+    --bg: #202124; --card: #292a2d; --text: #e8eaed; --muted: #9aa0a6;
+    --line: #3c4043; --ok: #81c995; --bad: #f28b82; --warn: #fdd663;
+    --accent: #8ab4f8;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh;
+    padding: 24px; transition: background 0.3s, color 0.3s;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px 18px; margin-bottom: 14px;
+  }
+  .card h2 { font-size: 15px; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .row:last-child { border-bottom: none; }
+  .row .k { color: var(--muted); }
+  .badge { padding: 2px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+  .badge.ok { background: rgba(24,128,56,.12); color: var(--ok); }
+  .badge.bad { background: rgba(217,48,37,.12); color: var(--bad); }
+  .badge.warn { background: rgba(227,116,0,.14); color: var(--warn); }
+  .badge.idle { background: rgba(97,97,97,.14); color: var(--muted); }
+  .bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin-top: 6px; }
+  .bar > div { height: 100%; background: var(--accent); transition: width .3s; }
+  .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .check { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.idle { background: var(--muted); }
+  .toolbar { display: flex; gap: 10px; margin-bottom: 16px; }
+  button {
+    border: 1px solid var(--line); background: var(--card); color: var(--text);
+    padding: 7px 16px; border-radius: 8px; font-size: 13px; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  .muted { color: var(--muted); }
+  code { font-family: Consolas, "Courier New", monospace; font-size: 12px; word-break: break-all; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>网络状态与连接安全</h1>
+  <div class="sub">连接状态、安全 DNS、隐私传输与浏览器身份实时一览（只读）</div>
+
+  <div class="toolbar">
+    <button id="btn-refresh">立即刷新</button>
+    <button id="btn-privacy">前往隐私与网络设置</button>
+  </div>
+
+  <div class="card">
+    <h2>连接状态</h2>
+    <div class="row">
+      <span class="k">在线状态</span>
+      <span id="online-badge" class="badge idle">检测中…</span>
+    </div>
+    <div class="row">
+      <span class="k">当前生效浏览器标识（UA）</span>
+      <span id="ua-text" class="muted"><code>—</code></span>
+    </div>
+    <div class="row">
+      <span class="k">UA 改写策略</span>
+      <span id="ua-mode" class="badge idle">—</span>
+    </div>
+    <div class="row">
+      <span class="k">UA 改写次数</span>
+      <span id="ua-count">—</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>安全 DNS（DoH）</h2>
+    <div id="doh-rows">
+      <div class="row"><span class="k">加载中…</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>连接安全清单</h2>
+    <div class="checks" id="checks"></div>
+  </div>
+
+  <div class="card">
+    <h2>默认搜索引擎</h2>
+    <div class="row">
+      <span class="k">地址栏搜索 / 建议接口使用的引擎</span>
+      <span id="engine-text" class="badge idle">—</span>
+    </div>
+  </div>
+</div>
+<script>
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  let pendingSettings = {};
+  window.electronAPI.on('settings-loaded', (settings) => {
+    pendingSettings = (settings && typeof settings === 'object') ? settings : {};
+    renderChecks();
+  });
+  const badge = (cls, text) => { const b = document.createElement('span'); b.className = 'badge ' + cls; b.textContent = text; return b; };
+
+  function renderChecks() {
+    const s = pendingSettings;
+    const checks = $('checks');
+    checks.textContent = '';
+    const items = [
+      { label: 'HTTPS-only 模式', on: s.httpsOnly !== false },
+      { label: '跟踪器拦截', on: s.blockTrackers !== false },
+      { label: '第三方 Cookie 加固', on: s.hardenCookies !== false },
+      { label: '本地网络访问防护', on: s.blockLocalNetworkAccess !== false },
+      { label: '广告信号拦截', on: s.blockAdSignals !== false },
+      { label: '减少客户端提示', on: s.reduceClientHints !== false },
+      { label: '超链接 ping 拦截', on: s.blockHyperlinkPing !== false },
+    ];
+    for (const it of items) {
+      const div = document.createElement('div');
+      div.className = 'check';
+      const dot = document.createElement('span');
+      dot.className = 'dot ' + (it.on ? 'ok' : 'idle');
+      const label = document.createElement('span');
+      label.textContent = it.label;
+      div.appendChild(dot); div.appendChild(label);
+      checks.appendChild(div);
+    }
+  }
+
+  async function refresh() {
+    const online = await window.electronAPI.invoke('get-network-status');
+    const ua = await window.electronAPI.invoke('get-ua-policy');
+    const doh = await window.electronAPI.invoke('get-doh-status');
+    const engine = await window.electronAPI.invoke('get-search-provider');
+    window.electronAPI.send('get-settings');
+    const settings = pendingSettings;
+
+    const ob = $('online-badge');
+    if (online && online.success) {
+      ob.className = 'badge ' + (online.online ? 'ok' : 'bad');
+      ob.textContent = online.online ? '在线' : '离线';
+    } else {
+      ob.className = 'badge warn'; ob.textContent = '未知';
+    }
+
+    if (ua && ua.success) {
+      $('ua-text').querySelector('code').textContent = ua.effectiveUa || '—';
+      const mode = ua.mode || 'default';
+      $('ua-mode').className = 'badge ' + (mode === 'default' ? 'idle' : 'warn');
+      $('ua-mode').textContent = mode;
+      $('ua-count').textContent = String(ua.overrideCount || 0) + ' 次' +
+        (ua.lastOverrideAt ? '（最近 ' + new Date(ua.lastOverrideAt).toLocaleTimeString() + '）' : '');
+    }
+
+    const dohRows = $('doh-rows');
+    dohRows.textContent = '';
+    if (doh && doh.ok) {
+      const rows = [
+        { k: '系统支持解析器接管', v: doh.supported ? '支持' : '不支持', cls: doh.supported ? 'ok' : 'bad' },
+        { k: '当前模式', v: (doh.status && doh.status.mode) || '—', cls: doh.status && doh.status.mode !== 'off' ? 'ok' : 'idle' },
+        { k: '生效提供方', v: (doh.status && doh.status.provider) || '—', cls: 'idle' },
+      ];
+      for (const r of rows) {
+        const row = document.createElement('div');
+        row.className = 'row';
+        const k = document.createElement('span'); k.className = 'k'; k.textContent = r.k;
+        row.appendChild(k);
+        const vb = badge(r.cls, r.v);
+        row.appendChild(vb);
+        dohRows.appendChild(row);
+      }
+    } else {
+      const row = document.createElement('div');
+      row.className = 'row';
+      const k = document.createElement('span'); k.className = 'k';
+      k.textContent = 'DoH 状态不可用';
+      row.appendChild(k);
+      dohRows.appendChild(row);
+    }
+
+    const checks = $('checks');
+    checks.textContent = '';
+    const s = pendingSettings;
+    const items = [
+      { label: 'HTTPS-only 模式', on: s.httpsOnly !== false },
+      { label: '跟踪器拦截', on: s.blockTrackers !== false },
+      { label: '第三方 Cookie 加固', on: s.hardenCookies !== false },
+      { label: '本地网络访问防护', on: s.blockLocalNetworkAccess !== false },
+      { label: '广告信号拦截', on: s.blockAdSignals !== false },
+      { label: '减少客户端提示', on: s.reduceClientHints !== false },
+      { label: '超链接 ping 拦截', on: s.blockHyperlinkPing !== false },
+      { label: 'Secure DNS（DoH）', on: !!(doh && doh.ok && doh.status && doh.status.mode !== 'off') },
+    ];
+    for (const it of items) {
+      const div = document.createElement('div');
+      div.className = 'check';
+      const dot = document.createElement('span');
+      dot.className = 'dot ' + (it.on ? 'ok' : 'idle');
+      const label = document.createElement('span');
+      label.textContent = it.label;
+      div.appendChild(dot); div.appendChild(label);
+      checks.appendChild(div);
+    }
+
+    if (engine && engine.success) {
+      const found = (engine.providers || []).find(p => p.id === engine.providerId);
+      $('engine-text').className = 'badge ok';
+      $('engine-text').textContent = (found && found.name) || engine.providerId || '—';
+    }
+  }
+
+  $('btn-refresh').addEventListener('click', refresh);
+  $('btn-privacy').addEventListener('click', () => window.location.href = 'cosy://privacy');
+  window.electronAPI.on('network-status-changed', (e, data) => {
+    if (data && typeof data.online === 'boolean') {
+      const ob = $('online-badge');
+      ob.className = 'badge ' + (data.online ? 'ok' : 'bad');
+      ob.textContent = data.online ? '在线' : '离线';
+    }
+  });
+  refresh();
+</script>
+</body>
+</html>
