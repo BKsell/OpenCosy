@@ -164,6 +164,14 @@
         .search-input:focus { outline: none; border-color: var(--theme-color); }
         .count-badge { font-size: 13px; color: var(--text-secondary); white-space: nowrap; }
         .error-detail { font-size: 12px; color: var(--danger-color); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .sort-select {
+            padding: 6px 10px; border: 1px solid var(--border-color); border-radius: 16px;
+            background: var(--bg-secondary); color: var(--text-secondary); font-size: 13px; cursor: pointer; outline: none;
+        }
+        .sort-select:focus { border-color: var(--theme-color); }
+        .time-bar { display: flex; gap: 6px; }
+        .summary-line { font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; }
+        .summary-line b { color: var(--theme-color); font-weight: 600; }
     </style>
 </head>
 <body>
@@ -183,9 +191,22 @@
                 <button class="filter-btn" data-filter="complete">已完成</button>
                 <button class="filter-btn" data-filter="error">失败</button>
             </div>
+            <div class="time-bar" id="time-bar">
+                <button class="filter-btn active" data-time="all">全部时间</button>
+                <button class="filter-btn" data-time="today">今天</button>
+                <button class="filter-btn" data-time="week">近 7 天</button>
+            </div>
+            <select id="sort-select" class="sort-select" title="排序方式">
+                <option value="time-desc">按时间 ↓</option>
+                <option value="time-asc">按时间 ↑</option>
+                <option value="size-desc">按大小 ↓</option>
+                <option value="size-asc">按大小 ↑</option>
+                <option value="name-asc">按名称 A→Z</option>
+            </select>
             <input type="search" id="search-input" class="search-input" placeholder="搜索文件名…">
             <span id="download-count" class="count-badge"></span>
         </div>
+        <div class="summary-line" id="summary-line"></div>
         <div class="download-list" id="download-list"></div>
     </div>
     <script>
@@ -222,6 +243,8 @@
 
         let filter = 'all';
         let searchText = '';
+        let timeRange = 'all';
+        let sortMode = 'time-desc';
 
         function matchesFilter(dl) {
             if (filter === 'all') return true;
@@ -232,6 +255,66 @@
         function matchesSearch(dl) {
             if (!searchText) return true;
             return (dl.filename || '').toLowerCase().includes(searchText);
+        }
+
+        function matchesTime(dl) {
+            if (timeRange === 'all') return true;
+            const ts = Number(dl.startTime) || 0;
+            if (!ts) return timeRange === 'all';
+            const now = Date.now();
+            if (timeRange === 'today') {
+                const d = new Date(ts);
+                const today = new Date();
+                return d.getFullYear() === today.getFullYear() &&
+                       d.getMonth() === today.getMonth() &&
+                       d.getDate() === today.getDate();
+            }
+            if (timeRange === 'week') return now - ts <= 7 * 24 * 3600 * 1000;
+            return true;
+        }
+
+        function sortDownloads(list) {
+            const sorted = list.slice();
+            const bySize = (a, b) => (Number(a.totalBytes) || 0) - (Number(b.totalBytes) || 0);
+            const byTime = (a, b) => (Number(a.startTime) || 0) - (Number(b.startTime) || 0);
+            const byName = (a, b) => String(a.filename || '').localeCompare(String(b.filename || ''), 'zh-CN');
+            switch (sortMode) {
+                case 'time-asc': sorted.sort(byTime); break;
+                case 'size-desc': sorted.sort((a, b) => bySize(b, a)); break;
+                case 'size-asc': sorted.sort(bySize); break;
+                case 'name-asc': sorted.sort(byName); break;
+                case 'time-desc':
+                default: sorted.sort((a, b) => byTime(b, a)); break;
+            }
+            return sorted;
+        }
+
+        function updateSummary(visible) {
+            const total = downloads.length;
+            const shown = visible.length;
+            const done = downloads.filter(d => d.status === 'complete').length;
+            const failed = downloads.filter(d => d.status === 'error').length;
+            const totalBytes = downloads.reduce((s, d) => s + (Number(d.totalBytes) || 0), 0);
+            const el = document.getElementById('summary-line');
+            if (!el) return;
+            el.innerHTML = '';
+            const parts = [
+                `共 <b>${total}</b> 项`,
+                `当前显示 <b>${shown}</b> 项`,
+                `完成 <b>${done}</b>`,
+                `失败 <b>${failed}</b>`,
+                `累计下载 <b>${formatSize(totalBytes)}</b>`,
+            ];
+            for (const p of parts) {
+                const span = document.createElement('span');
+                span.innerHTML = p;
+                el.appendChild(span);
+                if (p !== parts[parts.length - 1]) {
+                    const sep = document.createElement('span');
+                    sep.textContent = ' · ';
+                    el.appendChild(sep);
+                }
+            }
         }
 
         function updateCount() {
@@ -248,7 +331,18 @@
                 const btn = e.target.closest('.filter-btn');
                 if (!btn) return;
                 filter = btn.dataset.filter;
-                document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b === btn));
+                document.querySelectorAll('#filter-bar .filter-btn').forEach(b => b.classList.toggle('active', b === btn));
+                renderDownloads();
+            });
+            document.getElementById('time-bar').addEventListener('click', (e) => {
+                const btn = e.target.closest('.filter-btn');
+                if (!btn) return;
+                timeRange = btn.dataset.time;
+                document.querySelectorAll('#time-bar .filter-btn').forEach(b => b.classList.toggle('active', b === btn));
+                renderDownloads();
+            });
+            document.getElementById('sort-select').addEventListener('change', (e) => {
+                sortMode = e.target.value;
                 renderDownloads();
             });
             document.getElementById('search-input').addEventListener('input', (e) => {
@@ -271,8 +365,9 @@
 
         function renderDownloads() {
             const c = document.getElementById('download-list');
-            const visible = downloads.filter(matchesFilter).filter(matchesSearch);
+            const visible = sortDownloads(downloads.filter(matchesFilter).filter(matchesSearch).filter(matchesTime));
             updateCount();
+            updateSummary(visible);
             if (!visible.length) {
                 if (!downloads.length) {
                     c.innerHTML = '<div class="empty-state"><div class="empty-icon">↓</div><p class="empty-text">暂无下载记录</p><p class="empty-subtext">下载的文件将显示在这里</p></div>';
