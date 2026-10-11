@@ -7,6 +7,7 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:;">
     <title>新标签页 - OpenCosy浏览器</title>
     <script src="constants.js"></script>
+    <script src="jsonimportguard.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; position: relative; overflow: hidden; }
@@ -553,31 +554,33 @@
         function importTiles(file) {
             const reader = new FileReader();
             reader.onload = () => {
-                let data;
-                try { data = JSON.parse(String(reader.result || '')); }
-                catch { alert('文件不是有效的 JSON'); return; }
-                const incoming = Array.isArray(data) ? data : data && data.customs;
-                if (!Array.isArray(incoming)) { alert('备份文件里没有磁贴列表'); return; }
+                // 备份文件是“不可信外部数据”：走 jsonimportguard 内核解析，
+                // 深度/元素/大小/字段全部设限，url 仅放行 http(s) 白名单，
+                // 返回的已是净化后的磁贴数组（不再信任原始 JSON 的任何字段）。
+                const text = String(reader.result || '');
+                const parsed = (window.OpenCosyJsonImport && window.OpenCosyJsonImport.parseTiles)
+                    ? window.OpenCosyJsonImport.parseTiles(text)
+                    : null;
+                if (!parsed || !parsed.ok) {
+                    alert((parsed && parsed.error) || '文件不是有效的 JSON');
+                    return;
+                }
+                const incoming = parsed.items;
+                if (!incoming.length) { alert('备份文件里没有可导入的磁贴'); return; }
                 const links = loadCustomLinks();
                 let added = 0;
                 for (const item of incoming) {
-                    if (!item || typeof item.url !== 'string' || !isSafeUrl(item.url)) continue;
-                    if (!/^https?:/i.test(item.url)) continue;
                     if (links.some(l => l.url === item.url)) continue;
-                    const name = String(item.name || item.url).trim().slice(0, 24) || hostOf(item.url);
                     links.push({
-                        name, url: item.url,
-                        color: typeof item.color === 'string' ? item.color : guessColor(item.url),
-                        letter: name.charAt(0).toUpperCase(),
+                        name: item.name, url: item.url,
+                        color: item.color || guessColor(item.url),
+                        letter: item.letter || item.name.charAt(0).toUpperCase(),
                     });
                     added++;
                     if (links.length >= MAX_CUSTOM_LINKS) break;
                 }
                 saveCustomLinks(links);
-                if (Array.isArray(data.order) && data.order.length) {
-                    const valid = data.order.filter(u => typeof u === 'string');
-                    if (valid.length) saveOrder(valid);
-                }
+                if (parsed.order && parsed.order.length) saveOrder(parsed.order);
                 renderQuickLinks();
                 renderSuggestions();
                 alert(`已导入 ${added} 个磁贴`);
