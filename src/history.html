@@ -19,10 +19,15 @@ button{font-family:inherit;cursor:pointer;}
 .btn{padding:8px 14px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font-size:13px;}
 .btn:hover{border-color:var(--accent);}
 .btn.danger:hover{border-color:var(--danger);color:var(--danger);}
+.btn.primary{background:var(--accent);color:#fff;border-color:var(--accent);}
+.btn.primary:hover{opacity:.9;}
 .count{font-size:12px;color:var(--sub);}
 .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
 .chip{display:inline-block;padding:4px 12px;border:1px solid var(--border);border-radius:16px;background:var(--card);color:var(--text);font-size:12px;cursor:pointer;}
 .chip.on{background:var(--accent);color:#fff;border-color:var(--accent);}
+.ranges{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+.range{display:inline-block;padding:4px 12px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-size:12px;cursor:pointer;}
+.range.on{background:var(--accent);color:#fff;border-color:var(--accent);}
 .groups{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;}
 .gitem{display:flex;gap:8px;align-items:center;padding:8px 12px;border:1px solid var(--border);border-radius:10px;background:var(--card);font-size:13px;}
 .gitem b{color:var(--accent);}
@@ -33,24 +38,40 @@ button{font-family:inherit;cursor:pointer;}
 .row .t-title{flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .row .t-url{flex:1.2;font-size:11px;color:var(--sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .row .t-time{font-size:11px;color:var(--sub);flex:none;min-width:64px;text-align:right;}
+.row .sel{width:18px;height:18px;accent-color:var(--accent);flex:none;}
 .row .del{width:24px;height:24px;border:none;border-radius:50%;background:transparent;color:var(--sub);font-size:15px;line-height:1;flex:none;}
 .row .del:hover{background:var(--danger);color:#fff;}
 .day{font-size:12px;color:var(--sub);margin:14px 0 6px;font-weight:600;}
 .pager{display:flex;gap:10px;align-items:center;margin-top:16px;justify-content:center;}
 .pager .pageinfo{font-size:12px;color:var(--sub);}
 .empty-page{padding:40px;text-align:center;color:var(--sub);}
+.selectionbar{display:flex;gap:10px;align-items:center;margin-bottom:10px;}
+.selectionbar .selcount{font-size:12px;color:var(--accent);font-weight:600;}
 </style>
 </head>
 <body>
 <h1>历史记录</h1>
-<div class="tip">本机浏览器历史：搜索标题 / 网址，按站点过滤；点击条目在新标签页打开，悬停右侧 × 删除单条。Ctrl+Shift+Delete 可一键清空全部历史。顶部数字为按日分组的访问量。</div>
+<div class="tip">本机浏览器历史：搜索标题 / 网址，按站点过滤，按时间范围筛选；点击条目在新标签页打开，勾选可批量删除，Ctrl+Shift+Delete 一键清空全部历史。导出为 JSON 便于备份。</div>
 <div class="bar">
   <input class="search" id="search" type="text" placeholder="搜索历史（标题或网址）…" autofocus>
   <span class="count" id="count"></span>
+  <button class="btn" id="export-btn" type="button">导出 JSON</button>
   <button class="btn danger" id="clear-btn" type="button">清空全部历史</button>
+</div>
+<div class="ranges" id="ranges">
+  <span class="range on" data-days="0">全部</span>
+  <span class="range" data-days="1">今天</span>
+  <span class="range" data-days="7">近 7 天</span>
+  <span class="range" data-days="30">近 30 天</span>
+  <span class="range" data-days="90">近 90 天</span>
 </div>
 <div class="filters" id="filters"></div>
 <div class="groups" id="groups"></div>
+<div class="selectionbar" id="selectionbar" style="display:none;">
+  <span class="selcount" id="selcount"></span>
+  <button class="btn danger" id="seldel-btn" type="button">删除选中</button>
+  <button class="btn" id="selall-btn" type="button">全选当前页</button>
+</div>
 <div id="list"></div>
 <div class="pager">
   <button class="btn" id="prev-btn" type="button">← 上一页</button>
@@ -70,7 +91,13 @@ button{font-family:inherit;cursor:pointer;}
   var nextBtn = document.getElementById('next-btn');
   var pageInfoEl = document.getElementById('pageinfo');
   var PAGE_SIZE = 50;
-  var state = { items: [], groups: [], filtered: [], hostFilter: '', query: '', page: 0 };
+  var state = { items: [], groups: [], filtered: [], hostFilter: '', query: '', rangeDays: 0, page: 0, selected: {}, selectable: [] };
+  var exportBtn = document.getElementById('export-btn');
+  var selBar = document.getElementById('selectionbar');
+  var selCountEl = document.getElementById('selcount');
+  var selDelBtn = document.getElementById('seldel-btn');
+  var selAllBtn = document.getElementById('selall-btn');
+  var rangeEls = Array.prototype.slice.call(document.querySelectorAll('.range'));
 
   function setText(el, text) { el.textContent = String(text); }
 
@@ -144,16 +171,41 @@ button{font-family:inherit;cursor:pointer;}
 
   function applyFilter() {
     var q = state.query.toLowerCase();
+    var cutoff = state.rangeDays > 0 ? Date.now() - state.rangeDays * 86400000 : 0;
     state.filtered = [];
+    state.selectable = [];
     for (var i = 0; i < state.items.length; i++) {
       var it = state.items[i];
+      var ts = Number(it.timestamp) || 0;
+      if (cutoff && ts < cutoff) continue;
       if (state.hostFilter && hostOf(it.url) !== state.hostFilter) continue;
       if (q && String(it.title || '').toLowerCase().indexOf(q) < 0
         && String(it.url || '').toLowerCase().indexOf(q) < 0) continue;
       state.filtered.push(it);
+      state.selectable.push(it);
     }
+    state.selected = {};
+    updateSelBar();
     state.page = 0;
     render();
+  }
+
+  function updateSelBar() {
+    var n = Object.keys(state.selected).length;
+    if (n === 0) { selBar.style.display = 'none'; return; }
+    selBar.style.display = 'flex';
+    setText(selCountEl, '已选 ' + n + ' 条');
+  }
+
+  function selectionKey(it) {
+    return String(it.url) + '|' + String(it.timestamp);
+  }
+
+  function toggleSel(it, checked) {
+    var k = selectionKey(it);
+    if (checked) state.selected[k] = true;
+    else delete state.selected[k];
+    updateSelBar();
   }
 
   function render() {
@@ -173,6 +225,12 @@ button{font-family:inherit;cursor:pointer;}
       var day = dayLabel(it.timestamp);
       if (day !== lastDay) { lastDay = day; listEl.appendChild(el('div', 'day', day)); }
       var row = el('div', 'row');
+      var chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.className = 'sel';
+      chk.checked = !!state.selected[selectionKey(it)];
+      chk.addEventListener('change', function () { toggleSel(it, chk.checked); });
+      row.appendChild(chk);
       var fav = document.createElement('img');
       fav.className = 'fav'; fav.alt = '';
       var h = hostOf(it.url);
@@ -209,6 +267,55 @@ button{font-family:inherit;cursor:pointer;}
   prevBtn.addEventListener('click', function () { if (state.page > 0) { state.page--; render(); } });
   nextBtn.addEventListener('click', function () { state.page++; render(); });
   searchEl.addEventListener('input', function () { state.query = String(searchEl.value || '').trim(); applyFilter(); });
+
+  rangeEls.forEach(function (r) {
+    r.addEventListener('click', function () {
+      rangeEls.forEach(function (x) { x.classList.remove('on'); });
+      r.classList.add('on');
+      state.rangeDays = Number(r.getAttribute('data-days')) || 0;
+      applyFilter();
+    });
+  });
+
+  selAllBtn.addEventListener('click', function () {
+    var start = state.page * PAGE_SIZE;
+    var slice = state.filtered.slice(start, start + PAGE_SIZE);
+    slice.forEach(function (it) { state.selected[selectionKey(it)] = true; });
+    updateSelBar();
+    render();
+  });
+
+  selDelBtn.addEventListener('click', function () {
+    var keys = Object.keys(state.selected);
+    if (keys.length === 0) return;
+    if (!window.confirm('删除选中的 ' + keys.length + ' 条历史记录？')) return;
+    var req = { urls: [] };
+    keys.forEach(function (k) {
+      var p = k.indexOf('|');
+      if (p > 0) req.urls.push({ url: k.slice(0, p), timestamp: Number(k.slice(p + 1)) || 0 });
+    });
+    window.electronAPI.invoke('history-delete-entries', req)
+      .then(function (r) {
+        if (!r || !r.ok) return;
+        state.items = state.items.filter(function (x) { return !state.selected[selectionKey(x)]; });
+        applyFilter();
+      })
+      .catch(function () {});
+  });
+
+  exportBtn.addEventListener('click', function () {
+    var payload = state.filtered.map(function (it) {
+      return { url: it.url || '', title: it.title || '', timestamp: Number(it.timestamp) || 0 };
+    });
+    var stamp = new Date().toISOString().slice(0, 10);
+    window.electronAPI.invoke('history-export-json', { name: 'open-cosy-history-' + stamp + '.json', text: JSON.stringify(payload, null, 2) })
+      .then(function (r) {
+        if (!r || !r.ok) { window.alert('导出失败：' + ((r && r.error) || '未知错误')); return; }
+        window.alert('已导出 ' + payload.length + ' 条历史记录到 ' + (r.path || '下载目录'));
+      })
+      .catch(function () { window.alert('导出失败：IPC 调用错误'); });
+  });
+
   clearBtn.addEventListener('click', function () {
     if (!window.confirm('确定清空全部历史记录？此操作不可撤销。')) return;
     window.electronAPI.invoke('history-clear-all')
