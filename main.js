@@ -23,8 +23,7 @@ const hostMatch = require('./hostmatch');
 const urlResolve = require('./urlresolve');
 const shortcutKeys = require('./shortcutkeys');
 const taskManagerCore = require('./taskmanager');
-const dohGuard = require('./dohguard');
-const permPolicy = require('./permpolicy');
+const dohGuard = require('./dohguard');const permPolicy = require('./permpolicy');
 const dloadGuard = require('./dloadguard');
 const urlClean = require('./urlclean');
 const popupGuard = require('./popupguard');
@@ -44,6 +43,7 @@ const channelPolicy = require('./channelpolicy');
 const displayGuard = require('./displayguard');
 const redirectGuard = require('./redirectguard');
 const switchGuard = require('./switchguard');
+const blockRules = require('./blockrules');
 const devicerGuard = require('./devicerguard');
 const cosyScheme = require('./cosyscheme');
 const fullscreenGuard = require('./fullscreenguard');
@@ -352,6 +352,38 @@ const TRACKER_DOMAIN_GROUPS = {
 // 合并各分组，得到最终拦截集合（名单去重）。
 const TRACKER_HOSTS = new Set(Object.values(TRACKER_DOMAIN_GROUPS).flat());
 
+// ===== 自定义拦截规则（用户可管理，优先于内置列表）=====
+// 内置追踪域列表无法覆盖用户特定场景；blockRules 内核提供 host / glob / path
+// 三类规则、持久化与导入导出。customRules 为内存态规则集，compiledCustomRules
+// 为预编译正则，rulesFile 为持久化路径（userData/blockrules.json）。
+const customRules = blockRules.createEmptyRules();
+let compiledCustomRules = blockRules.compileRules(customRules);
+let customRulesLoaded = false;
+let customRulesFile = '';
+
+function reloadCustomRules() {
+  compiledCustomRules = blockRules.compileRules(customRules);
+}
+
+function loadCustomRulesFromDisk(filePath) {
+  customRulesFile = filePath;
+  if (!customRulesLoaded) {
+    const loaded = blockRules.loadRules(filePath);
+    customRules.host = loaded.host;
+    customRules.glob = loaded.glob;
+    customRules.path = loaded.path;
+    customRulesLoaded = true;
+    reloadCustomRules();
+  }
+}
+
+function persistCustomRules() {
+  if (!customRulesFile) return { ok: false, reason: 'no-file' };
+  const r = blockRules.saveRules(customRulesFile, customRules);
+  reloadCustomRules();
+  return r;
+}
+
 // hostMatchesTracker 判断主机是否为已知追踪域（精确或其子域）。
 // 归一化（小写/去尾点）与精确-子域边界判断统一由 hostmatch 内核负责，
 // 避免与 Cookie 归属、私网判定各写一套口径。
@@ -360,12 +392,15 @@ function hostMatchesTracker(hostname) {
 }
 
 // isTrackerRequest 只拦子资源，顶层框架 / iframe 框架文档一律放行，避免误伤导航。
+// 自定义规则优先（decideBlocked 先查 host/glob/path），内置列表兜底。
 function isTrackerRequest(details) {
   if (!blockTrackers) return false;
   const rt = details.resourceType;
   if (rt === 'mainFrame' || rt === 'subFrame') return false;
   let host = '';
   try { host = new URL(details.url).hostname; } catch { return false; }
+  const decision = blockRules.decideBlocked(details.url, compiledCustomRules, TRACKER_HOSTS);
+  if (decision) return true;
   return hostMatchesTracker(host);
 }
 
@@ -5860,7 +5895,8 @@ function loadTabContent(tab) {
         'shortcuts': 'src/shortcuts.html',
         'pages': 'src/pages.html',
         'reader': 'src/reader.html',
-        'httpsonly': 'src/httpsonly.html'
+        'httpsonly': 'src/httpsonly.html',
+        'blockrules': 'src/blockrules.html'
       };
       const filePath = pageMap[hostname];
       if (filePath) tab.view.webContents.loadFile(filePath);
@@ -6816,6 +6852,7 @@ app.whenReady().then(async () => {
   loadBookmarks();
   loadReadingList();
   loadZoomFactors();
+  loadCustomRulesFromDisk(path.join(app.getPath('userData'), 'blockrules.json'));
 
   // 启动时还原 darkMode / httpsOnly / memorySaver 等运行时状态
   const stored = readStoredSettings();
@@ -8494,6 +8531,62 @@ ipcMain.on('reset-trackers', (event) => {
   blockedTrackerCount = 0;
   blockedTrackerByHost.clear();
   sendToRenderer('trackers-blocked', { count: 0, host: '', top: [] });
+});
+
+// ===== 自定义拦截规则 IPC =====
+// 规则以字符串行表达：裸域名 / host:x / glob:https://*.x/* / path:https://x/ads/
+// 所有写操作后立即持久化并重编译，webRequest 管道下一次判定即生效。
+function customRulesSnapshot() {
+  return {
+    host: customRules.host.slice(),
+    glob: customRules.glob.slice(),
+    path: customRules.path.slice(),
+    count: blockRules.ruleCount(customRules),
+  };
+}
+
+ipcMain.handle('get-block-rules', (event) => {
+  if (!isMainSender(event)) return { success: false };
+  return { success: true, enabled: blockTrackers, rules: customRulesSnapshot() };
+});
+
+ipcMain.handle('add-block-rule', (event, raw) => {
+  if (!isMainSender(event)) return { success: false };
+  const res = blockRules.addRule(customRules, String(raw || ''));
+  if (res.ok) {
+    const saved = persistCustomRules();
+    if (!saved.ok) return { success: false, ok: false, reason: saved.reason };
+  }
+  return { success: true, ...res, count: blockRules.ruleCount(customRules) };
+});
+
+ipcMain.handle('remove-block-rule', (event, raw) => {
+  if (!isMainSender(event)) return { success: false };
+  const removed = blockRules.removeRule(customRules, String(raw || ''));
+  if (removed) persistCustomRules();
+  return { success: true, removed, count: blockRules.ruleCount(customRules) };
+});
+
+ipcMain.handle('import-block-rules', (event, text) => {
+  if (!isMainSender(event)) return { success: false };
+  const res = blockRules.importRulesText(customRules, String(text || ''));
+  const saved = persistCustomRules();
+  if (!saved.ok) return { success: false, ...res, reason: saved.reason };
+  return { success: true, ...res, count: blockRules.ruleCount(customRules) };
+});
+
+ipcMain.handle('export-block-rules', (event) => {
+  if (!isMainSender(event)) return { success: false };
+  return { success: true, text: blockRules.exportRulesText(customRules) };
+});
+
+ipcMain.handle('clear-block-rules', (event) => {
+  if (!isMainSender(event)) return { success: false };
+  customRules.host = [];
+  customRules.glob = [];
+  customRules.path = [];
+  persistCustomRules();
+  return { success: true, count: 0 };
 });
 
 // 崩溃横幅上的“强制刷新”：按 tabId 找到对应标签重载（无响应 / 连续崩溃后由用户手动触发）。

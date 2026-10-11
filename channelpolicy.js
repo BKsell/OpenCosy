@@ -105,6 +105,11 @@ const COSY_ONLY_CHANNELS = new Set([
   'clear-https-exceptions',
   // 阅读模式正文数据只允许 cosy://reader 等内置页读取（远程网页帧拿不到）。
   'get-reader-article',
+  // 自定义拦截规则写通道：只允许安全内置页（cosy:// 帧）修改规则集。
+  'add-block-rule',
+  'remove-block-rule',
+  'import-block-rules',
+  'clear-block-rules',
 ]);
 
 // 通用浏览能力：受信帧（外壳 / cosy 内置页 / 证书错误页）都可调用。只登记“读”与
@@ -137,6 +142,7 @@ const GENERAL_CHANNELS = new Set([
   'remove-download', 'shelf-show-all', 'get-download-shelf',
   // 页面状态只读
   'get-https-only', 'list-https-exceptions', 'get-network-status', 'get-memory-saver', 'get-trackers',
+  'get-block-rules', 'export-block-rules',
   'get-spellcheck-info',
   // 任务管理器：进程指标只读；结束标签与 close-tab 同级（handler 内再限定只有
   // cosy://taskmanager 帧、且只能按稳定标签 id 关闭关联到标签的渲染进程）。
