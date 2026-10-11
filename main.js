@@ -648,6 +648,8 @@ function shelfSnapshot() {
       speed: d.speed || '0 B/s',
       status: d.status || 'pending',
       savePath: d.savePath || null,
+      startTime: d.startTime || null,
+      errorMessage: d.errorMessage || null,
     });
   }
   return items;
@@ -7278,6 +7280,15 @@ ipcMain.on('get-downloads', (event) => {
 
 // ===== 底部下载栏 IPC =====
 ipcMain.handle('get-download-shelf', () => shelfSnapshot());
+
+// copy-text：受控剪贴板写入（下载项右键“复制链接/复制文件名”用）。
+// 只接受字符串、长度上限 4096，避免恶意渲染层借 IPC 写入超长文本 / 二进制垃圾；
+// 文本本身由调用方（renderer 右键菜单）提供，这里仅做类型与长度收口。
+ipcMain.on('copy-text', (event, text) => {
+  if (!isMainSender(event)) return;
+  if (typeof text !== 'string' || text.length === 0 || text.length > 4096) return;
+  clipboard.writeText(text);
+});
 
 ipcMain.on('shelf-show-all', (event) => {
   if (!isMainSender(event)) return;
