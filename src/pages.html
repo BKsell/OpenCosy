@@ -12,52 +12,142 @@
 body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);padding:24px;transition:.3s;max-width:900px;margin:0 auto;}
 h1{font-size:20px;margin-bottom:4px;}
 .tip{color:var(--sub);font-size:13px;margin-bottom:16px;}
+.toolrow{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;}
+input.search{flex:1;min-width:200px;padding:9px 14px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font-size:13px;outline:none;}
+input.search:focus{border-color:var(--accent);}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+.chip{display:inline-block;padding:4px 12px;border:1px solid var(--border);border-radius:16px;background:var(--card);color:var(--text);font-size:12px;cursor:pointer;}
+.chip.on{background:var(--accent);color:#fff;border-color:var(--accent);}
+.cnt{font-size:12px;color:var(--sub);}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;}
-.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;cursor:pointer;transition:box-shadow .15s,transform .1s;display:flex;flex-direction:column;gap:6px;}
-.card:hover{box-shadow:0 4px 14px rgba(0,0,0,.12);}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;cursor:pointer;transition:box-shadow .15s,transform .1s;display:flex;flex-direction:column;gap:6px;outline:none;}
+.card:hover,.card.focus{box-shadow:0 4px 14px rgba(0,0,0,.12);border-color:var(--accent);}
 .card .p-title{font-size:14px;font-weight:600;}
 .card .p-desc{font-size:12px;color:var(--sub);flex:1;line-height:1.5;}
 .card .p-url{font-size:11px;color:var(--accent);font-family:Consolas,'Courier New',monospace;}
+.card .p-url{display:flex;align-items:center;gap:6px;}
+.card .group-badge{font-size:10px;color:var(--sub);border:1px solid var(--border);border-radius:8px;padding:0 6px;font-family:'Segoe UI',sans-serif;}
 .empty-page{padding:40px;text-align:center;color:var(--sub);}
 </style>
 </head>
 <body>
 <h1>内部页面</h1>
 <div class="tip">OpenCosy 内置页面导航。点击任意卡片在当前窗口新标签打开；也可直接在地址栏输入对应 cosy:// 地址。内部页均受帧白名单守卫，远程网页无法调取其 IPC。</div>
+<div class="toolrow">
+  <input class="search" id="search" type="text" placeholder="搜索页面名称或说明…" autofocus>
+  <span class="cnt" id="cnt"></span>
+</div>
+<div class="chips" id="chips"></div>
 <div class="grid" id="grid"><div class="empty-page">加载中…</div></div>
 <script>
 (function () {
   'use strict';
   var gridEl = document.getElementById('grid');
+  var searchEl = document.getElementById('search');
+  var chipsEl = document.getElementById('chips');
+  var cntEl = document.getElementById('cnt');
+  var allPages = [];
+  var query = '';
+  var groupFilter = '';
+  var focusIndex = -1;
+  var visibleCards = [];
+
   function el(tag, cls, text) {
     var e = document.createElement(tag);
     if (cls) e.className = cls;
     if (text !== undefined) e.textContent = String(text);
     return e;
   }
-  function render(pages) {
+
+  function groupOf(name) {
+    var n = String(name || '');
+    if (/bookmark|readinglist|history|vault|sitedata|privacy/.test(n)) return '隐私与数据';
+    if (/permission|security|blockrules|httpsonly|hashes/.test(n)) return '安全与权限';
+    if (/download|taskmanager|network|extensions|taboverview/.test(n)) return '工具';
+    return '其它';
+  }
+
+  function renderChips() {
+    chipsEl.textContent = '';
+    var groups = ['', '隐私与数据', '安全与权限', '工具', '其它'];
+    groups.forEach(function (g) {
+      var c = el('span', 'chip' + (groupFilter === g ? ' on' : ''), g === '' ? '全部' : g);
+      c.addEventListener('click', function () { groupFilter = g; render(); });
+      chipsEl.appendChild(c);
+    });
+  }
+
+  function render() {
+    var q = String(searchEl.value || '').trim().toLowerCase();
+    var matched = allPages.filter(function (p) {
+      if (groupFilter && groupOf(p.name) !== groupFilter) return false;
+      if (!q) return true;
+      return String(p.title || '').toLowerCase().indexOf(q) >= 0
+        || String(p.desc || '').toLowerCase().indexOf(q) >= 0
+        || String(p.name || '').toLowerCase().indexOf(q) >= 0;
+    });
+    visibleCards = matched;
+    focusIndex = -1;
+    setText(cntEl, matched.length + ' / ' + allPages.length + ' 个页面');
     gridEl.textContent = '';
-    if (!pages || pages.length === 0) {
-      gridEl.appendChild(el('div', 'empty-page', '内部页面数据加载失败'));
+    if (matched.length === 0) {
+      gridEl.appendChild(el('div', 'empty-page', '没有匹配的内部页面'));
       return;
     }
-    pages.forEach(function (p) {
+    matched.forEach(function (p, idx) {
       var card = el('div', 'card');
-      card.appendChild(el('div', 'p-title', p.title || p.name || ''));
+      card.tabIndex = 0;
+      var titleRow = el('div', 'p-title', p.title || p.name || '');
+      titleRow.appendChild(el('span', 'group-badge', groupOf(p.name)));
+      card.appendChild(titleRow);
       if (p.desc) card.appendChild(el('div', 'p-desc', p.desc));
       card.appendChild(el('div', 'p-url', 'cosy://' + (p.name || '')));
       card.addEventListener('click', function () {
         window.electronAPI.invoke('pages-open', { name: p.name }).catch(function () {});
       });
+      card.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          window.electronAPI.invoke('pages-open', { name: p.name }).catch(function () {});
+        }
+      });
+      card.addEventListener('focus', function () { focusIndex = idx; updateFocus(); });
       gridEl.appendChild(card);
     });
   }
+
+  function updateFocus() {
+    visibleCards.forEach(function (p, i) {
+      var card = gridEl.children[i];
+      if (!card) return;
+      if (i === focusIndex) card.classList.add('focus');
+      else card.classList.remove('focus');
+    });
+  }
+
+  searchEl.addEventListener('input', render);
+  document.addEventListener('keydown', function (e) {
+    if (visibleCards.length === 0) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      focusIndex = (focusIndex + 1) % visibleCards.length;
+      var c = gridEl.children[focusIndex];
+      if (c) { c.focus(); c.scrollIntoView({ block: 'nearest' }); }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      focusIndex = (focusIndex - 1 + visibleCards.length) % visibleCards.length;
+      var c2 = gridEl.children[focusIndex];
+      if (c2) { c2.focus(); c2.scrollIntoView({ block: 'nearest' }); }
+    }
+  });
+
   function load() {
     if (!window.electronAPI || !window.electronAPI.invoke) return;
     window.electronAPI.invoke('pages-snapshot', {})
-      .then(function (r) { render(r && r.ok ? r.pages : null); })
-      .catch(function () { render(null); });
+      .then(function (r) { allPages = (r && r.ok && r.pages) ? r.pages : []; renderChips(); render(); })
+      .catch(function () { render(); });
   }
+  renderChips();
   load();
 })();
 </script>
