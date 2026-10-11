@@ -72,6 +72,23 @@
         .protocol-badge.deny { background: rgba(244,67,54,0.15); color: #c62828; }
         .protocol-row .protocol-clear { border: 1px solid currentColor; background: transparent; border-radius: 6px; padding: 3px 12px; font-size: 12px; cursor: pointer; opacity: 0.8; }
         .protocol-row .protocol-clear:hover { opacity: 1; }
+        .settings-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 20px; }
+        .settings-search { flex: 1; min-width: 220px; padding: 9px 14px; border: 1px solid #ddd; border-radius: 20px; font-size: 14px; background: white; color: #333; outline: none; transition: border-color 0.2s, box-shadow 0.2s; }
+        body.dark-mode .settings-search { background: #3d3d3d; border-color: #555; color: #e0e0e0; }
+        .settings-search:focus { border-color: var(--theme-color, #0078d4); box-shadow: 0 0 0 2px rgba(0,120,212,0.2); }
+        .nav-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+        .nav-chip { padding: 6px 14px; border: 1px solid #d0d0d0; border-radius: 16px; background: transparent; color: #555; font-size: 13px; cursor: pointer; transition: all 0.2s; }
+        body.dark-mode .nav-chip { border-color: #555; color: #ccc; }
+        .nav-chip.active { border-color: var(--theme-color, #0078d4); color: var(--theme-color, #0078d4); font-weight: 600; }
+        .reset-button { padding: 6px 14px; border: 1px solid #d32f2f; border-radius: 16px; background: transparent; color: #d32f2f; font-size: 13px; cursor: pointer; }
+        .reset-button:hover { background: rgba(211,47,47,0.08); }
+        .settings-summary { font-size: 12px; color: #888; margin-bottom: 16px; }
+        .setting-item.filtered-out { display: none; }
+        .settings-section.filtered-out { display: none; }
+        .setting-item .match-mark { background: rgba(255,213,79,0.5); border-radius: 3px; padding: 0 2px; }
+        body.dark-mode .setting-item .match-mark { background: rgba(255,213,79,0.25); }
+        .reset-confirm-box { padding: 12px 14px; border: 1px solid rgba(211,47,47,0.4); border-radius: 8px; margin-bottom: 20px; font-size: 13px; display: none; }
+        .reset-confirm-box.show { display: block; }
         @media (max-width: 600px) {
             .settings-container { padding: 20px 10px; }
             .settings-section { padding: 20px; }
@@ -85,6 +102,19 @@
             <h1 class="settings-title">OpenCosy浏览器设置</h1>
             <p class="settings-subtitle">个性化您的浏览体验</p>
         </div>
+        <div class="settings-toolbar">
+            <input type="text" class="settings-search" id="settingsSearch" placeholder="搜索设置项，例如 暗色、Cookie、DNS…" autocomplete="off">
+            <div class="nav-chips" id="navChips">
+                <button type="button" class="nav-chip active" data-section="">全部</button>
+            </div>
+            <button type="button" class="reset-button" id="resetSettingsBtn">恢复默认</button>
+        </div>
+        <div class="reset-confirm-box" id="resetConfirmBox">
+            确认要恢复全部设置为默认值吗？此操作会清空当前保存的所有设置并重新加载页面。
+            <button type="button" class="save-button" id="resetConfirmYes" style="margin-left:10px;">确认恢复</button>
+            <button type="button" class="reset-button" id="resetConfirmNo">取消</button>
+        </div>
+        <div class="settings-summary" id="settingsSummary"></div>
         <div class="settings-section">
             <h2 class="section-title">个性化设置</h2>
             <div class="setting-item">
@@ -1083,6 +1113,125 @@ document.getElementById('dohMode').dispatchEvent(new Event('change'));
             window.electronAPI.on('export-config-canceled', () => {});
             window.electronAPI.on('export-config-error', (message) => { alert(message); });
         }
+
+        // ===== 设置搜索 / 分组导航 / 恢复默认 =====
+        // 搜索：按设置项 label+description 全文匹配，匹配关键词加高亮；
+        // 分组：按 section 标题生成导航 chips，点击只显示对应分组；
+        // 恢复默认：二次确认后清空本地设置并通知主进程。
+
+        function sectionTitleOf(section) {
+            const h2 = section.querySelector('h2.section-title');
+            return h2 ? h2.textContent.trim() : '';
+        }
+
+        function highlightText(node, query) {
+            const text = node.textContent || '';
+            const idx = text.toLowerCase().indexOf(query.toLowerCase());
+            if (idx < 0) return;
+            node.textContent = text.slice(0, idx) + '\u0001' + text.slice(idx, idx + query.length) + '\u0002' + text.slice(idx + query.length);
+            // 用占位符标记后重建 span，避免直接 innerHTML 引入 XSS 面
+            const html = node.textContent
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/\u0001/g, '<span class="match-mark">')
+                .replace(/\u0002/g, '</span>');
+            node.innerHTML = html;
+        }
+
+        function clearHighlights(section) {
+            section.querySelectorAll('.match-mark').forEach(function(mark) {
+                const parent = mark.parentNode;
+                if (!parent) return;
+                const text = parent.textContent;
+                parent.innerHTML = '';
+                parent.textContent = text;
+            });
+        }
+
+        function buildNavChips() {
+            const chipBox = document.getElementById('navChips');
+            if (!chipBox) return;
+            const titles = [];
+            document.querySelectorAll('.settings-section').forEach(function(section) {
+                const t = sectionTitleOf(section);
+                if (t && !titles.includes(t)) titles.push(t);
+            });
+            titles.forEach(function(title) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'nav-chip';
+                btn.setAttribute('data-section', title);
+                btn.textContent = title;
+                chipBox.appendChild(btn);
+            });
+            chipBox.querySelectorAll('.nav-chip').forEach(function(chip) {
+                chip.addEventListener('click', function() {
+                    chipBox.querySelectorAll('.nav-chip').forEach(function(c) { c.classList.remove('active'); });
+                    chip.classList.add('active');
+                    applyFilters();
+                });
+            });
+        }
+
+        function activeSection() {
+            const chip = document.querySelector('#navChips .nav-chip.active');
+            return chip ? chip.getAttribute('data-section') || '' : '';
+        }
+
+        function applyFilters() {
+            const query = (document.getElementById('settingsSearch').value || '').trim();
+            const section = activeSection();
+            const summary = document.getElementById('settingsSummary');
+            let visibleItems = 0;
+            let totalItems = 0;
+            document.querySelectorAll('.settings-section').forEach(function(sec) {
+                const title = sectionTitleOf(sec);
+                const sectionMatches = !section || title === section;
+                clearHighlights(sec);
+                let anyItemVisible = false;
+                sec.querySelectorAll('.setting-item').forEach(function(item) {
+                    totalItems++;
+                    const label = item.querySelector('.setting-label');
+                    const desc = item.querySelector('.setting-description');
+                    const text = (label ? label.textContent : '') + ' ' + (desc ? desc.textContent : '');
+                    const matched = !query || text.toLowerCase().indexOf(query.toLowerCase()) >= 0;
+                    const show = sectionMatches && matched;
+                    item.classList.toggle('filtered-out', !show);
+                    if (show) {
+                        anyItemVisible = true;
+                        visibleItems++;
+                        if (query && label) highlightText(label, query);
+                        if (query && desc) highlightText(desc, query);
+                    }
+                });
+                sec.classList.toggle('filtered-out', !sectionMatches || !anyItemVisible);
+            });
+            if (summary) {
+                if (query) summary.textContent = '搜索「' + query + '」：' + visibleItems + '/' + totalItems + ' 个设置项';
+                else if (section) summary.textContent = '分组「' + section + '」：' + visibleItems + ' 个设置项';
+                else summary.textContent = '共 ' + totalItems + ' 个设置项';
+            }
+        }
+
+        function resetSettingsToDefault() {
+            localStorage.removeItem('cosySettings');
+            window.electronAPI.send('save-settings', {});
+            applyThemeColor('#0078d4');
+            location.reload();
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            buildNavChips();
+            applyFilters();
+            const searchEl = document.getElementById('settingsSearch');
+            if (searchEl) searchEl.addEventListener('input', applyFilters);
+            const resetBtn = document.getElementById('resetSettingsBtn');
+            const confirmBox = document.getElementById('resetConfirmBox');
+            if (resetBtn && confirmBox) {
+                resetBtn.addEventListener('click', function() { confirmBox.classList.add('show'); });
+                document.getElementById('resetConfirmYes').addEventListener('click', resetSettingsToDefault);
+                document.getElementById('resetConfirmNo').addEventListener('click', function() { confirmBox.classList.remove('show'); });
+            }
+        });
     </script>
 </body>
 </html>
