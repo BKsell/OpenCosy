@@ -93,6 +93,8 @@ test('下载 / 打印 / 源码 / 打开文件 / 历史', () => {
   assert.strictEqual(matchShortcut(mk('h', { control: true })), ACTION.OPEN_HISTORY);
   // Ctrl+Shift+H 必须命中完整历史页动作（规则排在 Ctrl+H 之后，首条命中优先）。
   assert.strictEqual(matchShortcut(mk('h', { control: true, shift: true })), ACTION.OPEN_HISTORY_PAGE);
+  // Ctrl+Shift+L 打开稍后读页；纯 Ctrl+L 命中聚焦地址栏/URL 选择（旧链保留）。
+  assert.strictEqual(matchShortcut(mk('l', { control: true, shift: true })), ACTION.OPEN_READING_LIST);
 });
 
 test('Alt+Home 回主页（不校验 ctrl/shift）', () => {
