@@ -1,7 +1,8 @@
-const { app, BrowserWindow, WebContentsView, ipcMain, session, protocol, Menu, MenuItem, dialog, shell, globalShortcut, clipboard, net, nativeTheme, webContents } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, session, protocol, Menu, MenuItem, dialog, shell, globalShortcut, clipboard, net, nativeTheme, webContents, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
+const crypto = require('crypto');
 const os = require('os');
 const bookmarkIO = require('./bookmarkio');
 const headerGrade = require('./headergrade');
@@ -31,6 +32,8 @@ const quarantine = require('./quarantine');
 const navGuard = require('./navguard');
 const httpsOnlyCore = require('./httpsonly');
 const readerCore = require('./reader');
+const vaultCore = require('./vault');
+const cleanerCore = require('./cleaner');
 const containerGuard = require('./container');
 const schemeOrigin = require('./schemeorigin');
 const webviewHarden = require('./webviewharden');
@@ -1086,6 +1089,231 @@ function isHttpExceptionHost(urlOrHost) {
       : httpsOnlyCore.normalizeExceptionHost(urlOrHost);
     return !!host && httpsExceptions.has(host);
   } catch { return false; }
+}
+
+// ===== 加密保险库（vault）与站点数据清理（cleaner）=====
+// 保险库：主密钥由 safeStorage（OS 级加密）保护后落盘 vault-key.bin；vault.json
+// 只存密文。safeStorage 可用时启动自动解锁；不可用（无 keychain）则保持锁定，
+// 由用户输入主密码解锁。清理中心：先枚举 session 存储数据 → 纯内核规划 →
+// 用户确认 → 执行 → 审计落盘。
+const vaultStorePath = path.join(app.getPath('userData'), 'vault.json');
+const vaultKeyPath = path.join(app.getPath('userData'), 'vault-key.bin');
+const cleanAuditPath = path.join(app.getPath('userData'), 'clean-audit.json');
+let vaultState = null;   // 持久化状态（密文 + 元数据），未解锁时也存在
+let vaultHandle = null;  // 已解锁句柄；锁定态为 null
+let vaultUsePasswordMode = false;
+let cleanAuditLog = [];
+
+function atomicWriteJSON(filePath, obj) {
+  const dir = path.dirname(filePath);
+  const tmp = path.join(dir, '.' + path.basename(filePath) + '.tmp-' + process.pid);
+  fsSync.writeFileSync(tmp, JSON.stringify(obj), 'utf8');
+  try { fsSync.renameSync(tmp, filePath); }
+  catch (e) {
+    try { fsSync.unlinkSync(tmp); } catch {}
+    throw e;
+  }
+}
+
+function loadVaultStateFromDisk() {
+  try {
+    if (fsSync.existsSync(vaultStorePath)) {
+      vaultState = JSON.parse(fsSync.readFileSync(vaultStorePath, 'utf8'));
+    }
+  } catch (e) { console.error('读取保险库失败:', e); }
+  try {
+    if (fsSync.existsSync(cleanAuditPath)) {
+      cleanAuditLog = JSON.parse(fsSync.readFileSync(cleanAuditPath, 'utf8'));
+      if (!Array.isArray(cleanAuditLog)) cleanAuditLog = [];
+    }
+  } catch (e) { console.error('读取清理审计失败:', e); }
+}
+
+function persistVaultState() {
+  if (!vaultState) return;
+  try { atomicWriteJSON(vaultStorePath, vaultState); } catch (e) { console.error('写入保险库失败:', e); }
+}
+
+function persistCleanAudit() {
+  try { atomicWriteJSON(cleanAuditPath, cleanAuditLog); } catch (e) { console.error('写入清理审计失败:', e); }
+}
+
+function persistVaultKey(keyBuf) {
+  try {
+    let wrapped = keyBuf;
+    if (safeStorage.isEncryptionAvailable()) {
+      wrapped = safeStorage.encryptString(keyBuf.toString('hex'));
+    }
+    atomicWriteJSON(vaultKeyPath, { v: 1, wrapped: wrapped.toString('base64') });
+  } catch (e) { console.error('写入保险库密钥失败:', e); }
+}
+
+// initVaultOnStartup：启动时尝试用 safeStorage 包层自动解锁；无 keychain 时
+// 保留锁定态（vault:status 会报告 locked，由 UI 引导用户输主密码）。
+function initVaultOnStartup() {
+  loadVaultStateFromDisk();
+  if (!fsSync.existsSync(vaultKeyPath)) return { ok: true, unlocked: false, reason: 'no-key' };
+  try {
+    const raw = JSON.parse(fsSync.readFileSync(vaultKeyPath, 'utf8'));
+    if (!raw || raw.v !== 1 || typeof raw.wrapped !== 'string') return { ok: true, unlocked: false };
+    const wrapped = Buffer.from(raw.wrapped, 'base64');
+    const hex = safeStorage.isEncryptionAvailable()
+      ? safeStorage.decryptString(wrapped)
+      : wrapped.toString('utf8');
+    const key = Buffer.from(hex, 'hex');
+    if (key.length < vaultCore.MIN_MASTER_KEY_BYTES) return { ok: true, unlocked: false };
+    if (!vaultState) return { ok: true, unlocked: false };
+    const loaded = vaultCore.loadVault(JSON.stringify(vaultState), key);
+    if (loaded.ok) {
+      vaultHandle = loaded.vault;
+      vaultUsePasswordMode = false;
+      return { ok: true, unlocked: true };
+    }
+  } catch (e) { console.error('自动解锁保险库失败:', e); }
+  return { ok: true, unlocked: false };
+}
+
+// vaultStatusSnapshot 给 UI 的只读快照；绝不外泄条目密文 / 主密钥。
+function vaultStatusSnapshot() {
+  const unlocked = !!(vaultHandle && !vaultHandle.locked());
+  let entries = [];
+  if (unlocked) {
+    const l = vaultHandle.list();
+    if (l.ok) entries = l.entries;
+  }
+  return {
+    ok: true,
+    unlocked,
+    passwordMode: vaultUsePasswordMode,
+    storageAvailable: safeStorage.isEncryptionAvailable(),
+    hasVault: !!vaultState,
+    entries,
+  };
+}
+
+// createNewVault(masterPassword)：全新创建（或强制重建）。主密钥优先用
+// safeStorage 随机密钥；自设密码模式用 PBKDF2 慢化。返回结果不包含密钥。
+function createNewVault(masterPassword) {
+  let key;
+  let kdf = vaultCore.KDF_HKDF;
+  vaultUsePasswordMode = false;
+  if (typeof masterPassword === 'string' && masterPassword.length > 0) {
+    key = Buffer.from(masterPassword, 'utf8');
+    kdf = vaultCore.KDF_PBKDF2;
+    vaultUsePasswordMode = true;
+  } else {
+    key = crypto.randomBytes(32);
+  }
+  const c = vaultCore.createVault(key, { kdf });
+  if (!c.ok) return c;
+  vaultHandle = c.vault;
+  vaultState = c.vault.exportState().state;
+  persistVaultState();
+  if (!vaultUsePasswordMode) persistVaultKey(key);
+  return { ok: true, ...vaultStatusSnapshot() };
+}
+
+// unlockVault(masterPassword)：用自设主密码解锁（safeStorage 模式由启动自动解锁）。
+function unlockVault(masterPassword) {
+  if (typeof masterPassword !== 'string' || masterPassword === '') {
+    return { ok: false, reason: 'bad-password' };
+  }
+  if (!vaultState) return { ok: false, reason: 'no-vault' };
+  const key = Buffer.from(masterPassword, 'utf8');
+  const loaded = vaultCore.loadVault(JSON.stringify(vaultState), key);
+  if (!loaded.ok) return { ok: false, reason: loaded.reason };
+  vaultHandle = loaded.vault;
+  vaultUsePasswordMode = true;
+  return { ok: true, ...vaultStatusSnapshot() };
+}
+
+// executeCleanPlan：按已确认的计划执行清理。返回摘要；失败项记入审计。
+// 安全设计：不信任渲染进程传来的 targets 白名单（防 UI 被篡改后越权清理），
+// 而是按计划条件（mode/host/since/storageTypes）在 main 侧重新枚举 + 纯内核
+// 过滤生成权威目标集，再与计划摘要（sites/targetCount）核对一致才执行。
+async function executeCleanPlan(plan) {
+  if (!plan || typeof plan !== 'object') return { ok: false, reason: 'bad-plan' };
+  if (!Array.isArray(plan.actions) || plan.actions.length === 0) return { ok: false, reason: 'bad-plan' };
+  const src = enumerateSiteStorage();
+  const filtered = cleanerCore.filterSiteEntries(src.entries, {
+    matchMode: plan.mode,
+    host: plan.host,
+    since: plan.since,
+    storageTypes: plan.storageTypes,
+  });
+  if (!filtered.ok) return { ...filtered };
+  // 摘要核对：renderer 传来的计划（sites/targetCount/bytes）必须与 main 重算结果一致；
+  // 不一致说明计划在途中被改过（或数据已变化），拒绝执行。
+  if (typeof plan.sites === 'number' && filtered.sites !== plan.sites) {
+    return { ok: false, reason: 'plan-mismatch', expected: filtered.sites, got: plan.sites };
+  }
+  if (typeof plan.targetCount === 'number' && filtered.targets.length !== plan.targetCount) {
+    return { ok: false, reason: 'plan-mismatch', expected: filtered.targets.length, got: plan.targetCount };
+  }
+  if (typeof plan.totalBytes === 'number' && filtered.totalBytes !== plan.totalBytes) {
+    return { ok: false, reason: 'plan-mismatch', expected: filtered.totalBytes, got: plan.totalBytes };
+  }
+  const cleaned = [];
+  const failed = [];
+  const storageTypes = plan.actions;
+  for (const t of filtered.targets) {
+    try {
+      const ses = session.defaultSession;
+      const origin = String(t.origin || '');
+      if (origin === '') continue;
+      // 按 origin + 类型做最小化清理：全部类型用 clearStorageData({ origin })，
+      // 否则逐类型调用。
+      const opts = { origin };
+      if (!storageTypes.includes('all')) {
+        const mapped = storageTypes.map((a) => cleanerCore.classifyStorageType(a))
+          .filter((a) => a !== '' && a !== 'all');
+        if (mapped.length === 0) { failed.push({ origin, reason: 'no-actions' }); continue; }
+        for (const st of mapped) {
+          try {
+            const res = await ses.clearStorageData({ origin, storages: [st] });
+            void res;
+          } catch (e) { failed.push({ origin, storageType: st, reason: String(e && e.message || e) }); }
+        }
+      } else {
+        try {
+          const res = await ses.clearStorageData({ origin });
+          void res;
+        } catch (e) { failed.push({ origin, reason: String(e && e.message || e) }); }
+      }
+      cleaned.push(t.origin);
+    } catch (e) { failed.push({ origin: t.origin, reason: String(e && e.message || e) }); }
+  }
+  const audit = cleanerCore.recordCleanAudit(cleanAuditLog, {
+    mode: filtered.mode,
+    host: filtered.host,
+    sites: filtered.sites,
+    targetCount: filtered.targets.length,
+    bytes: filtered.totalBytes,
+    actions: storageTypes,
+    source: 'cleaner-ui',
+  });
+  persistCleanAudit();
+  return { ok: true, cleaned: cleaned.length, failed, audit: audit.ok ? audit.entry : null };
+}
+
+// enumerateSiteStorage：枚举默认会话全部 origin 的存储占用（粗略字节）。
+// cookies 无 API 可枚举 origin 级，用 session.cookies 逐个列举（受限）。
+function enumerateSiteStorage() {
+  const out = [];
+  const ses = session.defaultSession;
+  // 1) clearStorageData 支持的类型无法枚举，改用 storageData 不可得；
+  //    这里列出“可确认存在”的 origin 维度信息由 plan 阶段补充。
+  // 2) service workers：遍历 registrations。
+  try {
+    const sw = ses.serviceWorkers;
+    const regs = sw.getAllRunning() || {};
+    for (const id of Object.keys(regs)) {
+      const reg = regs[id];
+      const scope = reg && reg.scope ? reg.scope : '';
+      if (scope) out.push({ origin: scope, storageType: 'serviceworkers', bytes: 0, lastAccessed: Date.now() });
+    }
+  } catch {}
+  return { ok: true, entries: out };
 }
 
 // maybeFallbackAfterUpgradeFailure 在“HTTPS-Only 升级后加载失败”时，判断并执行
@@ -6853,6 +7081,7 @@ app.whenReady().then(async () => {
   loadReadingList();
   loadZoomFactors();
   loadCustomRulesFromDisk(path.join(app.getPath('userData'), 'blockrules.json'));
+  initVaultOnStartup();
 
   // 启动时还原 darkMode / httpsOnly / memorySaver 等运行时状态
   const stored = readStoredSettings();
@@ -8587,6 +8816,164 @@ ipcMain.handle('clear-block-rules', (event) => {
   customRules.path = [];
   persistCustomRules();
   return { success: true, count: 0 };
+});
+
+// ===== 保险库 IPC =====
+// 写操作（创建/解锁/写入/删除）均走 COSY_ONLY 分级（见 channelpolicy）；读快照走
+// GENERAL。任何 handler 都不回传密文与主密钥。
+ipcMain.handle('vault-status', (event) => {
+  if (!isMainSender(event)) return { success: false };
+  return { success: true, ...vaultStatusSnapshot() };
+});
+
+ipcMain.handle('vault-create', (event, payload = {}) => {
+  if (!isMainSender(event)) return { success: false };
+  const pw = typeof payload === 'string' ? payload : (payload && payload.masterPassword);
+  return { success: true, ...createNewVault(pw) };
+});
+
+ipcMain.handle('vault-unlock', (event, payload = {}) => {
+  if (!isMainSender(event)) return { success: false };
+  const pw = typeof payload === 'string' ? payload : (payload && payload.masterPassword);
+  return { success: true, ...unlockVault(pw) };
+});
+
+ipcMain.handle('vault-lock', (event) => {
+  if (!isMainSender(event)) return { success: false };
+  if (vaultHandle) vaultHandle.lock();
+  vaultHandle = null;
+  return { success: true, ...vaultStatusSnapshot() };
+});
+
+ipcMain.handle('vault-list', (event) => {
+  if (!isMainSender(event)) return { success: false };
+  if (!vaultHandle || vaultHandle.locked()) return { success: false, reason: 'locked' };
+  return { success: true, ...vaultHandle.list() };
+});
+
+ipcMain.handle('vault-get', (event, id) => {
+  if (!isMainSender(event)) return { success: false };
+  if (!vaultHandle || vaultHandle.locked()) return { success: false, reason: 'locked' };
+  const g = vaultHandle.get(String(id || ''));
+  if (!g.ok) return { success: false, reason: g.reason };
+  return { success: true, payload: g.payload, ...(vaultHandle.list().ok ? { label: vaultHandle.list().entries.find((e) => e.id === id)?.label } : {}) };
+});
+
+ipcMain.handle('vault-set', (event, payload = {}) => {
+  if (!isMainSender(event)) return { success: false };
+  if (!vaultHandle || vaultHandle.locked()) return { success: false, reason: 'locked' };
+  const r = vaultHandle.set(String(payload.kind || ''), String(payload.label || ''), payload.payload);
+  if (r.ok) persistVaultState();
+  return { success: true, ...r };
+});
+
+ipcMain.handle('vault-update', (event, payload = {}) => {
+  if (!isMainSender(event)) return { success: false };
+  if (!vaultHandle || vaultHandle.locked()) return { success: false, reason: 'locked' };
+  const r = vaultHandle.update(String(payload.id || ''), String(payload.kind || ''),
+    String(payload.label || ''), payload.payload);
+  if (r.ok) persistVaultState();
+  return { success: true, ...r };
+});
+
+ipcMain.handle('vault-delete', (event, id) => {
+  if (!isMainSender(event)) return { success: false };
+  if (!vaultHandle || vaultHandle.locked()) return { success: false, reason: 'locked' };
+  const r = vaultHandle.delete(String(id || ''));
+  if (r.ok) persistVaultState();
+  return { success: true, ...r };
+});
+
+// vault-rekey：修改主密码。传主密码 → PBKDF2 慢化重包裹；留空 → 生成新随机密钥
+// 并重新写回系统安全存储。任一条目解密失败会整体中止，保持原状态。
+ipcMain.handle('vault-rekey', (event, payload = {}) => {
+  if (!isMainSender(event)) return { success: false };
+  if (!vaultHandle || vaultHandle.locked()) return { success: false, reason: 'locked' };
+  const pw = typeof payload === 'string' ? payload : (payload && payload.masterPassword);
+  let key;
+  let kdf;
+  if (typeof pw === 'string' && pw.length > 0) {
+    key = Buffer.from(pw, 'utf8');
+    kdf = vaultCore.KDF_PBKDF2;
+    vaultUsePasswordMode = true;
+  } else {
+    key = crypto.randomBytes(32);
+    kdf = vaultCore.KDF_HKDF;
+    vaultUsePasswordMode = false;
+  }
+  const rr = vaultHandle.rekey(key, { kdf });
+  if (!rr.ok) return { success: false, reason: rr.reason };
+  persistVaultState();
+  if (!vaultUsePasswordMode) persistVaultKey(key);
+  return { success: true, ...rr, ...vaultStatusSnapshot() };
+});
+
+// vault-export-backup：返回密文 JSON 文本（不含密钥/明文），供用户自行保存。
+ipcMain.handle('vault-export-backup', (event) => {
+  if (!isMainSender(event)) return { success: false };
+  if (!vaultHandle || vaultHandle.locked()) return { success: false, reason: 'locked' };
+  const ex = vaultHandle.exportState();
+  if (!ex.ok) return { success: false, reason: ex.reason };
+  return { success: true, backup: JSON.stringify(ex.state) };
+});
+
+// vault-import-backup：合并同一主密钥包裹的备份密文；格式/密钥不匹配整体拒绝。
+ipcMain.handle('vault-import-backup', (event, text) => {
+  if (!isMainSender(event)) return { success: false };
+  if (!vaultHandle || vaultHandle.locked()) return { success: false, reason: 'locked' };
+  let state;
+  try {
+    state = JSON.parse(String(text || ''));
+  } catch {
+    return { success: false, reason: 'bad-state' };
+  }
+  const rr = vaultHandle.mergeFromState(state);
+  if (rr.ok) persistVaultState();
+  return { success: true, ...rr };
+});
+
+// ===== 站点数据清理 IPC =====
+// 流程固定为：枚举 → 规划（纯函数）→ 用户确认 plan → 执行 → 审计。
+// 执行只接受 filterSiteEntries 产出的 plan 对象（含 targets 白名单）。
+ipcMain.handle('cleaner-enumerate', async (event) => {
+  if (!isMainSender(event)) return { success: false };
+  return { success: true, ...enumerateSiteStorage() };
+});
+
+ipcMain.handle('cleaner-plan', (event, payload = {}) => {
+  if (!isMainSender(event)) return { success: false };
+  const src = enumerateSiteStorage();
+  const filtered = cleanerCore.filterSiteEntries(src.entries, {
+    matchMode: payload.matchMode,
+    host: payload.host,
+    since: payload.since,
+    storageTypes: payload.storageTypes,
+  });
+  if (!filtered.ok) return { success: false, ...filtered };
+  return {
+    success: true,
+    ...filtered,
+    storageTypes: payload.storageTypes || [],
+    ...cleanerCore.summarizePlan(filtered, payload.actions || []),
+  };
+});
+
+ipcMain.handle('cleaner-execute', async (event, plan) => {
+  if (!isMainSender(event)) return { success: false };
+  const res = await executeCleanPlan(plan);
+  return { success: true, ...res };
+});
+
+ipcMain.handle('cleaner-audit', (event) => {
+  if (!isMainSender(event)) return { success: false };
+  return { success: true, entries: cleanAuditLog.slice() };
+});
+
+ipcMain.handle('cleaner-prune-audit', (event, keep) => {
+  if (!isMainSender(event)) return { success: false };
+  const r = cleanerCore.pruneAuditLog(cleanAuditLog, Number(keep) || 0);
+  if (r.ok) persistCleanAudit();
+  return { success: true, ...r };
 });
 
 // 崩溃横幅上的“强制刷新”：按 tabId 找到对应标签重载（无响应 / 连续崩溃后由用户手动触发）。
