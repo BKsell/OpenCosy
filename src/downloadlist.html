@@ -146,6 +146,24 @@
         }
 
         .progress-text { font-size: 12px; color: var(--text-secondary); margin-top: 5px; }
+
+        .controls { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+        .filter-bar { display: flex; gap: 6px; flex-wrap: wrap; }
+        .filter-btn {
+            padding: 6px 14px; border: 1px solid var(--border-color); border-radius: 16px;
+            background: var(--bg-secondary); color: var(--text-secondary); font-size: 13px;
+            cursor: pointer; transition: all 0.2s ease;
+        }
+        .filter-btn:hover { border-color: var(--theme-color); color: var(--theme-color); }
+        .filter-btn.active { background: var(--theme-color); border-color: var(--theme-color); color: #fff; font-weight: 600; }
+        .search-input {
+            flex: 1; min-width: 180px; max-width: 320px; padding: 7px 12px;
+            border: 1px solid var(--border-color); border-radius: 16px; font-size: 13px;
+            background: var(--bg-secondary); color: var(--text-primary);
+        }
+        .search-input:focus { outline: none; border-color: var(--theme-color); }
+        .count-badge { font-size: 13px; color: var(--text-secondary); white-space: nowrap; }
+        .error-detail { font-size: 12px; color: var(--danger-color); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     </style>
 </head>
 <body>
@@ -156,6 +174,17 @@
             <div class="header-actions">
                 <button class="action-btn btn-danger" id="clear-downloads">清空下载</button>
             </div>
+        </div>
+        <div class="controls">
+            <div class="filter-bar" id="filter-bar">
+                <button class="filter-btn active" data-filter="all">全部</button>
+                <button class="filter-btn" data-filter="downloading">下载中</button>
+                <button class="filter-btn" data-filter="paused">已暂停</button>
+                <button class="filter-btn" data-filter="complete">已完成</button>
+                <button class="filter-btn" data-filter="error">失败</button>
+            </div>
+            <input type="search" id="search-input" class="search-input" placeholder="搜索文件名…">
+            <span id="download-count" class="count-badge"></span>
         </div>
         <div class="download-list" id="download-list"></div>
     </div>
@@ -191,9 +220,41 @@
             } catch {}
         }
 
+        let filter = 'all';
+        let searchText = '';
+
+        function matchesFilter(dl) {
+            if (filter === 'all') return true;
+            if (filter === 'downloading') return dl.status === 'downloading' || dl.status === 'pending';
+            return dl.status === filter;
+        }
+
+        function matchesSearch(dl) {
+            if (!searchText) return true;
+            return (dl.filename || '').toLowerCase().includes(searchText);
+        }
+
+        function updateCount() {
+            const total = downloads.length;
+            const done = downloads.filter(d => d.status === 'complete').length;
+            const failed = downloads.filter(d => d.status === 'error').length;
+            document.getElementById('download-count').textContent = `共 ${total} 项 · 完成 ${done} · 失败 ${failed}`;
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
             loadThemeColor();
             document.getElementById('clear-downloads').addEventListener('click', clearDownloads);
+            document.getElementById('filter-bar').addEventListener('click', (e) => {
+                const btn = e.target.closest('.filter-btn');
+                if (!btn) return;
+                filter = btn.dataset.filter;
+                document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b === btn));
+                renderDownloads();
+            });
+            document.getElementById('search-input').addEventListener('input', (e) => {
+                searchText = e.target.value.trim().toLowerCase();
+                renderDownloads();
+            });
             window.electronAPI.send('get-downloads');
         });
 
@@ -210,12 +271,18 @@
 
         function renderDownloads() {
             const c = document.getElementById('download-list');
-            if (!downloads.length) {
-                c.innerHTML = '<div class="empty-state"><div class="empty-icon">↓</div><p class="empty-text">暂无下载记录</p><p class="empty-subtext">下载的文件将显示在这里</p></div>';
+            const visible = downloads.filter(matchesFilter).filter(matchesSearch);
+            updateCount();
+            if (!visible.length) {
+                if (!downloads.length) {
+                    c.innerHTML = '<div class="empty-state"><div class="empty-icon">↓</div><p class="empty-text">暂无下载记录</p><p class="empty-subtext">下载的文件将显示在这里</p></div>';
+                } else {
+                    c.innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><p class="empty-text">没有匹配的下载</p><p class="empty-subtext">换个筛选条件或搜索关键词试试</p></div>';
+                }
                 return;
             }
             c.innerHTML = '';
-            downloads.forEach(dl => {
+            visible.forEach(dl => {
                 const item = document.createElement('div');
                 item.className = 'download-item';
                 item.setAttribute('data-id', dl.id);
@@ -233,7 +300,10 @@
 
                 const meta = document.createElement('div');
                 meta.className = 'file-meta';
-                [formatSize(dl.totalBytes), formatDate(dl.startTime), getStatusText(dl.status)].forEach(t => {
+                const metaItems = [formatSize(dl.totalBytes), formatDate(dl.startTime), getStatusText(dl.status)];
+                const host = getSourceHost(dl.url);
+                if (host) metaItems.push(host);
+                metaItems.forEach(t => {
                     const s = document.createElement('span');
                     s.textContent = t;
                     meta.appendChild(s);
@@ -254,6 +324,14 @@
                     txt.textContent = `${formatSize(dl.receivedBytes)} / ${formatSize(dl.totalBytes)} (${dl.progress}%) - ${dl.speed}`;
                     info.appendChild(bar);
                     info.appendChild(txt);
+                }
+
+                if (dl.status === 'error' && typeof dl.errorMessage === 'string' && dl.errorMessage) {
+                    const err = document.createElement('div');
+                    err.className = 'error-detail';
+                    err.textContent = '原因：' + dl.errorMessage.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 120);
+                    err.title = dl.errorMessage;
+                    info.appendChild(err);
                 }
 
                 const actions = document.createElement('div');
@@ -278,6 +356,7 @@
             if (dl.status === 'complete') {
                 actions.appendChild(btn('打开', 'btn-primary', () => openFile(dl.savePath)));
                 actions.appendChild(btn('文件夹', 'btn-secondary', () => openFolder(dl.savePath)));
+                actions.appendChild(btn('复制链接', 'btn-secondary', () => copyLink(dl.url)));
                 actions.appendChild(btn('删除', 'btn-danger', () => removeDownload(dl.id)));
             } else if (dl.status === 'pending') {
                 const b = btn('等待中', 'btn-secondary', null);
@@ -291,8 +370,21 @@
                 actions.appendChild(btn('取消', 'btn-danger', () => cancelDownload(dl.id)));
             } else if (dl.status === 'error') {
                 actions.appendChild(btn('重试', 'btn-secondary', () => retryDownload(dl.id)));
+                actions.appendChild(btn('复制链接', 'btn-secondary', () => copyLink(dl.url)));
                 actions.appendChild(btn('删除', 'btn-danger', () => removeDownload(dl.id)));
             }
+        }
+
+        function copyLink(url) {
+            if (typeof url === 'string' && url) window.electronAPI.send('copy-text', url);
+        }
+
+        function getSourceHost(url) {
+            if (typeof url !== 'string' || !url) return '';
+            try {
+                const u = new URL(url);
+                return u.hostname || '';
+            } catch { return ''; }
         }
 
         function updateDownloadProgress(data) {
@@ -347,6 +439,20 @@
             } else {
                 if (bar) bar.remove();
                 if (txt) txt.remove();
+            }
+            // 错误详情：状态切换时同步增删，避免旧详情残留。
+            const infoBox = el.querySelector('.file-info');
+            const oldErr = el.querySelector('.error-detail');
+            if (dl.status === 'error' && typeof dl.errorMessage === 'string' && dl.errorMessage) {
+                if (!oldErr && infoBox) {
+                    const err = document.createElement('div');
+                    err.className = 'error-detail';
+                    err.textContent = '原因：' + dl.errorMessage.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 120);
+                    err.title = dl.errorMessage;
+                    infoBox.appendChild(err);
+                }
+            } else if (oldErr) {
+                oldErr.remove();
             }
             const acts = el.querySelector('.file-actions');
             if (acts) { acts.innerHTML = ''; addActions(acts, dl); }
