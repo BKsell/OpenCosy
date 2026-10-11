@@ -232,6 +232,16 @@
     };
     const data = {
       exportedAt: new Date().toISOString(),
+      browser: {
+        userAgent: String(navigator.userAgent || '').slice(0, 300),
+        language: navigator.language || '',
+        platform: navigator.platform || '',
+        languages: (navigator.languages || []).join(',').slice(0, 200),
+        screen: (window.screen ? window.screen.width + 'x' + window.screen.height : ''),
+        dnt: navigator.doNotTrack || '',
+        timezone: Intl.DateTimeFormat ? Intl.DateTimeFormat().resolvedOptions().timeZone || '' : '',
+        online: typeof navigator.onLine === 'boolean' ? navigator.onLine : null,
+      },
       online: pick('online-badge'),
       ua: pick('ua-text'),
       uaMode: pick('ua-mode'),
