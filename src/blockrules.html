@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+<title>自定义拦截规则 - OpenCosy</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+:root{--bg:#f3f3f3;--card:#fff;--text:#222;--sub:#666;--border:#dfe4e1;--accent:#0078d4;--danger:#dc3545;--ok:#1e8e3e;--warnbg:#fff8e1;--warnbd:#e0b100;}
+[data-theme="dark"]{--bg:#1a1a1a;--card:#2d2d2d;--text:#e6e6e6;--sub:#9a9a9a;--border:#444;--warnbg:#3a3210;--warnbd:#8a6d00;}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);padding:24px;transition:.3s;}
+h1{font-size:20px;margin-bottom:4px;}
+.tip{color:var(--sub);font-size:13px;margin-bottom:16px;line-height:1.6;}
+.status{display:inline-flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--border);
+  border-radius:8px;padding:8px 14px;font-size:13px;margin-bottom:18px;}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--accent);}
+.dot.off{background:var(--sub);}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-bottom:16px;}
+.card h2{font-size:14px;margin-bottom:10px;}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+input[type=text]{flex:1;min-width:240px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;
+  background:var(--bg);color:var(--text);font-size:13px;}
+textarea{width:100%;min-height:110px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;
+  background:var(--bg);color:var(--text);font-size:12.5px;font-family:Consolas,monospace;resize:vertical;}
+button{border-radius:6px;padding:8px 14px;font-size:13px;cursor:pointer;border:1px solid var(--accent);
+  background:var(--accent);color:#fff;}
+button.ghost{background:transparent;color:var(--accent);}
+button.danger{background:transparent;border-color:var(--danger);color:var(--danger);}
+button.danger:hover{background:var(--danger);color:#fff;}
+button:disabled{opacity:.5;cursor:not-allowed;}
+table{width:100%;border-collapse:collapse;}
+th,td{padding:9px 12px;text-align:left;font-size:13px;border-bottom:1px solid var(--border);}
+th{color:var(--sub);font-weight:600;}
+tr:last-child td{border-bottom:none;}
+td.mono{font-family:Consolas,monospace;font-size:12.5px;word-break:break-all;}
+.empty{padding:26px;text-align:center;color:var(--sub);font-size:13px;}
+.warn{background:var(--warnbg);border:1px solid var(--warnbd);border-radius:8px;padding:10px 14px;
+  font-size:12.5px;line-height:1.6;margin-bottom:16px;}
+.msg{font-size:12.5px;color:var(--danger);min-height:18px;margin-top:8px;}
+.msg.ok{color:var(--ok);}
+.count{color:var(--sub);font-size:12.5px;margin-left:8px;}
+.badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;background:var(--bg);
+  border:1px solid var(--border);color:var(--sub);margin-right:6px;}
+</style>
+</head>
+<body>
+<h1>自定义拦截规则</h1>
+<div class="tip">
+  内置追踪域列表覆盖常见广告 / 追踪服务，但无法覆盖你的特定场景。这里可添加三类规则，
+  <b>优先于内置列表</b>生效，立即写入磁盘：
+  <br>· <b>host</b>：域名后缀，含其所有子域，例如 <code>evil.example.com</code>；
+  <br>· <b>glob</b>：URL 通配模式，<code>*</code> 匹配任意字符，例如 <code>https://cdn.bad.net/assets/*</code>；
+  <br>· <b>path</b>：域名 + 路径前缀，例如 <code>https://ok.example/ads/</code>。
+</div>
+
+<div class="status"><span class="dot" id="dot"></span><span id="stateText">-</span><span class="count" id="count"></span></div>
+
+<div class="card">
+  <h2>手动添加规则</h2>
+  <div class="row">
+    <input type="text" id="ruleInput" placeholder="裸域名 / host:evil.com / glob:https://cdn.bad.net/* / path:https://x.example/ads/" autocomplete="off" spellcheck="false">
+    <button id="addBtn">添加</button>
+  </div>
+  <div class="msg" id="addMsg"></div>
+</div>
+
+<div class="card">
+  <h2>当前规则<span class="count" id="listCount"></span></h2>
+  <table>
+    <thead><tr><th>类型</th><th>规则</th><th></th></tr></thead>
+    <tbody id="rows"><tr><td colspan="3" class="empty">加载中…</td></tr></tbody>
+  </table>
+  <div class="row" style="margin-top:12px;">
+    <button class="danger" id="clearBtn" disabled>全部清空</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>导入 / 导出规则</h2>
+  <div class="tip" style="margin-bottom:8px;">一行一条，<code>#</code> 开头为注释；导入时自动跳过非法行。</div>
+  <textarea id="importArea" placeholder="host:evil.com&#10;glob:https://cdn.bad.net/assets/*&#10;# 注释行"></textarea>
+  <div class="row" style="margin-top:10px;">
+    <button id="importBtn" class="ghost">导入到列表</button>
+    <button id="exportBtn" class="ghost">导出当前规则</button>
+  </div>
+  <div class="msg" id="ioMsg"></div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var api = window.electronAPI;
+  var rowsEl = document.getElementById('rows');
+  var listCountEl = document.getElementById('listCount');
+  var countEl = document.getElementById('count');
+  var clearBtn = document.getElementById('clearBtn');
+  var addBtn = document.getElementById('addBtn');
+  var ruleInput = document.getElementById('ruleInput');
+  var addMsg = document.getElementById('addMsg');
+  var dotEl = document.getElementById('dot');
+  var stateTextEl = document.getElementById('stateText');
+  var importArea = document.getElementById('importArea');
+  var importBtn = document.getElementById('importBtn');
+  var exportBtn = document.getElementById('exportBtn');
+  var ioMsg = document.getElementById('ioMsg');
+  var currentRules = { host: [], glob: [], path: [] };
+
+  function applyTheme() {
+    var dark = false;
+    try { dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches; } catch (e) {}
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  }
+
+  function setAddMsg(text, ok) {
+    addMsg.textContent = text || '';
+    addMsg.className = 'msg' + (ok ? ' ok' : '');
+  }
+  function setIoMsg(text, ok) {
+    ioMsg.textContent = text || '';
+    ioMsg.className = 'msg' + (ok ? ' ok' : '');
+  }
+
+  function allRules(rules) {
+    return (rules.host || []).concat(rules.glob || []).concat(rules.path || []);
+  }
+
+  function kindLabel(kind) {
+    return { host: 'host', glob: 'glob', path: 'path' }[kind] || kind;
+  }
+
+  function render(payload) {
+    var enabled = !!(payload && payload.enabled);
+    var rules = (payload && payload.rules) || currentRules;
+    currentRules = rules;
+    var total = allRules(rules).length;
+    dotEl.className = 'dot' + (enabled ? '' : ' off');
+    stateTextEl.textContent = enabled ? '拦截已开启' : '拦截已关闭（规则保留，开启后生效）';
+    countEl.textContent = '共 ' + total + ' 条';
+
+    rowsEl.textContent = '';
+    if (!total) {
+      var tr = document.createElement('tr');
+      var td = document.createElement('td');
+      td.colSpan = 3;
+      td.className = 'empty';
+      td.textContent = '暂无规则';
+      tr.appendChild(td);
+      rowsEl.appendChild(tr);
+    } else {
+      ['host', 'glob', 'path'].forEach(function (kind) {
+        (rules[kind] || []).forEach(function (value) {
+          var tr = document.createElement('tr');
+
+          var tdKind = document.createElement('td');
+          var badge = document.createElement('span');
+          badge.className = 'badge';
+          badge.textContent = kindLabel(kind);
+          tdKind.appendChild(badge);
+
+          var tdVal = document.createElement('td');
+          tdVal.className = 'mono';
+          tdVal.textContent = value;
+
+          var tdOp = document.createElement('td');
+          var rm = document.createElement('button');
+          rm.className = 'danger';
+          rm.type = 'button';
+          rm.textContent = '移除';
+          rm.addEventListener('click', function () {
+            api.invoke('remove-block-rule', kind + ':' + value).then(refresh).catch(function () {});
+          });
+          tdOp.appendChild(rm);
+
+          tr.appendChild(tdKind);
+          tr.appendChild(tdVal);
+          tr.appendChild(tdOp);
+          rowsEl.appendChild(tr);
+        });
+      });
+    }
+    listCountEl.textContent = total ? '（' + total + '）' : '';
+    clearBtn.disabled = !total;
+  }
+
+  function refresh() {
+    if (!api || !api.invoke) return;
+    api.invoke('get-block-rules').then(function (res) {
+      render(res || { enabled: true, rules: { host: [], glob: [], path: [] } });
+    }).catch(function () { stateTextEl.textContent = '读取失败'; });
+  }
+
+  function addRule() {
+    setAddMsg('');
+    var raw = ruleInput.value;
+    if (!api || !api.invoke) return;
+    api.invoke('add-block-rule', raw).then(function (res) {
+      if (res && res.success && res.ok) {
+        ruleInput.value = '';
+        refresh();
+        setAddMsg('已添加（当前共 ' + res.count + ' 条）', true);
+      } else {
+        var reason = (res && res.reason) || 'invalid-rule';
+        var map = {
+          'invalid-rule': '规则无效：检查格式（host 需 ≥2 段域名；glob 需 http(s) 且含 *）',
+          'limit': '已达上限（2000 条）',
+          'duplicate': '该规则已存在',
+        };
+        setAddMsg(map[reason] || ('添加失败：' + reason));
+      }
+    }).catch(function () { setAddMsg('添加失败'); });
+  }
+
+  function removeRule(raw) {
+    if (!api || !api.invoke) return;
+    api.invoke('remove-block-rule', raw).then(refresh).catch(function () {});
+  }
+
+  function clearAll() {
+    if (!api || !api.invoke) return;
+    var ok = window.confirm('确定清空全部自定义拦截规则吗？');
+    if (!ok) return;
+    api.invoke('clear-block-rules').then(function () { refresh(); setIoMsg('已清空', true); }).catch(function () {});
+  }
+
+  function doImport() {
+    setIoMsg('');
+    if (!api || !api.invoke) return;
+    api.invoke('import-block-rules', importArea.value).then(function (res) {
+      if (res && res.success) {
+        importArea.value = '';
+        refresh();
+        setIoMsg('导入完成：新增 ' + res.added + ' 条，跳过 ' + res.skipped + ' 条', true);
+      } else {
+        setIoMsg('导入失败：' + ((res && res.reason) || 'unknown'));
+      }
+    }).catch(function () { setIoMsg('导入失败'); });
+  }
+
+  function doExport() {
+    setIoMsg('');
+    if (!api || !api.invoke) return;
+    api.invoke('export-block-rules').then(function (res) {
+      if (res && res.success) {
+        importArea.value = res.text;
+        setIoMsg('已导出到下方文本框，可复制保存', true);
+      } else {
+        setIoMsg('导出失败');
+      }
+    }).catch(function () { setIoMsg('导出失败'); });
+  }
+
+  addBtn.addEventListener('click', addRule);
+  ruleInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') addRule(); });
+  clearBtn.addEventListener('click', clearAll);
+  importBtn.addEventListener('click', doImport);
+  exportBtn.addEventListener('click', doExport);
+
+  if (window.matchMedia) {
+    try { window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme); } catch (e) {}
+  }
+  applyTheme();
+  refresh();
+})();
+</script>
+</body>
+</html>
