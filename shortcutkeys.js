@@ -50,6 +50,7 @@ const ACTION = Object.freeze({
   TOGGLE_BOOKMARK: 'toggle-bookmark',
   OPEN_HISTORY: 'open-history',
   OPEN_HISTORY_PAGE: 'open-history-page',
+  OPEN_READING_LIST: 'open-reading-list',
   CLEAR_BROWSING_DATA: 'clear-browsing-data',
   TOGGLE_PINNED_TAB: 'toggle-pinned-tab',
 });
@@ -72,6 +73,9 @@ const SHORTCUT_RULES = Object.freeze([
   { action: ACTION.DISCARD_BACKGROUND_TABS, key: 's', ctrl: true, shift: true, alt: null },
   { action: ACTION.PREV_TAB, key: 'tab', ctrl: true, shift: true, alt: null },
   { action: ACTION.NEXT_TAB, key: 'tab', ctrl: true, shift: false, alt: null },
+  // 稍后读页：Ctrl+Shift+L。必须排在 FOCUS_ADDRESS_BAR（Ctrl+L，shift 宽松）之前，
+  // 否则首条命中会先被聚焦地址栏吞掉。
+  { action: ACTION.OPEN_READING_LIST, key: 'l', ctrl: true, shift: true, alt: false },
   { action: ACTION.FOCUS_ADDRESS_BAR, key: 'l', ctrl: true, shift: null, alt: null },
   { action: ACTION.FOCUS_ADDRESS_BAR, key: 'f6', ctrl: null, shift: null, alt: null },
   { action: ACTION.CLOSE_TAB_F4, key: 'f4', ctrl: true, shift: null, alt: null },
@@ -191,6 +195,7 @@ const PRIMARY_ACCELERATOR = Object.freeze({
   [ACTION.TOGGLE_BOOKMARK]: 'Ctrl+D',
   [ACTION.OPEN_HISTORY]: 'Ctrl+H',
   [ACTION.OPEN_HISTORY_PAGE]: 'Ctrl+Shift+H',
+  [ACTION.OPEN_READING_LIST]: 'Ctrl+Shift+L',
   [ACTION.CLEAR_BROWSING_DATA]: 'Ctrl+Shift+Delete',
   [ACTION.TOGGLE_PINNED_TAB]: 'Alt+Shift+P',
 });
