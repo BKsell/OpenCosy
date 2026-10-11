@@ -9036,6 +9036,21 @@ ipcMain.handle('clear-block-rules', (event) => {
 // ===== 保险库 IPC =====
 // 写操作（创建/解锁/写入/删除）均走 COSY_ONLY 分级（见 channelpolicy）；读快照走
 // GENERAL。任何 handler 都不回传密文与主密钥。
+// vaultPasswordOK：主进程侧主密码收口校验（渲染层另有 UI 限制，此处纵深防御）。
+// 规则：必须是字符串；1~256 个可见字符；不含控制字符/NUL；非纯空白；
+// UTF-8 编码后不超过 1024 字节，防止超长输入拖垮 PBKDF2 慢化造成 DoS。
+function vaultPasswordOK(pw) {
+  if (typeof pw !== 'string') return false;
+  if (pw.length < 1 || pw.length > 256) return false;
+  if (/[\x00-\x1f\x7f]/.test(pw)) return false;
+  if (/^\s*$/.test(pw)) return false;
+  try {
+    return Buffer.byteLength(pw, 'utf8') <= 1024;
+  } catch {
+    return false;
+  }
+}
+
 ipcMain.handle('vault-status', (event) => {
   if (!isMainSender(event)) return { success: false };
   return { success: true, ...vaultStatusSnapshot() };
@@ -9044,12 +9059,14 @@ ipcMain.handle('vault-status', (event) => {
 ipcMain.handle('vault-create', (event, payload = {}) => {
   if (!isMainSender(event)) return { success: false };
   const pw = typeof payload === 'string' ? payload : (payload && payload.masterPassword);
+  if (!vaultPasswordOK(pw)) return { success: false, reason: 'bad-password' };
   return { success: true, ...createNewVault(pw) };
 });
 
 ipcMain.handle('vault-unlock', (event, payload = {}) => {
   if (!isMainSender(event)) return { success: false };
   const pw = typeof payload === 'string' ? payload : (payload && payload.masterPassword);
+  if (!vaultPasswordOK(pw)) return { success: false, reason: 'bad-password' };
   return { success: true, ...unlockVault(pw) };
 });
 
@@ -9108,6 +9125,7 @@ ipcMain.handle('vault-rekey', (event, payload = {}) => {
   let key;
   let kdf;
   if (typeof pw === 'string' && pw.length > 0) {
+    if (!vaultPasswordOK(pw)) return { success: false, reason: 'bad-password' };
     key = Buffer.from(pw, 'utf8');
     kdf = vaultCore.KDF_PBKDF2;
     vaultUsePasswordMode = true;
