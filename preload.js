@@ -82,6 +82,8 @@ const allowedInvokeChannels = new Set([
   'bookmarks-rename',
   'about-snapshot',
   'shortcuts-snapshot',
+  'pages-snapshot',
+  'pages-open',
   'clear-browsing-data',
   'get-https-only',
   'get-network-status',
