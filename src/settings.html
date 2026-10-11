@@ -117,6 +117,21 @@
             <div class="setting-item">
                 <div class="setting-icon">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" fill="currentColor" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">HTTPS-Only 模式</label>
+                    <p class="setting-description">自动把公网 http 站点升级为加密的 https 连接，失败时由你确认后再回退明文；关闭后所有站点按其原始协议访问</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="httpsOnly" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <rect x="3" y="6" width="18" height="12" rx="2" stroke="currentColor" stroke-width="2" />
                         <path d="M7 6V3M12 6V3M17 6V3M7 21v-3M12 21v-3M17 21v-3" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
                         <path d="M8 10v4M12 10v4M16 10v4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
@@ -613,13 +628,13 @@
         <button class="save-button" onclick="saveSettings()">保存设置</button>
     </div>
     <script>
-        const ALLOWED_SETTING_KEYS = new Set(['defaultTab', 'tabLayout', 'searchEngine', 'backgroundType', 'customUrl', 'customBackgroundUrl', 'themeColor', 'darkMode', 'memorySaver', 'clearOnExit', 'confirmCloseMultiple', 'blockTrackers', 'blockThirdPartyCookies', 'hardenCookies', 'blockLocalNetworkAccess', 'reduceClientHints', 'blockAdSignals', 'blockHyperlinkPing', 'stripAcceptCh', 'allowPictureInPicture', 'webrtcMode', 'dohMode', 'dohProvider', 'dohCustomUrl', 'crashRecovery', 'stripTrackingParams', 'spellcheckEnabled', 'spellcheckLanguages']);
+        const ALLOWED_SETTING_KEYS = new Set(['defaultTab', 'tabLayout', 'searchEngine', 'backgroundType', 'customUrl', 'customBackgroundUrl', 'themeColor', 'darkMode', 'httpsOnly', 'memorySaver', 'clearOnExit', 'confirmCloseMultiple', 'blockTrackers', 'blockThirdPartyCookies', 'hardenCookies', 'blockLocalNetworkAccess', 'reduceClientHints', 'blockAdSignals', 'blockHyperlinkPing', 'stripAcceptCh', 'allowPictureInPicture', 'webrtcMode', 'dohMode', 'dohProvider', 'dohCustomUrl', 'crashRecovery', 'stripTrackingParams', 'spellcheckEnabled', 'spellcheckLanguages']);
         const ALLOWED_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'cosy:']);
         const COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
         const DEFAULT_SPELLCHECK_LANGS = ['en-US', 'zh-CN'];
         // 这些键在 .inf 配置里保存为 true/false，导入时必须还原成布尔值，
         // 否则字符串 'false' 会被当成真值，导致"关闭"类设置永远关不掉。
-        const BOOLEAN_SETTING_KEYS = new Set(['darkMode', 'memorySaver', 'clearOnExit', 'confirmCloseMultiple', 'blockTrackers', 'blockThirdPartyCookies', 'hardenCookies', 'blockLocalNetworkAccess', 'reduceClientHints', 'blockAdSignals', 'blockHyperlinkPing', 'stripAcceptCh', 'allowPictureInPicture', 'crashRecovery', 'stripTrackingParams', 'spellcheckEnabled']);
+        const BOOLEAN_SETTING_KEYS = new Set(['darkMode', 'httpsOnly', 'memorySaver', 'clearOnExit', 'confirmCloseMultiple', 'blockTrackers', 'blockThirdPartyCookies', 'hardenCookies', 'blockLocalNetworkAccess', 'reduceClientHints', 'blockAdSignals', 'blockHyperlinkPing', 'stripAcceptCh', 'allowPictureInPicture', 'crashRecovery', 'stripTrackingParams', 'spellcheckEnabled']);
 
         // 安全 DNS 控件联动：关闭模式下禁用解析器选择；仅 custom 时启用自定义 URL。
         (function syncDohControls() {
@@ -826,6 +841,8 @@
             }
             // 默认开启：仅在明确存了 false 时关闭。
             document.getElementById('memorySaver').checked = settings.memorySaver !== false;
+            // HTTPS-Only 默认开启（与主进程运行时开关一致），仅在明确存 false 时关闭。
+            document.getElementById('httpsOnly').checked = settings.httpsOnly !== false;
             // 这两项默认关闭，仅在明确存 true 时勾选。
             document.getElementById('clearOnExit').checked = settings.clearOnExit === true;
             document.getElementById('confirmCloseMultiple').checked = settings.confirmCloseMultiple === true;
@@ -873,6 +890,7 @@ document.getElementById('dohMode').dispatchEvent(new Event('change'));
             const customBackgroundUrl = document.getElementById('customBackgroundUrl').value;
             const themeColor = document.getElementById('themeColor').value;
             const darkMode = document.getElementById('darkMode').checked;
+            const httpsOnly = document.getElementById('httpsOnly').checked;
             const memorySaver = document.getElementById('memorySaver').checked;
             const clearOnExit = document.getElementById('clearOnExit').checked;
             const confirmCloseMultiple = document.getElementById('confirmCloseMultiple').checked;
@@ -941,6 +959,7 @@ document.getElementById('dohMode').dispatchEvent(new Event('change'));
                 customBackgroundUrl: (backgroundType === 'custom' && isSafeUrl(customBackgroundUrl)) ? customBackgroundUrl : '',
                 themeColor,
                 darkMode,
+                httpsOnly,
                 memorySaver,
                 clearOnExit,
                 confirmCloseMultiple,
