@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+<title>关于 OpenCosy</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+:root{--bg:#f3f3f3;--card:#fff;--text:#222;--sub:#666;--border:#dfe4e1;--accent:#0078d4;--ok:#1e8e3e;--warn:#b06000;}
+[data-theme="dark"]{--bg:#1a1a1a;--card:#2d2d2d;--text:#e6e6e6;--sub:#9a9a9a;--border:#444;}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);padding:24px;transition:.3s;max-width:760px;margin:0 auto;}
+h1{font-size:20px;margin-bottom:4px;}
+.tip{color:var(--sub);font-size:13px;margin-bottom:16px;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:14px;}
+.card h2{font-size:15px;margin-bottom:12px;}
+.kv{display:flex;gap:12px;padding:6px 0;border-bottom:1px dashed var(--border);font-size:13px;}
+.kv:last-child{border-bottom:none;}
+.kv .k{flex:none;width:140px;color:var(--sub);word-break:break-all;}
+.kv .v{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.kv .v.multi{white-space:normal;}
+.badge{display:inline-block;padding:2px 10px;border-radius:10px;font-size:12px;margin-left:8px;}
+.badge.ok{background:var(--ok);color:#fff;}
+.badge.warn{background:var(--warn);color:#fff;}
+.row-sec{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;}
+.chip{display:inline-block;padding:4px 12px;border:1px solid var(--border);border-radius:16px;background:var(--card);color:var(--text);font-size:12px;}
+.chip.on{background:var(--accent);color:#fff;border-color:var(--accent);}
+</style>
+</head>
+<body>
+<h1>关于 OpenCosy</h1>
+<div class="tip">版本与运行环境信息。此页仅供诊断与安全检查使用，不会上传任何数据。</div>
+<div id="root"><div class="card">加载中…</div></div>
+<script>
+(function () {
+  'use strict';
+  var root = document.getElementById('root');
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = String(text);
+    return e;
+  }
+  function kv(k, v, multi) {
+    var row = el('div', 'kv');
+    row.appendChild(el('div', 'k', k));
+    var vEl = el('div', 'v' + (multi ? ' multi' : ''), v);
+    row.appendChild(vEl);
+    return row;
+  }
+  function card(title, rows) {
+    var c = el('div', 'card');
+    c.appendChild(el('h2', '', title));
+    rows.forEach(function (r) { c.appendChild(r); });
+    return c;
+  }
+  function badge(state, text) {
+    var b = el('span', 'badge ' + (state ? 'ok' : 'warn'), text || (state ? '已启用' : '未启用'));
+    return b;
+  }
+  function render(info) {
+    root.textContent = '';
+    if (!info) { root.appendChild(el('div', 'card', '信息加载失败')); return; }
+    root.appendChild(card('应用', [
+      kv('名称', info.appName),
+      kv('版本', info.appVersion),
+      kv('用户数据目录', info.userDataPath, true),
+      kv('内置页面数', info.internalPages),
+    ]));
+    root.appendChild(card('运行时', [
+      kv('Electron', info.electronVersion),
+      kv('Chromium', info.chromiumVersion),
+      kv('Node.js', info.nodeVersion),
+      kv('V8', info.v8Version),
+      kv('平台', info.platform),
+      kv('架构', info.arch),
+    ]));
+    root.appendChild(card('安全状态', [
+      kv('HTTPS-Only 模式', info.httpsOnly, true),
+      kv('自动阻止不安全内容', info.httpsOnlyBlockInsecure, true),
+      kv('Do Not Track 透传', info.dnt, true),
+      kv('禁用 WebRTC 泄露', info.disableWebRTC, true),
+      kv('扩展权限白名单', '仅允许安全 API（危险权限一律拒绝）', true),
+    ]));
+    root.appendChild(card('连接台账（跨主机统计）', [
+      kv('记录主机数', info.stats.hosts),
+      kv('总请求数', info.stats.requests),
+      kv('已拦截请求', info.stats.blocked),
+      kv('后台跨主机请求', info.stats.backgroundHosts),
+      kv('不安全 HTTP 请求', info.stats.insecureHosts),
+    ]));
+  }
+  if (window.electronAPI && window.electronAPI.invoke) {
+    window.electronAPI.invoke('about-snapshot', {})
+      .then(function (r) { render(r && r.ok ? r.info : null); })
+      .catch(function () { render(null); });
+  } else {
+    render(null);
+  }
+})();
+</script>
+</body>
+</html>
