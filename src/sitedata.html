@@ -86,6 +86,20 @@
     min-width: 30px; text-align: center; background: #0078d4; color: #fff;
     border-radius: 10px; padding: 2px 9px; font-size: 12px; font-weight: 600;
   }
+  .row-sel { width: 18px; height: 18px; accent-color: #0078d4; flex-shrink: 0; cursor: pointer; }
+  select.sort {
+    padding: 9px 12px; border: 1px solid #d0d0d0; border-radius: 6px; font-size: 13px;
+    background: #fafafa; color: inherit; outline: none; cursor: pointer;
+  }
+  body.dark-mode select.sort { background: #3d3d3d; border-color: #555; }
+  .batchbar {
+    display: flex; align-items: center; gap: 10px; padding: 10px 16px; margin-bottom: 12px;
+    background: #fff; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    font-size: 13px;
+  }
+  body.dark-mode .batchbar { background: #2d2d2d; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+  .batchbar .selinfo { color: #0078d4; font-weight: 600; }
+  body.dark-mode .batchbar .selinfo { color: #4da3ff; }
 
   .empty {
     text-align: center; padding: 70px 20px; color: #888; background: #fff;
@@ -163,7 +177,20 @@
 
   <div class="toolbar">
     <input class="search-box" id="searchInput" type="search" placeholder="按域名搜索，例如 example.com" autocomplete="off">
+    <select class="sort" id="sortSelect">
+      <option value="count">按 Cookie 数排序</option>
+      <option value="domain">按域名排序</option>
+      <option value="secure">仅看含 Secure 的站点</option>
+      <option value="httpOnly">仅看含 HttpOnly 的站点</option>
+    </select>
     <button class="btn-primary" id="refreshBtn">刷新</button>
+  </div>
+
+  <div class="batchbar" id="batchbar" style="display:none;">
+    <input type="checkbox" id="selAll" class="row-sel" title="全选当前结果">
+    <span>全选当前结果</span>
+    <span class="selinfo" id="selInfo"></span>
+    <button class="btn-danger-ghost btn-mini" id="batchDeleteBtn">批量删除选中站点 Cookie</button>
   </div>
 
   <div class="site-list" id="siteList"></div>
@@ -204,7 +231,7 @@
 'use strict';
 
 const api = window.electronAPI;
-const state = { rows: [], totalCookies: 0, currentDomain: null };
+const state = { rows: [], totalCookies: 0, currentDomain: null, selected: {} };
 
 const $ = id => document.getElementById(id);
 
@@ -248,7 +275,12 @@ function render() {
   const query = $('searchInput').value.trim().toLowerCase();
   const list = $('siteList');
   list.textContent = '';
-  const filtered = state.rows.filter(r => !query || r.domain.toLowerCase().includes(query));
+  const sortMode = $('sortSelect').value;
+  let filtered = state.rows.filter(r => !query || r.domain.toLowerCase().includes(query));
+  if (sortMode === 'secure') filtered = filtered.filter(r => r.secureCount > 0);
+  else if (sortMode === 'httpOnly') filtered = filtered.filter(r => r.httpOnlyCount > 0);
+  else if (sortMode === 'domain') filtered = filtered.slice().sort((a, b) => a.domain.localeCompare(b.domain));
+  else filtered = filtered.slice().sort((a, b) => b.count - a.count);
   $('statDomains').textContent = state.rows.length;
   $('statCookies').textContent = state.totalCookies;
   $('statShown').textContent = filtered.length;
@@ -257,9 +289,27 @@ function render() {
     ? `没有域名匹配 “${$('searchInput').value.trim()}”`
     : '没有找到任何站点 Cookie';
 
+  // 清理已不存在行的选中项，并刷新批量栏。
+  for (const d of Object.keys(state.selected)) {
+    if (!filtered.some(r => r.domain === d)) delete state.selected[d];
+  }
+  updateBatchBar();
+
   for (const row of filtered) {
     const el = document.createElement('div');
     el.className = 'site-row';
+
+    const sel = document.createElement('input');
+    sel.type = 'checkbox';
+    sel.className = 'row-sel';
+    sel.checked = !!state.selected[row.domain];
+    sel.title = '加入批量删除';
+    sel.addEventListener('change', () => {
+      if (sel.checked) state.selected[row.domain] = true;
+      else delete state.selected[row.domain];
+      updateBatchBar();
+    });
+    el.appendChild(sel);
 
     const main = document.createElement('div');
     main.className = 'site-main';
@@ -426,6 +476,52 @@ async function openCookieModal(domain) {
 
 $('refreshBtn').onclick = loadData;
 $('searchInput').addEventListener('input', render);
+$('sortSelect').addEventListener('change', render);
+$('selAll').addEventListener('change', () => {
+  const query = $('searchInput').value.trim().toLowerCase();
+  const sortMode = $('sortSelect').value;
+  let pool = state.rows.filter(r => !query || r.domain.toLowerCase().includes(query));
+  if (sortMode === 'secure') pool = pool.filter(r => r.secureCount > 0);
+  else if (sortMode === 'httpOnly') pool = pool.filter(r => r.httpOnlyCount > 0);
+  const checked = $('selAll').checked;
+  for (const r of pool) {
+    if (checked) state.selected[r.domain] = true;
+    else delete state.selected[r.domain];
+  }
+  updateBatchBar();
+  render();
+});
+$('batchDeleteBtn').onclick = async () => {
+  const domains = Object.keys(state.selected);
+  if (!domains.length) return;
+  let total = 0;
+  for (const d of state.rows) if (state.selected[d.domain]) total += d.count;
+  const ok = await showConfirm(
+    '批量删除 Cookie',
+    `将删除 ${domains.length} 个站点（合计约 ${total} 个 Cookie）及其子域下的 Cookie，站点可能退出登录。继续？`
+  );
+  if (!ok) return;
+  let removed = 0;
+  for (const domain of domains) {
+    const r = await api.invoke('delete-site-cookies', { domain });
+    if (r && r.success) removed += r.removed || 0;
+  }
+  state.selected = {};
+  updateBatchBar();
+  toast(`已删除 ${removed} 个 Cookie`);
+  loadData();
+};
+
+function updateBatchBar() {
+  const domains = Object.keys(state.selected);
+  const bar = $('batchbar');
+  if (!domains.length) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  let total = 0;
+  for (const d of state.rows) if (state.selected[d.domain]) total += d.count;
+  $('selInfo').textContent = `已选 ${domains.length} 个站点 / ${total} 个 Cookie`;
+  $('selAll').checked = domains.length > 0 && state.rows.filter(r => !state.selected[r.domain]).length === 0;
+}
 $('cookieModalClose').onclick = () => $('cookieModal').classList.remove('show');
 $('cookieModalDone').onclick = () => $('cookieModal').classList.remove('show');
 $('deleteAllCookiesBtn').onclick = async () => {
