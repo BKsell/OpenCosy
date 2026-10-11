@@ -117,6 +117,34 @@
             word-break: break-all;
         }
 
+        .diag-panel {
+            background: var(--bg-secondary);
+            border-left: 3px solid var(--theme-color);
+            border-radius: 8px;
+            padding: 14px 18px;
+            margin-bottom: 18px;
+            text-align: left;
+        }
+
+        .diag-title {
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 6px;
+            font-size: 13px;
+        }
+
+        .diag-body {
+            color: var(--text-secondary);
+            font-size: 13px;
+            line-height: 1.7;
+        }
+
+        .err-stats {
+            color: var(--text-secondary);
+            font-size: 12px;
+            margin-bottom: 20px;
+        }
+
         .action-buttons {
             display: flex;
             gap: 12px;
@@ -198,6 +226,11 @@
                 <div class="detail-item"><div class="detail-label">发生时间：</div><div class="detail-value" id="detail-time">正在获取...</div></div>
                 <div class="detail-item"><div class="detail-label">浏览器错误代码：</div><div class="detail-value" id="detail-browser-code">-6</div></div>
             </div>
+            <div class="diag-panel" id="diag-panel">
+                <div class="diag-title">诊断建议</div>
+                <div class="diag-body" id="diag-body">加载中…</div>
+            </div>
+            <div class="err-stats" id="err-stats"></div>
         </div>
     </div>
 
@@ -357,12 +390,71 @@
             });
         }
 
+        // 根据浏览器错误码给出可操作建议（只读帮助文案，不含外部请求）。
+        function diagnosticFor(browserCode) {
+            const n = Number(browserCode);
+            const map = {
+                '-105': '无法解析服务器域名：检查 DNS / 是否输错网址，或换个网络试试。',
+                '-106': '证书错误：服务器证书不可信。如果确认站点安全，可在设置中加入 HTTPS 例外后重试。',
+                '-109': '连接被拒绝：服务器未开放该端口，或本地防火墙拦截了连接。',
+                '-118': '连接被重置：网络中断或服务器主动断开，稍后重试或刷新。',
+                '-119': '连接失败：目标服务器不可达，检查网络与代理设置。',
+                '-3': '连接已取消：页面跳转或重复请求导致，属正常现象，无需处理。',
+                '-6': '无法连接服务器：网络未就绪或站点离线，检查网络连接。',
+                '-7': '超时：服务器响应过慢，可稍后重试。',
+                '-8': '请求超时：与服务器握手失败，检查网络质量。',
+                '-10': '证书过期：服务器证书已过期，需站点管理员更新证书。',
+                '-200': '网络已断开：浏览器离线，请检查网络连接后重试。',
+                '-21': 'HTTP 认证失败：服务器要求身份验证，请提供正确的账号密码。',
+                '-23': '磁盘空间不足：本机缓存或临时文件写入失败，清理磁盘后重试。',
+                '-25': '内存不足：请关闭部分标签页释放内存后重试。',
+                '-27': '拒绝访问：站点或本地策略阻止了该请求。',
+                '-29': '连接被破坏：服务器在传输中关闭连接，稍后重试。',
+                '-34': '协议错误：站点协议不兼容或服务异常。',
+                '-57': '下载被取消：由用户或扩展程序取消。',
+                '-101': '连接已关闭：服务器主动关闭连接，稍后重试。',
+            };
+            return map[String(n)] || '一般性网络错误：可刷新重试；若持续出现，检查网络、代理或稍后再访问。';
+        }
+
+        // 本地错误计数：同一 code 出现次数与最近一次时间，帮助判断是偶发还是持续故障。
+        function recordAndRenderStats() {
+            const p = getUrlParams();
+            const key = 'cosyErrorStats';
+            let stats = {};
+            try { stats = JSON.parse(localStorage.getItem(key) || '{}'); } catch {}
+            const code = String(p.code || 'unknown');
+            const now = Date.now();
+            const prev = stats[code] || { count: 0, last: 0 };
+            stats[code] = { count: Math.min(prev.count + 1, 999), last: now };
+            try {
+                const keys = Object.keys(stats);
+                if (keys.length > 20) {
+                    const drop = keys.slice(0, keys.length - 20);
+                    drop.forEach(k => { delete stats[k]; });
+                }
+                localStorage.setItem(key, JSON.stringify(stats));
+            } catch {}
+            const el = document.getElementById('err-stats');
+            if (!el) return;
+            const c = stats[code].count;
+            el.textContent = '此错误（' + code + '）近期已出现 ' + c + ' 次' + (c > 3 ? '，如反复出现请检查网络或站点状态。' : '。');
+        }
+
+        function updateDiagPanel() {
+            const p = getUrlParams();
+            const body = document.getElementById('diag-body');
+            body.textContent = diagnosticFor(p.browserCode);
+        }
+
         function updateOfflineBanner() {
             document.getElementById('offline-banner').classList.toggle('show', !navigator.onLine);
         }
 
         document.addEventListener('DOMContentLoaded', function() {
             updateErrorDisplay();
+            updateDiagPanel();
+            recordAndRenderStats();
             updateOfflineBanner();
             window.addEventListener('online', updateOfflineBanner);
             window.addEventListener('offline', updateOfflineBanner);
