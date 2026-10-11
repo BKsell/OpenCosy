@@ -5355,7 +5355,19 @@ function tabOverviewItem(tab, index) {
 
 ipcMain.handle('tab-overview-snapshot', (event) => {
   if (!isTabOverviewFrameSender(event)) return { ok: false, error: 'denied' };
-  return { ok: true, tabs: tabs.map(tabOverviewItem) };
+  return {
+    ok: true,
+    tabs: tabs.map(tabOverviewItem),
+    groups: tabGroupModel.orderedGroupIds().map(gid => {
+      const g = tabGroupModel.getGroup(gid);
+      return {
+        id: gid,
+        name: g ? String(g.title || '') : '',
+        color: g ? String(g.color || '') : '',
+        collapsed: !!(g && g.collapsed),
+      };
+    }),
+  };
 });
 
 // 概览页点击卡片：切到该标签。id 不存在时静默失败（标签可能已被关闭）。
