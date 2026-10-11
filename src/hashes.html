@@ -57,6 +57,22 @@
   body.dark-mode .stat-label { color: #999; }
 
   .hash-list { display: flex; flex-direction: column; gap: 10px; }
+  .history-wrap { margin-top: 22px; border-top: 1px solid rgba(0,0,0,0.12); padding-top: 14px; }
+  body.dark-mode .history-wrap { border-top-color: rgba(255,255,255,0.12); }
+  .history-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .history-title { font-weight: 600; }
+  .history-count { font-size: 12px; color: #777; }
+  .history-clear { margin-left: auto; }
+  .history-box { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
+  .history-row { display: flex; align-items: center; gap: 10px; padding: 7px 10px; background: rgba(0,0,0,0.04); border-radius: 6px; font-size: 13px; }
+  body.dark-mode .history-row { background: rgba(255,255,255,0.06); }
+  .history-badge { flex-shrink: 0; font-size: 12px; padding: 1px 8px; border-radius: 10px; }
+  .history-badge.ok { background: rgba(34,197,94,0.15); color: #16a34a; }
+  .history-badge.bad { background: rgba(239,68,68,0.15); color: #dc2626; }
+  .history-body { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #555; }
+  body.dark-mode .history-body { color: #bbb; }
+  .history-copy { flex-shrink: 0; font-size: 12px; border: 1px solid rgba(0,0,0,0.2); border-radius: 5px; background: transparent; padding: 2px 10px; cursor: pointer; }
+  .history-empty { font-size: 13px; color: #999; padding: 8px 2px; }
   .hash-row {
     background: #fff; border-radius: 10px; padding: 13px 18px;
     box-shadow: 0 2px 10px rgba(0,0,0,0.08);
@@ -187,6 +203,15 @@
     <div class="big">&#128230;</div>
     <div id="emptyText">还没有已计算校验和的下载</div>
   </div>
+
+  <div class="history-wrap" id="historyWrap" style="display:none;">
+    <div class="history-head">
+      <span class="history-title">校验历史</span>
+      <span class="history-count" id="historyCount"></span>
+      <button class="btn-ghost history-clear" id="clearHistoryBtn">清空历史</button>
+    </div>
+    <div class="history-box" id="historyBox"></div>
+  </div>
 </div>
 
 <div class="modal-mask" id="confirmModal">
@@ -268,10 +293,12 @@ async function verifyRow(rowId, inputEl, resultEl) {
       resultEl.textContent = '✓ 校验一致';
       resultEl.className = 'verify-result ok';
       toast('校验一致：' + (r.filename || ''));
+      pushVerifyHistory({ filename: r.filename || '', expected, matched: true, host: r.host || '' });
     } else if (r && r.match === false) {
       resultEl.textContent = '✗ 校验不一致，文件可能被篡改';
       resultEl.className = 'verify-result bad';
       toast('校验不一致！', true);
+      pushVerifyHistory({ filename: r.filename || '', expected, matched: false, host: r.host || '' });
     } else {
       resultEl.textContent = '校验失败：' + ((r && r.reason) || 'unknown');
       resultEl.className = 'verify-result bad';
@@ -280,6 +307,68 @@ async function verifyRow(rowId, inputEl, resultEl) {
     resultEl.textContent = '校验出错';
     resultEl.className = 'verify-result bad';
   }
+}
+
+// ---- 校验历史（localStorage 有界留存）----
+const HISTORY_KEY = 'cosyVerifyHistory';
+const MAX_HISTORY = 200;
+
+function loadVerifyHistory() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+    return Array.isArray(raw) ? raw : [];
+  } catch { return []; }
+}
+
+function pushVerifyHistory(entry) {
+  const hist = loadVerifyHistory();
+  const clean = { filename: String(entry.filename || '').slice(0, 200), expected: String(entry.expected || '').slice(0, 64), matched: !!entry.matched, host: String(entry.host || '').slice(0, 200), ts: Date.now() };
+  hist.unshift(clean);
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(hist.slice(0, MAX_HISTORY))); } catch {}
+  renderHistory();
+}
+
+function renderHistory() {
+  const box = $('historyBox');
+  if (!box) return;
+  const hist = loadVerifyHistory();
+  const wrap = $('historyWrap');
+  if (wrap) wrap.style.display = hist.length ? 'block' : 'none';
+  const cnt = $('historyCount');
+  if (cnt) cnt.textContent = hist.length + ' 条';
+  box.textContent = '';
+  if (!hist.length) {
+    const empty = document.createElement('div');
+    empty.className = 'history-empty';
+    empty.textContent = '暂无校验记录';
+    box.appendChild(empty);
+    return;
+  }
+  hist.forEach((h, i) => {
+    const row = document.createElement('div');
+    row.className = 'history-row';
+    const badge = document.createElement('span');
+    badge.className = 'history-badge ' + (h.matched ? 'ok' : 'bad');
+    badge.textContent = h.matched ? '一致' : '不一致';
+    const body = document.createElement('span');
+    body.className = 'history-body';
+    body.textContent = (h.filename || '(无文件名)') + ' · ' + formatTime(h.ts) + (h.host ? ' · ' + h.host : '');
+    body.title = h.expected;
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'history-copy';
+    copyBtn.textContent = '复制哈希';
+    copyBtn.addEventListener('click', () => copyText(h.expected, '校验哈希'));
+    row.appendChild(badge);
+    row.appendChild(body);
+    row.appendChild(copyBtn);
+    box.appendChild(row);
+  });
+}
+
+function clearVerifyHistory() {
+  localStorage.removeItem(HISTORY_KEY);
+  renderHistory();
+  toast('校验历史已清空');
 }
 
 async function removeRow(rowId) {
@@ -461,6 +550,8 @@ $('searchInput').addEventListener('input', render);
 $('confirmModal').addEventListener('click', e => {
   if (e.target === $('confirmModal')) $('confirmModal').classList.remove('show');
 });
+const clearHistoryBtn = $('clearHistoryBtn');
+if (clearHistoryBtn) clearHistoryBtn.onclick = clearVerifyHistory;
 
 // 后台摘要完成时即时刷新列表。
 if (api && api.on) {
@@ -469,6 +560,7 @@ if (api && api.on) {
 
 applyDarkMode();
 loadData();
+renderHistory();
 </script>
 </body>
 </html>
