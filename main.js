@@ -5345,6 +5345,16 @@ function isBookmarksFrameSender(event) {
   return u.protocol === 'cosy:' && u.hostname === 'bookmarks';
 }
 
+// 关于页帧守卫：只放行 cosy://about 内置帧（主窗口外壳也可直达）。
+function isAboutFrameSender(event) {
+  if (isMainSender(event)) return true;
+  const frame = event && event.senderFrame;
+  if (!frame || typeof frame.url !== 'string') return false;
+  let u;
+  try { u = new URL(frame.url); } catch { return false; }
+  return u.protocol === 'cosy:' && u.hostname === 'about';
+}
+
 // tabOverviewItem 输出单标签的概览数据。字段做类型收口，避免脏标题 / 长 URL
 // 破坏网格布局；分组信息从 tabGroupModel 实时取，标签被改组后概览自动跟随。
 function tabOverviewItem(tab, index) {
@@ -5709,6 +5719,7 @@ function loadTabContent(tab) {
         'taboverview': 'src/taboverview.html',
         'history': 'src/history.html',
         'bookmarks': 'src/bookmarks.html',
+        'about': 'src/about.html',
         'reader': 'src/reader.html',
         'httpsonly': 'src/httpsonly.html'
       };
@@ -8038,6 +8049,40 @@ ipcMain.handle('bookmarks-rename', (event, payload = {}) => {
   saveBookmarks();
   sendToRenderer('bookmarks-updated', bookmarks);
   return { ok: true, title };
+});
+
+// 关于页快照：版本 / 运行时 / 安全开关 / 跨主机连接台账汇总。
+// 只放行 cosy://about 帧与主窗口外壳；不做任何网络请求，纯本地信息。
+ipcMain.handle('about-snapshot', (event) => {
+  if (!isAboutFrameSender(event)) return { ok: false, error: 'denied' };
+  const stats = getRequestLogStats();
+  return {
+    ok: true,
+    info: {
+      appName: 'OpenCosy',
+      appVersion: typeof app.getVersion === 'function' ? app.getVersion() : '',
+      userDataPath: app.getPath('userData'),
+      internalPages: Object.keys(pageMap).length,
+      electronVersion: process.versions.electron || '',
+      chromiumVersion: process.versions.chrome || '',
+      nodeVersion: process.versions.node || '',
+      v8Version: process.versions.v8 || '',
+      platform: process.platform || '',
+      arch: process.arch || '',
+      httpsOnly: httpsOnlyEnabled,
+      httpsOnlyBlockInsecure: !!httpsOnlyEnabled,
+      dnt: true,
+      disableWebRTC: webrtcMode !== 'legacy',
+      webrtcMode,
+      stats: {
+        hosts: Number(stats.hosts) || 0,
+        requests: Number(stats.requests) || 0,
+        blocked: Number(stats.blocked) || 0,
+        backgroundHosts: Number(stats.backgroundHosts) || 0,
+        insecureHosts: Number(stats.insecureHosts) || 0,
+      },
+    },
+  };
 });
 
 ipcMain.handle('get-https-only', (event) => {
