@@ -8604,6 +8604,29 @@ ipcMain.handle('clear-history', (event) => {
   return { success: true };
 });
 
+// sanitizeBookmarkLike 把书签 / 稍后读条目收敛成可进内部页 DOM 的标量快照：
+// url、title 限长，addedDate 只接受字符串。两个管理器历史上各自内联了同一段映射，
+// 集中到这里，避免标题长度上限或类型收口在某一处被改漏。
+function sanitizeBookmarkLike(b) {
+  return {
+    url: typeof b.url === 'string' ? b.url.slice(0, 8192) : '',
+    title: typeof b.title === 'string' ? b.title.slice(0, 300) : '',
+    addedDate: typeof b.addedDate === 'string' ? b.addedDate : '',
+  };
+}
+
+// openUrlFromInternalFrame 是历史 / 书签 / 稍后读三个内部页“点击条目新开标签”的
+// 公共内核：frameOk 是该页自己的帧来源判定；URL 必须过 isSafeUrl（http/https），
+// cosy:// 内置页则交由 createNewTab 的 pageMap 白名单兜底，其余协议一律拒绝。
+// 三个 handler 过去逐字复制了同一段校验，集中后任何收紧只需改这一处。
+function openUrlFromInternalFrame(frameOk, url) {
+  if (!frameOk) return { ok: false, error: 'denied' };
+  const isInternal = typeof url === 'string' && url.startsWith('cosy://');
+  if (!isSafeUrl(url) && !isInternal) return { ok: false, error: 'bad-url' };
+  const tab = createNewTab(url);
+  return { ok: true, id: tab.id, index: tabs.length - 1 };
+}
+
 // 历史页快照：全量返回历史数组（上限 1000 条，磁盘加载已按 MAX_HISTORY_ENTRIES
 // 截断）。只放行历史页帧 / 主窗口外壳；返回前对每条做类型收口，绝不让脏标题
 // 或畸形 URL 进入内部页 DOM。
@@ -8632,14 +8655,8 @@ ipcMain.handle('history-delete-entry', (event, payload = {}) => {
 
 // 历史页点击条目：经 isSafeUrl 校验后在当前窗口新开标签。cosy:// 内置地址
 // 同样放行（历史页“在新标签打开”允许内部页跳转），其余非法协议一律拒绝。
-ipcMain.handle('history-open-url', (event, url) => {
-  if (!isHistoryFrameSender(event)) return { ok: false, error: 'denied' };
-  if (!isSafeUrl(url) && !(typeof url === 'string' && url.startsWith('cosy://'))) {
-    return { ok: false, error: 'bad-url' };
-  }
-  const tab = createNewTab(url);
-  return { ok: true, id: tab.id, index: tabs.length - 1 };
-});
+ipcMain.handle('history-open-url', (event, url) =>
+  openUrlFromInternalFrame(isHistoryFrameSender(event), url));
 
 // 历史页清空：仅受信帧可触发，与面板“清除历史”共用 saveHistory 落盘。
 ipcMain.handle('history-clear-all', (event) => {
@@ -8700,23 +8717,13 @@ ipcMain.handle('history-export-json', async (event, payload = {}) => {
 // 书签管理器快照：返回全量书签（拷贝防外部篡改，标题/URL 长度收口）。
 ipcMain.handle('bookmarks-snapshot', (event) => {
   if (!isBookmarksFrameSender(event)) return { ok: false, error: 'denied', items: [] };
-  const items = bookmarks.map(b => ({
-    url: typeof b.url === 'string' ? b.url.slice(0, 8192) : '',
-    title: typeof b.title === 'string' ? b.title.slice(0, 300) : '',
-    addedDate: typeof b.addedDate === 'string' ? b.addedDate : '',
-  }));
+  const items = bookmarks.map(sanitizeBookmarkLike);
   return { ok: true, items };
 });
 
 // 书签管理器打开：经 isSafeUrl 校验（含 cosy:// 内部页），新标签打开。
-ipcMain.handle('bookmarks-open-url', (event, url) => {
-  if (!isBookmarksFrameSender(event)) return { ok: false, error: 'denied' };
-  if (!isSafeUrl(url) && !(typeof url === 'string' && url.startsWith('cosy://'))) {
-    return { ok: false, error: 'bad-url' };
-  }
-  const tab = createNewTab(url);
-  return { ok: true, id: tab.id, index: tabs.length - 1 };
-});
+ipcMain.handle('bookmarks-open-url', (event, url) =>
+  openUrlFromInternalFrame(isBookmarksFrameSender(event), url));
 
 // 书签管理器删除：按 url 精确匹配，删除后落盘并广播（书签栏同步）。
 ipcMain.handle('bookmarks-remove', (event, payload = {}) => {
@@ -8749,11 +8756,7 @@ ipcMain.handle('bookmarks-rename', (event, payload = {}) => {
 // 稍后读快照：返回全量条目（拷贝防外部篡改，标题/URL 长度收口，与书签同款净化）。
 ipcMain.handle('readinglist-snapshot', (event) => {
   if (!isReadingListFrameSender(event)) return { ok: false, error: 'denied', items: [] };
-  const items = readingList.map(b => ({
-    url: typeof b.url === 'string' ? b.url.slice(0, 8192) : '',
-    title: typeof b.title === 'string' ? b.title.slice(0, 300) : '',
-    addedDate: typeof b.addedDate === 'string' ? b.addedDate : '',
-  }));
+  const items = readingList.map(sanitizeBookmarkLike);
   return { ok: true, items };
 });
 
@@ -8776,14 +8779,8 @@ ipcMain.handle('readinglist-add', (event, payload = {}) => {
 });
 
 // 稍后读打开：经 isSafeUrl 校验（含 cosy:// 内部页），新标签打开。
-ipcMain.handle('readinglist-open-url', (event, url) => {
-  if (!isReadingListFrameSender(event)) return { ok: false, error: 'denied' };
-  if (!isSafeUrl(url) && !(typeof url === 'string' && url.startsWith('cosy://'))) {
-    return { ok: false, error: 'bad-url' };
-  }
-  const tab = createNewTab(url);
-  return { ok: true, id: tab.id, index: tabs.length - 1 };
-});
+ipcMain.handle('readinglist-open-url', (event, url) =>
+  openUrlFromInternalFrame(isReadingListFrameSender(event), url));
 
 // 稍后读删除：按 url 精确匹配，删除后落盘。
 ipcMain.handle('readinglist-remove', (event, payload = {}) => {
