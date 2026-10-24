@@ -71,3 +71,12 @@ test('isPrivateHostname 私网/本机判定与旧实现一致', () => {
   assert.ok(isPrivateHostname('localhost.'));
   assert.ok(!isPrivateHostname(''));
 });
+
+test('isPrivateHostname normalizes inet_aton obfuscated private literals', () => {
+  const obf = ['2130706433', '0x7f000001', '017700000001', '127.1', '0x7f.0.1',
+    '0177.0.0.1', '3232235521', '0x0a000001'];
+  for (const h of obf) assert.ok(isPrivateHostname(h), 'private expected: ' + h);
+  // Public obfuscations stay public; hostmatch policy still excludes CGNAT and 0/8.
+  const pub = ['0x08080808', '8.8', '134744072', '100.65.0.1', '0.0.0.1', '010.0.0.1'];
+  for (const h of pub) assert.ok(!isPrivateHostname(h), 'public expected: ' + h);
+});
