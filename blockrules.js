@@ -150,21 +150,50 @@ function ruleCount(rules) {
   return rules.host.length + rules.glob.length + rules.path.length;
 }
 
-// globToRegex 把 glob 模式转成正则（只处理 * 通配；? 与 [] 按字面转义，防 ReDoS 面扩大）。
-function globToRegex(pattern) {
-  let out = '';
-  for (const ch of pattern) {
-    if (ch === '*') out += '.*';
-    else out += ch.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+// globMatch 线性通配匹配：glob 里只有 '*' 是通配符（匹配任意长度的任意字符序列，
+// 含空串），其余字符（包括 '?' '[' ']' 等正则元字符）一律按字面值比较，整体要求
+// 全串匹配（等价于旧实现的 ^...$ 锚定）。
+//
+// 安全要点：旧实现把每个 '*' 编译成 '.*' 再 new RegExp，多个/相邻 '*' 会生成
+// '.*.*.*' 这类嵌套量词。decideBlocked 跑在“每个子资源请求”的 webRequest 主进程
+// 热路径上，一条 '*' 很多的 glob（可经 add/import-block-rules 或被同步的配置写入）
+// 对一个不匹配的长 URL 会触发灾难性回溯，直接卡死整个 Electron 主进程。
+// 这里改用经典“单星回溯点 + 双指针”迭代算法，时间随文本长度线性增长、占用常量
+// 额外空间，结构上不可能出现指数级回溯。
+function globMatch(pattern, text) {
+  const pn = pattern.length;
+  const tn = text.length;
+  let p = 0;
+  let t = 0;
+  let star = -1; // 最近一个 '*' 在 pattern 中的位置
+  let anchor = 0; // 该 '*' 当前吞到 text 的哪个位置
+  while (t < tn) {
+    if (p < pn && pattern[p] !== '*' && pattern[p] === text[t]) {
+      p += 1;
+      t += 1;
+    } else if (p < pn && pattern[p] === '*') {
+      star = p;
+      anchor = t;
+      p += 1; // 先尝试让 '*' 吞空串
+    } else if (star !== -1) {
+      // 失配：回到最近的 '*'，让它多吞一个字符再重试
+      p = star + 1;
+      anchor += 1;
+      t = anchor;
+    } else {
+      return false;
+    }
   }
-  return new RegExp('^' + out + '$');
+  // 文本已吃完，pattern 剩余只允许是一连串 '*'
+  while (p < pn && pattern[p] === '*') p += 1;
+  return p === pn;
 }
 
-// compileRules 预编译 glob 正则，避免每次请求都重新编译。
+// compileRules 预编译 glob 匹配器（线性、有界），避免每次请求都重复构造。
 function compileRules(rules) {
   return {
     host: new Set(rules.host.map(v => v.toLowerCase())),
-    glob: rules.glob.map(v => ({ src: v, re: globToRegex(v) })),
+    glob: rules.glob.map(v => ({ src: v, match: (u) => globMatch(v, u) })),
     path: rules.path.map(v => v.toLowerCase()),
   };
 }
@@ -209,7 +238,7 @@ function decideBlocked(rawUrl, compiled, trackerHosts) {
     return { blockedBy: 'custom', rule: customHit };
   }
   for (const g of compiled.glob) {
-    if (g.re.test(rawUrl)) return { blockedBy: 'custom', rule: g.src };
+    if (g.match(rawUrl)) return { blockedBy: 'custom', rule: g.src };
   }
   if (pathMatchesCustom(rawUrl, compiled.path)) {
     const low = rawUrl.toLowerCase();
@@ -290,6 +319,7 @@ module.exports = {
   exportRulesText,
   ruleCount,
   compileRules,
+  globMatch,
   decideBlocked,
   loadRules,
   saveRules,
