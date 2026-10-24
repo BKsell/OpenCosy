@@ -14,6 +14,10 @@
 // IPv6 方括号、去尾部根点；边界匹配一律走 "相等" 或 "以 base 加一个点开头"，
 // 绝不允许裸 endsWith(base)（那会把 evil-evil.com 误判成 evil.com 的子域）。
 
+// pna 提供唯一的 IPv4/IPv6 字面量归一化（含 inet_aton 短格式 / 进制混淆），
+// 本模块只复用其解析，私网“范围口径”仍由下方 v4InPrivateRange 自己决定。
+const pna = require('./pna');
+
 // normalizeHostname 把来自 URL.hostname / Cookie domain 的主机名归一成可直接比较的形态：
 // 去首尾空白、转小写、剥掉 IPv6 的一对方括号、去掉结尾的一个或多个根点。
 function normalizeHostname(host) {
@@ -74,12 +78,27 @@ function parseIPv4Parts(host) {
 function isPrivateHostname(rawHost) {
   const host = normalizeHostname(rawHost);
   if (!host) return false;
-  if (host === '::1') return true;
   if (hostEqualsOrSubdomain(host, 'localhost')) return true;
-  if (host === '::ffff:127.0.0.1') return true;
-  const p = parseIPv4Parts(host);
-  if (!p) return false;
-  const a = p[0], b = p[1];
+  // IPv6（含 ::1 与 ::ffff:127.0.0.1 等 v4-mapped）走 pna 归一化解析。
+  if (host.indexOf(':') >= 0) {
+    const parsed = pna.parseIPv6(host);
+    if (!parsed) return false;
+    if (parsed.kind === 'v4mapped') return v4InPrivateRange(parsed.v4);
+    const g = parsed.groups;
+    return g[0] === 0 && g[1] === 0 && g[2] === 0 && g[3] === 0 &&
+      g[4] === 0 && g[5] === 0 && g[6] === 0 && g[7] === 1; // 仅 ::1
+  }
+  // IPv4：借 pna 把 2130706433 / 127.1 / 0x7f000001 / 017700000001 等 inet_aton
+  // 混淆写法也归一成 32 位整数，避免公网页面用整数态地址绕过私网判定。
+  const v = pna.parseIPv4Literal(host);
+  return v != null && v4InPrivateRange(v);
+}
+
+// v4InPrivateRange 是 hostmatch 自己的私网范围口径：回环 127/8、RFC1918 三段与
+// 链路本地 169.254/16。刻意不收 0/8、CGNAT 100.64/10（保持既有行为与测试口径）。
+function v4InPrivateRange(v) {
+  const a = (v >>> 24) & 0xff;
+  const b = (v >>> 16) & 0xff;
   if (a === 127 || a === 10) return true;
   if (a === 172 && b >= 16 && b <= 31) return true;
   if (a === 192 && b === 168) return true;
