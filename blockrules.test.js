@@ -198,10 +198,38 @@ test('saveRules 原子写并可回读', () => {
   assert.deepStrictEqual(loaded.host, ['evil.com']);
 });
 
-test('globToRegex 特殊字符转义', () => {
-  const re = br.compileRules({ host: [], glob: ['https://a.example/x?y=1*'], path: [] }).glob[0].re;
-  assert.ok(re.test('https://a.example/x?y=1zzz'));
-  assert.ok(!re.test('https://a.example/x?y=2zzz'));
+test('globMatch 特殊字符按字面匹配（? 不是通配符）', () => {
+  const match = br.compileRules({ host: [], glob: ['https://a.example/x?y=1*'], path: [] }).glob[0].match;
+  assert.strictEqual(match('https://a.example/x?y=1zzz'), true);
+  assert.strictEqual(match('https://a.example/x?y=2zzz'), false);
+});
+
+test('globMatch 多个通配符的基本正确性', () => {
+  assert.strictEqual(br.globMatch('a*b*c', 'aXXbYYc'), true);
+  assert.strictEqual(br.globMatch('a*b*c', 'aXXbYY'), false);
+  assert.strictEqual(br.globMatch('https://*.x/*', 'https://a.x/p'), true);
+  assert.strictEqual(br.globMatch('https://*.x/*', 'https://a.y/p'), false);
+  assert.strictEqual(br.globMatch('*', 'anything'), true);
+  assert.strictEqual(br.globMatch('a*', 'aaa'), true);
+  assert.strictEqual(br.globMatch('*a', 'bbba'), true);
+  assert.strictEqual(br.globMatch('a*a', 'aba'), true);
+});
+
+test('globMatch 多星模式不会灾难性回溯（主进程 ReDoS 回归）', () => {
+  // 旧实现会把这串 '*' 编译成 '.*.*.*…'，对不匹配的长 URL 指数级回溯。
+  const pattern = 'https://' + '*'.repeat(120) + 'Z';
+  const compiled = br.compileRules({
+    host: [],
+    glob: [pattern],
+    path: [],
+  });
+  const longUrl = 'https://' + 'a'.repeat(100000);
+  const start = Date.now();
+  const hit = br.decideBlocked(longUrl, compiled, null);
+  const elapsed = Date.now() - start;
+  assert.strictEqual(hit, null);
+  // 线性匹配 10 万字符应在毫秒级；给极宽上限防抖动，但旧正则在这里会近乎永久挂起。
+  assert.ok(elapsed < 1000, '多星 glob 匹配耗时异常: ' + elapsed + 'ms');
 });
 
 test('compileRules 大写 host 归一小写', () => {
