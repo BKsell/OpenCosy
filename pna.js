@@ -62,6 +62,56 @@ function classifyIPv4(v) {
   return SPACE_PUBLIC;
 }
 
+// parseIPPiece 解析 inet_aton 允许的单个数值段：十进制、0x 十六进制、
+// 前导 0 八进制。非法（含字母 / 空串）返回 null。
+function parseIPPiece(piece) {
+  if (!/^[0-9a-fx]+$/i.test(piece)) return null;
+  if (piece.length > 2 && piece[0] === '0' && (piece[1] === 'x' || piece[1] === 'X')) {
+    return parseInt(piece, 16);
+  }
+  // 前导零且全为合法八进制数字时按八进制（如 0177=127）；夹杂 8/9 的按十进制，
+  // 避免 08/09 这类被当成域名漏判。
+  if (piece.length > 1 && piece[0] === '0' && /^0[0-7]+$/.test(piece)) {
+    return parseInt(piece, 8);
+  }
+  if (!/^\d+$/.test(piece)) return null;
+  return parseInt(piece, 10);
+}
+
+// parseIPv4Literal 把任意形态的 IPv4 字面量归一成 32 位无符号整数；非 IP 字面量
+// （含字母的域名、段数错误、超界）返回 null。除规范四段外，按 inet_aton 短格式
+// 解析：a.b.c.d / a.b.c（末段 16 位）/ a.b（末段 24 位）/ a（单段 32 位），
+// 各段都允许十进制、十六进制、八进制。
+//
+// 必要性：parseIPv4 故意拒绝前导零与短格式（给需要“规范地址”的调用方用），但
+// PNA 判定面对的是攻击者可控的 URL，Chrome/系统解析器会把 2130706433、0x7f000001、
+// 017700000001、127.1 当成 127.0.0.1。这里若只认规范写法，就会把它们误判成
+// “未知域名”放行，形成 public-to-private 绕过，因此分类必须按归一化结果 fail-closed。
+function parseIPv4Literal(text) {
+  const s = String(text == null ? '' : text).trim();
+  if (!s) return null;
+  const strict = parseIPv4(s);
+  if (strict != null) return strict;
+  const parts = s.split('.');
+  if (parts.length < 1 || parts.length > 4) return null;
+  const nums = [];
+  for (const p of parts) {
+    const n = parseIPPiece(p);
+    if (n == null || !Number.isFinite(n) || n < 0) return null;
+    nums.push(n);
+  }
+  // 前 k-1 段各占 8 位，末段占剩余位；任一段超界即不是合法字面量。
+  let v = 0;
+  for (let i = 0; i < nums.length; i++) {
+    const width = (i === nums.length - 1) ? 32 - (nums.length - 1) * 8 : 8;
+    const max = width >= 32 ? 0xffffffff : (2 ** width - 1);
+    if (nums[i] > max) return null;
+    v = v * (max + 1) + nums[i];
+  }
+  return v >>> 0;
+}
+
+
 // 将 IPv6 规整成 8 段 16 位数组；支持 :: 压缩、IPv4-mapped（::ffff:1.2.3.4）。
 function parseIPv6(text) {
   let s = String(text || '').toLowerCase();
@@ -139,7 +189,14 @@ function classifyHost(host) {
   if (!h) return SPACE_UNKNOWN;
   if (h === 'localhost' || h.endsWith('.localhost')) return SPACE_LOOPBACK;
   if (h.indexOf('.') >= 0) {
-    const v4 = parseIPv4(h);
+    // 含点：规范四段 + inet_aton 短格式/进制混淆写法（2130706433 之外的
+    // 127.1 / 0177.0.0.1 / 0x7f.0.0.1 等）一律按归一化地址分类。
+    const v4 = parseIPv4Literal(h);
+    if (v4 != null) return classifyIPv4(v4);
+  } else if (h.indexOf(':') < 0) {
+    // 无点无冒号：可能是单段整数/十六进制/八进制 IP 字面量（如 2130706433、
+    // 0x7f000001、017700000001），同样归一化分类；含字母的普通域名返回 null→UNKNOWN。
+    const v4 = parseIPv4Literal(h);
     if (v4 != null) return classifyIPv4(v4);
   }
   if (h.indexOf(':') >= 0) {
@@ -224,6 +281,7 @@ module.exports = {
   SPACE_UNKNOWN,
   SUBRESOURCE_TYPES,
   parseIPv4,
+  parseIPv4Literal,
   classifyIPv4,
   parseIPv6,
   classifyHost,
