@@ -137,3 +137,51 @@ test('域名形式的目标在解析前不拦（UNKNOWN 放行，避免 DNS 误�
   assert.equal(r.block, false);
   assert.equal(r.targetLevel, SPACE_UNKNOWN);
 });
+
+// ===== 混淆 IPv4 字面量（inet_aton 短格式 / 进制）不得绕过 =====
+
+test('parseIPv4Literal 归一化 inet_aton 短格式与进制写法', () => {
+  const L = 0x7f000001; // 127.0.0.1
+  assert.equal(pna.parseIPv4Literal('127.0.0.1'), L);
+  assert.equal(pna.parseIPv4Literal('127.1'), L);
+  assert.equal(pna.parseIPv4Literal('0x7f.0.0.1'), L);
+  assert.equal(pna.parseIPv4Literal('0x7f.1'), L);
+  assert.equal(pna.parseIPv4Literal('0177.0.0.1'), L);
+  assert.equal(pna.parseIPv4Literal('0x7f000001'), L);
+  assert.equal(pna.parseIPv4Literal('0X7F000001'), L);
+  assert.equal(pna.parseIPv4Literal('2130706433'), L);
+  assert.equal(pna.parseIPv4Literal('017700000001'), L);
+  // 非 IP：含字母域名 / 空 / 超界。
+  assert.equal(pna.parseIPv4Literal('example.com'), null);
+  assert.equal(pna.parseIPv4Literal(''), null);
+  assert.equal(pna.parseIPv4Literal('999.0.0.1'), null);
+  assert.equal(pna.parseIPv4Literal('256.1'), null);
+  // 公网短格式仍归公网：两段 a.b 等价 a.0.0.b。
+  assert.equal(pna.parseIPv4Literal('8.8'), 0x08000008); // 8.0.0.8
+});
+
+test('classifyHost 混淆回环/私网写法仍判更私有空间', () => {
+  for (const h of ['127.1', '0177.0.0.1', '0x7f000001', '2130706433', '017700000001']) {
+    assert.equal(pna.classifyHost(h), SPACE_LOOPBACK, `loopback: ${h}`);
+  }
+  for (const h of ['012.0.0.1', '0xa.0.0.5']) {
+    assert.equal(pna.classifyHost(h), SPACE_PRIVATE, `private: ${h}`);
+  }
+  for (const h of ['0xa9.0xfe.0xa9.0xfe', '0xa9fea9fe']) {
+    assert.equal(pna.classifyHost(h), SPACE_LINK_LOCAL, `link-local: ${h}`);
+  }
+});
+
+test('公网页面用整数态 IP 打本机同样被拦截（防 PNA 混淆绕过）', () => {
+  for (const url of [
+    'http://2130706433/admin',
+    'http://0x7f000001/admin',
+    'http://017700000001/admin',
+  ]) {
+    const r = pna.evaluatePnaRequest({
+      url, resourceType: 'xhr', documentURL: 'https://evil.example/',
+    });
+    assert.equal(r.block, true, `应拦截 ${url}`);
+    assert.equal(r.reason, 'public-to-loopback');
+  }
+});
