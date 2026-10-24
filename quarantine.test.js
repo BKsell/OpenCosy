@@ -122,3 +122,16 @@ test('openDecision：显式 zoneId 覆盖 hostUrl', () => {
   assert.equal(q.openDecision({ filePath: 'a.exe', hostUrl: 'http://10.0.0.1', zoneId: q.ZONE_INTERNET }), 'confirm');
   assert.equal(q.openDecision({ filePath: 'a.exe', hostUrl: 'https://a.com', zoneId: q.ZONE_INTRANET }), 'allow');
 });
+
+test('isPrivateHostname catches dotted/obfuscated loopback literals', () => {
+  assert.equal(q.isPrivateHostname('127.1'), true);
+  assert.equal(q.isPrivateHostname('0x7f.0.1'), true);
+  assert.equal(q.isPrivateHostname('0177.0.0.1'), true);
+  assert.equal(q.isPrivateHostname('2130706433'), true);
+  assert.equal(q.isPrivateHostname('[::1]'), true);
+  assert.equal(q.isPrivateHostname('100.65.0.1'), true);
+  assert.equal(q.isPrivateHostname('0x08080808'), false);
+  assert.equal(q.isPrivateHostname('8.8.8.8'), false);
+  assert.equal(q.isPrivateHostname('nas.lan'), true);
+  assert.equal(q.isPrivateHostname('evil.com'), false);
+});
