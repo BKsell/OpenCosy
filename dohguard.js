@@ -35,6 +35,10 @@ function isObj(v) {
   return v !== null && typeof v === 'object';
 }
 
+// 复用 PNA 内核的 IPv4 inet_aton 归一化与地址空间分类，避免本模块再维护一份
+// 短格式 / 进制解析，保证“混淆 IP 字面量”在各守卫处判定一致。
+const pna = require('./pna');
+
 // normalizeMode 把设置值归一到合法模式；非法值回退 automatic。
 function normalizeMode(mode) {
   const all = new Set(Object.values(SECURE_DNS_MODES));
@@ -153,6 +157,11 @@ function hostIsPrivateLiteral(host) {
   // 形如四段点分数字却无法解析（越界 / 前导零）的字面量，绝不能当普通域名放行，
   // 否则会被解析器按数字 IP 歧义处理，绕过私网判定。
   if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h)) return true;
+  // 一至三段短格式 / 进制混淆（127.1、0x7f.0.1、2130706433、017700000001 等）
+  // 严格 parseIPv4 不认，但系统解析器会按 inet_aton 还原成真实地址；复用 PNA 的
+  // 归一化内核按还原后的地址空间判定，防止把 DoH 端点用混淆写法指到回环 / 内网。
+  const lit = pna.parseIPv4Literal(h);
+  if (lit !== null) return pna.classifyIPv4(lit) !== pna.SPACE_PUBLIC;
   // 纯整数 / 十六进制整数主机名在部分解析器里会被当作 32 位 IP，同样拒绝。
   if (/^\d+$/.test(h) || /^0x[0-9a-f]+$/i.test(h)) return true;
   return false;
