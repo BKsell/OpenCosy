@@ -49,6 +49,19 @@ test('hostIsPrivateLiteral：公网域名与公网 IP 放行，非法字面量�
   assert.equal(d.hostIsPrivateLiteral('gg:::1'), true);
 });
 
+test('hostIsPrivateLiteral：inet_aton 短格式/进制混淆不得绕过到回环内网', () => {
+  // 这些形态都会被系统解析器还原成 127.0.0.1 / 10.0.0.5 / 169.254.169.254。
+  for (const h of ['127.1', '0x7f.0.1', '0x7f.1', '2130706433', '0x7f000001',
+    '017700000001', '0xa.0.0.5', '0xa9fea9fe']) {
+    assert.equal(d.hostIsPrivateLiteral(h), true, `${h} 应判私有/本机`);
+  }
+  // 四段前导零八进制歧义维持保守拒绝（即便数值可能是公网）。
+  assert.equal(d.hostIsPrivateLiteral('010.0.0.1'), true);
+  // 公网短格式 / 十六进制公网应放行，不能一刀切拒绝所有数字形态主机。
+  assert.equal(d.hostIsPrivateLiteral('8.8'), false);
+  assert.equal(d.hostIsPrivateLiteral('0x08080808'), false);
+});
+
 test('validateDohServer：合法白名单模板通过', () => {
   for (const p of d.KNOWN_PROVIDERS) {
     const r = d.validateDohServer(p.template);
