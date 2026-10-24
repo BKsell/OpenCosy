@@ -28,23 +28,25 @@ var OPEN_RISK_EXTS = new Set([
   '.msc', '.reg', '.lnk', '.hta', '.dll',
 ]);
 
+// pna 提供唯一的 IP 字面量归一化 / 空间分类，私网判定不再在本模块另写一份。
+var pna = require('./pna');
+
 // isPrivateHostname 判定主机是否为私网 / 回环（与主进程口径一致，内核自带一份
 // 轻量实现，避免与 Electron 主文件产生循环依赖）。
 function isPrivateHostname(hostname) {
   var h = String(hostname || '').toLowerCase().replace(/\.$/, '');
   if (!h) return false;
-  if (h === 'localhost' || h === '::1' || h === '[::1]') return true;
-  var m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
-  if (m) {
-    var a = Number(m[1]);
-    var b = Number(m[2]);
-    if (a === 10 || a === 127) return true;
-    if (a === 192 && b === 168) return true;
-    if (a === 172 && b >= 16 && b <= 31) return true;
-    if (a === 169 && b === 254) return true; // 链路本地
-    if (a === 0) return true;
-    return false;
+  if (h === 'localhost' || endsWithDotSuffix(h, '.localhost')) return true;
+  // IP 字面量（含 inet_aton 整数 / 短格式 / 进制混淆、v4-mapped IPv6）统一借 pna
+  // 归一化分类；环回 / 私网 / 链路本地 / CGNAT 都算内网，避免 127.1、0x7f000001、
+  // 2130706433 等写法把下载来源误判成公网而错配 MOTW Zone。
+  var level = pna.classifyHost(h);
+  if (level === pna.SPACE_LOOPBACK || level === pna.SPACE_PRIVATE ||
+      level === pna.SPACE_LINK_LOCAL) {
+    return true;
   }
+  if (level === pna.SPACE_PUBLIC) return false;
+  // UNKNOWN（普通域名）再走名称启发：裸主机名与常见内网后缀视为内网。
   if (h.indexOf('.') === -1) return true; // 裸主机名视为内网
   if (endsWithDotSuffix(h, '.local')) return true;
   if (endsWithDotSuffix(h, '.internal')) return true;
