@@ -14,16 +14,27 @@ test('isHttpString 只接受 http:// 字面量', () => {
   assert.strictEqual(H.isHttpString(42), false);
 });
 
-test('hostLooksPrivate 命中回环 / 本地惯例域名', () => {
+test('hostLooksPrivate 命中回环 / 私网 / 本地惯例域名', () => {
   for (const h of ['localhost', 'LOCALHOST', 'localhost.localdomain',
     '127.0.0.1', '127.9.9.9', '0.0.0.0', '[::1]', '::1',
+    '127.1', '2130706433', '0x7f000001', '0177.0.0.1',
+    '10.0.0.1', '192.168.1.1', '172.16.5.5', '169.254.1.1',
     'foo.localhost', 'printer.local', 'svc.internal', 'router.lan']) {
     assert.strictEqual(H.hostLooksPrivate(h), true, h);
   }
-  for (const h of ['example.com', '192.168.1.1', '10.0.0.1', '169.254.1.1', '', null]) {
-    // 注：字面量内核不负责私网段（10/192.168/169.254 由 hostmatch 注入判定）。
+  for (const h of ['example.com', '8.8.8.8', '93.184.216.34', '', null]) {
+    // 公网域名与公网 IP 字面量仍走升级；空输入不判私网。
     assert.strictEqual(H.hostLooksPrivate(h), false, String(h));
   }
+});
+
+test('hostLooksPrivate 覆盖私网段边界与 CGNAT / 链路本地 v6', () => {
+  for (const h of ['172.31.255.255', '172.16.0.1', '10.255.255.255',
+    '192.168.255.255', '100.64.0.1', '[fe80::1]', 'fe80::1']) {
+    assert.strictEqual(H.hostLooksPrivate(h), true, h);
+  }
+  // 公网地址段边界之外不得误判：172.32.0.1 已超出 RFC1918 的 172.16/12。
+  assert.strictEqual(H.hostLooksPrivate('172.32.0.1'), false);
 });
 
 test('normalizeExceptionHost 收敛主机名并拒绝危险 / 畸形输入', () => {
