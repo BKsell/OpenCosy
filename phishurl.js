@@ -63,23 +63,24 @@ function decodePunyHost(hostname) {
 }
 
 // isIPv4Literal 判断主机是否是裸 IPv4，支持点分十进制、十六进制（0x..）、
-// 八进制（前导 0）这类 Node/URL 不会归一化、但部分系统仍会解析的写法。
+// 八进制（前导 0）以及 inet_aton 短格式（127.1、127.0.1、单段整数 127）这类
+// Node/URL 不会归一化、但部分系统仍会解析的写法。
 function isIPv4Literal(host) {
   const h = String(host || '').toLowerCase();
   if (!h) return null;
-  // 标准点分十进制
-  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(h)) {
-    const parts = h.split('.').map(Number);
-    if (parts.every(n => n >= 0 && n <= 255)) return 'ipv4';
-  }
-  // 每段为十进制 / 0x 十六进制 / 前导 0 八进制之一
-  if (/^(?:0x[0-9a-f]+|0[0-7]+|\d{1,3})(?:\.(?:0x[0-9a-f]+|0[0-7]+|\d{1,3})){3}$/.test(h)) {
-    return 'ipv4-nondecimal';
-  }
-  // 单个整数 / 0x 整数形式（http://2130706433）
-  if (/^(?:0x[0-9a-f]+|\d{8,10})$/.test(h)) return 'ipv4-flat';
   // [::1] 这类 IPv6 字面量
   if (/^\[[0-9a-f:]+\]$/i.test(h)) return 'ipv6';
+  // 单段扁平整数（http://2130706433、http://0x7f000001）
+  if (/^(?:0x[0-9a-f]+|\d{1,10})$/.test(h)) return 'ipv4-flat';
+  // 2~4 段数值：每段允许十进制 / 0x 十六进制 / 前导 0 八进制。
+  // 旧实现只认完整四段，漏掉 127.1 / 127.0.1 这种短格式混淆回环。
+  const seg = '(?:0x[0-9a-f]+|0[0-7]+|[0-9]{1,3})';
+  if (new RegExp('^' + seg + '(?:\\.' + seg + '){1,3}$').test(h)) {
+    const parts = h.split('.');
+    const allPlainDecimal = parts.every(p => /^[0-9]{1,3}$/.test(p) && Number(p) <= 255);
+    if (parts.length === 4 && allPlainDecimal) return 'ipv4';
+    return 'ipv4-nondecimal';
+  }
   return null;
 }
 
