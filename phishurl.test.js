@@ -21,6 +21,13 @@ test('isIPv4Literal 识别标准/非标准/扁平/IPv6 写法', () => {
   assert.equal(pu.isIPv4Literal('[::1]'), 'ipv6');
   assert.equal(pu.isIPv4Literal('example.com'), null);
   assert.equal(pu.isIPv4Literal('999.1.1.1'), 'ipv4-nondecimal');
+  // inet_aton 短格式：127.1 / 127.0.1 / 单段 127 都要识别为裸 IP。
+  assert.equal(pu.isIPv4Literal('127.1'), 'ipv4-nondecimal');
+  assert.equal(pu.isIPv4Literal('127.0.1'), 'ipv4-nondecimal');
+  assert.equal(pu.isIPv4Literal('127'), 'ipv4-flat');
+  // 正常域名（字母段、多级子域）不得误判。
+  assert.equal(pu.isIPv4Literal('mail.163.com'), null);
+  assert.equal(pu.isIPv4Literal('a.b.c.example.com'), null);
 });
 
 test('非法段（>255）点分写法不被当成合法 ipv4', () => {
@@ -70,6 +77,16 @@ test('十六进制 IP 主机额外命中 decimalHexIp', () => {
   assert.ok(s.has('bareIPv4'));
   assert.ok(s.has('decimalHexIp'));
   assert.equal(r.level, 'high');
+});
+
+test('inet_aton 短格式 IP 走主流程仍判为裸 IP', () => {
+  for (const u of ['http://127.1/', 'http://127.0.1/login', 'http://2130706433/']) {
+    const r = pu.analyze(u);
+    assert.ok(r, u);
+    assert.ok(signalsOf(r).has('bareIPv4'), u);
+  }
+  // 正常域名不得被误判成裸 IP。
+  assert.equal(pu.analyze('http://example.com/'), null);
 });
 
 test('主机百分号编码命中', () => {
