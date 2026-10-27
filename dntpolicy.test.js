@@ -56,3 +56,17 @@ test('describeSignal 四态', () => {
   assert.equal(dnt.describeSignal({ dnt: false, gpc: false }), 'DNT/GPC 均关闭');
   assert.equal(dnt.describeSignal(undefined), 'DNT/GPC 均关闭');
 });
+
+test('畸形 details 不抛异常，缺省放行', () => {
+  assert.doesNotThrow(() => dnt.decideRequest({ dnt: true, gpc: true }, null));
+  const r = dnt.decideRequest({ dnt: true, gpc: true }, { url: 'https://a.com', resourceType: undefined });
+  assert.equal(r.active, true);
+  assert.equal(r.headers.DNT, '1');
+});
+
+test('各子资源类型与顶层导航对 http(s) 都发头', () => {
+  for (const rt of ['script','image','subFrame','xhr','mainFrame']) {
+    const r = dnt.decideRequest({ dnt: true, gpc: true }, { url: 'https://a.com/x', resourceType: rt });
+    assert.equal(r.active, true, rt);
+  }
+});
