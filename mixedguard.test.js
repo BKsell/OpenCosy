@@ -148,3 +148,17 @@ test('data:/blob: 子资源本身不是明文，直接放行', () => {
   assert.equal(mg.classifyMixedContent('data:image/png;base64,AAAA', page, 'image').action, 'allow');
   assert.equal(mg.classifyMixedContent('blob:https://example.com/uuid', page, 'media').action, 'allow');
 });
+
+
+test("inet_aton 混淆回环子资源豁免，私网明文仍阻止", () => {
+  const page = "https://app.example.com/";
+  // 127.1 / 2130706433 等价 127.0.0.1：本地联调豁免，不升级也不阻断。
+  for (const u of ["http://127.1/a.js", "http://2130706433/a.js"]) {
+    const r = mg.classifyMixedContent(u, page, "script");
+    assert.equal(r.action, "allow", u);
+    assert.equal(r.reason, "loopback-exempt", u);
+  }
+  // 普通私网 RFC1918 明文主动内容不在豁免面内，仍按主动混合内容阻止。
+  const blocked = mg.classifyMixedContent("http://192.168.1.5/a.js", page, "script");
+  assert.equal(blocked.action, "block");
+});
