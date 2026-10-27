@@ -1,6 +1,7 @@
 'use strict';
 
 // mixedguard.js —— 混合内容（Mixed Content）判定纯逻辑内核（不依赖 Electron）。
+const { classifyHost, SPACE_LOOPBACK } = require('./pna');
 //
 // 场景：用户通过 HTTPS 打开的页面，却去加载 HTTP 的子资源。HTTP 子资源在传输
 // 途中可被中间人改写，等于把整页 HTTPS 的保护拆掉。现代 Chrome 的策略是：
@@ -71,16 +72,13 @@ function upgradedURL(url) {
 }
 
 // isLoopbackInsecure 允许开发者本地联调的明文回环资源豁免（http://localhost、
-// 127.x / ::1 作为子资源主机时），公网明文一律不豁免。判定保守，只认字面量。
+// 127.x / ::1 作为子资源主机时），公网与普通私网明文一律不豁免。判定收敛到 pna
+// 内核：只把 SPACE_LOOPBACK（127/8、::1，含 127.1、2130706433 等 inet_aton 混淆
+// 写法）视为回环，私网段不豁免——避免把豁免面放大到整个 RFC1918。
 function isLoopbackInsecure(url) {
   try {
-    const u = new URL(url);
-    // WHATWG URL 里 IPv6 字面量的 hostname 带一对方括号，先剥掉再比对。
-    const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
-    if (h === 'localhost' || h.endsWith('.localhost')) return true;
-    if (h === '::1') return true;
-    if (/^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h)) return true;
-    return false;
+    const h = new URL(url).hostname.toLowerCase();
+    return classifyHost(h) === SPACE_LOOPBACK;
   } catch {
     return false;
   }
