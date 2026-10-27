@@ -21,6 +21,12 @@
 //     证书错误 / 超时 / 域名解析失败一律不提供降级（避免被诱导降级）。
 
 // 结果原因常量，便于调用方留痕与测试断言。
+const {
+  classifyHost,
+  SPACE_LOOPBACK,
+  SPACE_PRIVATE,
+  SPACE_LINK_LOCAL,
+} = require('./pna');
 const REASON_NOT_HTTP = 'not-http';
 const REASON_INVALID = 'invalid-url';
 const REASON_EMPTY_HOST = 'empty-host';
@@ -50,14 +56,20 @@ function isHttpString(rawUrl) {
 
 // hostLooksPrivate 仅按主机名字面量判断回环 / 内网惯例地址，缺省返回 false。
 // 真正的私网分类由调用方注入（hostmatch 内核），这里只兜住最明显的字面量，
-// 避免本模块在没有注入回调时把 localhost 升级到一个没意义的 https。
+// 避免本模块在没有注入回调时把 localhost / 内网地址升级到一个没意义的 https。
+//
+// IP 字面量（含 inet_aton 短格式 127.1、单整数 2130706433、0x7f.0.0.1、
+// 0177.0.0.1 等混淆写法）统一走 pna.classifyHost 归一化，不再手写严格四段：
+// 旧实现只点配 127.0.0.1 字面量与 127.* 前缀，会把 10.1.2.3 / 192.168.1.1 /
+// 169.254.1.1 等私网地址误当公网而强行升级 https，内网老站点被搞挂。
 function hostLooksPrivate(hostname) {
   const h = String(hostname || '').toLowerCase();
   if (!h) return false;
-  if (h === 'localhost' || h === 'localhost.localdomain') return true;
-  if (h === '127.0.0.1' || h === '[::1]' || h === '::1') return true;
-  if (h.endsWith('.localhost')) return true;
-  if (h === '0.0.0.0' || h.startsWith('127.')) return true;
+  if (h === 'localhost.localdomain') return true;
+  const space = classifyHost(h);
+  if (space === SPACE_LOOPBACK || space === SPACE_PRIVATE || space === SPACE_LINK_LOCAL) {
+    return true;
+  }
   if (h.endsWith('.local') || h.endsWith('.internal')) return true;
   if (h.endsWith('.lan')) return true;
   return false;
