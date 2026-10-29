@@ -51,3 +51,26 @@ test('normalizeBookmarkTitle 截断', () => {
   assert.ok(out.endsWith('…'));
   assert.equal(d.normalizeBookmarkTitle('short', 100), 'short');
 });
+
+test('flattenFolderTree 拍平嵌套文件夹', () => {
+  const tree = {
+    title: 'Bookmarks',
+    children: [
+      { title: 'dev', children: [
+        { title: 'GH', url: 'https://github.com' },
+        { title: 'GL', url: 'https://gitcode.com' },
+      ] },
+      { title: 'root', url: 'https://example.com' },
+    ],
+  };
+  const flat = d.flattenFolderTree(tree, []);
+  assert.equal(flat.length, 3);
+  assert.equal(flat[0].folder, 'Bookmarks/dev');
+  assert.equal(flat[0].title, 'GH');
+  assert.equal(flat[2].folder, 'Bookmarks');
+});
+
+test('flattenFolderTree 空输入', () => {
+  assert.deepEqual(d.flattenFolderTree(null, []), []);
+  assert.deepEqual(d.flattenFolderTree([], []), []);
+});

@@ -55,4 +55,29 @@ module.exports = {
   dedupeBookmarks,
   sanitizeBookmarkUrl,
   normalizeBookmarkTitle,
+  flattenFolderTree,
 };
+
+// flattenFolderTree 把浏览器书签导出里的 { children:[...] } 树拍平成
+// 一维数组，自动带上从根到叶的 folder 路径，方便跟现有书签做差。
+function flattenFolderTree(node, prefix) {
+  const out = [];
+  const cur = Array.isArray(node) ? node : [node];
+  const base = Array.isArray(prefix) ? prefix : [];
+  for (const n of cur) {
+    if (!n || typeof n !== 'object') continue;
+    if (Array.isArray(n.children) && n.children.length > 0) {
+      const nextFolder = n.title ? base.concat(String(n.title)) : base;
+      out.push(...flattenFolderTree(n.children, nextFolder));
+      continue;
+    }
+    if (n.url) {
+      out.push({
+        title: n.title || '',
+        url: n.url,
+        folder: base.join('/'),
+      });
+    }
+  }
+  return out;
+}
