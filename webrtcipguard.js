@@ -46,4 +46,20 @@ function isLocalCandidateAddress(addr) {
 module.exports = {
   decideWebRTC,
   isLocalCandidateAddress,
+  filterLocalCandidates,
 };
+
+// filterLocalCandidates 从 ICE 候选字符串列表里剔除本地内网候选，
+// 返回 mDNS 替换后的新列表（调用方把 local 候选换成 x.local 形式）。
+function filterLocalCandidates(candidates) {
+  const out = [];
+  for (const c of Array.isArray(candidates) ? candidates : []) {
+    const s = String(c || '');
+    const m = s.match(/(\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-f:]+\])/i);
+    if (m && isLocalCandidateAddress(m[1])) {
+      continue;
+    }
+    out.push(s);
+  }
+  return out;
+}

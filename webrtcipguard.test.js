@@ -41,3 +41,19 @@ test('本地候选识别', () => {
   assert.equal(w.isLocalCandidateAddress('::1'), true);
   assert.equal(w.isLocalCandidateAddress('host.local'), true);
 });
+
+test('过滤本地候选列表', () => {
+  const in_ = [
+    'candidate:1 1 udp 1 192.168.1.5 54321 typ host',
+    'candidate:2 1 udp 1 8.8.8.8 54321 typ srflx',
+    'candidate:3 1 udp 1 [::1] 54321 typ host',
+  ];
+  const out = w.filterLocalCandidates(in_);
+  assert.equal(out.length, 1);
+  assert.match(out[0], /8\.8\.8\.8/);
+});
+
+test('过滤空/非数组', () => {
+  assert.deepEqual(w.filterLocalCandidates(null), []);
+  assert.deepEqual(w.filterLocalCandidates([]), []);
+});
