@@ -55,8 +55,12 @@ function filterLocalCandidates(candidates) {
   const out = [];
   for (const c of Array.isArray(candidates) ? candidates : []) {
     const s = String(c || '');
-    const m = s.match(/(\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-f:]+\])/i);
-    if (m && isLocalCandidateAddress(m[1])) {
+    const v4 = s.match(/\b(\d{1,3}(?:\.\d{1,3}){3})\b/);
+    if (v4 && isLocalCandidateAddress(v4[1])) {
+      continue;
+    }
+    const v6 = s.match(/\[([0-9a-f:]+)\]/i);
+    if (v6 && isLocalCandidateAddress(v6[1])) {
       continue;
     }
     out.push(s);
