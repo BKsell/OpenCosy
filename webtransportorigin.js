@@ -53,4 +53,20 @@ function isPrivateHost(host) {
 module.exports = {
   decideWebTransport,
   isPrivateHost,
+  parseTransportTarget,
 };
+
+// parseTransportTarget 把 WebTransport 目标 URL 拆成 { host, port, scheme }。
+// 解析失败返回 null。
+function parseTransportTarget(urlStr) {
+  try {
+    const u = new URL(String(urlStr || ''));
+    return {
+      scheme: u.protocol.replace(/:$/, ''),
+      host: u.hostname.toLowerCase(),
+      port: u.port,
+    };
+  } catch {
+    return null;
+  }
+}

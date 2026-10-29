@@ -50,3 +50,13 @@ test('isPrivateHost', () => {
   assert.equal(w.isPrivateHost('172.32.0.1'), false);
   assert.equal(w.isPrivateHost('8.8.8.8'), false);
 });
+
+test('parseTransportTarget 拆 URL', () => {
+  const r = w.parseTransportTarget('https://cdn.example.com:4433/x');
+  assert.deepEqual(r, { scheme: 'https', host: 'cdn.example.com', port: '4433' });
+});
+
+test('parseTransportTarget 坏 URL 返回 null', () => {
+  assert.equal(w.parseTransportTarget('://nope'), null);
+  assert.equal(w.parseTransportTarget(''), null);
+});
