@@ -29,6 +29,9 @@ const taskManagerCore = require('./taskmanager');
 const dohGuard = require('./dohguard');const permPolicy = require('./permpolicy');
 const dloadGuard = require('./dloadguard');
 const downloadName = require('./downloadname');
+const downloadChain = require('./downloadchain');
+const downloadRateGuard = require('./downloadratelimit');
+const downloadFreqLimiter = new downloadRateGuard.DownloadRateLimiter();
 const dloadOpen = require('./dloadopen');
 const urlClean = require('./urlclean');
 const popupGuard = require('./popupguard');
@@ -6933,6 +6936,36 @@ function handleDownloadEvent(event, item, webContents) {
     const riskAnalysis = admission.analysis || { decision: '', finalExt: '', risks: [] };
     const finalFilename = admission.finalFilename || 'download';
     const dlHost = admission.host;
+    const chainCheck = downloadChain.analyzeDownloadChain(
+      typeof item.getURLChain === 'function' ? item.getURLChain() : null,
+    );
+    if (chainCheck.verdict === downloadChain.VERDICT.BLOCK) {
+      try { item.cancel(); } catch {}
+      recordSecurityEvent('download-blocked', 'critical',
+        `拒绝重定向链不安全的下载: ${downloadChain.describeDownloadChain(chainCheck)} -> ${url}`,
+        originOfContents(webContents));
+      recordDownloadRisk({
+        filename: item.getFilename() || '(bad-chain)', host: chainCheck.finalHost || '',
+        decision: 'reject', action: 'rejected', ext: '',
+        risks: [chainCheck.reason],
+      });
+      sendToRenderer('show-toast', `已取消存在风险的重定向下载：${downloadChain.describeDownloadChain(chainCheck)}`);
+      return;
+    }
+    const rateCheck = downloadFreqLimiter.record(chainCheck.finalHost || dlHost || '');
+    if (!rateCheck.ok) {
+      try { item.cancel(); } catch {}
+      recordSecurityEvent('download-rate-limited', 'warn',
+        `下载频率超限，已取消: ${downloadRateGuard.describeDownloadRateLimit(rateCheck)} -> ${url}`,
+        originOfContents(webContents));
+      recordDownloadRisk({
+        filename: item.getFilename() || '(rate-limited)', host: rateCheck.host || '',
+        decision: 'reject', action: 'rejected', ext: '',
+        risks: [rateCheck.reason],
+      });
+      sendToRenderer('show-toast', `下载过于频繁，已取消：${downloadRateGuard.describeDownloadRateLimit(rateCheck)}`);
+      return;
+    }
 
     // block-unsafe-url：不安全协议/地址（file:/javascript:/data: 等）直接取消整次下载。
     if (admission.action === downloadAdmission.ACTION_BLOCK_UNSAFE) {
