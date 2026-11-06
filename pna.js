@@ -168,6 +168,17 @@ function classifyIPv6(parsed) {
   }
   if ((g[0] & 0xfe00) === 0xfc00) return SPACE_PRIVATE;   // fc00::/7
   if ((g[0] & 0xffc0) === 0xfe80) return SPACE_LINK_LOCAL; // fe80::/10
+  if (g[0] === 0x0064 && g[1] === 0xff9b && g[2] === 0 && g[3] === 0 &&
+      g[4] === 0 && g[5] === 0) {
+    return classifyIPv4(((g[6] >>> 0) * 65536 + g[7]) >>> 0);
+  }
+  if (g[0] === 0x2002) {
+    return classifyIPv4(((g[1] >>> 0) * 65536 + g[2]) >>> 0);
+  }
+  if (g[0] === 0x2001 && g[1] === 0) {
+    const raw = ((g[6] >>> 0) * 65536 + g[7]) >>> 0;
+    return classifyIPv4((raw ^ 0xffffffff) >>> 0);
+  }
   if (g[0] === 0 && g[1] === 0 && g[2] === 0 && g[3] === 0 &&
       g[4] === 0 && g[5] === 0xffff && (g[6] >>> 8) === 0) {
     // ::ffff:a.b.c.d 在上面已处理，这里兜底。
