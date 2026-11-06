@@ -4,14 +4,15 @@ const test = require('node:test');
 const assert = require('node:assert');
 const H = require('./httpsonly');
 
-test('isHttpString 只接受 http:// 字面量', () => {
+test('isHttpString 接受任意大小写的 http scheme', () => {
   assert.strictEqual(H.isHttpString('http://a.com'), true);
   assert.strictEqual(H.isHttpString('http://'), true);
+  assert.strictEqual(H.isHttpString('HTTP://a.com'), true);
   assert.strictEqual(H.isHttpString('https://a.com'), false);
-  assert.strictEqual(H.isHttpString('HTTP://a.com'), false); // 大小写敏感，调用方应先归一
   assert.strictEqual(H.isHttpString(''), false);
   assert.strictEqual(H.isHttpString(null), false);
   assert.strictEqual(H.isHttpString(42), false);
+  assert.strictEqual(H.isHttpString('http://a b.com'), false);
 });
 
 test('hostLooksPrivate 命中回环 / 私网 / 本地惯例域名', () => {
@@ -85,10 +86,26 @@ test('upgradeHttpUrl 私网 / 回环主机保留 http', () => {
   assert.strictEqual(pub.ok, true);
 });
 
-test('upgradeHttpUrl 保留 userinfo 且把主机名归一为小写', () => {
-  const r = H.upgradeHttpUrl('http://user:p%40ss@EXAMPLE.com/');
+test('upgradeHttpUrl 丢弃 userinfo，不把凭据带进升级后的 URL', () => {
+  const r = H.upgradeHttpUrl('http://user:p%40ss@EXAMPLE.com/a');
   assert.strictEqual(r.ok, true);
-  assert.strictEqual(r.url, 'https://user:p%40ss@example.com/');
+  assert.strictEqual(r.url, 'https://example.com/a');
+  assert.strictEqual(H.urlCarriesUserinfo(new URL('http://user@example.com/'), 'http://user@example.com/'), true);
+  const bare = H.upgradeHttpUrl('http://@example.com/');
+  assert.strictEqual(bare.ok, true);
+  assert.strictEqual(bare.url, 'https://example.com/');
+});
+
+test('upgradeHttpUrl 接受大写 scheme 并保持路径', () => {
+  const r = H.upgradeHttpUrl('HTTP://Example.COM/a?b=1#c');
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.url, 'https://example.com/a?b=1#c');
+});
+
+test('hostLooksPrivate 吃掉 FQDN 尾点后仍判私网', () => {
+  assert.strictEqual(H.hostLooksPrivate('localhost.'), true);
+  assert.strictEqual(H.hostLooksPrivate('127.0.0.1.'), true);
+  assert.strictEqual(H.hostLooksPrivate('example.com.'), false);
 });
 
 test('upgradeHttpUrl 拒绝非 http / 空主机 / 畸形 URL', () => {
@@ -109,6 +126,18 @@ test('downgradeHttpsUrlForFallback 只还原默认端口形态', () => {
   assert.strictEqual(H.downgradeHttpsUrlForFallback('https://example.com:8443/'), '');
   assert.strictEqual(H.downgradeHttpsUrlForFallback('http://example.com/'), '');
   assert.strictEqual(H.downgradeHttpsUrlForFallback('not a url'), '');
+});
+
+test('downgradeHttpsUrlForFallback 拒绝 userinfo 与控制字符', () => {
+  assert.strictEqual(H.downgradeHttpsUrlForFallback('https://user:pw@example.com/'), '');
+  assert.strictEqual(H.downgradeHttpsUrlForFallback('https://example.com/a b'), '');
+  assert.strictEqual(H.downgradeHttpsUrlForFallback('https://example.com/\x01'), '');
+});
+
+test('normalizeExceptionHost 拒绝带 userinfo 的 URL', () => {
+  assert.strictEqual(H.normalizeExceptionHost('https://user:pw@example.com/x'), '');
+  assert.strictEqual(H.normalizeExceptionHost('http://@example.com/'), '');
+  assert.strictEqual(H.normalizeExceptionHost('https://example.com/x'), 'example.com');
 });
 
 test('isFallbackableUpgradeError 只接受无-TLS-能力强信号码', () => {
