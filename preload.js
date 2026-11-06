@@ -113,6 +113,8 @@ const allowedInvokeChannels = new Set([
   'list-permission-decisions',
   'reset-permission-decision',
   'clear-permission-decisions',
+  'audit-permission-decisions',
+  'prune-permission-decisions',
   'get-protocol-decisions',
   'clear-protocol-decision',
   'get-block-rules',
@@ -208,6 +210,9 @@ const allowedInvokeChannels = new Set([
   'set-ua-policy',
   'reset-ua-policy',
   'preview-random-ua',
+  'get-download-journal',
+  'clear-download-journal',
+  'reconcile-download-journal',
   'get-download-rate-limit',
   'set-download-rate-limit',
 ]);
