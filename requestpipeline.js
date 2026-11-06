@@ -173,7 +173,7 @@ function decideRequest(deps, details) {
   //    http://。升级目标由 httpsonly 内核计算：默认端口（无端口/:80）收敛到 https
   //    默认 443；非标准端口不盲目改 scheme（对端在该端口说的是明文 HTTP，强行 TLS
   //    握手必失败），此时直接放行 http 并留痕，由后续“升级失败可回退”链路兜底。
-  if (flags.httpsOnlyEnabled && url.startsWith('http://')) {
+  if (flags.httpsOnlyEnabled && httpsOnly.isHttpString(url)) {
     let privateHost = false;
     try {
       privateHost = !!(guards.isPrivateNetworkHost && guards.isPrivateNetworkHost(url));
@@ -188,6 +188,10 @@ function decideRequest(deps, details) {
         upgrade = httpsOnly.upgradeHttpUrl(url);
       } catch { upgrade = null; }
       if (upgrade && upgrade.ok) {
+        if (httpsOnly.urlCarriesUserinfo(null, url)) {
+          recordSecurityEvent('https-only', 'warn',
+            'URL 携带 userinfo 凭据，升级时已丢弃该段', upgrade.host || '');
+        }
         return { type: DECISION_REDIRECT, url: upgrade.url, reason: 'https-only' };
       }
       if (upgrade && upgrade.reason === httpsOnly.REASON_NONSTANDARD_PORT) {
