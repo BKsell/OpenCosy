@@ -27,6 +27,7 @@ const shortcutKeys = require('./shortcutkeys');
 const taskManagerCore = require('./taskmanager');
 const dohGuard = require('./dohguard');const permPolicy = require('./permpolicy');
 const dloadGuard = require('./dloadguard');
+const dloadOpen = require('./dloadopen');
 const urlClean = require('./urlclean');
 const popupGuard = require('./popupguard');
 const quarantine = require('./quarantine');
@@ -749,7 +750,8 @@ function downloadNotifyDeps() {
       n.show();
     },
     openPath(savePath) {
-      if (savePath) shell.openPath(savePath);
+      if (!savePath) return;
+      performDownloadOpen(path.resolve(String(savePath)), { notifySource: true });
     },
     focusWindow() {
       if (mainWindow && !mainWindow.isDestroyed()) {
@@ -7760,31 +7762,48 @@ ipcMain.on('remove-download', (event, id) => {
   }
 });
 
-ipcMain.on('open-file', (event, filePath) => {
-  if (!isMainSender(event)) return;
-  const resolved = path.resolve(filePath);
-  if (!isInSafeDirs(resolved) || !fsSync.existsSync(resolved)) return;
-
-  // 打开“来自互联网（或来源未知）的可执行 / 脚本 / 安装包”前必须二次确认，
-  // 防止用户在下载列表里误点直接运行 drive-by 下载的程序。
+// performDownloadOpen 是“打开已下载文件”的唯一执行出口：下载列表 IPC 与系统
+// 通知点击都走这里。判定交给 dloadopen 内核（文件名伪装、来源、容器类型），
+// UI（确认框）与系统调用留在这里，避免通知点击绕过来源确认与路径消毒。
+function performDownloadOpen(resolved, opts) {
+  const options = opts || {};
+  if (!isInSafeDirs(resolved) || !fsSync.existsSync(resolved)) {
+    return { ok: false, action: 'missing' };
+  }
   const originUrl = downloadOriginByPath.has(resolved)
     ? downloadOriginByPath.get(resolved)
     : null;
-  const exeDecision = quarantine.openDecision({ filePath: resolved, hostUrl: originUrl });
-  // 容器类（压缩包 / 宏 Office / 磁盘镜像）：MOTW 不会随解压继承，来自互联网
-  // （或来源未知）的容器打开前同样确认。
-  const fromWeb = originUrl ? quarantine.isWebDownload(originUrl) : false;
   const baseName = path.basename(resolved);
-  const containerClass = containerGuard.classifyContainer(baseName);
-  const containerDecision = originUrl == null
-    ? (containerClass.kind === containerGuard.KIND_NONE ? containerGuard.RISK_ALLOW : containerGuard.RISK_CONFIRM)
-    : containerGuard.openContainerDecision({ filename: baseName, fromWeb });
-  const needConfirm = exeDecision === 'confirm' ||
-    containerDecision === 'confirm' || containerDecision === 'warn';
-
-  if (needConfirm) {
+  const target = dloadOpen.decideOpenTarget({ filePath: resolved, filename: baseName, hostUrl: originUrl });
+  if (target.action === dloadOpen.ACTION.BLOCK) {
+    recordSecurityEvent('download-open-blocked', 'warn',
+      `打开下载项被文件名判定拦截: ${baseName}`, '');
+    sendToRenderer('show-toast', '已阻止打开：文件名不安全');
+    return { ok: false, action: 'block', reason: target.reason };
+  }
+  // 交给系统打开前再走一次路径消毒（控制字符 / UNC / 穿越）。可执行文件是否
+  // 允许运行已由上面的来源确认决定，这里只挡畸形与越界路径。
+  const launchReview = shellGuard.reviewLocalLaunchPath(resolved, true);
+  if (!launchReview.ok) {
+    recordSecurityEvent('download-blocked', 'warn',
+      `打开本地文件被路径消毒拦截（${shellGuard.describeReason(launchReview.reason)}）`, '');
+    sendToRenderer('show-toast', '已阻止打开：文件路径不安全');
+    return { ok: false, action: 'block', reason: launchReview.reason };
+  }
+  // 本地网页 / 磁盘镜像这类“打开即获得本地来源或直接挂载”的类型只定位，
+  // 用户需要时自己在浏览器 / 资源管理器里显式打开。
+  if (target.action === dloadOpen.ACTION.REVEAL) {
+    recordSecurityEvent('download-open-blocked', 'info',
+      `下载项仅定位不执行: ${baseName}`, '');
+    shell.showItemInFolder(resolved);
+    return { ok: true, action: 'reveal' };
+  }
+  if (target.action === dloadOpen.ACTION.CONFIRM) {
     const host = originUrl ? urlResolve.safeHost(originUrl, originUrl) : '未知来源';
-    const containerAdvice = containerGuard.describeContainerRisk(containerClass);
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isMinimized()) mainWindow.restore();
+    const advice = (target.reasons && target.reasons.length)
+      ? target.reasons.join('\n')
+      : '该文件是可执行程序或脚本，来自互联网（或来源不明），可能会危害您的计算机或更改系统设置。';
     const choice = dialog.showMessageBoxSync(mainWindow, {
       type: 'warning',
       buttons: ['取消', '仍然运行'],
@@ -7795,28 +7814,25 @@ ipcMain.on('open-file', (event, filePath) => {
       detail: [
         `来源：${host}`,
         '',
-        containerAdvice ||
-          '该文件是可执行程序或脚本，来自互联网（或来源不明），可能会危害您的',
-        containerAdvice ? '' : '计算机或更改系统设置。请仅在确认其来源可信时运行。',
-      ].filter(l => l !== undefined).join('\n').replace(/\n{3,}/g, '\n\n'),
+        advice,
+        '',
+        '请仅在确认其来源可信时运行。',
+      ].join('\n').replace(/\n{3,}/g, '\n\n'),
       noLink: true,
     });
     if (choice !== 1) {
       recordSecurityEvent('download-open-blocked', 'info',
         `用户取消运行来自互联网的文件: ${baseName}`, host);
-      return;
+      return { ok: false, action: 'cancel' };
     }
   }
-  // 交给系统打开前再走一次路径消毒（控制字符 / UNC / 穿越）。可执行文件是否
-  // 允许运行已由上面的来源确认决定，这里只挡畸形与越界路径。
-  const launchReview = shellGuard.reviewLocalLaunchPath(resolved, true);
-  if (!launchReview.ok) {
-    recordSecurityEvent('download-blocked', 'warn',
-      `打开本地文件被路径消毒拦截（${shellGuard.describeReason(launchReview.reason)}）`, '');
-    sendToRenderer('show-toast', '已阻止打开：文件路径不安全');
-    return;
-  }
   shell.openPath(resolved);
+  return { ok: true, action: 'open' };
+}
+
+ipcMain.on('open-file', (event, filePath) => {
+  if (!isMainSender(event)) return;
+  performDownloadOpen(path.resolve(filePath));
 });
 
 ipcMain.on('open-folder', (event, filePath) => {
