@@ -25,7 +25,12 @@ const path = require('path');
 const { pathToFileURL, fileURLToPath } = require('url');
 
 const COSY_SCHEME = 'cosy';
-const LOCAL_FILE_HOSTS = new Set(['', 'localhost', '127.0.0.1', '[::1]']);
+const LOCAL_FILE_HOSTS = new Set(['']);
+const RESERVED_DEVICE_NAMES = new Set([
+  'CON', 'PRN', 'AUX', 'NUL',
+  'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9',
+  'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9',
+]);
 
 // 内置页 host -> 相对 src 的文件。集中成单一白名单，未命中一律回落到 newtab，
 // 不允许用 URL 的 path/query 直接拼磁盘路径（从根上杜绝 cosy: 路径穿越）。
@@ -73,6 +78,11 @@ function normalizeHost(rawHost) {
   let h = String(rawHost == null ? '' : rawHost).trim().toLowerCase();
   if (h.endsWith('.')) h = h.slice(0, -1);
   return h;
+}
+
+function isLocalFileAuthority(rawHostname) {
+  const h = String(rawHostname == null ? '' : rawHostname).trim().toLowerCase();
+  return h === '';
 }
 
 // resolveCosyPage 依据白名单把 cosy URL 映射到“相对 src 的文件”。未知 host 回落
@@ -123,7 +133,7 @@ function resolveAllowedFileUrl(rawUrl, allowedDirs) {
   }
   // 拒绝远程/UNC host：file://server/share 这类指向网络共享的请求不放行。
   // 空 host（file:///C:/...、file:///tmp/...）与 localhost 才是本机文件。
-  if (!LOCAL_FILE_HOSTS.has(u.hostname.toLowerCase())) {
+  if (!isLocalFileAuthority(u.hostname)) {
     return { ok: false, path: '', reason: 'remote-host' };
   }
 
@@ -134,6 +144,10 @@ function resolveAllowedFileUrl(rawUrl, allowedDirs) {
     return { ok: false, path: '', reason: 'malformed' };
   }
   filePath = path.resolve(filePath);
+  const stem = path.basename(filePath).toUpperCase().split('.')[0];
+  if (RESERVED_DEVICE_NAMES.has(stem)) {
+    return { ok: false, path: '', reason: 'reserved-name' };
+  }
 
   const dirs = Array.isArray(allowedDirs) ? allowedDirs : [];
   for (const dir of dirs) {
@@ -156,6 +170,7 @@ module.exports = {
   DEFAULT_PAGE,
   privilegedSchemeOptions,
   normalizeHost,
+  isLocalFileAuthority,
   resolveCosyPage,
   resolveCosyFilePath,
   isPathInsideDir,
