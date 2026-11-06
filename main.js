@@ -9535,7 +9535,6 @@ ipcMain.handle('preview-random-ua', (event) => {
 });
 
 // ===== 下载限速 IPC =====
-// ===== 安全态势汇总（安全面板），只读聚合既有台账，不改任何状态 =====
 ipcMain.handle('get-security-posture', (event) => {
   if (!isMainSender(event)) return { ok: false };
   const decisions = listPermissionDecisions();
@@ -9571,7 +9570,6 @@ ipcMain.handle('get-security-posture', (event) => {
   };
 });
 
-// ===== 下载台账脱敏导出：本地绝对路径一律替换为占位，避免分享时泄露目录结构 =====
 ipcMain.handle('get-download-journal-export', (event, payload = {}) => {
   if (!isMainSender(event)) return { ok: false };
   const requested = Number.isInteger(payload.limit) && payload.limit > 0 ? payload.limit : downloadJournalModule.DEFAULT_MAX_ENTRIES;
@@ -9585,7 +9583,6 @@ ipcMain.handle('get-download-journal-export', (event, payload = {}) => {
   };
 });
 
-// ===== 站点权限风险报告：按站点聚合授权并给出处置建议 =====
 ipcMain.handle('get-permission-risk-report', (event, payload = {}) => {
   if (!isMainSender(event)) return { ok: false };
   const requested = Number.isInteger(payload.limit) && payload.limit > 0 ? payload.limit : 50;
