@@ -28,6 +28,7 @@ const shortcutKeys = require('./shortcutkeys');
 const taskManagerCore = require('./taskmanager');
 const dohGuard = require('./dohguard');const permPolicy = require('./permpolicy');
 const dloadGuard = require('./dloadguard');
+const downloadName = require('./downloadname');
 const dloadOpen = require('./dloadopen');
 const urlClean = require('./urlclean');
 const popupGuard = require('./popupguard');
@@ -6752,7 +6753,12 @@ function sanitizeDownloadFilename(name) {
   const res = dloadGuard.sanitizeName(name);
   if (res.rejected || !res.name) return 'download';
   // 双保险：dloadguard 已剥目录，这里再清一遍 Windows/Unix 保留字符。
-  return res.name.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_') || 'download';
+  const final = downloadName.sanitizeDownloadName(res.name, 'download');
+  if (final.changed) {
+    recordSecurityEvent('download-name', 'info',
+      `下载文件名已净化（${final.reasons.join(',')}）`, '');
+  }
+  return final.name || 'download';
 }
 
 // resolveUniqueDownloadPath 如果目标已存在，自动追加 (1)/(2)/... 避免覆盖
@@ -6908,6 +6914,13 @@ function handleDownloadEvent(event, item, webContents) {
     try { mimeType = typeof item.getMimeType === 'function' ? item.getMimeType() : ''; } catch { mimeType = ''; }
 
     // 纯内核一次给出：URL 是否放行、净化后的文件名、危险类型档位与风险原因链。
+    let rawFilename = item.getFilename();
+    try {
+      if (typeof item.getContentDisposition === 'function') {
+        const cd = downloadName.parseContentDisposition(item.getContentDisposition());
+        if (cd.filename) rawFilename = cd.filename;
+      }
+    } catch { rawFilename = item.getFilename(); }
     const admission = downloadAdmission.planDownloadAdmission(
       {
         isSafeUrl,
@@ -6915,7 +6928,7 @@ function handleDownloadEvent(event, item, webContents) {
         analyzeName: analyzeDownloadSafety,
         DECISION: dloadGuard.DECISION,
       },
-      { url, rawFilename: item.getFilename(), mimeType },
+      { url, rawFilename, mimeType },
     );
     const riskAnalysis = admission.analysis || { decision: '', finalExt: '', risks: [] };
     const finalFilename = admission.finalFilename || 'download';
