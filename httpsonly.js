@@ -32,6 +32,7 @@ const REASON_INVALID = 'invalid-url';
 const REASON_EMPTY_HOST = 'empty-host';
 const REASON_PRIVATE_HOST = 'private-host';
 const REASON_NONSTANDARD_PORT = 'nonstandard-port';
+const REASON_USERINFO = 'url-userinfo';
 const REASON_UPGRADED = 'upgraded';
 
 // “站点没有可用 HTTPS”的强信号错误码（Chromium net error 负值）。
@@ -51,7 +52,37 @@ const MAX_HOST_BYTES = 255; // DNS 全名上限，顺带挡住畸形超长主机
 const DEFAULT_EXCEPTION_CAPACITY = 500;
 
 function isHttpString(rawUrl) {
-  return typeof rawUrl === 'string' && rawUrl.startsWith('http://');
+  if (typeof rawUrl !== 'string') return false;
+  // scheme 大小写不敏感（RFC 3986）；旧实现只看 'http://' 前缀，'HTTP://' 会
+  // 被当成"不是 http"直接放行，等于给主动升级留了一个大小写旁路。
+  if (rawUrl.length < 7 || rawUrl.slice(0, 7).toLowerCase() !== 'http://') return false;
+  // URL 里出现控制字符 / 空白一律不认，避免上游拼接出 'http:// host' 形态。
+  for (let i = 0; i < rawUrl.length; i++) {
+    const c = rawUrl.charCodeAt(i);
+    if (c <= 0x20 || c === 0x7f) return false;
+  }
+  return true;
+}
+
+// urlCarriesUserinfo 判断 URL 是否带 user:pass@ 段。浏览器不会把 userinfo 发给
+// 服务端，但它会出现在地址栏、日志与降级后的明文请求行里；降级到 http 时更会
+// 以 clear-text 形式暴露凭据。这类 URL 一律不参与 HTTPS-Only 升级/回退。
+function urlCarriesUserinfo(u, rawUrl) {
+  if (u && (u.username !== '' || u.password !== '')) return true;
+  // 'http://@host/' 解析后 username 为空，但 authority 里确实带 '@'。
+  const raw = String(rawUrl || '');
+  const schemeEnd = raw.indexOf('://');
+  if (schemeEnd < 0) return false;
+  const rest = raw.slice(schemeEnd + 3);
+  let authority = rest;
+  for (let i = 0; i < rest.length; i++) {
+    const c = rest[i];
+    if (c === '/' || c === '?' || c === '#') {
+      authority = rest.slice(0, i);
+      break;
+    }
+  }
+  return authority.indexOf('@') >= 0;
 }
 
 // hostLooksPrivate 仅按主机名字面量判断回环 / 内网惯例地址，缺省返回 false。
@@ -63,7 +94,10 @@ function isHttpString(rawUrl) {
 // 旧实现只点配 127.0.0.1 字面量与 127.* 前缀，会把 10.1.2.3 / 192.168.1.1 /
 // 169.254.1.1 等私网地址误当公网而强行升级 https，内网老站点被搞挂。
 function hostLooksPrivate(hostname) {
-  const h = String(hostname || '').toLowerCase();
+  let h = String(hostname || '').toLowerCase();
+  // 去掉 FQDN 尾点：'localhost.' 与 'localhost' 是同一个主机，旧实现只认后者，
+  // 会让 'localhost.' 逃过私网判定被升级到 https（内网服务随即打不开）。
+  while (h.length > 1 && h.endsWith('.')) h = h.slice(0, -1);
   if (!h) return false;
   if (h === 'localhost.localdomain') return true;
   const space = classifyHost(h);
@@ -84,7 +118,9 @@ function normalizeExceptionHost(input) {
   // 允许调用方直接传 http(s) URL 或 origin，取出主机名；纯主机名也接受。
   if (h.indexOf('://') >= 0) {
     try {
-      h = new URL(h).hostname.toLowerCase();
+      const parsed = new URL(h);
+      if (urlCarriesUserinfo(parsed, h)) return '';
+      h = parsed.hostname.toLowerCase();
     } catch { return ''; }
   } else {
     // 纯主机名里混进路径分隔符 / 端口 / @ 一律不接受，避免一个键匹配多源。
@@ -110,9 +146,10 @@ function normalizeExceptionHost(input) {
 //   ok=true 时 url 为目标 https 地址；ok=false 时 url 为空、reason 说明原因。
 function upgradeHttpUrl(rawUrl, isPrivateHost) {
   const fail = (reason) => ({ ok: false, url: '', reason, host: '' });
-  if (!isHttpString(rawUrl)) {
-    // 区分一下“根本不是 http”和“是 https 但传进来了”，对调用方都是不升级。
-    return fail(REASON_NOT_HTTP);
+  if (typeof rawUrl !== 'string' || rawUrl === '') return fail(REASON_NOT_HTTP);
+  for (let i = 0; i < rawUrl.length; i++) {
+    const c = rawUrl.charCodeAt(i);
+    if (c <= 0x20 || c === 0x7f) return fail(REASON_INVALID);
   }
   let u;
   try {
@@ -120,6 +157,7 @@ function upgradeHttpUrl(rawUrl, isPrivateHost) {
   } catch {
     return fail(REASON_INVALID);
   }
+  if (u.protocol !== 'http:') return fail(REASON_NOT_HTTP);
   const host = u.hostname.toLowerCase();
   if (!host) return fail(REASON_EMPTY_HOST);
 
@@ -141,7 +179,7 @@ function upgradeHttpUrl(rawUrl, isPrivateHost) {
   }
 
   // 用 URL 对象重组，自动正确保留 pathname/search/hash 与百分号编码；显式去掉
-  // 端口让其走 https 默认 443。userinfo（极少见）按同主机升级保留。
+  // 端口让其走 https 默认 443。userinfo 在入口处已被拒绝，这里不再搬运。
   const target = new URL('https://example.com');
   target.protocol = 'https:';
   target.hostname = host;
@@ -149,8 +187,6 @@ function upgradeHttpUrl(rawUrl, isPrivateHost) {
   target.pathname = u.pathname;
   target.search = u.search;
   target.hash = u.hash;
-  target.username = u.username;
-  target.password = u.password;
   return { ok: true, url: target.toString(), reason: REASON_UPGRADED, host };
 }
 
@@ -158,13 +194,19 @@ function upgradeHttpUrl(rawUrl, isPrivateHost) {
 // https 候选还原成最初的 http 地址。只处理默认端口形态（无端口 / 443），非标
 // 准端口不回退（那本来就不是我们升级出来的）。
 function downgradeHttpsUrlForFallback(rawHttpsUrl) {
-  if (typeof rawHttpsUrl !== 'string' || !rawHttpsUrl.startsWith('https://')) return '';
+  if (typeof rawHttpsUrl !== 'string' || rawHttpsUrl === '') return '';
+  for (let i = 0; i < rawHttpsUrl.length; i++) {
+    const c = rawHttpsUrl.charCodeAt(i);
+    if (c <= 0x20 || c === 0x7f) return '';
+  }
   let u;
   try {
     u = new URL(rawHttpsUrl);
   } catch {
     return '';
   }
+  if (u.protocol !== 'https:') return '';
+  if (urlCarriesUserinfo(u, rawHttpsUrl)) return '';
   if (u.port !== '' && u.port !== '443') return '';
   const target = new URL('http://example.com');
   target.protocol = 'http:';
@@ -173,8 +215,6 @@ function downgradeHttpsUrlForFallback(rawHttpsUrl) {
   target.pathname = u.pathname;
   target.search = u.search;
   target.hash = u.hash;
-  target.username = u.username;
-  target.password = u.password;
   return target.toString();
 }
 
@@ -261,11 +301,13 @@ module.exports = {
   REASON_EMPTY_HOST,
   REASON_PRIVATE_HOST,
   REASON_NONSTANDARD_PORT,
+  REASON_USERINFO,
   REASON_UPGRADED,
   FALLBACKABLE_ERROR_CODES,
   MAX_HOST_BYTES,
   DEFAULT_EXCEPTION_CAPACITY,
   isHttpString,
+  urlCarriesUserinfo,
   hostLooksPrivate,
   normalizeExceptionHost,
   upgradeHttpUrl,
