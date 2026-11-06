@@ -30,6 +30,10 @@ const dohGuard = require('./dohguard');const permPolicy = require('./permpolicy'
 const dloadGuard = require('./dloadguard');
 const downloadName = require('./downloadname');
 const downloadChain = require('./downloadchain');
+const downloadChainLive = require('./downloadchainlive');
+const downloadQuotaCore = require('./downloadquota');
+const downloadSaveTarget = require('./downloadsavetarget');
+const downloadByteQuota = new downloadQuotaCore.DownloadQuota();
 const downloadRateGuard = require('./downloadratelimit');
 const downloadFreqLimiter = new downloadRateGuard.DownloadRateLimiter();
 const dloadOpen = require('./dloadopen');
@@ -7043,18 +7047,73 @@ function handleDownloadEvent(event, item, webContents) {
       downloads.push(downloadInfo);
     }
     currentDownloadInfo = downloadInfo;
+    const downloadRoot = app.getPath('downloads');
+    if (downloadInfo.savePath) {
+      const reusedCheck = downloadSaveTarget.auditSaveTarget(
+        downloadRoot, downloadInfo.savePath, path.basename(downloadInfo.savePath),
+      );
+      if (!reusedCheck.ok) {
+        downloadInfo.savePath = null;
+        recordSecurityEvent('download-savepath', 'warn',
+          `复用下载槽位的保存路径未通过校验: ${downloadSaveTarget.describeSaveTargetReject(reusedCheck.reason)}`,
+          originOfContents(webContents));
+      }
+    }
     if (downloadInfo.savePath) {
       item.setSavePath(downloadInfo.savePath);
     } else {
-      const defaultSavePath = resolveUniqueDownloadPath(app.getPath('downloads'), finalFilename);
-      item.setSavePath(defaultSavePath);
-      downloadInfo.savePath = defaultSavePath;
+      const defaultSavePath = resolveUniqueDownloadPath(downloadRoot, finalFilename);
+      const saveCheck = downloadSaveTarget.auditSaveTarget(downloadRoot, defaultSavePath, path.basename(defaultSavePath));
+      if (!saveCheck.ok) {
+        try { item.cancel(); } catch {}
+        recordSecurityEvent('download-blocked', 'critical',
+          `拒绝保存到非法路径的下载: ${downloadSaveTarget.describeSaveTargetReject(saveCheck.reason)}`,
+          originOfContents(webContents));
+        recordDownloadRisk({
+          filename: finalFilename, host: dlHost, decision: 'reject', action: 'rejected',
+          ext: riskAnalysis.finalExt, risks: riskAnalysis.risks,
+        });
+        sendToRenderer('show-toast', `下载保存路径非法，已取消：${downloadSaveTarget.describeSaveTargetReject(saveCheck.reason)}`);
+        return;
+      }
+      item.setSavePath(saveCheck.path);
+      downloadInfo.savePath = saveCheck.path;
     }
+    downloadInfo.quotaHost = chainCheck.finalHost || dlHost || 'unknown-host';
+    downloadInfo.quotaReserved = 0;
+    const quotaCheck = downloadByteQuota.reserve(downloadInfo.quotaHost, totalBytes);
+    if (!quotaCheck.ok) {
+      try { item.cancel(); } catch {}
+      recordSecurityEvent('download-quota', 'warn',
+        `下载字节配额拒绝: ${downloadQuotaCore.describeQuotaReject(quotaCheck.reason, downloadInfo.quotaHost)}`,
+        originOfContents(webContents));
+      recordDownloadRisk({
+        filename: finalFilename, host: downloadInfo.quotaHost, decision: 'reject', action: 'rejected',
+        ext: riskAnalysis.finalExt, risks: riskAnalysis.risks,
+      });
+      sendToRenderer('show-toast', `下载超出字节配额，已取消：${downloadQuotaCore.describeQuotaReject(quotaCheck.reason, downloadInfo.quotaHost)}`);
+      return;
+    }
+    downloadInfo.quotaHost = quotaCheck.host;
+    downloadInfo.quotaReserved = quotaCheck.reservedBytes;
     applyRateLimitToItem(item);
     sendShelf();
     sendToRenderer('download-status-changed', { id: downloadInfo.id, status: 'downloading' });
     item.on('updated', (event, state) => {
       if (state === 'progressing') {
+        const liveCheck = downloadChainLive.auditLiveChain(
+          typeof item.getURLChain === 'function' ? item.getURLChain() : null,
+        );
+        if (liveCheck.verdict === downloadChainLive.VERDICT.ABORT) {
+          try { item.cancel(); } catch {}
+          downloadInfo.status = 'error';
+          recordSecurityEvent('download-blocked', 'critical',
+            `下载过程中重定向链失效: ${downloadChainLive.describeLiveChain(liveCheck)}`,
+            originOfContents(webContents));
+          sendToRenderer('show-toast', `已取消重定向链失效的下载：${downloadChainLive.describeLiveChain(liveCheck)}`);
+          sendShelf();
+          return;
+        }
         const receivedBytes = item.getReceivedBytes();
         const totalBytes = item.getTotalBytes();
         const progress = totalBytes > 0 ? ((receivedBytes / totalBytes) * 100).toFixed(2) : 0;
@@ -7075,6 +7134,15 @@ function handleDownloadEvent(event, item, webContents) {
     });
     item.on('done', (event, state) => {
       downloadInfo.isItemValid = false;
+      if (state === 'completed') {
+        downloadByteQuota.settle(
+          downloadInfo.quotaHost || '',
+          downloadInfo.quotaReserved || 0,
+          Math.max(downloadInfo.quotaReserved || 0, downloadInfo.receivedBytes || 0),
+        );
+      } else {
+        downloadByteQuota.release(downloadInfo.quotaHost || '', downloadInfo.quotaReserved || 0);
+      }
       if (state === 'completed') {
         downloadInfo.status = 'complete';
         downloadInfo.savePath = item.getSavePath();
