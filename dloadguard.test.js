@@ -127,3 +127,54 @@ test('普通图片无警告放行', () => {
   const r = analyzeDownloadName('photo.png', 'image/png');
   assert.equal(r.decision, DECISION.ALLOW);
 });
+
+test('LRE / RLE 方向控制符必须识别（旧集合漏项）', () => {
+  for (const ch of ['\u202A', '\u202B']) {
+    const r = analyzeDownloadName(`file${ch}exe.pdf`);
+    assert.equal(r.decision, DECISION.CONFIRM, ch);
+    assert.ok(r.risks.some(x => x.id === 'rtl-override'), ch);
+    assert.ok(!r.displayName.includes(ch), '净化后不应保留方向控制符');
+  }
+});
+
+test('方向隔离符 LRI / RLI / FSI / PDI 同样触发确认', () => {
+  for (const ch of ['\u2066', '\u2067', '\u2068', '\u2069']) {
+    const r = analyzeDownloadName(`x${ch}y.pdf`);
+    assert.equal(r.decision, DECISION.CONFIRM, ch);
+    assert.ok(r.risks.some(x => x.id === 'rtl-override'), ch);
+    assert.ok(!r.displayName.includes(ch));
+  }
+});
+
+test('软连字符与蒙古文元音分隔符按零宽字符处理', () => {
+  const soft = analyzeDownloadName('soft\u00AD.exe');
+  assert.equal(soft.decision, DECISION.CONFIRM);
+  assert.ok(soft.risks.some(x => x.id === 'zero-width'));
+  assert.equal(soft.displayName, 'soft.exe');
+
+  const mvs = analyzeDownloadName('evil\u180E.png');
+  assert.ok(mvs.risks.some(x => x.id === 'zero-width'));
+  assert.equal(mvs.displayName, 'evil.png');
+  assert.equal(mvs.decision, DECISION.WARN);
+});
+
+test('NTFS 备用数据流冒号必须拦下并从落盘名剥除', () => {
+  const hidden = analyzeDownloadName('a.txt:hidden.exe');
+  assert.equal(hidden.decision, DECISION.CONFIRM);
+  assert.ok(hidden.risks.some(x => x.id === 'ntfs-ads'));
+  assert.ok(!hidden.displayName.includes(':'), '落盘名不能含冒号');
+
+  const doc = analyzeDownloadName('a:b.pdf');
+  assert.equal(doc.decision, DECISION.CONFIRM, '带冒号的 pdf 也要确认，不能静默放行');
+  assert.ok(doc.risks.some(x => x.id === 'ntfs-ads'));
+  assert.equal(doc.displayName, 'a_b.pdf');
+});
+
+test('净化幂等：同一名字二次净化不再改动', () => {
+  for (const n of ['file\u202Bexe.pdf', 'a.txt:hidden.exe', 'CON.txt', 'x.exe.']) {
+    const once = sanitizeName(n).name;
+    const twice = sanitizeName(once);
+    assert.equal(twice.changed, false, n);
+    assert.equal(twice.name, once, n);
+  }
+});
