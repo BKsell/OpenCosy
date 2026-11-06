@@ -73,6 +73,28 @@ function decideRequest(deps, details) {
   const url = (details && details.url) || '';
   const http = isHttpUrl(url);
 
+  if (typeof guards.evaluateRequestMethod === 'function') {
+    try {
+      const methodVerdict = guards.evaluateRequestMethod(details);
+      if (methodVerdict && methodVerdict.action === 'cancel') {
+        recordSecurityEvent('request-method', 'warn',
+          `已拦截异常请求（${methodVerdict.reason}）：${methodVerdict.detail} ${url}`, hostOf(url));
+        return { type: DECISION_CANCEL, reason: methodVerdict.reason };
+      }
+    } catch { /* 判定异常不干预浏览 */ }
+  }
+
+  if (typeof guards.evaluatePluginResource === 'function') {
+    try {
+      const pluginVerdict = guards.evaluatePluginResource(details);
+      if (pluginVerdict && pluginVerdict.action === 'cancel') {
+        recordSecurityEvent('plugin-resource', 'warn',
+          `已拦截插件类资源（${pluginVerdict.reason}）：${pluginVerdict.detail} ${url}`, hostOf(url));
+        return { type: DECISION_CANCEL, reason: pluginVerdict.reason };
+      }
+    } catch { /* 判定异常不干预浏览 */ }
+  }
+
   // 1) 超链接审计打点：静默取消，顶层导航不受影响。
   if (http) {
     try {
