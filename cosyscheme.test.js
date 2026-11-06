@@ -4,12 +4,14 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
 const os = require('os');
+const { pathToFileURL } = require('url');
 
 const {
   COSY_SCHEME,
   COSY_PAGES,
   privilegedSchemeOptions,
   normalizeHost,
+  isLocalFileAuthority,
   resolveCosyPage,
   resolveCosyFilePath,
   isPathInsideDir,
@@ -111,4 +113,54 @@ test('百分号编码与穿越尝试', () => {
     .replace(/\\/g, '/').replace(/^\//, '') + '/%2e%2e%2f%2e%2e%2fetc%2fpasswd';
   const r = resolveAllowedFileUrl(enc, [path.join(dir, 'allowed')]);
   assert.equal(r.ok, false);
+});
+
+test('file: IP 字面量 authority 一律按远程主机拒绝', () => {
+  const dir = os.tmpdir();
+  const raws = [
+    'file://127.0.0.1/C:/x',
+    'file://[::1]/C:/x',
+    'file://0x7f000001/C:/x',
+    'file://127.1/C:/x',
+    'file://2130706433/C:/x',
+  ];
+  for (const raw of raws) {
+    const r = resolveAllowedFileUrl(raw, [dir]);
+    assert.equal(r.ok, false, raw);
+    assert.equal(r.reason, 'remote-host', raw);
+  }
+});
+
+test('isLocalFileAuthority 只放行空 authority', () => {
+  assert.equal(isLocalFileAuthority(''), true);
+  assert.equal(isLocalFileAuthority('   '), true);
+  assert.equal(isLocalFileAuthority(undefined), true);
+  assert.equal(isLocalFileAuthority(null), true);
+  assert.equal(isLocalFileAuthority('localhost'), false);
+  assert.equal(isLocalFileAuthority('127.0.0.1'), false);
+  assert.equal(isLocalFileAuthority('[::1]'), false);
+  assert.equal(isLocalFileAuthority('fileserver'), false);
+});
+
+test('file: 空 authority 的绝对路径仍落在允许目录内', () => {
+  const dir = os.tmpdir();
+  const target = path.join(dir, 'cosy-authority-probe.txt');
+  const r = resolveAllowedFileUrl(pathToFileURL(target).href, [dir]);
+  assert.equal(r.ok, true);
+  assert.equal(path.resolve(r.path), path.resolve(target));
+});
+
+test('file: IP authority 不再产生 UNC 网络路径', () => {
+  const r = resolveAllowedFileUrl('file://127.0.0.1/C:/Windows/win.ini', [os.tmpdir()]);
+  assert.equal(r.ok, false);
+  assert.equal(r.path, '');
+});
+
+test('file: Windows 保留设备名被拒', () => {
+  const dir = os.tmpdir();
+  for (const name of ['CON', 'nul.txt', 'COM1']) {
+    const r = resolveAllowedFileUrl(pathToFileURL(path.join(dir, name)).href, [dir]);
+    assert.equal(r.ok, false, name);
+    assert.equal(r.reason, 'reserved-name', name);
+  }
 });
