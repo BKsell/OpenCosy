@@ -133,3 +133,38 @@ test('describeJournalReject covers every reason', () => {
     assert.notEqual(text, '未知下载记录问题');
   }
 });
+
+test('reconcile marks completed entry whose file vanished', () => {
+  const root = makeRoot();
+  const journal = makeJournal(root);
+  const savePath = path.join(root, 'gone.zip');
+  journal.record(sampleEntry({
+    savePath,
+    state: journals.STATE.COMPLETE,
+    receivedBytes: 2048,
+    totalBytes: 2048,
+    startedAt: Date.now() - 1000,
+  }));
+  const result = journal.reconcile({ exists: () => false });
+  assert.equal(result.ok, true);
+  assert.equal(result.summary.missing, 1);
+  const entry = journal.snapshot()[0];
+  assert.equal(entry.fileCheck, 'missing');
+  const reloaded = makeJournal(root).load().entries[0];
+  assert.equal(reloaded.id, 'dl-1');
+});
+
+test('reconcile flags size mismatch and keeps ok entries intact', () => {
+  const root = makeRoot();
+  const journal = makeJournal(root);
+  journal.record(sampleEntry({ savePath: path.join(root, 'small.zip'), state: journals.STATE.COMPLETE, startedAt: Date.now() - 1000 }));
+  journal.record(sampleEntry({ id: 'dl-2', filename: 'ok.zip', savePath: path.join(root, 'ok.zip'), state: journals.STATE.COMPLETE, startedAt: Date.now() - 1000, receivedBytes: 2048, totalBytes: 2048 }));
+  const result = journal.reconcile({
+    exists: () => true,
+    sizeOf: (target) => (target.endsWith('small.zip') ? 10 : 2048),
+  });
+  assert.equal(result.summary.sizeMismatch, 1);
+  assert.equal(result.summary.ok, 1);
+  assert.equal(result.changes[0].id, 'dl-2');
+  assert.deepEqual(result.changes.map((c) => c.to), ['ok', 'size-mismatch']);
+});
