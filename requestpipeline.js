@@ -81,7 +81,7 @@ function decideRequest(deps, details) {
           `已拦截异常请求（${methodVerdict.reason}）：${methodVerdict.detail} ${url}`, hostOf(url));
         return { type: DECISION_CANCEL, reason: methodVerdict.reason };
       }
-    } catch { /* 判定异常不干预浏览 */ }
+    } catch {}
   }
 
   if (typeof guards.evaluatePluginResource === 'function') {
@@ -92,7 +92,7 @@ function decideRequest(deps, details) {
           `已拦截插件类资源（${pluginVerdict.reason}）：${pluginVerdict.detail} ${url}`, hostOf(url));
         return { type: DECISION_CANCEL, reason: pluginVerdict.reason };
       }
-    } catch { /* 判定异常不干预浏览 */ }
+    } catch {}
   }
 
   // 1) 超链接审计打点：静默取消，顶层导航不受影响。
