@@ -213,6 +213,9 @@ const allowedInvokeChannels = new Set([
   'get-download-journal',
   'clear-download-journal',
   'reconcile-download-journal',
+  'get-security-posture',
+  'get-download-journal-export',
+  'get-permission-risk-report',
   'get-download-rate-limit',
   'set-download-rate-limit',
 ]);
