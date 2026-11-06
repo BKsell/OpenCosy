@@ -23,6 +23,7 @@ const extensionStore = require('./extensionstore');
 const suggestionGuard = require('./suggestionguard');
 const hostMatch = require('./hostmatch');
 const urlResolve = require('./urlresolve');
+const pathContain = require('./pathcontain');
 const shortcutKeys = require('./shortcutkeys');
 const taskManagerCore = require('./taskmanager');
 const dohGuard = require('./dohguard');const permPolicy = require('./permpolicy');
@@ -855,7 +856,15 @@ function sanitizePath(inputPath, baseDir) {
 }
 
 function isPathInDir(filePath, dir) {
-  return filePath === dir || filePath.startsWith(dir + path.sep);
+  return pathContain.isContained(dir, filePath, { realpath: realpathForContainment }).ok;
+}
+
+function realpathForContainment(p) {
+  try {
+    return fsSync.realpathSync.native(p);
+  } catch {
+    return null;
+  }
 }
 
 function isValidColor(str) {
