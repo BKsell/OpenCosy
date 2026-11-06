@@ -74,6 +74,11 @@ const webviewHarden = require('./webviewharden');
 const winPolicy = require('./winpolicy');
 const goneGuard = require('./goneguard');
 const shellGuard = require('./shellguard');
+const externalProtocolBudget = require('./externalprotocolbudget');
+const clipboardReadOrigin = require('./clipboardreadorigin');
+const requestMethodGuard = require('./requestmethodguard');
+const pluginResourceGuard = require('./pluginresourceguard');
+const externalBudget = externalProtocolBudget.createExternalBudget();
 const deeplinkGuard = require('./deeplinkguard');
 const ipcGuard = require('./ipcguard');
 const channelPolicy = require('./channelpolicy');
@@ -1887,6 +1892,8 @@ function buildRequestPipelineDeps() {
       hostOf: fpGuard.hostOf.bind(fpGuard),
       isTrackerRequest,
       evaluatePnaRequest: pnaGuard.evaluatePnaRequest.bind(pnaGuard),
+      evaluateRequestMethod: requestMethodGuard.evaluateRequestMethod.bind(requestMethodGuard),
+      evaluatePluginResource: pluginResourceGuard.evaluatePluginResource.bind(pluginResourceGuard),
       classifyMixedContent: mixedGuard.classifyMixedContent.bind(mixedGuard),
       stripTrackingFromUrl,
       analyzeHostForSpoof,
@@ -2086,6 +2093,13 @@ async function launchExternalWithPrompt(url, origin, remember) {
       `外部唤起内容消毒未过（${shellGuard.describeReason(extReview.reason)}）: ${scheme}`, origin);
     sendToRenderer('show-toast', `已阻止不安全的外部链接: ${shellGuard.describeReason(extReview.reason)}`);
     return { ok: false, reason: extReview.reason };
+  }
+  const extBudget = externalBudget.judge({ url: extReview.url, origin, now: Date.now() });
+  if (!extBudget.allowed) {
+    recordSecurityEvent('protocol-flood', 'warn',
+      `外部唤起被节流（${externalProtocolBudget.describeReason(extBudget.reason)}）: ${scheme}`, origin);
+    sendToRenderer('show-toast', `已阻止外部协议唤起: ${externalProtocolBudget.describeReason(extBudget.reason)}`);
+    return { ok: false, reason: extBudget.reason };
   }
   const safeExternalUrl = extReview.url;
   if (isRememberableOrigin(origin)) {
@@ -3816,6 +3830,23 @@ function setupPermissionHandlers() {
       return;
     }
 
+    if (permission === 'clipboard-read') {
+      const clipOrigin = urlResolve.safeOrigin(webContents.getURL());
+      const clipVerdict = clipboardReadOrigin.decideClipboardRead({
+        permission,
+        pageUrl: webContents.getURL(),
+        requestOrigin: details && details.requestingUrl,
+        isTopFrame: !(details && details.isMainFrame === false),
+        tabActive: getCurrentTabWebContents() === webContents
+      });
+      if (!clipVerdict.allow) {
+        recordSecurityEvent('clipboard-read-blocked', 'warn',
+          `剪贴板读取被拒（${clipboardReadOrigin.describeReason(clipVerdict.reason)}）: ${clipVerdict.detail}`, clipOrigin);
+        callback(false);
+        return;
+      }
+    }
+
     if (SENSITIVE_PAGE_PERMISSIONS.has(permission)) {
       const origin = urlResolve.safeOrigin(webContents.getURL());
 
@@ -3871,6 +3902,21 @@ function setupPermissionHandlers() {
   session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
     if (permission === 'openExternal') return false;
     if (!enforceFrameGuard(webContents, permission, details, requestingOrigin)) return false;
+    if (permission === 'clipboard-read') {
+      const checkVerdict = clipboardReadOrigin.decideClipboardRead({
+        permission,
+        pageUrl: webContents && typeof webContents.getURL === 'function' ? webContents.getURL() : '',
+        requestOrigin: requestingOrigin,
+        isTopFrame: !(details && details.isMainFrame === false),
+        tabActive: getCurrentTabWebContents() === webContents
+      });
+      if (!checkVerdict.allow) {
+        const checkOrigin = urlResolve.safeOrigin(webContents.getURL());
+        recordSecurityEvent('clipboard-read-blocked', 'warn',
+          `剪贴板读取检查被拒（${clipboardReadOrigin.describeReason(checkVerdict.reason)}）: ${checkVerdict.detail}`, checkOrigin);
+      }
+      return checkVerdict.allow;
+    }
     // 敏感权限：记忆为"允许"才承认；记忆为"拒绝"或未记忆一律返回 false，
     // 让站点真正调用时走 request handler（弹询问条或直接兑现拒绝）。
     if (SENSITIVE_PAGE_PERMISSIONS.has(permission)) {
