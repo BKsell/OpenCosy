@@ -68,8 +68,21 @@ const RESERVED_BASENAMES = Object.freeze(new Set([
 ]));
 
 // 危险的不可见 / 格式控制字符。
-const RTL_OVERRIDE_CHARS = Object.freeze(['\u202E', '\u202D', '\u202C', '\u200F', '\u200E']);
-const ZERO_WIDTH_CHARS = Object.freeze(['\u200B', '\u200C', '\u200D', '\uFEFF']);
+// 旧集合只覆盖 U+202E/U+202D/U+202C/U+200E/U+200F，漏掉同样能重排显示方向的
+// U+202A LRE / U+202B RLE、U+061C 阿拉伯字母标记，以及 U+2066..U+2069 一整套
+// 方向隔离符（LRI / RLI / FSI / PDI）——攻击者换个控制符就能让同一个名字的
+// 显示顺序完全不同，而旧实现判定为“无风险、直接放行”。
+const RTL_OVERRIDE_CHARS = Object.freeze([
+  '\u202A', '\u202B', '\u202C', '\u202D', '\u202E',
+  '\u200E', '\u200F', '\u061C',
+  '\u2066', '\u2067', '\u2068', '\u2069',
+]);
+// 零宽 / 不可见字符：旧集合只有 U+200B..U+200D 与 U+FEFF，漏了软连字符
+// U+00AD、蒙古文元音分隔符 U+180E、词连接符 U+2060 与不可见运算符 U+2061..U+2064。
+const ZERO_WIDTH_CHARS = Object.freeze([
+  '\u200B', '\u200C', '\u200D', '\uFEFF',
+  '\u00AD', '\u180E', '\u2060', '\u2061', '\u2062', '\u2063', '\u2064',
+]);
 
 // 可执行内容的 MIME 前缀 / 精确值（小写）。
 const EXECUTABLE_MIMES = Object.freeze(new Set([
@@ -180,6 +193,11 @@ function sanitizeName(filename) {
   }
   name = name.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
 
+  // Windows 文件名里不允许 ':'，但裸 ':' 会被 NTFS 当成备用数据流分隔符：
+  // "a.txt:hidden.exe" 实际写到 a.txt 的 hidden.exe 流，磁盘上只看得到一个无害的
+  // a.txt。旧实现原样放行冒号，这里统一替换成 '_'，保证落盘名与审计名一致。
+  name = name.replace(/:/g, '_');
+
   // Windows 落盘会剥掉结尾的 '.' 与空格，这里先剥，保证审计看到的名字与磁盘一致。
   name = name.replace(/[ .]+$/g, '');
 
@@ -248,6 +266,12 @@ function analyzeDownloadName(filename, mime) {
   }
   if (hasControlChar(baseNameOnly(filename))) {
     push('control-char', DECISION.CONFIRM, '文件名包含控制字符，可能用于绕过类型检查');
+  }
+  // NTFS 备用数据流：名字里的 ':' 会让内容写进另一个文件的隐藏流，
+  // 资源管理器里只显示前半段（a.txt），实际落盘的 exe 完全不可见。
+  if (baseNameOnly(filename).indexOf(':') >= 0) {
+    push('ntfs-ads', DECISION.CONFIRM,
+      '文件名含冒号，Windows 会把它解释成 NTFS 备用数据流（a.txt:hidden.exe 写进 a.txt 的隐藏流），已替换为下划线');
   }
   if (originalReservedName(filename)) {
     push('reserved-name', DECISION.WARN, '文件名命中 Windows 保留设备名（CON/NUL/COM1 等），已自动加前缀');
