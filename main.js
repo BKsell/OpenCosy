@@ -23,6 +23,13 @@ const extensionStore = require('./extensionstore');
 const suggestionGuard = require('./suggestionguard');
 const hostMatch = require('./hostmatch');
 const urlResolve = require('./urlresolve');
+const pointerLockFrame = require('./pointerlockframe');
+const clipboardFrame = require('./clipboardframe');
+const fullscreenFrame = require('./fullscreenframe');
+const permissionDenyLedger = require('./permissiondenyledger');
+const createDenyLedger = permissionDenyLedger.createDenyLedger;
+const popupOpenerFrame = require('./popupopenerframe');
+const notificationFrame = require('./notificationframe');
 const pathContain = require('./pathcontain');
 const shortcutKeys = require('./shortcutkeys');
 const taskManagerCore = require('./taskmanager');
@@ -3740,6 +3747,54 @@ function setupPermissionHandlers() {
     return tab ? tab.id : null;
   };
 
+  const frameGuardedPermissions = new Set(['pointerLock', 'fullscreen', 'clipboard-sanitized-write', 'pop-up', 'notifications']);
+  const permDenyLedger = createDenyLedger({ windowMs: 60000, maxPerKey: 3, maxKeys: 512 });
+
+  const permissionFrameInput = (wc, details, fallbackOrigin) => {
+    const activeTab = tabs[currentTabIndex];
+    const tab = tabs.find(t => t.view && t.view.webContents === wc);
+    const requested = (details && details.requestingUrl) || fallbackOrigin || wc.getURL();
+    return {
+      requestUrl: requested,
+      topUrl: wc.getURL(),
+      isMainFrame: !(details && details.isMainFrame === false),
+      tabActive: !tab || !activeTab ? true : tab.id === activeTab.id,
+      windowFocused: mainWindow && typeof mainWindow.isFocused === 'function' ? mainWindow.isFocused() : true,
+    };
+  };
+
+  const evaluatePermissionFrame = (wc, permission, details, fallbackOrigin) => {
+    const input = permissionFrameInput(wc, details, fallbackOrigin);
+    if (permission === 'pointerLock') return pointerLockFrame.evaluatePointerLockFrame(input);
+    if (permission === 'fullscreen') return fullscreenFrame.evaluateFullscreenFrame(input);
+    if (permission === 'pop-up') return popupOpenerFrame.evaluatePopupFrame(input);
+    if (permission === 'notifications') return notificationFrame.evaluateNotificationFrame(input);
+    return clipboardFrame.evaluateClipboardFrame(input);
+  };
+
+  const notePermissionDeny = (origin, permission, detail) => {
+    const entry = permDenyLedger.record({ origin, permission });
+    if (entry.log) {
+      recordSecurityEvent('permission-blocked', 'warn', detail, origin);
+    }
+    return entry;
+  };
+
+  const enforceFrameGuard = (wc, permission, details, fallbackOrigin) => {
+    if (!frameGuardedPermissions.has(permission)) return true;
+    if (!wc || (typeof wc.isDestroyed === 'function' && wc.isDestroyed())) return true;
+    const origin = urlResolve.safeOrigin(wc.getURL());
+    const decision = evaluatePermissionFrame(wc, permission, details, fallbackOrigin);
+    if (decision.action === 'deny') {
+      notePermissionDeny(origin, permission, decision.detail);
+      return false;
+    }
+    if (decision.action === 'warn') {
+      recordSecurityEvent('permission-frame', 'info', decision.detail, origin);
+    }
+    return true;
+  };
+
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     // openExternal 不再静默放行：弹一次原生确认。这里拿不到具体 URL，
     // 真正带 URL 的外部协议请求走 confirmAndOpenExternal IPC。
@@ -3753,6 +3808,11 @@ function setupPermissionHandlers() {
         message: '当前网站请求调用系统外部应用，是否允许？'
       });
       callback(choice === 0);
+      return;
+    }
+
+    if (!enforceFrameGuard(webContents, permission, details)) {
+      callback(false);
       return;
     }
 
@@ -3808,8 +3868,9 @@ function setupPermissionHandlers() {
     }
     callback(allowed);
   });
-  session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+  session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
     if (permission === 'openExternal') return false;
+    if (!enforceFrameGuard(webContents, permission, details, requestingOrigin)) return false;
     // 敏感权限：记忆为"允许"才承认；记忆为"拒绝"或未记忆一律返回 false，
     // 让站点真正调用时走 request handler（弹询问条或直接兑现拒绝）。
     if (SENSITIVE_PAGE_PERMISSIONS.has(permission)) {
