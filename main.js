@@ -44,6 +44,9 @@ const permissionGrants = require('./permissiongrants');
 const securityPosture = require('./securityposture');
 const downloadJournalExport = require('./downloadjournalexport');
 const permissionRiskReport = require('./permissionriskreport');
+const downloadDiskSpace = require('./downloaddiskspace');
+const downloadDiskMonitorModule = require('./downloaddiskmonitor');
+const downloadPathCollision = require('./downloadpathcollision');
 let downloadJournal = null;
 const popupGuard = require('./popupguard');
 const quarantine = require('./quarantine');
@@ -1175,6 +1178,7 @@ let uaPolicyState = { ...uaPolicyCore.DEFAULT_POLICY };
 let uaOverrideCount = 0;
 let uaLastOverrideAt = 0;
 let downloadRateLimit = 0; // 字节/秒；0 = 不限速
+const downloadDiskMonitor = downloadDiskMonitorModule.createDiskMonitor({ minFreeBytes: downloadDiskSpace.MIN_FREE_BYTES });
 
 function loadUaPolicyStateFromDisk() {
   try {
@@ -6834,15 +6838,19 @@ function sanitizeDownloadFilename(name) {
 
 // resolveUniqueDownloadPath 如果目标已存在，自动追加 (1)/(2)/... 避免覆盖
 function resolveUniqueDownloadPath(dir, filename) {
-  const ext = path.extname(filename);
-  const stem = path.basename(filename, ext);
-  let candidate = path.join(dir, filename);
-  let counter = 1;
-  while (fsSync.existsSync(candidate)) {
-    candidate = path.join(dir, `${stem} (${counter})${ext}`);
-    counter++;
+  let existingNames = [];
+  try {
+    existingNames = fsSync.readdirSync(dir);
+  } catch (scanError) {
+    existingNames = [];
   }
-  return candidate;
+  const allocation = downloadPathCollision.planUniquePath({ dir, filename, taken: existingNames });
+  if (!allocation.ok) {
+    recordSecurityEvent('download-savepath', 'critical',
+      `无法分配唯一下载文件名: ${downloadPathCollision.describeAllocation(allocation)}`, 'download-manager');
+    return '';
+  }
+  return allocation.path;
 }
 
 // ===== 下载文件名伪装 / 危险类型台账（download-risk.json / cosy://security）=====
@@ -7112,6 +7120,42 @@ function handleDownloadEvent(event, item, webContents) {
     }
     currentDownloadInfo = downloadInfo;
     const downloadRoot = app.getPath('downloads');
+    let diskFreeBytes = null;
+    try {
+      const diskStat = fsSync.statfsSync(downloadRoot);
+      diskFreeBytes = Number(diskStat.bavail) * Number(diskStat.bsize);
+    } catch (diskProbeError) {
+      diskFreeBytes = null;
+    }
+    let existingDownloadBytes = 0;
+    if (downloadInfo.savePath) {
+      try {
+        existingDownloadBytes = Number(fsSync.statSync(downloadInfo.savePath).size) || 0;
+      } catch (existingProbeError) {
+        existingDownloadBytes = 0;
+      }
+    }
+    downloadInfo.diskFreeBytes = diskFreeBytes;
+    const diskDecision = diskFreeBytes === null
+      ? {
+        action: downloadDiskSpace.ACTION.WARN, reason: downloadDiskSpace.REASON.UNKNOWN_SIZE,
+        freeBytes: null, requiredFreeBytes: 0, shortfallBytes: 0,
+      }
+      : downloadDiskSpace.evaluateSpace({ freeBytes: diskFreeBytes, totalBytes, existingBytes: existingDownloadBytes });
+    if (diskDecision.action === downloadDiskSpace.ACTION.BLOCK) {
+      try { item.cancel(); } catch {}
+      downloadInfo.status = 'error';
+      recordSecurityEvent('download-blocked', 'critical',
+        `磁盘空间不足，拒绝下载: ${downloadDiskSpace.describeDecision(diskDecision)}`,
+        originOfContents(webContents));
+      sendToRenderer('show-toast', `空间不足，已取消下载：${downloadDiskSpace.describeDecision(diskDecision)}`);
+      sendShelf();
+      return;
+    }
+    if (diskDecision.action === downloadDiskSpace.ACTION.WARN) {
+      recordSecurityEvent('download-disk', 'warn',
+        downloadDiskSpace.describeDecision(diskDecision), originOfContents(webContents));
+    }
     if (downloadInfo.savePath) {
       const reusedCheck = downloadSaveTarget.auditSaveTarget(
         downloadRoot, downloadInfo.savePath, path.basename(downloadInfo.savePath),
@@ -7189,6 +7233,36 @@ function handleDownloadEvent(event, item, webContents) {
         }
         const receivedBytes = item.getReceivedBytes();
         const totalBytes = item.getTotalBytes();
+        let liveFreeBytes = downloadInfo.diskFreeBytes;
+        try {
+          const liveStat = fsSync.statfsSync(downloadRoot);
+          liveFreeBytes = Number(liveStat.bavail) * Number(liveStat.bsize);
+        } catch (liveProbeError) {
+          liveFreeBytes = downloadInfo.diskFreeBytes;
+        }
+        const diskEvent = downloadDiskMonitor.sample({
+          id: downloadInfo.id, freeBytes: liveFreeBytes, totalBytes, receivedBytes,
+        });
+        if (diskEvent.action === downloadDiskMonitor.ACTION.PAUSE) {
+          try { item.pause(); } catch {}
+          downloadInfo.status = 'paused';
+          recordSecurityEvent('download-paused', 'warn',
+            `磁盘剩余空间不足，下载暂停: ${downloadDiskSpace.describeDecision(diskEvent.decision)}`,
+            originOfContents(webContents));
+          if (downloadDiskMonitor.shouldNotify(downloadInfo.id)) {
+            downloadDiskMonitor.markNotified(downloadInfo.id);
+            sendToRenderer('show-toast', `磁盘空间不足，下载已暂停：${downloadInfo.filename}`);
+          }
+          sendShelf();
+          return;
+        }
+        if (diskEvent.action === downloadDiskMonitor.ACTION.RESUME) {
+          try { item.resume(); } catch {}
+          downloadInfo.status = 'downloading';
+          recordSecurityEvent('download-resumed', 'info',
+            '磁盘空间恢复，下载继续', originOfContents(webContents));
+          sendToRenderer('show-toast', `磁盘空间恢复，继续下载：${downloadInfo.filename}`);
+        }
         const progress = totalBytes > 0 ? ((receivedBytes / totalBytes) * 100).toFixed(2) : 0;
         const now = Date.now();
         const timeDiff = (now - downloadInfo.lastUpdate) / 1000;
@@ -7207,6 +7281,7 @@ function handleDownloadEvent(event, item, webContents) {
     });
     item.on('done', (event, state) => {
       downloadInfo.isItemValid = false;
+      downloadDiskMonitor.release(downloadInfo.id);
       if (state === 'completed') {
         downloadByteQuota.settle(
           downloadInfo.quotaHost || '',
