@@ -47,6 +47,10 @@ const permissionRiskReport = require('./permissionriskreport');
 const downloadDiskSpace = require('./downloaddiskspace');
 const downloadDiskMonitorModule = require('./downloaddiskmonitor');
 const downloadPathCollision = require('./downloadpathcollision');
+const downloadHostGuard = require('./downloadhostguard');
+const downloadSlotReservation = require('./downloadslotreservation');
+const downloadFinishGuard = require('./downloadfinishguard');
+const downloadContentMagic = require('./downloadcontentmagic');
 let downloadJournal = null;
 const popupGuard = require('./popupguard');
 const quarantine = require('./quarantine');
@@ -1179,6 +1183,7 @@ let uaOverrideCount = 0;
 let uaLastOverrideAt = 0;
 let downloadRateLimit = 0; // 字节/秒；0 = 不限速
 const downloadDiskMonitor = downloadDiskMonitorModule.createDiskMonitor({ minFreeBytes: downloadDiskSpace.MIN_FREE_BYTES });
+const downloadSlotGuard = downloadSlotReservation.createSlotReservation();
 
 function loadUaPolicyStateFromDisk() {
   try {
@@ -6992,6 +6997,20 @@ function handleDownloadEvent(event, item, webContents) {
     let mimeType = '';
     try { mimeType = typeof item.getMimeType === 'function' ? item.getMimeType() : ''; } catch { mimeType = ''; }
 
+    const urlDecision = downloadHostGuard.evaluateDownloadUrl(url);
+    if (urlDecision.action === downloadHostGuard.ACTION.BLOCK) {
+      try { item.cancel(); } catch {}
+      recordSecurityEvent('download-url', 'critical',
+        `下载地址被拒绝: ${downloadHostGuard.describeDownloadUrl(urlDecision)}`,
+        originOfContents(webContents));
+      sendToRenderer('show-toast', `下载地址不安全，已取消：${downloadHostGuard.describeDownloadUrl(urlDecision)}`);
+      return;
+    }
+    if (urlDecision.action === downloadHostGuard.ACTION.WARN) {
+      recordSecurityEvent('download-url', 'warn',
+        downloadHostGuard.describeDownloadUrl(urlDecision), originOfContents(webContents));
+    }
+
     // 纯内核一次给出：URL 是否放行、净化后的文件名、危险类型档位与风险原因链。
     let rawFilename = item.getFilename();
     try {
@@ -7167,25 +7186,55 @@ function handleDownloadEvent(event, item, webContents) {
           originOfContents(webContents));
       }
     }
+    const reserveSlotFor = (candidatePath, attempt) => {
+      let target = candidatePath;
+      if (attempt > 0) {
+        const parsed = path.parse(candidatePath);
+        target = path.join(parsed.dir, `${parsed.name} (${attempt})${parsed.ext}`);
+      }
+      const reservation = downloadSlotGuard.reserve({ id: downloadInfo.id, path: target });
+      return reservation.ok ? target : '';
+    };
+    if (downloadInfo.savePath) {
+      if (reserveSlotFor(downloadInfo.savePath, 0)) {
+        item.setSavePath(downloadInfo.savePath);
+      } else {
+        recordSecurityEvent('download-savepath', 'warn',
+          `复用下载槽位的目标已被其他下载占用，重新分配文件名: ${path.basename(downloadInfo.savePath)}`,
+          originOfContents(webContents));
+        downloadInfo.savePath = null;
+      }
+    }
     if (downloadInfo.savePath) {
       item.setSavePath(downloadInfo.savePath);
     } else {
-      const defaultSavePath = resolveUniqueDownloadPath(downloadRoot, finalFilename);
-      const saveCheck = downloadSaveTarget.auditSaveTarget(downloadRoot, defaultSavePath, path.basename(defaultSavePath));
-      if (!saveCheck.ok) {
+      let reservedTarget = '';
+      for (let attempt = 0; attempt < 4 && !reservedTarget; attempt += 1) {
+        const candidate = resolveUniqueDownloadPath(downloadRoot, finalFilename);
+        const saveCheck = downloadSaveTarget.auditSaveTarget(downloadRoot, candidate, path.basename(candidate));
+        if (!saveCheck.ok) {
+          try { item.cancel(); } catch {}
+          recordSecurityEvent('download-blocked', 'critical',
+            `拒绝保存到非法路径的下载: ${downloadSaveTarget.describeSaveTargetReject(saveCheck.reason)}`,
+            originOfContents(webContents));
+          recordDownloadRisk({
+            filename: finalFilename, host: dlHost, decision: 'reject', action: 'rejected',
+            ext: riskAnalysis.finalExt, risks: riskAnalysis.risks,
+          });
+          sendToRenderer('show-toast', `下载保存路径非法，已取消：${downloadSaveTarget.describeSaveTargetReject(saveCheck.reason)}`);
+          return;
+        }
+        reservedTarget = reserveSlotFor(saveCheck.path, attempt);
+      }
+      if (!reservedTarget) {
         try { item.cancel(); } catch {}
         recordSecurityEvent('download-blocked', 'critical',
-          `拒绝保存到非法路径的下载: ${downloadSaveTarget.describeSaveTargetReject(saveCheck.reason)}`,
-          originOfContents(webContents));
-        recordDownloadRisk({
-          filename: finalFilename, host: dlHost, decision: 'reject', action: 'rejected',
-          ext: riskAnalysis.finalExt, risks: riskAnalysis.risks,
-        });
-        sendToRenderer('show-toast', `下载保存路径非法，已取消：${downloadSaveTarget.describeSaveTargetReject(saveCheck.reason)}`);
+          '下载保存槽位持续冲突，无法分配唯一文件名', originOfContents(webContents));
+        sendToRenderer('show-toast', '同名文件正在下载，已取消本次下载');
         return;
       }
-      item.setSavePath(saveCheck.path);
-      downloadInfo.savePath = saveCheck.path;
+      item.setSavePath(reservedTarget);
+      downloadInfo.savePath = reservedTarget;
     }
     const journalStart = journalDownloadState(downloadInfo, downloadJournalModule.STATE.STARTED);
     if (journalStart) {
@@ -7282,6 +7331,7 @@ function handleDownloadEvent(event, item, webContents) {
     item.on('done', (event, state) => {
       downloadInfo.isItemValid = false;
       downloadDiskMonitor.release(downloadInfo.id);
+      downloadSlotGuard.release(downloadInfo.id);
       if (state === 'completed') {
         downloadByteQuota.settle(
           downloadInfo.quotaHost || '',
@@ -7292,8 +7342,62 @@ function handleDownloadEvent(event, item, webContents) {
         downloadByteQuota.release(downloadInfo.quotaHost || '', downloadInfo.quotaReserved || 0);
       }
       if (state === 'completed') {
-        downloadInfo.status = 'complete';
         downloadInfo.savePath = item.getSavePath();
+        let finishStat = null;
+        try { finishStat = fsSync.lstatSync(downloadInfo.savePath); } catch { finishStat = null; }
+        if (finishStat) {
+          const finishAudit = downloadFinishGuard.auditDownloadResult({
+            rootDir: downloadRoot,
+            savePath: downloadInfo.savePath,
+            expectedBytes: downloadInfo.totalBytes,
+            actualBytes: finishStat.size,
+            isSymlink: finishStat.isSymbolicLink(),
+            isRegular: finishStat.isFile(),
+          });
+          if (finishAudit.action === downloadFinishGuard.ACTION.BLOCK) {
+            downloadInfo.status = 'error';
+            recordSecurityEvent('download-finish', 'critical',
+              `下载落盘校验失败: ${downloadFinishGuard.describeDownloadAudit(finishAudit)}`,
+              originOfContents(webContents));
+            sendToRenderer('download-error', {
+              id: downloadInfo.id,
+              filename: downloadInfo.filename || finalFilename,
+              errorMessage: '下载文件未通过落盘校验，已标记为失败',
+            });
+            sendShelf();
+            return;
+          }
+          if (finishAudit.action === downloadFinishGuard.ACTION.WARN) {
+            recordSecurityEvent('download-finish', 'warn',
+              downloadFinishGuard.describeDownloadAudit(finishAudit), originOfContents(webContents));
+          }
+          const magicProbe = downloadContentMagic.readMagic(downloadInfo.savePath);
+          if (magicProbe.ok) {
+            const contentAudit = downloadContentMagic.auditDownloadedContent({
+              name: path.basename(downloadInfo.savePath),
+              mime: mimeType,
+              magic: magicProbe.magic,
+            });
+            if (contentAudit.action === downloadContentMagic.ACTION.BLOCK) {
+              downloadInfo.status = 'error';
+              recordSecurityEvent('download-content', 'critical',
+                `下载内容伪装检测命中: ${downloadContentMagic.describeContentAudit(contentAudit)}`,
+                originOfContents(webContents));
+              sendToRenderer('download-error', {
+                id: downloadInfo.id,
+                filename: downloadInfo.filename || finalFilename,
+                errorMessage: '下载内容与扩展名不符，已标记为可疑',
+              });
+              sendShelf();
+              return;
+            }
+            if (contentAudit.action === downloadContentMagic.ACTION.WARN) {
+              recordSecurityEvent('download-content', 'warn',
+                downloadContentMagic.describeContentAudit(contentAudit), originOfContents(webContents));
+            }
+          }
+        }
+        downloadInfo.status = 'complete';
         sendToRenderer('download-complete', { id: downloadInfo.id, savePath: downloadInfo.savePath });
         // 系统通知：完成（静音、低打扰；点击打开文件）。在 MOTW 补写之前弹，
         // 用户看到通知时文件已落盘且来源登记已完成。
