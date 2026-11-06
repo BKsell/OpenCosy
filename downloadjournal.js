@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const downloadResume = require('./downloadresume');
+const downloadReconcile = require('./downloadreconcile');
 
 const DEFAULT_MAX_ENTRIES = 200;
 const DEFAULT_MAX_FILE_BYTES = 256 * 1024;
@@ -310,6 +311,30 @@ function createDownloadJournal(options = {}) {
     return { ok: true, reason: REASON.OK, entry: entries[index] };
   }
 
+  function reconcile(options = {}) {
+    const now = clock();
+    const exists = typeof options.exists === 'function' ? options.exists : (p) => partStats(p) !== null;
+    const sizeOf = typeof options.sizeOf === 'function' ? options.sizeOf : (p) => partStats(p);
+    const result = downloadReconcile.reconcileEntries(entries, {
+      now,
+      exists,
+      sizeOf,
+      maxVerify: options.maxVerify,
+    });
+    entries = result.entries;
+    const saved = changesCount(result) > 0 ? save() : { ok: true, reason: REASON.OK };
+    return {
+      ok: saved.ok,
+      reason: saved.reason,
+      summary: result.summary,
+      changes: result.changes,
+    };
+  }
+
+  function changesCount(result) {
+    return Array.isArray(result.changes) ? result.changes.length : 0;
+  }
+
   function snapshot() {
     return entries.map((item) => ({ ...item }));
   }
@@ -328,6 +353,7 @@ function createDownloadJournal(options = {}) {
     update,
     snapshot,
     clear,
+    reconcile,
     lastRejected: () => lastRejected.slice(),
   };
 }
