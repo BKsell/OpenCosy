@@ -15,6 +15,10 @@ const netAuthGuard = require('./netauthguard');
 const cookieGuard = require('./cookieguard');
 const pnaGuard = require('./pna');
 const fpGuard = require('./fpguard');
+const corsGuard = require('./corsmisconfigguard');
+const authChallengeGuard = require('./httpauthchallengeguard');
+const mimeExecGuard = require('./mimetypeexecguard');
+const cacheVaryGuard = require('./cachevaryguard');
 const requestPipeline = require('./requestpipeline');
 const downloadAdmission = require('./downloadadmission');
 const downloadNotify = require('./downloadnotify');
@@ -1787,6 +1791,28 @@ function hardenResponseHeaders(rawHeaders, details, options) {
     const removedCh = fpGuard.stripAcceptClientHints(headers, { stripAcceptCh });
     if (removedCh.length) {
       recordFpHit(fpGuard.hostOf(details.url), 'accept-ch', removedCh);
+    }
+  } catch {}
+  try {
+    const corsResult = corsGuard.applyCorsGuard(headers);
+    if (corsResult.changed && grade) {
+      recordSecurityEvent('origin-boundary-blocked', 'warn',
+        `cors:${corsResult.verdict.reason}`, fpGuard.hostOf(details.url));
+    }
+    const authResult = authChallengeGuard.applyAuthChallengeGuard(headers, details);
+    if (authResult.changed && grade) {
+      recordSecurityEvent('auth-blocked', 'warn',
+        `challenge:${authResult.verdict.reason}`, fpGuard.hostOf(details.url));
+    }
+    const mimeResult = mimeExecGuard.applyContentDispositionGuard(headers, details);
+    if (mimeResult.changed && grade) {
+      recordSecurityEvent('download-blocked', 'warn',
+        `mime:${mimeResult.verdict.reason}`, fpGuard.hostOf(details.url));
+    }
+    const cacheResult = cacheVaryGuard.applyCacheVaryGuard(headers);
+    if (cacheResult.changed && grade) {
+      recordSecurityEvent('cookie-blocked', 'warn',
+        `cache:${cacheResult.verdict.reason}`, fpGuard.hostOf(details.url));
     }
   } catch {}
   const setIfMissing = (name, value) => {
