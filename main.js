@@ -38,6 +38,8 @@ const downloadRateGuard = require('./downloadratelimit');
 const downloadFreqLimiter = new downloadRateGuard.DownloadRateLimiter();
 const dloadOpen = require('./dloadopen');
 const urlClean = require('./urlclean');
+const downloadJournalModule = require('./downloadjournal');
+let downloadJournal = null;
 const popupGuard = require('./popupguard');
 const quarantine = require('./quarantine');
 const navGuard = require('./navguard');
@@ -7079,6 +7081,15 @@ function handleDownloadEvent(event, item, webContents) {
       item.setSavePath(saveCheck.path);
       downloadInfo.savePath = saveCheck.path;
     }
+    const journalStart = journalDownloadState(downloadInfo, downloadJournalModule.STATE.STARTED);
+    if (journalStart) {
+      const journalResult = getDownloadJournal().record(journalStart);
+      if (!journalResult.ok) {
+        recordSecurityEvent('download-journal', 'warn',
+          `下载台账写入被拒绝: ${downloadJournalModule.describeJournalReject(journalResult.reason)}`,
+          originOfContents(webContents));
+      }
+    }
     downloadInfo.quotaHost = chainCheck.finalHost || dlHost || 'unknown-host';
     downloadInfo.quotaReserved = 0;
     const quotaCheck = downloadByteQuota.reserve(downloadInfo.quotaHost, totalBytes);
@@ -7200,6 +7211,20 @@ function handleDownloadEvent(event, item, webContents) {
           errorMessage: failureReason,
         });
       }
+      const journalDone = journalDownloadState(downloadInfo);
+      if (journalDone) {
+        const journalResult = getDownloadJournal().update(downloadInfo.id, {
+          state: journalDone.state,
+          receivedBytes: journalDone.receivedBytes,
+          savePath: journalDone.savePath,
+          partPath: journalDone.partPath,
+        });
+        if (!journalResult.ok) {
+          recordSecurityEvent('download-journal', 'warn',
+            `下载台账收尾写入被拒绝: ${downloadJournalModule.describeJournalReject(journalResult.reason)}`,
+            originOfContents(webContents));
+        }
+      }
       sendShelf();
     });
 }
@@ -7208,6 +7233,40 @@ function handleDownloadEvent(event, item, webContents) {
 // session 注册两次，一次下载会触发两轮回调：弹两次确认框、写两条台账、落盘后补两次
 // MOTW。defaultSession 走 setupDownloadManager、分区走 session-created，理论上互斥，
 // 但仍用 WeakSet 做幂等兜底（session 回收后条目自动消失，不泄漏）。
+function getDownloadJournal() {
+  if (downloadJournal) return downloadJournal;
+  const downloadsRoot = app.getPath('downloads');
+  downloadJournal = downloadJournalModule.createDownloadJournal({
+    filePath: path.join(app.getPath('userData'), 'download-journal.json'),
+    rootDir: downloadsRoot,
+  });
+  const loaded = downloadJournal.load();
+  if (loaded.rejected.length > 0) {
+    recordSecurityEvent('download-journal', 'warn',
+      `下载台账载入时丢弃 ${loaded.rejected.length} 条非法记录`, 'download-journal');
+  }
+  return downloadJournal;
+}
+
+function journalDownloadState(downloadInfo, fallbackState) {
+  if (!downloadInfo || !downloadInfo.id) return null;
+  const state = downloadInfo.status === 'complete' ? downloadJournalModule.STATE.COMPLETE
+    : downloadInfo.status === 'error' ? downloadJournalModule.STATE.ERROR
+    : fallbackState || downloadJournalModule.STATE.DOWNLOADING;
+  return {
+    id: downloadInfo.id,
+    url: downloadInfo.url || '',
+    filename: downloadInfo.filename || '',
+    host: downloadInfo.quotaHost || '',
+    savePath: downloadInfo.savePath || '',
+    partPath: downloadInfo.status === 'error' && downloadInfo.savePath ? `${downloadInfo.savePath}.crdownload` : '',
+    totalBytes: Number.isFinite(downloadInfo.totalBytes) ? downloadInfo.totalBytes : 0,
+    receivedBytes: Number.isFinite(downloadInfo.receivedBytes) ? downloadInfo.receivedBytes : 0,
+    state,
+    startedAt: downloadInfo.startTime || Date.now(),
+  };
+}
+
 const managedDownloadSessions = new WeakSet();
 
 // attachDownloadManager 把同一套下载保护挂到任意 session；defaultSession 与分区会话
@@ -9411,6 +9470,26 @@ ipcMain.handle('set-download-rate-limit', (event, payload = {}) => {
   }
   return { success: true, bytesPerSecond: downloadRateLimit };
 });
+
+ipcMain.handle('get-download-journal', (event, payload = {}) => {
+  const requested = Number.isInteger(payload.limit) && payload.limit > 0 ? payload.limit : 50;
+  const limit = Math.min(requested, downloadJournalModule.DEFAULT_MAX_ENTRIES);
+  return getDownloadJournal().snapshot().slice(0, limit).map((entry) => ({
+    id: entry.id,
+    filename: entry.filename,
+    host: entry.host,
+    totalBytes: entry.totalBytes,
+    receivedBytes: entry.receivedBytes,
+    state: entry.state,
+    startedAt: entry.startedAt,
+    updatedAt: entry.updatedAt,
+    resumable: entry.resumable === true,
+    resumeReason: entry.resumeReason,
+    resumeOffset: entry.resumeOffset,
+  }));
+});
+
+ipcMain.handle('clear-download-journal', () => getDownloadJournal().clear());
 
 // 崩溃横幅上的“强制刷新”：按 tabId 找到对应标签重载（无响应 / 连续崩溃后由用户手动触发）。
 ipcMain.on('reload-tab-by-id', (event, tabId) => {
