@@ -185,3 +185,28 @@ test('公网页面用整数态 IP 打本机同样被拦截（防 PNA 混淆绕�
     assert.equal(r.reason, 'public-to-loopback');
   }
 });
+
+test('过渡前缀内嵌的内网 IPv4 按内网分类', () => {
+  assert.equal(pna.classifyHost('[64:ff9b::a00:1]'), SPACE_PRIVATE);
+  assert.equal(pna.classifyHost('[64:ff9b::c0a8:101]'), SPACE_PRIVATE);
+  assert.equal(pna.classifyHost('[2002:a00:1::]'), SPACE_PRIVATE);
+  assert.equal(pna.classifyHost('[2002:c0a8:101::]'), SPACE_PRIVATE);
+  assert.equal(pna.classifyHost('[2002:a9fe:a9fe::]'), SPACE_LINK_LOCAL);
+  assert.equal(pna.classifyHost('[2002:7f00:1::]'), SPACE_LOOPBACK);
+  assert.equal(pna.classifyHost('[2001:0:0:0:0:0:80ff:fffe]'), SPACE_LOOPBACK);
+});
+
+test('过渡前缀内嵌的公网 IPv4 仍按公网放行', () => {
+  assert.equal(pna.classifyHost('[64:ff9b::808:808]'), SPACE_PUBLIC);
+  assert.equal(pna.classifyHost('[2002:808:808::]'), SPACE_PUBLIC);
+  assert.equal(pna.classifyHost('[2001:0::f7f7:f7f7]'), SPACE_PUBLIC);
+  assert.equal(pna.classifyHost('[2606:4700::1111]'), SPACE_PUBLIC);
+});
+
+test('公网页面经过渡前缀打内网同样被拦截', () => {
+  const r = pna.evaluatePnaRequest({
+    url: 'http://[64:ff9b::a00:1]/admin', resourceType: 'xhr',
+    documentURL: 'https://evil.example/',
+  });
+  assert.equal(r.block, true);
+});
