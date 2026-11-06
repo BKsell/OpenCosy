@@ -41,6 +41,9 @@ const urlClean = require('./urlclean');
 const downloadJournalModule = require('./downloadjournal');
 const downloadReconcileModule = require('./downloadreconcile');
 const permissionGrants = require('./permissiongrants');
+const securityPosture = require('./securityposture');
+const downloadJournalExport = require('./downloadjournalexport');
+const permissionRiskReport = require('./permissionriskreport');
 let downloadJournal = null;
 const popupGuard = require('./popupguard');
 const quarantine = require('./quarantine');
@@ -9532,6 +9535,69 @@ ipcMain.handle('preview-random-ua', (event) => {
 });
 
 // ===== 下载限速 IPC =====
+// ===== 安全态势汇总（安全面板），只读聚合既有台账，不改任何状态 =====
+ipcMain.handle('get-security-posture', (event) => {
+  if (!isMainSender(event)) return { ok: false };
+  const decisions = listPermissionDecisions();
+  const riskyOrigins = new Set();
+  for (const decision of decisions) {
+    if (decision.state !== permissionGrants.STATE.ALLOW) continue;
+    if ((permissionGrants.HIGH_RISK_WEIGHT[decision.permission] || 0) >= 2) riskyOrigins.add(decision.origin);
+  }
+  let criticalEvents = 0;
+  for (const item of listSecurityEvents('', 200)) {
+    if (item.severity === 'critical') criticalEvents += 1;
+  }
+  const cspStats = getCspReportStats();
+  const headerStats = getHeaderGradeStats();
+  loadCertExceptions();
+  const report = securityPosture.scorePosture({
+    httpsOnly: httpsOnlyEnabled,
+    blockRules: (compiledCustomRules.host ? compiledCustomRules.host.size : 0)
+      + (compiledCustomRules.glob ? compiledCustomRules.glob.length : 0)
+      + (compiledCustomRules.path ? compiledCustomRules.path.length : 0),
+    cspReports: Number(cspStats.totalHits) || 0,
+    certExceptions: certExceptions.length,
+    riskyOrigins: riskyOrigins.size,
+    criticalEvents,
+    headerGrades: headerStats.byGrade,
+    expiredGrants: decisions.filter((decision) => decision.state === permissionGrants.STATE.EXPIRED).length,
+  });
+  return {
+    ok: true,
+    report,
+    description: securityPosture.describePosture(report),
+    worst: securityPosture.worstSeverity(report),
+  };
+});
+
+// ===== 下载台账脱敏导出：本地绝对路径一律替换为占位，避免分享时泄露目录结构 =====
+ipcMain.handle('get-download-journal-export', (event, payload = {}) => {
+  if (!isMainSender(event)) return { ok: false };
+  const requested = Number.isInteger(payload.limit) && payload.limit > 0 ? payload.limit : downloadJournalModule.DEFAULT_MAX_ENTRIES;
+  const entries = getDownloadJournal().snapshot().slice(0, requested);
+  const exported = downloadJournalExport.buildJournalExport(entries);
+  return {
+    ok: true,
+    export: exported,
+    description: downloadJournalExport.describeExport(exported),
+    leaked: downloadJournalExport.exportContainsLocalPaths(exported),
+  };
+});
+
+// ===== 站点权限风险报告：按站点聚合授权并给出处置建议 =====
+ipcMain.handle('get-permission-risk-report', (event, payload = {}) => {
+  if (!isMainSender(event)) return { ok: false };
+  const requested = Number.isInteger(payload.limit) && payload.limit > 0 ? payload.limit : 50;
+  const report = permissionRiskReport.buildPermissionReport(listPermissionDecisions(), { limit: requested });
+  return {
+    ok: true,
+    report,
+    description: permissionRiskReport.describePermissionReport(report),
+    attention: permissionRiskReport.needsAttention(report),
+  };
+});
+
 ipcMain.handle('get-download-rate-limit', (event) => {
   if (!isMainSender(event)) return { success: false };
   return { success: true, bytesPerSecond: downloadRateLimit, kbps: Math.round(downloadRateLimit / 1024) };
