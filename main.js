@@ -39,6 +39,8 @@ const downloadFreqLimiter = new downloadRateGuard.DownloadRateLimiter();
 const dloadOpen = require('./dloadopen');
 const urlClean = require('./urlclean');
 const downloadJournalModule = require('./downloadjournal');
+const downloadReconcileModule = require('./downloadreconcile');
+const permissionGrants = require('./permissiongrants');
 let downloadJournal = null;
 const popupGuard = require('./popupguard');
 const quarantine = require('./quarantine');
@@ -3559,6 +3561,7 @@ const REMEMBERED_PAGE_PERMISSIONS = new Set([
 ]);
 const permissionStorePath = path.join(app.getPath('userData'), 'permission-decisions.json');
 const MAX_PERMISSION_DECISIONS = 1000;
+const PERMISSION_DECISION_TTL_MS = permissionGrants.DEFAULT_TTL_MS;
 // key 为 `${origin} ${permission}` -> { decision: 'allow'|'deny', updatedAt }
 const permissionDecisions = new Map();
 let permissionDecisionsLoaded = false;
@@ -3599,6 +3602,16 @@ function loadPermissionDecisions() {
       if (permissionDecisions.size >= MAX_PERMISSION_DECISIONS) break;
       permissionDecisions.set(k, { decision: v.decision, updatedAt: Number(v.updatedAt) || Date.now() });
     }
+    const pruned = permissionGrants.pruneExpired(Object.fromEntries(permissionDecisions), {
+      now: Date.now(),
+      ttlMs: PERMISSION_DECISION_TTL_MS,
+    });
+    if (pruned.removed.length > 0) {
+      for (const key of pruned.removed) permissionDecisions.delete(key);
+      recordSecurityEvent('permission-expired', 'info',
+        `清理 ${pruned.removed.length} 条过期站点权限记忆`, 'permission-decisions');
+      persistPermissionDecisions();
+    }
   } catch {}
 }
 
@@ -3616,8 +3629,18 @@ function persistPermissionDecisions() {
 function getRememberedPermission(origin, permission) {
   loadPermissionDecisions();
   if (!isRememberableOrigin(origin) || !REMEMBERED_PAGE_PERMISSIONS.has(permission)) return null;
-  const v = permissionDecisions.get(permissionStoreKey(origin, permission));
-  return v ? v.decision : null;
+  const key = permissionStoreKey(origin, permission);
+  const v = permissionDecisions.get(key);
+  if (!v) return null;
+  const state = permissionGrants.effectiveDecision(v, Date.now(), PERMISSION_DECISION_TTL_MS);
+  if (state === permissionGrants.STATE.EXPIRED || state === permissionGrants.STATE.UNKNOWN) {
+    permissionDecisions.delete(key);
+    persistPermissionDecisions();
+    recordSecurityEvent('permission-expired', 'info',
+      `站点权限记忆已过期（${permission}），本次回到询问流程`, origin);
+    return null;
+  }
+  return state;
 }
 
 function rememberPermission(origin, permission, decision) {
@@ -3628,6 +3651,16 @@ function rememberPermission(origin, permission, decision) {
   const key = permissionStoreKey(origin, permission);
   if (!permissionDecisions.has(key) && permissionDecisions.size >= MAX_PERMISSION_DECISIONS) return false;
   permissionDecisions.set(key, { decision, updatedAt: Date.now() });
+  const droppedKeys = permissionGrants.enforceOriginCap(Object.fromEntries(permissionDecisions), origin, {
+    now: Date.now(),
+    ttlMs: PERMISSION_DECISION_TTL_MS,
+    maxPerOrigin: permissionGrants.DEFAULT_MAX_PER_ORIGIN,
+  });
+  for (const dropped of droppedKeys) permissionDecisions.delete(dropped);
+  if (droppedKeys.length > 0) {
+    recordSecurityEvent('permission-cap', 'warn',
+      `单个站点授权数超过上限，撤销 ${droppedKeys.length} 条旧授权`, origin);
+  }
   persistPermissionDecisions();
   return true;
 }
@@ -3642,13 +3675,18 @@ function forgetPermission(origin, permission) {
 function listPermissionDecisions() {
   loadPermissionDecisions();
   const out = [];
+  const now = Date.now();
   for (const [k, v] of permissionDecisions) {
     const sp = k.indexOf(' ');
+    const effective = permissionGrants.effectiveDecision(v, now, PERMISSION_DECISION_TTL_MS);
     out.push({
       origin: k.slice(0, sp),
       permission: k.slice(sp + 1),
       decision: v.decision,
       updatedAt: v.updatedAt,
+      state: effective,
+      expired: effective === permissionGrants.STATE.EXPIRED,
+      ageDays: permissionGrants.ageDays(v, now),
     });
   }
   out.sort((a, b) => a.origin.localeCompare(b.origin) || a.permission.localeCompare(b.permission));
@@ -3829,6 +3867,27 @@ function setupPermissionHandlers() {
     const origin = String(payload.origin || '');
     if (!isRememberableOrigin(origin)) return { success: false, reason: 'invalid origin' };
     return { success: true, removed: clearPermissionDecisionsForOrigin(origin) };
+  });
+  ipcMain.handle('audit-permission-decisions', (event) => {
+    if (!isMainSender(event)) return { total: 0 };
+    loadPermissionDecisions();
+    const report = permissionGrants.auditGrants(Object.fromEntries(permissionDecisions), {
+      now: Date.now(),
+      ttlMs: PERMISSION_DECISION_TTL_MS,
+    });
+    return { ...report, summary: permissionGrants.summarizeRisk(report) };
+  });
+  ipcMain.handle('prune-permission-decisions', (event) => {
+    if (!isMainSender(event)) return { success: false };
+    loadPermissionDecisions();
+    const before = permissionDecisions.size;
+    const pruned = permissionGrants.pruneExpired(Object.fromEntries(permissionDecisions), {
+      now: Date.now(),
+      ttlMs: PERMISSION_DECISION_TTL_MS,
+    });
+    for (const key of pruned.removed) permissionDecisions.delete(key);
+    if (pruned.removed.length > 0) persistPermissionDecisions();
+    return { success: true, removed: pruned.removed.length, remaining: permissionDecisions.size, before };
   });
 
   // ===== 安全事件中心（cosy://security）只读 / 清空 IPC，仅主框架可调 =====
@@ -7245,6 +7304,26 @@ function getDownloadJournal() {
     recordSecurityEvent('download-journal', 'warn',
       `下载台账载入时丢弃 ${loaded.rejected.length} 条非法记录`, 'download-journal');
   }
+  const reconciled = downloadJournal.reconcile({
+    exists: (target) => {
+      try { return fsSync.statSync(target).isFile(); } catch { return false; }
+    },
+    sizeOf: (target) => {
+      try {
+        const stat = fsSync.statSync(target);
+        return stat.isFile() ? stat.size : null;
+      } catch { return null; }
+    },
+  });
+  if (!reconciled.ok) {
+    recordSecurityEvent('download-journal', 'warn',
+      `下载台账落盘文件核对结果未能保存: ${downloadJournalModule.describeJournalReject(reconciled.reason)}`,
+      'download-journal');
+  } else if (reconciled.changes.length > 0) {
+    recordSecurityEvent('download-journal', 'info',
+      `下载台账文件核对: ${downloadReconcileModule.summarizeReconcile(reconciled.summary)}`,
+      'download-journal');
+  }
   return downloadJournal;
 }
 
@@ -9486,7 +9565,31 @@ ipcMain.handle('get-download-journal', (event, payload = {}) => {
     resumable: entry.resumable === true,
     resumeReason: entry.resumeReason,
     resumeOffset: entry.resumeOffset,
+    fileCheck: entry.fileCheck || downloadReconcileModule.VERDICT.SKIPPED,
+    fileCheckReason: downloadReconcileModule.describeVerdict(entry.fileCheck || downloadReconcileModule.VERDICT.SKIPPED),
+    fileBytes: Number.isFinite(entry.fileBytes) ? entry.fileBytes : null,
   }));
+});
+
+ipcMain.handle('reconcile-download-journal', (event) => {
+  if (!isMainSender(event)) return { success: false };
+  const result = getDownloadJournal().reconcile({
+    exists: (target) => {
+      try { return fsSync.statSync(target).isFile(); } catch { return false; }
+    },
+    sizeOf: (target) => {
+      try {
+        const stat = fsSync.statSync(target);
+        return stat.isFile() ? stat.size : null;
+      } catch { return null; }
+    },
+  });
+  return {
+    success: result.ok,
+    summary: result.summary,
+    description: downloadReconcileModule.summarizeReconcile(result.summary),
+    changes: result.changes.length,
+  };
 });
 
 ipcMain.handle('clear-download-journal', () => getDownloadJournal().clear());
