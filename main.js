@@ -43,6 +43,17 @@ const wwwAuthenticateGuard = require('./wwwauthenticateguard');
 const timingAllowOriginGuard = require('./timingalloworiginpolicyguard');
 const headerInjectionGuard = require('./headerinjectionguard');
 const hstsGuard = require('./hstsguard');
+const priorityGuard = require('./priorityguard');
+const linkResponseGuard = require('./linkresponseguard');
+const acceptPatchGuard = require('./acceptpatchguard');
+const speculationRulesGuard = require('./speculationrulesguard');
+const proxyStatusGuard = require('./proxystatusguard');
+const acceptCharsetGuard = require('./acceptcharsetguard');
+const reportingGuard = require('./reporttoguard');
+const upgradeGuard = require('./upgradeguard');
+const expectCtGuard = require('./expectctguard');
+const publicKeyPinsGuard = require('./publickeypinsguard');
+const originTrialGuard = require('./origintrialguard');
 const documentPolicyGuard = require('./documentpolicyguard');
 const contentDigestGuard = require('./contentdigestguard');
 const cacheStatusGuard = require('./cachestatusguard');
@@ -2094,6 +2105,66 @@ function hardenResponseHeaders(rawHeaders, details, options) {
         `credential-request:${credentialRequestResult.reason}`, fpGuard.hostOf(details.url));
     }
     if (grade) {
+      const priorityResult = priorityGuard.applyPriorityGuard(headers);
+      if (priorityResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `priority:${priorityResult}.reason`, fpGuard.hostOf(details.url));
+      }
+      const linkResponseResult = linkResponseGuard.applyLinkResponseGuard(headers, details.url);
+      if (linkResponseResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `link:${linkResponseResult}.reason`, fpGuard.hostOf(details.url));
+      }
+      const acceptPatchResult = acceptPatchGuard.applyAcceptPatchGuard(headers);
+      if (acceptPatchResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `accept-patch:${acceptPatchResult}.reason`, fpGuard.hostOf(details.url));
+      }
+      const speculationRulesResult = speculationRulesGuard.applySpeculationRulesGuard(headers, details.url);
+      if (speculationRulesResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `speculation-rules:${speculationRulesResult}.reason`, fpGuard.hostOf(details.url));
+      }
+      const proxyStatusResult = proxyStatusGuard.applyProxyStatusGuard(headers);
+      if (proxyStatusResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `proxy-status:${proxyStatusResult}.reason`, fpGuard.hostOf(details.url));
+      }
+      const acceptCharsetResult = acceptCharsetGuard.applyAcceptCharsetGuard(headers);
+      if (acceptCharsetResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `accept-charset:${acceptCharsetResult}.reason`, fpGuard.hostOf(details.url));
+      }
+      const reportingEndpointsResult = reportingGuard.applyReportingEndpointsGuard(headers);
+      if (reportingEndpointsResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `reporting-endpoints:${reportingEndpointsResult}.reason`, fpGuard.hostOf(details.url));
+      }
+      const reportToResult = reportingGuard.applyReportToGuard(headers);
+      if (reportToResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `report-to:${reportToResult}.reason`, fpGuard.hostOf(details.url));
+      }
+      const upgradeResult = upgradeGuard.applyUpgradeHeaderGuard(headers);
+      if (upgradeResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `upgrade:${upgradeResult}.reason`, fpGuard.hostOf(details.url));
+      }
+      const expectCtResult = expectCtGuard.applyExpectCtGuard(headers);
+      if (expectCtResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `expect-ct:${expectCtResult}.reason`, fpGuard.hostOf(details.url));
+      }
+      const publicKeyPinsResult = publicKeyPinsGuard.applyPublicKeyPinsGuard(headers);
+      if (publicKeyPinsResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `public-key-pins:${publicKeyPinsResult}.reason`, fpGuard.hostOf(details.url));
+      }
+      const originTrialResult = originTrialGuard.applyOriginTrialGuard(headers, details.url);
+      if (originTrialResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `origin-trial:${originTrialResult}.reason`, fpGuard.hostOf(details.url));
+      }
       const acceptChLifetimeResult = acceptChLifetimeGuard.applyAcceptChLifetimeGuard(headers);
       if (acceptChLifetimeResult.changed) {
         recordSecurityEvent('mixed-content-blocked', 'warn',
