@@ -35,6 +35,13 @@ const serverBannerGuard = require('./serverbannerstripguard');
 const legacyPinGuard = require('./legacypinninguard');
 const contentEncodingGuard = require('./contentencodingguard');
 const hstsGuard = require('./hstsguard');
+const permissionsPolicyGuard = require('./permissionspolicyguard');
+const frameOptionsGuard = require('./frameoptionsguard');
+const cacheAuthGuard = require('./cacheauthguard');
+const contentDispositionGuard = require('./contentdispositionguard');
+const xssProtectionGuard = require('./xssprotectionguard');
+const clearSiteDataGuard = require('./clearsitedataguard');
+const serviceWorkerAllowedGuard = require('./serviceworkerallowedguard');
 const hopByHopGuard = require('./hopbyhopguard');
 const requestPipeline = require('./requestpipeline');
 const downloadAdmission = require('./downloadadmission');
@@ -1911,6 +1918,41 @@ function hardenResponseHeaders(rawHeaders, details, options) {
     if (bannerResult.changed && grade) {
       recordSecurityEvent('fingerprint-blocked', 'warn',
         `banner:${bannerResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const permissionsPolicyResult = permissionsPolicyGuard.applyPermissionsPolicyGuard(headers);
+    if (permissionsPolicyResult.changed && grade) {
+      recordSecurityEvent('origin-boundary-blocked', 'warn',
+        `permissions-policy:${permissionsPolicyResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const frameOptionsResult = frameOptionsGuard.applyFrameOptionsGuard(headers);
+    if (frameOptionsResult.changed && grade) {
+      recordSecurityEvent('origin-boundary-blocked', 'warn',
+        `x-frame-options:${frameOptionsResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const contentDispositionResult = contentDispositionGuard.applyContentDispositionGuard(headers);
+    if (contentDispositionResult.changed && grade) {
+      recordSecurityEvent('download-blocked', 'warn',
+        `content-disposition:${contentDispositionResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const cacheAuthResult = cacheAuthGuard.applyAuthCacheGuard(headers);
+    if (cacheAuthResult.changed && grade) {
+      recordSecurityEvent('auth-blocked', 'warn',
+        `cache-auth:${cacheAuthResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const xssProtectionResult = xssProtectionGuard.applyXSSProtectionGuard(headers);
+    if (xssProtectionResult.changed && grade) {
+      recordSecurityEvent('protocol-blocked', 'warn',
+        `x-xss-protection:${xssProtectionResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const clearSiteDataResult = clearSiteDataGuard.applyClearSiteDataGuard(headers);
+    if (clearSiteDataResult.changed && grade) {
+      recordSecurityEvent('storage-cross-access', 'warn',
+        `clear-site-data:${clearSiteDataResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const serviceWorkerAllowedResult = serviceWorkerAllowedGuard.applyServiceWorkerAllowedGuard(headers);
+    if (serviceWorkerAllowedResult.changed && grade) {
+      recordSecurityEvent('origin-boundary-blocked', 'warn',
+        `service-worker-allowed:${serviceWorkerAllowedResult.reason}`, fpGuard.hostOf(details.url));
     }
     if (grade) {
       const hstsResult = hstsGuard.applyHstsGuard(headers);
