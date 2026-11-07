@@ -34,6 +34,14 @@ const contentLocationGuard = require('./contentlocationguard');
 const serverBannerGuard = require('./serverbannerstripguard');
 const legacyPinGuard = require('./legacypinninguard');
 const contentEncodingGuard = require('./contentencodingguard');
+const referrerPolicyGuard = require('./referrerpolicyguard');
+const crossOriginPolicyGuard = require('./crossoriginpolicyguard');
+const setCookiePrefixGuard = require('./setcookieprefixguard');
+const retryAfterGuard = require('./retryafterguard');
+const xContentTypeOptionsGuard = require('./xcontenttypeoptionsguard');
+const wwwAuthenticateGuard = require('./wwwauthenticateguard');
+const timingAllowOriginGuard = require('./timingalloworiginpolicyguard');
+const headerInjectionGuard = require('./headerinjectionguard');
 const hstsGuard = require('./hstsguard');
 const permissionsPolicyGuard = require('./permissionspolicyguard');
 const frameOptionsGuard = require('./frameoptionsguard');
@@ -1953,6 +1961,51 @@ function hardenResponseHeaders(rawHeaders, details, options) {
     if (serviceWorkerAllowedResult.changed && grade) {
       recordSecurityEvent('origin-boundary-blocked', 'warn',
         `service-worker-allowed:${serviceWorkerAllowedResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const referrerPolicyResult = referrerPolicyGuard.applyReferrerPolicyGuard(headers);
+    if (referrerPolicyResult.changed && grade) {
+      recordSecurityEvent('origin-boundary-blocked', 'warn',
+        `referrer-policy:${referrerPolicyResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const crossOriginPolicyResult = crossOriginPolicyGuard.applyCrossOriginPolicyGuard(headers);
+    if (crossOriginPolicyResult.changed && grade) {
+      recordSecurityEvent('origin-boundary-blocked', 'warn',
+        `cross-origin-policy:${(crossOriginPolicyResult.findings[0] || {}).reason || 'ok'}`, fpGuard.hostOf(details.url));
+    }
+    const setCookiePrefixResult = setCookiePrefixGuard.applySetCookiePrefixGuard(headers);
+    if (setCookiePrefixResult.changed && grade) {
+      recordSecurityEvent('storage-cross-access', 'warn',
+        `set-cookie-prefix:${setCookiePrefixResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const retryAfterResult = retryAfterGuard.applyRetryAfterGuard(headers);
+    if (retryAfterResult.changed && grade) {
+      recordSecurityEvent('protocol-blocked', 'warn',
+        `retry-after:${retryAfterResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const xContentTypeOptionsResult = xContentTypeOptionsGuard.applyXContentTypeOptionsGuard(headers);
+    if (xContentTypeOptionsResult.changed && grade) {
+      recordSecurityEvent('protocol-blocked', 'warn',
+        `x-content-type-options:${xContentTypeOptionsResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const wwwAuthenticateResult = wwwAuthenticateGuard.applyWwwAuthenticateGuard(headers, 'WWW-Authenticate');
+    if (wwwAuthenticateResult.changed && grade) {
+      recordSecurityEvent('auth-blocked', 'warn',
+        `www-authenticate:${wwwAuthenticateResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const proxyAuthenticateResult = wwwAuthenticateGuard.applyWwwAuthenticateGuard(headers, 'Proxy-Authenticate');
+    if (proxyAuthenticateResult.changed && grade) {
+      recordSecurityEvent('auth-blocked', 'warn',
+        `proxy-authenticate:${proxyAuthenticateResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const timingAllowOriginResult = timingAllowOriginGuard.applyTimingAllowOriginGuard(headers);
+    if (timingAllowOriginResult.changed && grade) {
+      recordSecurityEvent('origin-boundary-blocked', 'warn',
+        `timing-allow-origin:${timingAllowOriginResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const headerInjectionResult = headerInjectionGuard.applyHeaderInjectionGuard(headers);
+    if (headerInjectionResult.changed && grade) {
+      recordSecurityEvent('protocol-blocked', 'warn',
+        `header-injection:${headerInjectionResult.reason}`, fpGuard.hostOf(details.url));
     }
     if (grade) {
       const hstsResult = hstsGuard.applyHstsGuard(headers);
