@@ -19,6 +19,10 @@ const corsGuard = require('./corsmisconfigguard');
 const authChallengeGuard = require('./httpauthchallengeguard');
 const mimeExecGuard = require('./mimetypeexecguard');
 const cacheVaryGuard = require('./cachevaryguard');
+const cookieJarGuard = require('./cookiejarhardening');
+const downloadNameGuard = require('./downloadnameextguard');
+const refreshGuard = require('./httpequivrefreshguard');
+const serverTimingGuard = require('./servertimingguard');
 const requestPipeline = require('./requestpipeline');
 const downloadAdmission = require('./downloadadmission');
 const downloadNotify = require('./downloadnotify');
@@ -1813,6 +1817,26 @@ function hardenResponseHeaders(rawHeaders, details, options) {
     if (cacheResult.changed && grade) {
       recordSecurityEvent('cookie-blocked', 'warn',
         `cache:${cacheResult.verdict.reason}`, fpGuard.hostOf(details.url));
+    }
+    const jarResult = cookieJarGuard.applyCookieJarHardening(headers);
+    if (jarResult.changed && grade) {
+      recordSecurityEvent('cookie-blocked', 'warn',
+        `jar:${jarResult.verdict.reason}`, fpGuard.hostOf(details.url));
+    }
+    const nameResult = downloadNameGuard.applyDownloadNameGuard(headers);
+    if (nameResult.changed && grade) {
+      recordSecurityEvent('download-blocked', 'warn',
+        `name:${nameResult.verdict.reason}`, fpGuard.hostOf(details.url));
+    }
+    const refreshResult = refreshGuard.applyRefreshHeaderGuard(headers, details);
+    if (refreshResult.changed && grade) {
+      recordSecurityEvent('origin-boundary-blocked', 'warn',
+        `refresh:${refreshResult.findings[0].reason}`, fpGuard.hostOf(details.url));
+    }
+    const timingResult = serverTimingGuard.applyServerTimingGuard(headers, details);
+    if (timingResult.changed && grade) {
+      recordSecurityEvent('origin-boundary-blocked', 'warn',
+        `timing:${timingResult.findings[0].reason}`, fpGuard.hostOf(details.url));
     }
   } catch {}
   const setIfMissing = (name, value) => {
