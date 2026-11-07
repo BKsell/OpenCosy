@@ -43,6 +43,17 @@ const wwwAuthenticateGuard = require('./wwwauthenticateguard');
 const timingAllowOriginGuard = require('./timingalloworiginpolicyguard');
 const headerInjectionGuard = require('./headerinjectionguard');
 const hstsGuard = require('./hstsguard');
+const originAgentClusterGuard = require('./originagentcluster');
+const ageClockGuard = require('./ageclockguard');
+const warningHeaderGuard = require('./warningheaderguard');
+const contentLanguageGuard = require('./contentlanguageguard');
+const lastModifiedGuard = require('./lastmodifiedguard');
+const dnsPrefetchGuard = require('./xdnsprefetchguard');
+const headerBudgetGuard = require('./headerbudgetguard');
+const acceptChGuard = require('./acceptchpolicyguard');
+const keepAliveGuard = require('./keepaliveguard');
+const crossDomainPolicyGuard = require('./xpermittedcrossdomainguard');
+const transferEncodingGuard = require('./contenttransferencodingguard');
 const permissionsPolicyGuard = require('./permissionspolicyguard');
 const frameOptionsGuard = require('./frameoptionsguard');
 const cacheAuthGuard = require('./cacheauthguard');
@@ -2008,6 +2019,61 @@ function hardenResponseHeaders(rawHeaders, details, options) {
         `header-injection:${headerInjectionResult.reason}`, fpGuard.hostOf(details.url));
     }
     if (grade) {
+      const originAgentClusterResult = originAgentClusterGuard.applyOriginAgentClusterGuard(headers);
+      if (originAgentClusterResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `origin-agent-cluster:${originAgentClusterResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const ageClockResult = ageClockGuard.applyAgeClockGuard(headers);
+      if (ageClockResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `age:${ageClockResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const warningHeaderResult = warningHeaderGuard.applyWarningHeaderGuard(headers);
+      if (warningHeaderResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `warning:${warningHeaderResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const contentLanguageResult = contentLanguageGuard.applyContentLanguageGuard(headers);
+      if (contentLanguageResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `content-language:${contentLanguageResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const lastModifiedResult = lastModifiedGuard.applyLastModifiedGuard(headers);
+      if (lastModifiedResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `last-modified:${lastModifiedResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const dnsPrefetchResult = dnsPrefetchGuard.applyDnsPrefetchGuard(headers);
+      if (dnsPrefetchResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `x-dns-prefetch-control:${dnsPrefetchResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const headerBudgetResult = headerBudgetGuard.applyHeaderBudgetGuard(headers);
+      if (headerBudgetResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `header-budget:${headerBudgetResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const acceptChResult = acceptChGuard.applyAcceptChGuard(headers);
+      if (acceptChResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `accept-ch:${acceptChResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const keepAliveResult = keepAliveGuard.applyKeepAliveGuard(headers);
+      if (keepAliveResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `keep-alive:${keepAliveResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const crossDomainPolicyResult = crossDomainPolicyGuard.applyCrossDomainPolicyGuard(headers);
+      if (crossDomainPolicyResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `x-permitted-cross-domain-policies:${crossDomainPolicyResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const transferEncodingResult = transferEncodingGuard.applyTransferEncodingGuard(headers);
+      if (transferEncodingResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `content-transfer-encoding:${transferEncodingResult.reason}`, fpGuard.hostOf(details.url));
+      }
       const hstsResult = hstsGuard.applyHstsGuard(headers);
       if (hstsResult.changed) {
         recordSecurityEvent('mixed-content-blocked', 'warn',
