@@ -268,6 +268,15 @@ const securityBoundaryHub = require('./securityboundaryhub');
 const ledgerStore = require('./ledgerstore');
 const securityHeadersGuard = require('./securityheadersguard');
 const downloadSourceTrustGuard = require('./downloadsourcetrustguard');
+const setCookieAttrGuard = require('./setcookieattrguard');
+const certPinningGuard = require('./certpinningguard');
+const dohResolverGuard = require('./dohresolverguard');
+const requestHeaderLeakGuard = require('./requestheaderleakguard');
+const urlCredentialStripGuard = require('./urlcredentialstripguard');
+const sameSiteEnforcementGuard = require('./samesiteenforcementguard');
+const sslStripGuard = require('./sslstripguard');
+const mixedContentReportGuard = require('./mixedcontentreportguard');
+const crashReportIdGuard = require('./crashreportidguard');
 const navigationTimeoutGuard = require('./navigationtimeoutguard');
 const { pathToFileURL } = require('url');
 
