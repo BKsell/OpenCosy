@@ -28,7 +28,6 @@ const charsetGuard = require('./charsetguard');
 const proxyAuthGuard = require('./proxyauthguard');
 const altSvcGuard = require('./altsvcguard');
 const nelReportGuard = require('./nelreportguard');
-const linkPreloadGuard = require('./linkpreloadguard');
 const digestGuard = require('./digestguard');
 const contentLocationGuard = require('./contentlocationguard');
 const serverBannerGuard = require('./serverbannerstripguard');
@@ -43,6 +42,17 @@ const wwwAuthenticateGuard = require('./wwwauthenticateguard');
 const timingAllowOriginGuard = require('./timingalloworiginpolicyguard');
 const headerInjectionGuard = require('./headerinjectionguard');
 const hstsGuard = require('./hstsguard');
+const acceptChLifetimeGuard = require('./acceptchlifetimeguard');
+const xuaCompatibleGuard = require('./xuacompatibleguard');
+const acceptRangesGuard = require('./acceptrangesguard');
+const contentBaseGuard = require('./contentbaseguard');
+const contentMd5Guard = require('./contentmd5guard');
+const pragmaCacheGuard = require('./pragmacacheguard');
+const xRobotsGuard = require('./xrobotsguard');
+const surrogateControlGuard = require('./surrogatecontrolguard');
+const setCookie2Guard = require('./setcookie2guard');
+const xWebKitCspGuard = require('./xwebkitcspguard');
+const authenticationInfoGuard = require('./authenticationinfoguard');
 const originAgentClusterGuard = require('./originagentcluster');
 const ageClockGuard = require('./ageclockguard');
 const warningHeaderGuard = require('./warningheaderguard');
@@ -2019,6 +2029,61 @@ function hardenResponseHeaders(rawHeaders, details, options) {
         `header-injection:${headerInjectionResult.reason}`, fpGuard.hostOf(details.url));
     }
     if (grade) {
+      const acceptChLifetimeResult = acceptChLifetimeGuard.applyAcceptChLifetimeGuard(headers);
+      if (acceptChLifetimeResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `accept-ch-lifetime:${acceptChLifetimeResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const xuaCompatibleResult = xuaCompatibleGuard.applyXuaCompatibleGuard(headers);
+      if (xuaCompatibleResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `x-ua-compatible:${xuaCompatibleResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const acceptRangesResult = acceptRangesGuard.applyAcceptRangesGuard(headers);
+      if (acceptRangesResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `accept-ranges:${acceptRangesResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const contentBaseResult = contentBaseGuard.applyContentBaseGuard(headers);
+      if (contentBaseResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `content-base:${contentBaseResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const contentMd5Result = contentMd5Guard.applyContentMd5Guard(headers);
+      if (contentMd5Result.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `content-md5:${contentMd5Result.reason}`, fpGuard.hostOf(details.url));
+      }
+      const pragmaCacheResult = pragmaCacheGuard.applyPragmaCacheGuard(headers);
+      if (pragmaCacheResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `pragma:${pragmaCacheResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const xRobotsResult = xRobotsGuard.applyXRobotsGuard(headers);
+      if (xRobotsResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `x-robots-tag:${xRobotsResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const surrogateControlResult = surrogateControlGuard.applySurrogateControlGuard(headers);
+      if (surrogateControlResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `surrogate-control:${surrogateControlResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const setCookie2Result = setCookie2Guard.applySetCookie2Guard(headers);
+      if (setCookie2Result.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `set-cookie2:${setCookie2Result.reason}`, fpGuard.hostOf(details.url));
+      }
+      const xWebKitCspResult = xWebKitCspGuard.applyXWebKitCspGuard(headers);
+      if (xWebKitCspResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `x-webkit-csp:${xWebKitCspResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const authenticationInfoResult = authenticationInfoGuard.applyAuthenticationInfoGuard(headers);
+      if (authenticationInfoResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `authentication-info:${authenticationInfoResult.reason}`, fpGuard.hostOf(details.url));
+      }
       const originAgentClusterResult = originAgentClusterGuard.applyOriginAgentClusterGuard(headers);
       if (originAgentClusterResult.changed) {
         recordSecurityEvent('mixed-content-blocked', 'warn',
