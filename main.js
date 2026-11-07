@@ -266,6 +266,9 @@ const bookmarkGuard = require('./bookmarkguard');
 const restoreGuard = require('./restoreguard');
 const securityBoundaryHub = require('./securityboundaryhub');
 const ledgerStore = require('./ledgerstore');
+const securityHeadersGuard = require('./securityheadersguard');
+const downloadSourceTrustGuard = require('./downloadsourcetrustguard');
+const navigationTimeoutGuard = require('./navigationtimeoutguard');
 const { pathToFileURL } = require('url');
 
 // 危险命令行开关 / ELECTRON_EXTRA_LAUNCH_ARGS 注入必须在 ready 之前就拦下：
@@ -2518,6 +2521,12 @@ function hardenResponseHeaders(rawHeaders, details, options) {
       if (acceptChLifetimeResult.changed) {
         recordSecurityEvent('mixed-content-blocked', 'warn',
           `accept-ch-lifetime:${acceptChLifetimeResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const securityHeadersAudit = securityHeadersGuard.auditHeaderBatch([{ url: details.url, headers }]);
+      if (securityHeadersAudit.weak > 0) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `security-headers:${securityHeadersGuard.describeFindings(securityHeadersAudit.findings)}`,
+          fpGuard.hostOf(details.url));
       }
       const xuaCompatibleResult = xuaCompatibleGuard.applyXuaCompatibleGuard(headers);
       if (xuaCompatibleResult.changed) {
@@ -7954,6 +7963,13 @@ function handleDownloadEvent(event, item, webContents) {
     try { mimeType = typeof item.getMimeType === 'function' ? item.getMimeType() : ''; } catch { mimeType = ''; }
 
     const urlDecision = downloadHostGuard.evaluateDownloadUrl(url);
+    const sourceTrust = downloadSourceTrustGuard.applyDownloadSourceTrustGuard({ url });
+    if (!sourceTrust.allowed) {
+      recordSecurityEvent('download-url', 'warn',
+        `下载来源可信度: ${downloadSourceTrustGuard.describeFindings([{ reason: sourceTrust.reason }])}`,
+        originOfContents(webContents));
+    }
+    const timeoutPlan = navigationTimeoutGuard.applyNavigationTimeoutGuard({ timeout: 30000, retries: 0 });
     if (urlDecision.action === downloadHostGuard.ACTION.BLOCK) {
       try { item.cancel(); } catch {}
       recordSecurityEvent('download-url', 'critical',
