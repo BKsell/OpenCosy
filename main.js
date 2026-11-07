@@ -27,6 +27,14 @@ const contentRangeGuard = require('./contentrangeguard');
 const charsetGuard = require('./charsetguard');
 const proxyAuthGuard = require('./proxyauthguard');
 const altSvcGuard = require('./altsvcguard');
+const nelReportGuard = require('./nelreportguard');
+const linkPreloadGuard = require('./linkpreloadguard');
+const digestGuard = require('./digestguard');
+const contentLocationGuard = require('./contentlocationguard');
+const serverBannerGuard = require('./serverbannerstripguard');
+const legacyPinGuard = require('./legacypinninguard');
+const contentEncodingGuard = require('./contentencodingguard');
+const hstsGuard = require('./hstsguard');
 const hopByHopGuard = require('./hopbyhopguard');
 const requestPipeline = require('./requestpipeline');
 const downloadAdmission = require('./downloadadmission');
@@ -1867,6 +1875,49 @@ function hardenResponseHeaders(rawHeaders, details, options) {
     if (altSvcResult.changed && grade) {
       recordSecurityEvent('origin-boundary-blocked', 'warn',
         `alt-svc:${altSvcResult.reason}`, fpGuard.hostOf(details.url));
+    }
+
+    const nelResult = nelReportGuard.applyReportingGuard(headers, details);
+    if (nelResult.changed && grade) {
+      recordSecurityEvent('origin-boundary-blocked', 'warn',
+        `reporting:${nelResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const linkResult = linkPreloadGuard.applyLinkPreloadGuard(headers, details);
+    if (linkResult.changed && grade) {
+      recordSecurityEvent('origin-boundary-blocked', 'warn',
+        `link:${linkResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const contentLocationResult = contentLocationGuard.applyContentLocationGuard(headers, details);
+    if (contentLocationResult.changed && grade) {
+      recordSecurityEvent('origin-boundary-blocked', 'warn',
+        `content-location:${contentLocationResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const digestResult = digestGuard.applyDigestGuard(headers);
+    if (digestResult.changed && grade) {
+      recordSecurityEvent('protocol-blocked', 'warn',
+        `digest:${digestResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const encodingResult = contentEncodingGuard.applyContentEncodingGuard(headers);
+    if (encodingResult.changed && grade) {
+      recordSecurityEvent('protocol-blocked', 'warn',
+        `content-encoding:${encodingResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const legacyPinResult = legacyPinGuard.applyLegacyPinninguard(headers);
+    if (legacyPinResult.changed && grade) {
+      recordSecurityEvent('protocol-blocked', 'warn',
+        `legacy-pin:${legacyPinResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const bannerResult = serverBannerGuard.applyServerBannerStripGuard(headers);
+    if (bannerResult.changed && grade) {
+      recordSecurityEvent('fingerprint-blocked', 'warn',
+        `banner:${bannerResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    if (grade) {
+      const hstsResult = hstsGuard.applyHstsGuard(headers);
+      if (hstsResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `hsts:${hstsResult.reason}`, fpGuard.hostOf(details.url));
+      }
     }
   } catch {}
   const setIfMissing = (name, value) => {
