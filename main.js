@@ -43,6 +43,15 @@ const wwwAuthenticateGuard = require('./wwwauthenticateguard');
 const timingAllowOriginGuard = require('./timingalloworiginpolicyguard');
 const headerInjectionGuard = require('./headerinjectionguard');
 const hstsGuard = require('./hstsguard');
+const documentPolicyGuard = require('./documentpolicyguard');
+const contentDigestGuard = require('./contentdigestguard');
+const cacheStatusGuard = require('./cachestatusguard');
+const etagGuard = require('./etagguard');
+const trailerFieldGuard = require('./trailerfieldguard');
+const secWebSocketGuard = require('./wsacceptguard');
+const xDownloadOptionsGuard = require('./xdownloadoptionsguard');
+const fileSystemAccessGuard = require('./filesystemaccessguard');
+const credentialRequestGuard = require('./credentialrequestguard');
 const acceptChLifetimeGuard = require('./acceptchlifetimeguard');
 const xuaCompatibleGuard = require('./xuacompatibleguard');
 const acceptRangesGuard = require('./acceptrangesguard');
@@ -2028,6 +2037,61 @@ function hardenResponseHeaders(rawHeaders, details, options) {
     if (headerInjectionResult.changed && grade) {
       recordSecurityEvent('protocol-blocked', 'warn',
         `header-injection:${headerInjectionResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const documentPolicyResult = documentPolicyGuard.applyDocumentPolicyGuard(headers);
+    if (documentPolicyResult.changed && grade) {
+      recordSecurityEvent('mixed-content-blocked', 'warn',
+        `document-policy:${documentPolicyResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const contentDigestResult = contentDigestGuard.applyContentDigestGuard(headers);
+    if (contentDigestResult.changed && grade) {
+      recordSecurityEvent('mixed-content-blocked', 'warn',
+        `content-digest:${contentDigestResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const reprDigestResult = contentDigestGuard.applyReprDigestGuard(headers);
+    if (reprDigestResult.changed && grade) {
+      recordSecurityEvent('mixed-content-blocked', 'warn',
+        `repr-digest:${reprDigestResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const cacheStatusResult = cacheStatusGuard.applyCacheStatusGuard(headers);
+    if (cacheStatusResult.changed && grade) {
+      recordSecurityEvent('mixed-content-blocked', 'warn',
+        `cache-status:${cacheStatusResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const etagResult = etagGuard.applyETagGuard(headers);
+    if (etagResult.changed && grade) {
+      recordSecurityEvent('mixed-content-blocked', 'warn',
+        `etag:${etagResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const trailerFieldResult = trailerFieldGuard.applyTrailerFieldGuard(headers);
+    if (trailerFieldResult.changed && grade) {
+      recordSecurityEvent('mixed-content-blocked', 'warn',
+        `trailer:${trailerFieldResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const secWebSocketAcceptResult = secWebSocketGuard.applySecWebSocketAcceptGuard(headers);
+    if (secWebSocketAcceptResult.changed && grade) {
+      recordSecurityEvent('mixed-content-blocked', 'warn',
+        `websocket-accept:${secWebSocketAcceptResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const secWebSocketProtocolResult = secWebSocketGuard.applySecWebSocketProtocolGuard(headers);
+    if (secWebSocketProtocolResult.changed && grade) {
+      recordSecurityEvent('mixed-content-blocked', 'warn',
+        `websocket-protocol:${secWebSocketProtocolResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const xDownloadOptionsResult = xDownloadOptionsGuard.applyXDownloadOptionsGuard(headers);
+    if (xDownloadOptionsResult.changed && grade) {
+      recordSecurityEvent('mixed-content-blocked', 'warn',
+        `x-download-options:${xDownloadOptionsResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const fileSystemAccessResult = fileSystemAccessGuard.inspectFileSystemAccess(details.url);
+    if (!fileSystemAccessResult.allowed && grade) {
+      recordSecurityEvent('mixed-content-blocked', 'warn',
+        `file-system-access:${fileSystemAccessResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const credentialRequestResult = credentialRequestGuard.inspectCredentialRequest(details.url);
+    if (!credentialRequestResult.allowed && grade) {
+      recordSecurityEvent('mixed-content-blocked', 'warn',
+        `credential-request:${credentialRequestResult.reason}`, fpGuard.hostOf(details.url));
     }
     if (grade) {
       const acceptChLifetimeResult = acceptChLifetimeGuard.applyAcceptChLifetimeGuard(headers);
