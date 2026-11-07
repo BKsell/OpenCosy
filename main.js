@@ -28,6 +28,7 @@ const charsetGuard = require('./charsetguard');
 const proxyAuthGuard = require('./proxyauthguard');
 const altSvcGuard = require('./altsvcguard');
 const nelReportGuard = require('./nelreportguard');
+const linkPreloadGuard = require('./linkpreloadguard');
 const digestGuard = require('./digestguard');
 const contentLocationGuard = require('./contentlocationguard');
 const serverBannerGuard = require('./serverbannerstripguard');
