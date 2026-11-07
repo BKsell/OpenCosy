@@ -69,6 +69,11 @@ const xfwdForGuard = require('./xfwdforguard');
 const featurePolicyGuard = require('./featurepolicyguard');
 const criticalChGuard = require('./criticalchguard');
 const wantDigestGuard = require('./wantdigestguard');
+const corpGuard = require('./corpguard');
+const xfwdPortGuard = require('./xfwdportguard');
+const taoOriginGuard = require('./taoguard');
+const proxyAuthenticateGuard = require('./proxyauthenticateguard');
+const xRequestedWithGuard = require('./xrequestedwithguard');
 const xRobotsGuard = require('./xrobotsguard');
 const coepGuard = require('./coepguard');
 const cspReportOnlyGuard = require('./cspreportonlyguard');
@@ -2464,6 +2469,31 @@ function hardenResponseHeaders(rawHeaders, details, options) {
       if (wantDigestGuardResult.changed) {
         recordSecurityEvent('mixed-content-blocked', 'warn',
           `wantdigest:${wantDigestGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const corpGuardResult = corpGuard.applyCorpGuard(headers);
+      if (corpGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `corp:${corpGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const xfwdPortGuardResult = xfwdPortGuard.applyXForwardedPortGuard(headers);
+      if (xfwdPortGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `xforwardedport:${xfwdPortGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const taoOriginGuardResult = taoOriginGuard.applyTimingAllowOriginGuard(headers);
+      if (taoOriginGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `timingalloworigin:${taoOriginGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const proxyAuthenticateGuardResult = proxyAuthenticateGuard.applyProxyAuthenticateGuard(headers);
+      if (proxyAuthenticateGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `proxyauthenticate:${proxyAuthenticateGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const xRequestedWithGuardResult = xRequestedWithGuard.applyXRequestedWithGuard(headers);
+      if (xRequestedWithGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `xrequestedwith:${xRequestedWithGuardResult.reason}`, fpGuard.hostOf(details.url));
       }
       const acceptChLifetimeResult = acceptChLifetimeGuard.applyAcceptChLifetimeGuard(headers);
       if (acceptChLifetimeResult.changed) {
