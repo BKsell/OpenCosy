@@ -69,6 +69,8 @@ const xfwdForGuard = require('./xfwdforguard');
 const featurePolicyGuard = require('./featurepolicyguard');
 const criticalChGuard = require('./criticalchguard');
 const wantDigestGuard = require('./wantdigestguard');
+const xMethodOverrideGuard = require('./xhttpmethodoverrideguard');
+const xOriginalUrlGuard = require('./xoriginalurlguard');
 const corpGuard = require('./corpguard');
 const xfwdPortGuard = require('./xfwdportguard');
 const taoOriginGuard = require('./taoguard');
@@ -2494,6 +2496,16 @@ function hardenResponseHeaders(rawHeaders, details, options) {
       if (xRequestedWithGuardResult.changed) {
         recordSecurityEvent('mixed-content-blocked', 'warn',
           `xrequestedwith:${xRequestedWithGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const xMethodOverrideGuardResult = xMethodOverrideGuard.applyXHttpMethodOverrideGuard(headers);
+      if (xMethodOverrideGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `xhttpmethodoverride:${xMethodOverrideGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const xOriginalUrlGuardResult = xOriginalUrlGuard.applyXOriginalUrlGuard(headers);
+      if (xOriginalUrlGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `xoriginalurl:${xOriginalUrlGuardResult.reason}`, fpGuard.hostOf(details.url));
       }
       const acceptChLifetimeResult = acceptChLifetimeGuard.applyAcceptChLifetimeGuard(headers);
       if (acceptChLifetimeResult.changed) {
