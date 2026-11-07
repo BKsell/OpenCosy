@@ -264,6 +264,7 @@ const storageAccessGuard = require('./storageaccessguard');
 const historyGuard = require('./historyguard');
 const bookmarkGuard = require('./bookmarkguard');
 const restoreGuard = require('./restoreguard');
+const securityBoundaryHub = require('./securityboundaryhub');
 const ledgerStore = require('./ledgerstore');
 const { pathToFileURL } = require('url');
 
@@ -2506,6 +2507,12 @@ function hardenResponseHeaders(rawHeaders, details, options) {
       if (xOriginalUrlGuardResult.changed) {
         recordSecurityEvent('mixed-content-blocked', 'warn',
           `xoriginalurl:${xOriginalUrlGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const responseSurfaceAudit = securityBoundaryHub.inspectResponseHeaders(headers, fpGuard.hostOf(details.url));
+      if (responseSurfaceAudit.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `response-surface:${securityBoundaryHub.describeFindings(responseSurfaceAudit.findings)}`,
+          fpGuard.hostOf(details.url));
       }
       const acceptChLifetimeResult = acceptChLifetimeGuard.applyAcceptChLifetimeGuard(headers);
       if (acceptChLifetimeResult.changed) {
@@ -5758,6 +5765,13 @@ function setupGlobalWebContentsHooks() {
           event.preventDefault();
           recordSecurityEvent('raw-ipc-blocked', 'warn',
             `渲染层直发未授权/异常原始 IPC 通道 ${v.channel}（${v.reasons.join('；')}）`,
+            originOfContents(contents));
+        }
+        const ipcPayloadAudit = securityBoundaryHub.inspectIpcRequest(args);
+        if (ipcPayloadAudit.changed) {
+          event.preventDefault();
+          recordSecurityEvent('raw-ipc-blocked', 'warn',
+            `IPC 负载结构未通过安全检查: ${securityBoundaryHub.describeFindings(ipcPayloadAudit.findings)}`,
             originOfContents(contents));
         }
       } catch (err) {
