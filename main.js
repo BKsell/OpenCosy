@@ -43,6 +43,32 @@ const wwwAuthenticateGuard = require('./wwwauthenticateguard');
 const timingAllowOriginGuard = require('./timingalloworiginpolicyguard');
 const headerInjectionGuard = require('./headerinjectionguard');
 const hstsGuard = require('./hstsguard');
+const xRobotsGuard = require('./xrobotsguard');
+const coepGuard = require('./coepguard');
+const cspReportOnlyGuard = require('./cspreportonlyguard');
+const xpcdpGuard = require('./xpcdpguard');
+const acacGuard = require('./acacguard');
+const contentDispositionGuard = require('./contentdispositionguard');
+const secGpcGuard = require('./secgpcguard');
+const dntGuard = require('./dntguard');
+const acceptLanguageGuard = require('./acceptlanguageguard');
+const ifNoneMatchGuard = require('./ifnonematchguard');
+const rangeGuard = require('./rangeguard');
+const connectionGuard = require('./connectionguard');
+const teGuard = require('./teguard');
+const viaGuard = require('./viaguard');
+const forwardedGuard = require('./forwardedguard');
+const secFetchSiteGuard = require('./secfetchsiteguard');
+const sourceMapGuard = require('./sourcedmapguard');
+const attributionGuard = require('./attributionguard');
+const reportingEndpointsGuard = require('./reportingendpointsguard');
+const noSniffGuard = require('./nosniffguard');
+const xRequestIdGuard = require('./xrequestidguard');
+const traceparentGuard = require('./traceparentguard');
+const saveDataGuard = require('./savedataguard');
+const trueClientIpGuard = require('./trueclientipguard');
+const xRealIpGuard = require('./xrealipguard');
+const acceptEncodingGuard = require('./acceptencodingguard');
 const priorityGuard = require('./priorityguard');
 const linkResponseGuard = require('./linkresponseguard');
 const acceptPatchGuard = require('./acceptpatchguard');
@@ -69,7 +95,6 @@ const acceptRangesGuard = require('./acceptrangesguard');
 const contentBaseGuard = require('./contentbaseguard');
 const contentMd5Guard = require('./contentmd5guard');
 const pragmaCacheGuard = require('./pragmacacheguard');
-const xRobotsGuard = require('./xrobotsguard');
 const surrogateControlGuard = require('./surrogatecontrolguard');
 const setCookie2Guard = require('./setcookie2guard');
 const xWebKitCspGuard = require('./xwebkitcspguard');
@@ -88,7 +113,6 @@ const transferEncodingGuard = require('./contenttransferencodingguard');
 const permissionsPolicyGuard = require('./permissionspolicyguard');
 const frameOptionsGuard = require('./frameoptionsguard');
 const cacheAuthGuard = require('./cacheauthguard');
-const contentDispositionGuard = require('./contentdispositionguard');
 const xssProtectionGuard = require('./xssprotectionguard');
 const clearSiteDataGuard = require('./clearsitedataguard');
 const serviceWorkerAllowedGuard = require('./serviceworkerallowedguard');
@@ -2164,6 +2188,126 @@ function hardenResponseHeaders(rawHeaders, details, options) {
       if (originTrialResult.changed) {
         recordSecurityEvent('mixed-content-blocked', 'warn',
           `origin-trial:${originTrialResult}.reason`, fpGuard.hostOf(details.url));
+      }
+      const coepGuardResult = coepGuard.applyCoepGuard(headers);
+      if (coepGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `coep:${coepGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const cspReportOnlyGuardResult = cspReportOnlyGuard.applyCspReportOnlyGuard(headers);
+      if (cspReportOnlyGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `csp-report-only:${cspReportOnlyGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const xpcdpGuardResult = xpcdpGuard.applyXpcdpGuard(headers);
+      if (xpcdpGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `x-permitted-cross-domain-policies:${xpcdpGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const acacGuardResult = acacGuard.applyAcacGuard(headers);
+      if (acacGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `cors-credentials:${acacGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const secGpcGuardResult = secGpcGuard.applySecGpcGuard(headers);
+      if (secGpcGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `sec-gpc:${secGpcGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const dntGuardResult = dntGuard.applyDntGuard(headers);
+      if (dntGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `dnt:${dntGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const acceptLanguageGuardResult = acceptLanguageGuard.applyAcceptLanguageGuard(headers);
+      if (acceptLanguageGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `accept-language:${acceptLanguageGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const ifNoneMatchGuardResult = ifNoneMatchGuard.applyIfNoneMatchGuard(headers);
+      if (ifNoneMatchGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `if-none-match:${ifNoneMatchGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const rangeGuardResult = rangeGuard.applyRangeGuard(headers);
+      if (rangeGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `range:${rangeGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const connectionGuardResult = connectionGuard.applyConnectionGuard(headers);
+      if (connectionGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `connection:${connectionGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const teGuardResult = teGuard.applyTeGuard(headers);
+      if (teGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `te:${teGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const viaGuardResult = viaGuard.applyViaGuard(headers);
+      if (viaGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `via:${viaGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const forwardedGuardResult = forwardedGuard.applyForwardedGuard(headers);
+      if (forwardedGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `forwarded:${forwardedGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const secFetchSiteGuardResult = secFetchSiteGuard.applySecFetchSiteGuard(headers);
+      if (secFetchSiteGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `sec-fetch-site:${secFetchSiteGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const sourceMapGuardResult = sourceMapGuard.applySourceMapGuard(headers);
+      if (sourceMapGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `sourcemap:${sourceMapGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const attributionGuardResult = attributionGuard.applyAttributionGuard(headers);
+      if (attributionGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `attribution-reporting:${attributionGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const reportingEndpointsGuardResult = reportingEndpointsGuard.applyReportingEndpointsGuard(headers);
+      if (reportingEndpointsGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `reporting-endpoints:${reportingEndpointsGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const noSniffGuardResult = noSniffGuard.applyNoSniffGuard(headers);
+      if (noSniffGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `nosniff:${noSniffGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const xRequestIdGuardResult = xRequestIdGuard.applyXRequestIdGuard(headers);
+      if (xRequestIdGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `x-request-id:${xRequestIdGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const traceparentGuardResult = traceparentGuard.applyTraceparentGuard(headers);
+      if (traceparentGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `traceparent:${traceparentGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const saveDataGuardResult = saveDataGuard.applySaveDataGuard(headers);
+      if (saveDataGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `save-data:${saveDataGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const trueClientIpGuardResult = trueClientIpGuard.applyTrueClientIpGuard(headers);
+      if (trueClientIpGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `true-client-ip:${trueClientIpGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const xRealIpGuardResult = xRealIpGuard.applyXRealIpGuard(headers);
+      if (xRealIpGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `x-real-ip:${xRealIpGuardResult.reason}`, fpGuard.hostOf(details.url));
+      }
+      const acceptEncodingGuardResult = acceptEncodingGuard.applyAcceptEncodingGuard(headers);
+      if (acceptEncodingGuardResult.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `accept-encoding:${acceptEncodingGuardResult.reason}`, fpGuard.hostOf(details.url));
       }
       const acceptChLifetimeResult = acceptChLifetimeGuard.applyAcceptChLifetimeGuard(headers);
       if (acceptChLifetimeResult.changed) {
