@@ -23,6 +23,11 @@ const cookieJarGuard = require('./cookiejarhardening');
 const downloadNameGuard = require('./downloadnameextguard');
 const refreshGuard = require('./httpequivrefreshguard');
 const serverTimingGuard = require('./servertimingguard');
+const contentRangeGuard = require('./contentrangeguard');
+const charsetGuard = require('./charsetguard');
+const proxyAuthGuard = require('./proxyauthguard');
+const altSvcGuard = require('./altsvcguard');
+const hopByHopGuard = require('./hopbyhopguard');
 const requestPipeline = require('./requestpipeline');
 const downloadAdmission = require('./downloadadmission');
 const downloadNotify = require('./downloadnotify');
@@ -1798,6 +1803,11 @@ function hardenResponseHeaders(rawHeaders, details, options) {
     }
   } catch {}
   try {
+    const hopResult = hopByHopGuard.applyHopByHopGuard(headers);
+    if (hopResult.changed && grade) {
+      recordSecurityEvent('protocol-blocked', 'warn',
+        `hop:${hopResult.reason}`, fpGuard.hostOf(details.url));
+    }
     const corsResult = corsGuard.applyCorsGuard(headers);
     if (corsResult.changed && grade) {
       recordSecurityEvent('origin-boundary-blocked', 'warn',
@@ -1837,6 +1847,26 @@ function hardenResponseHeaders(rawHeaders, details, options) {
     if (timingResult.changed && grade) {
       recordSecurityEvent('origin-boundary-blocked', 'warn',
         `timing:${timingResult.findings[0].reason}`, fpGuard.hostOf(details.url));
+    }
+    const rangeResult = contentRangeGuard.applyContentRangeGuard(headers);
+    if (rangeResult.changed && grade) {
+      recordSecurityEvent('download-blocked', 'warn',
+        `range:${rangeResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const charsetResult = charsetGuard.applyCharsetGuard(headers);
+    if (charsetResult.changed && grade) {
+      recordSecurityEvent('mixed-content-blocked', 'warn',
+        `charset:${charsetResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const proxyAuthResult = proxyAuthGuard.applyProxyAuthGuard(headers, details);
+    if (proxyAuthResult.changed && grade) {
+      recordSecurityEvent('auth-blocked', 'warn',
+        `proxy:${proxyAuthResult.findings[0].reason}`, fpGuard.hostOf(details.url));
+    }
+    const altSvcResult = altSvcGuard.applyAltSvcGuard(headers, details);
+    if (altSvcResult.changed && grade) {
+      recordSecurityEvent('origin-boundary-blocked', 'warn',
+        `alt-svc:${altSvcResult.reason}`, fpGuard.hostOf(details.url));
     }
   } catch {}
   const setIfMissing = (name, value) => {
