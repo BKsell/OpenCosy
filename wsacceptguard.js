@@ -1,5 +1,7 @@
 'use strict';
 
+const { firstValue, headerKey } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -15,23 +17,6 @@ const PROTOCOL_HEADER = 'sec-websocket-protocol';
 const MAX_ACCEPT_LENGTH = 28;
 const MAX_PROTOCOL_LENGTH = 64;
 const MAX_PROTOCOLS = 4;
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
-
-function firstValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return '';
-  const raw = headers[key];
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  return typeof value === 'string' ? value : '';
-}
 
 function deleteHeader(headers, name) {
   const key = headerKey(headers, name);
