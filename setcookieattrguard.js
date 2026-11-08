@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasons } = require('./findingsview');
 
 const REASON = {
   OK: 'ok',
@@ -97,12 +98,8 @@ function auditSetCookieHeaders(headers, options) {
 }
 
 function describeFindings(findings) {
-  const list = Array.isArray(findings) ? findings : [];
-  if (list.length === 0) return 'no set-cookie risk';
-  return list
-    .slice(0, 8)
-    .map((f) => f.reason + '(' + String(f.name || '') + ')')
-    .join('; ');
+  return describeReasons(findings, 'no set-cookie risk',
+    (f) => f.reason + '(' + String(f.name || '') + ')');
 }
 
 module.exports = {
