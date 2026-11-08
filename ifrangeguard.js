@@ -1,4 +1,7 @@
 'use strict';
+const { rawValue } = require('./headerutil');
+const { singleAlt } = require('./modutil');
+const single = singleAlt;
 
 const { headerKey } = require('./headerutil');
 
@@ -14,21 +17,6 @@ const HEADER = 'if-range';
 const ETAG = /^(W\/)?"[!#$%&'*+.^_`|~0-9A-Za-z:\-]{1,128}"$/;
 const IMF = /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} GMT$/;
 const MAX_LENGTH = 96;
-
-function rawValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return null;
-  return headers[key];
-}
-
-function single(raw) {
-  if (Array.isArray(raw)) {
-    if (raw.length !== 1) return null;
-    return String(raw[0]).trim();
-  }
-  if (typeof raw !== 'string') return null;
-  return raw.trim();
-}
 
 function applyIfRangeGuard(headers) {
   const raw = rawValue(headers, HEADER);
