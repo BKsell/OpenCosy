@@ -8981,16 +8981,18 @@ ipcMain.on('get-download-info', (event) => {
 
 ipcMain.on('start-download', (event, data) => {
   if (!isMainSender(event)) return;
+  const payload = data && typeof data === 'object' ? data : {};
   if (currentDownloadInfo) {
     try {
-      let savePath;
-      if (data.savePath) {
-        savePath = path.resolve(data.savePath);
-        if (!isInSafeDirs(savePath)) {
-          savePath = path.join(app.getPath('downloads'), currentDownloadInfo.filename);
-        }
-      } else {
-        savePath = path.join(app.getPath('downloads'), currentDownloadInfo.filename);
+      const fallbackName = sanitizeDownloadFilename(currentDownloadInfo.filename);
+      let savePath = path.join(app.getPath('downloads'), fallbackName);
+      if (payload.savePath) {
+        const requestedPath = path.resolve(String(payload.savePath));
+        const safeRoot = getSafeDirs().find((dir) => isPathInDir(requestedPath, dir));
+        const targetCheck = safeRoot
+          ? downloadSaveTarget.auditSaveTargetReal(safeRoot, requestedPath, path.basename(requestedPath))
+          : null;
+        if (targetCheck && targetCheck.ok) savePath = targetCheck.path;
       }
       if (currentDownloadInfo.item && currentDownloadInfo.isItemValid) {
         currentDownloadInfo.item.setSavePath(savePath);
@@ -9014,8 +9016,9 @@ ipcMain.on('start-download', (event, data) => {
 
 ipcMain.on('show-save-dialog', (event, data) => {
   if (!isMainSender(event)) return;
+  const payload = data && typeof data === 'object' ? data : {};
   dialog.showSaveDialog(mainWindow, {
-    defaultPath: path.join(app.getPath('downloads'), data.defaultName || 'download'),
+    defaultPath: path.join(app.getPath('downloads'), sanitizeDownloadFilename(payload.defaultName || 'download')),
     filters: [{ name: 'All Files', extensions: ['*'] }]
   }).then(result => {
     if (!result.canceled && result.filePath) {
@@ -9028,12 +9031,18 @@ ipcMain.on('show-save-dialog', (event, data) => {
         } catch (e) { console.error('取消下载以另存为失败:', e); }
       }
       if (currentDownloadInfo) {
+        const chosenVerdict = downloadSaveTarget.auditSaveName(path.basename(result.filePath));
+        if (chosenVerdict !== downloadSaveTarget.REASON.OK) {
+          sendToRenderer('show-toast',
+            `另存为文件名非法，已取消：${downloadSaveTarget.describeSaveTargetReject(chosenVerdict)}`);
+          return;
+        }
         currentDownloadInfo.savePath = result.filePath;
         currentDownloadInfo.status = 'pending';
         currentDownloadInfo.item = null;
         currentDownloadInfo.isItemValid = false;
       }
-      if (data.url && isSafeUrl(data.url)) session.defaultSession.downloadURL(data.url);
+      if (payload.url && isSafeUrl(payload.url)) session.defaultSession.downloadURL(payload.url);
       event.reply('download-started', { id: currentDownloadInfo ? currentDownloadInfo.id : null });
     }
   });
@@ -9124,8 +9133,8 @@ ipcMain.on('cancel-download', (event, id) => {
 
 ipcMain.on('retry-download', (event, data) => {
   if (!isMainSender(event)) return;
-  const { url } = data;
-  if (url && isSafeUrl(url)) session.defaultSession.downloadURL(url);
+  const url = data && typeof data === 'object' ? data.url : null;
+  if (typeof url === 'string' && url.length > 0 && isSafeUrl(url)) session.defaultSession.downloadURL(url);
 });
 
 ipcMain.on('remove-download', (event, id) => {
@@ -9664,7 +9673,8 @@ ipcMain.handle('browse-folder', async (event) => {
 
 ipcMain.on('show-context-menu', (event, data) => {
   if (!isMainSender(event)) return;
-  const menu = createContextMenu(data.menuType, data.selectedText);
+  const payload = data && typeof data === 'object' ? data : {};
+  const menu = createContextMenu(payload.menuType, payload.selectedText);
   menu.popup();
 });
 
