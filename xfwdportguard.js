@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerKey } = require('./headerutil');
+const { headerKey, rawValue } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -11,12 +11,6 @@ const REASON = {
 
 const HEADER = 'x-forwarded-port';
 const MAX_HOPS = 4;
-
-function rawValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return null;
-  return headers[key];
-}
 
 function validPort(value) {
   if (!/^\d{1,5}$/.test(value)) return false;
