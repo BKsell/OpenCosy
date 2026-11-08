@@ -1,5 +1,8 @@
 'use strict';
 
+const { parseUrl } = require('./modutil');
+const safeParse = parseUrl;
+
 // schemeorigin.js —— 顶层导航的“目标协议 × 发起来源”安全矩阵。
 //
 // 威胁模型：
@@ -25,14 +28,6 @@ function isInternalScheme(scheme) {
 }
 
 // safeParse 解析 URL，失败返回 null（不抛异常，便于在导航热路径里用）。
-function safeParse(raw) {
-  if (typeof raw !== 'string' || raw === '') return null;
-  try {
-    return new URL(raw);
-  } catch {
-    return null;
-  }
-}
 
 // originSpace 把一个 URL 归到安全判定用的“来源空间”：
 //   web       http / https
