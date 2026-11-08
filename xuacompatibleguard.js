@@ -1,5 +1,7 @@
 'use strict';
 
+const { countValues, firstValue, headerKey } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -14,31 +16,6 @@ const MAX_VALUE_LENGTH = 96;
 const MODE_PATTERN = /^ie\s*=\s*([a-z0-9]+)$/i;
 const KNOWN_MODES = new Set(['edge', '9', '10', '11']);
 const LEGACY_MODES = new Set(['5', '6', '7', '8', 'emulateie7', 'emulateie8', 'emulateie9', 'emulateie10']);
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
-
-function firstValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return '';
-  const raw = headers[key];
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  return typeof value === 'string' ? value : '';
-}
-
-function countValues(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return 0;
-  const raw = headers[key];
-  if (Array.isArray(raw)) return raw.length;
-  return typeof raw === 'string' ? 1 : 0;
-}
 
 function deleteHeader(headers, name) {
   const key = headerKey(headers, name);
