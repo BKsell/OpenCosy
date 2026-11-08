@@ -1,5 +1,7 @@
 'use strict';
 
+const { lowerKeys } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -14,13 +16,6 @@ const MAX_CHALLENGE_LENGTH = 256;
 const MAX_CHALLENGES = 5;
 const PROXY_HEADERS = ['proxy-authenticate', 'proxy-authentication-info', 'proxy-authorization'];
 const LEAKY_SCHEMES = new Set(['ntlm', 'negotiate', 'kerberos']);
-
-function lowerKeys(headers) {
-  const map = {};
-  if (!headers || typeof headers !== 'object') return map;
-  for (const key of Object.keys(headers)) map[key.toLowerCase()] = key;
-  return map;
-}
 
 function requestProtocol(details) {
   try {
