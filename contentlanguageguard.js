@@ -1,5 +1,7 @@
 'use strict';
 
+const { firstValue, headerKey } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -14,23 +16,6 @@ const MAX_TAGS = 5;
 const MAX_TAG_LENGTH = 35;
 const MAX_FIELD_LENGTH = 120;
 const LANGUAGE_TAG = /^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/;
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
-
-function firstValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return '';
-  const raw = headers[key];
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  return typeof value === 'string' ? value : '';
-}
 
 function parseLanguageTags(value) {
   if (typeof value !== 'string') return { reason: REASON.MALFORMED, tags: [] };
