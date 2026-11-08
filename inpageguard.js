@@ -1,4 +1,5 @@
 'use strict';
+const { pruneOlderThan, countSince, resetCooldown } = require('./modutil');
 
 // inpageguard.js —— history.pushState/replaceState 触发的同文档导航收口内核。
 //
@@ -59,21 +60,6 @@ function sanitizeInPageUrl(raw) {
     return { ok: false, reason: REJECT_SCHEME, url: '' };
   }
   return { ok: true, reason: '', url: parsed.href };
-}
-
-function pruneOlderThan(list, cutoff) {
-  let i = 0;
-  while (i < list.length && list[i] < cutoff) i++;
-  if (i > 0) list.splice(0, i);
-}
-
-function countSince(sortedTimes, cutoff) {
-  let n = 0;
-  for (let i = sortedTimes.length - 1; i >= 0; i--) {
-    if (sortedTimes[i] >= cutoff) n++;
-    else break;
-  }
-  return n;
 }
 
 function createInPageState(now) {
@@ -160,10 +146,6 @@ function decideInPageNav(state, rawUrl, now) {
     decision: INPAGE_ACCEPT, reason: '', url,
     burstCount, longCount, cooldownUntil: 0,
   };
-}
-
-function resetCooldown(state) {
-  if (state) state.cooldownUntil = 0;
 }
 
 function describeInPageReason(reason) {
