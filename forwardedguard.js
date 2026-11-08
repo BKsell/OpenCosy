@@ -1,5 +1,7 @@
 'use strict';
 
+const { firstValue, headerKey } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -16,23 +18,6 @@ const MAX_LENGTH = 512;
 const MAX_ENTRIES = 3;
 const HOST_RE = /^[a-z0-9.-]{1,253}(?::\d{1,5})?$/i;
 const NODE_RE = /^(?:"?\[?[0-9a-f:.]{2,45}\]?(?::\d{1,5})?"?|unknown|_[a-z0-9._-]{1,63})$/i;
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
-
-function firstValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return '';
-  const raw = headers[key];
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  return typeof value === 'string' ? value : '';
-}
 
 function splitParams(entry) {
   const params = [];
