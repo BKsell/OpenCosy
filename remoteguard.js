@@ -1,5 +1,7 @@
 'use strict';
 
+const { hasControlChar } = require('./modutil');
+
 // remoteguard.js —— @electron/remote 桥事件与 desktopCapturer 枚举的深度防御内核。
 //
 // 威胁模型：
@@ -50,15 +52,6 @@ const REMOTE_BURST_MAX = 4;
 const REMOTE_LONG_WINDOW_MS = 60000;
 const REMOTE_LONG_MAX = 16;
 const REMOTE_COOLDOWN_MS = 30000;
-
-function hasControlChar(s) {
-  if (typeof s !== 'string') return false;
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    if (c < 0x20 || c === 0x7f || c === 0x2028 || c === 0x2029 || c === 0xfeff) return true;
-  }
-  return false;
-}
 
 // sanitizeTarget 把事件里的“目标名”归一成可安全写进审计日志的短串：
 // 非字符串 / 超长 / 含控制字符时返回固定占位，绝不把脏值直接拼进日志。
