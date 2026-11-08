@@ -1,5 +1,7 @@
 'use strict';
 
+const { headerValues, setHeader } = require('./headerutil');
+
 const REASON = Object.freeze({
   OK: 'ok',
   WILDCARD_CREDENTIALS: 'wildcard-credentials',
@@ -22,27 +24,6 @@ const SENSITIVE_EXPOSE = new Set([
 ]);
 
 const UNSAFE_METHODS = new Set(['TRACE', 'TRACK', 'CONNECT']);
-
-function headerValues(headers, name) {
-  if (!headers || typeof headers !== 'object') return [];
-  const lower = name.toLowerCase();
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() !== lower) continue;
-    const value = headers[key];
-    if (Array.isArray(value)) return value.map((v) => String(v));
-    if (value === undefined || value === null) return [];
-    return [String(value)];
-  }
-  return [];
-}
-
-function setHeader(headers, name, values) {
-  const lower = name.toLowerCase();
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) delete headers[key];
-  }
-  if (values && values.length) headers[name] = values;
-}
 
 function splitTokens(values) {
   const out = [];
