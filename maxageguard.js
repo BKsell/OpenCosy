@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerKey } = require('./headerutil');
+const { headerKey, rawValue } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -13,12 +13,6 @@ const REASON = {
 const HEADER = 'access-control-max-age';
 const MAX_SECONDS = 86400;
 const DEFAULT_SECONDS = 600;
-
-function rawValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return null;
-  return headers[key];
-}
 
 function single(raw) {
   if (Array.isArray(raw)) return raw.length === 1 ? String(raw[0]).trim() : null;
