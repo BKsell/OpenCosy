@@ -1,5 +1,7 @@
 'use strict';
 
+const { firstValue, headerKey } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -15,23 +17,6 @@ const HEADER_DATE = 'date';
 const MAX_AGE_SECONDS = 2147483648;
 const MAX_STALE_SECONDS = 604800;
 const MAX_DATE_SKEW_SECONDS = 300;
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
-
-function firstValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return '';
-  const raw = headers[key];
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  return typeof value === 'string' ? value : '';
-}
 
 function parseAge(value) {
   if (typeof value !== 'string') return { reason: REASON.MALFORMED, age: null };
