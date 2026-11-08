@@ -1,4 +1,5 @@
 'use strict';
+const { pruneOlderThan } = require('./modutil');
 
 // zoomguard.js —— 页面缩放级别（zoom-changed / setZoomLevel）的越界与事件洪泛收口。
 //
@@ -46,12 +47,6 @@ function clampZoomLevel(level) {
 function zoomLevelToPercent(level) {
   // Chromium 缩放系数 = 1.2 ^ level。
   return Math.round(Math.pow(1.2, clampZoomLevel(level)) * 100);
-}
-
-function pruneOlderThan(list, cutoff) {
-  let i = 0;
-  while (i < list.length && list[i] < cutoff) i++;
-  if (i > 0) list.splice(0, i);
 }
 
 function createZoomState(now) {
