@@ -1,4 +1,5 @@
 'use strict';
+const { pruneOlderThan, countSince } = require('./modutil');
 
 // titleguard.js —— 标签页标题与网站图标的净化、长度与更新频率收口内核。
 //
@@ -59,21 +60,6 @@ function sanitizeTabTitle(raw) {
     truncated = true;
   }
   return { title: s, changed: changedControl || truncated, truncated };
-}
-
-function pruneOlderThan(list, cutoff) {
-  let i = 0;
-  while (i < list.length && list[i] < cutoff) i++;
-  if (i > 0) list.splice(0, i);
-}
-
-function countSince(sortedTimes, cutoff) {
-  let n = 0;
-  for (let i = sortedTimes.length - 1; i >= 0; i--) {
-    if (sortedTimes[i] >= cutoff) n++;
-    else break;
-  }
-  return n;
 }
 
 function createTitleState(now) {
