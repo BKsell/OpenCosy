@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerKey } = require('./headerutil');
+const { headerKey, rawValue } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -12,12 +12,6 @@ const REASON = {
 const HEADER = 'x-forwarded-host';
 const HOST = /^[A-Za-z0-9]([A-Za-z0-9._-]{0,251}[A-Za-z0-9])?(:\d{1,5})?$/;
 const MAX_HOPS = 4;
-
-function rawValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return null;
-  return headers[key];
-}
 
 function applyXForwardedHostGuard(headers) {
   const raw = rawValue(headers, HEADER);
