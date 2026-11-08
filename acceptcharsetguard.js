@@ -1,6 +1,6 @@
 'use strict';
 
-const { firstValue, headerKey } = require('./headerutil');
+const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -26,11 +26,6 @@ const KNOWN_CHARSETS = new Set([
   'utf-16le',
   'utf-16be',
 ]);
-
-function deleteHeader(headers, name) {
-  const key = headerKey(headers, name);
-  if (key) delete headers[key];
-}
 
 function normalizeCharset(token) {
   const text = token.trim().toLowerCase();
