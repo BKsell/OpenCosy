@@ -1,6 +1,6 @@
 'use strict';
 
-const { firstValue, headerKey } = require('./headerutil');
+const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -22,11 +22,6 @@ const ALGORITHMS = {
   'sha-512': 64,
 };
 const WEAK_ALGORITHMS = new Set(['md5', 'sha', 'sha-1']);
-
-function deleteHeader(headers, name) {
-  const key = headerKey(headers, name);
-  if (key) delete headers[key];
-}
 
 function splitMembers(text) {
   const members = [];
