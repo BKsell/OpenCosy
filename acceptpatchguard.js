@@ -1,6 +1,6 @@
 'use strict';
 
-const { firstValue, headerKey } = require('./headerutil');
+const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -22,11 +22,6 @@ const ALLOWED_TYPES = new Set([
   'application/apply-patch+yaml',
   'text/plain',
 ]);
-
-function deleteHeader(headers, name) {
-  const key = headerKey(headers, name);
-  if (key) delete headers[key];
-}
 
 function normalizeType(token) {
   const text = token.trim().toLowerCase();
