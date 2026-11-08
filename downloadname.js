@@ -56,10 +56,17 @@ function splitStemExt(name) {
   return { stem: name.slice(0, dot), ext: name.slice(dot) };
 }
 
+// Win32 把「第一个点之前的那一段」当作设备名解析：NUL.tar.gz 仍然打开 NUL 设备，
+// 不是普通文件。按最后一段 stem 判断（splitStemExt）会把 CON.tar.gz 这类多扩展名
+// 名字判成普通文件，写盘时被系统静默改道到设备，下载内容直接丢失。
+function deviceSegment(name) {
+  const dot = name.indexOf('.');
+  return dot < 0 ? name : name.slice(0, dot);
+}
+
 function prefixReservedDevice(name) {
-  const { stem } = splitStemExt(name);
-  const upper = stem.toUpperCase();
-  if (!RESERVED_DEVICE.has(upper)) return name;
+  const seg = deviceSegment(name).toUpperCase();
+  if (!RESERVED_DEVICE.has(seg)) return name;
   return '_' + name;
 }
 
@@ -173,12 +180,65 @@ function percentDecode(input) {
   return out;
 }
 
+function splitDispositionParams(header) {
+  const parts = [];
+  let current = '';
+  let quoted = false;
+  let escaped = false;
+  for (let i = 0; i < header.length; i += 1) {
+    const ch = header[i];
+    if (escaped) {
+      current += ch;
+      escaped = false;
+      continue;
+    }
+    if (quoted && ch === '\\') {
+      current += ch;
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      quoted = !quoted;
+      current += ch;
+      continue;
+    }
+    if (ch === ';' && !quoted) {
+      parts.push(current);
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  if (quoted) return null;
+  parts.push(current);
+  return parts;
+}
+
+function unquoteDispositionValue(value) {
+  if (!value.startsWith('"')) return value;
+  if (value.length < 2 || !value.endsWith('"')) return null;
+  const inner = value.slice(1, -1);
+  let out = '';
+  for (let i = 0; i < inner.length; i += 1) {
+    const ch = inner[i];
+    if (ch === '\\' && i + 1 < inner.length) {
+      out += inner[i + 1];
+      i += 1;
+      continue;
+    }
+    if (ch === '"') return null;
+    out += ch;
+  }
+  return out;
+}
+
 function parseContentDisposition(header) {
   if (typeof header !== 'string' || header.trim() === '') {
     return { filename: '', extended: false, reason: 'empty' };
   }
   if (header.length > 4096) return { filename: '', extended: false, reason: 'too-long-header' };
-  const parts = header.split(';');
+  const parts = splitDispositionParams(header);
+  if (!parts) return { filename: '', extended: false, reason: 'unterminated-quote' };
   const params = new Map();
   let star = '';
   for (let i = 1; i < parts.length; i++) {
@@ -187,12 +247,10 @@ function parseContentDisposition(header) {
     const eq = part.indexOf('=');
     if (eq < 0) return { filename: '', extended: false, reason: 'malformed-parameter' };
     const key = part.slice(0, eq).trim().toLowerCase();
-    let value = part.slice(eq + 1).trim();
-    if (value.startsWith('"')) {
-      if (!value.endsWith('"') || value.length < 2) {
-        return { filename: '', extended: false, reason: 'unterminated-quote' };
-      }
-      value = value.slice(1, -1);
+    const rawValue = part.slice(eq + 1).trim();
+    const value = unquoteDispositionValue(rawValue);
+    if (value === null) {
+      return { filename: '', extended: false, reason: 'unterminated-quote' };
     }
     if (params.has(key)) return { filename: '', extended: false, reason: 'duplicate-parameter' };
     params.set(key, value);
@@ -237,6 +295,13 @@ function latin1Decode(input) {
   return out;
 }
 
+function hasInvisibleCodePoint(raw) {
+  for (const ch of String(raw)) {
+    if (isInvisibleCodePoint(ch.codePointAt(0))) return true;
+  }
+  return false;
+}
+
 module.exports = {
   MAX_NAME_BYTES,
   FALLBACK_NAME,
@@ -245,4 +310,8 @@ module.exports = {
   stripControlAndInvisible,
   stripTrailingDotsAndSpaces,
   prefixReservedDevice,
+  splitDispositionParams,
+  unquoteDispositionValue,
+  hasInvisibleCodePoint,
+  isInvisibleCodePoint,
 };

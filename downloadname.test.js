@@ -103,3 +103,36 @@ test('parseContentDisposition 无 filename 参数时返回空', () => {
   assert.strictEqual(r.filename, '');
   assert.strictEqual(r.reason, 'no-filename');
 });
+
+test('sanitizeDownloadName 按 Windows 首段语义识别保留设备名', () => {
+  const multi = D.sanitizeDownloadName('NUL.tar.gz');
+  assert.strictEqual(multi.name, '_NUL.tar.gz');
+  assert.ok(multi.reasons.includes('reserved-device'));
+  const conMulti = D.sanitizeDownloadName('con.backup.zip');
+  assert.strictEqual(conMulti.name, '_con.backup.zip');
+  const plain = D.sanitizeDownloadName('nul.tar');
+  assert.strictEqual(plain.name, '_nul.tar');
+  assert.strictEqual(D.sanitizeDownloadName('a.NUL.b').name, 'a.NUL.b');
+});
+
+test('parseContentDisposition 支持引号内的分号', () => {
+  const r = D.parseContentDisposition('attachment; filename="a;b.txt"');
+  assert.strictEqual(r.filename, 'a;b.txt');
+  assert.strictEqual(r.extended, false);
+  const two = D.parseContentDisposition('attachment; filename="p;q.zip"; size=10');
+  assert.strictEqual(two.filename, 'p;q.zip');
+});
+
+test('parseContentDisposition 解析引号内转义字符', () => {
+  const quoted = D.parseContentDisposition('attachment; filename="a\\"b.txt"');
+  assert.strictEqual(quoted.filename, 'a"b.txt');
+  const broken = D.parseContentDisposition('attachment; filename="a;b.txt');
+  assert.strictEqual(broken.filename, '');
+  assert.strictEqual(broken.reason, 'unterminated-quote');
+});
+
+test('parseContentDisposition 星号参数不受引号内分号影响', () => {
+  const star = D.parseContentDisposition("attachment; filename=\"plain;name.txt\"; filename*=UTF-8''%E4%BD%A0%3B%E5%A5%BD.txt");
+  assert.strictEqual(star.extended, true);
+  assert.strictEqual(star.filename, '你;好.txt');
+});
