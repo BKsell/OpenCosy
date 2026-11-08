@@ -1,5 +1,7 @@
 'use strict';
 
+const { headerKey } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -9,15 +11,6 @@ const REASON = {
 
 const HEADER = 'x-content-type-options';
 const MAX_LENGTH = 128;
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
 
 function applyNoSniffGuard(headers) {
   const key = headerKey(headers, HEADER);
