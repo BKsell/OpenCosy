@@ -1,4 +1,5 @@
 'use strict';
+const { originFromUrl } = require('./modutil');
 
 // preloadguard.js —— 预加载脚本（preload）异常与渲染侧致命信号的收口判定内核。
 //
@@ -39,14 +40,6 @@ const MAX_REPORTS_PER_FINGERPRINT = 3;
 const MAX_REPORTS_PER_CONTENTS = 20;
 // 指纹（归一化后的错误信息）最大保留长度，防止异常信息超长撑大内存。
 const MAX_FINGERPRINT_LEN = 160;
-
-function originFromUrl(rawUrl) {
-  try {
-    return new URL(rawUrl || '').origin;
-  } catch {
-    return '';
-  }
-}
 
 // normalizePath 把 preload 路径里的反斜杠统一为斜杠并做小写，用于跨平台指纹稳定。
 // 不做真实文件系统访问（内核须可在无 Electron 的 node:test 中运行）。
