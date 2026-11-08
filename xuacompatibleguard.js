@@ -1,6 +1,6 @@
 'use strict';
 
-const { countValues, firstValue, headerKey } = require('./headerutil');
+const { countValues, deleteHeader, firstValue, headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -16,13 +16,6 @@ const MAX_VALUE_LENGTH = 96;
 const MODE_PATTERN = /^ie\s*=\s*([a-z0-9]+)$/i;
 const KNOWN_MODES = new Set(['edge', '9', '10', '11']);
 const LEGACY_MODES = new Set(['5', '6', '7', '8', 'emulateie7', 'emulateie8', 'emulateie9', 'emulateie10']);
-
-function deleteHeader(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return false;
-  delete headers[key];
-  return true;
-}
 
 function inspectXuaCompatible(value) {
   if (typeof value !== 'string') return { reason: REASON.MISSING };
