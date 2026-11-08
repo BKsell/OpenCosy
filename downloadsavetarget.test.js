@@ -120,3 +120,9 @@ test('auditSaveTargetReal 拒绝父目录符号链接逃逸', () => {
   assert.strictEqual(auditSaveTargetReal(root, escaped, 'payload.bin').reason, REASON.OUTSIDE_ROOT);
   assert.strictEqual(auditSaveTargetReal(root, root + '/fresh/payload.bin', 'payload.bin').reason, REASON.OK);
 });
+
+test('rejects C1 control characters in save names', () => {
+  assert.strictEqual(target.auditSaveName('a\u0085b.txt'), target.REASON.BAD_NAME);
+  assert.strictEqual(target.auditSaveName('a\u009bb.txt'), target.REASON.BAD_NAME);
+  assert.strictEqual(target.auditSaveName('report中\u0098.pdf'), target.REASON.BAD_NAME);
+});
