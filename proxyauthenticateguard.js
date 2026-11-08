@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerKey } = require('./headerutil');
+const { headerKey, rawValue } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -15,12 +15,6 @@ const STRONG = new Set(['digest', 'negotiate', 'ntlm', 'bearer']);
 const WEAK = new Set(['basic']);
 const TOKEN = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,32}$/;
 const MAX_CHALLENGES = 3;
-
-function rawValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return null;
-  return headers[key];
-}
 
 function applyProxyAuthenticateGuard(headers) {
   const raw = rawValue(headers, HEADER);
