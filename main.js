@@ -206,6 +206,7 @@ const searchProvider = require('./searchprovider');
 const containerGuard = require('./container');
 const schemeOrigin = require('./schemeorigin');
 const webviewHarden = require('./webviewharden');
+const internalFrame = require('./internalframe');
 const winPolicy = require('./winpolicy');
 const goneGuard = require('./goneguard');
 const shellGuard = require('./shellguard');
@@ -808,7 +809,14 @@ function readPersistedSettings() {
 const isDev = !app.isPackaged;
 
 function isMainSender(event) {
-  return event.sender === mainWindow?.webContents;
+  if (!mainWindow || !event || event.sender !== mainWindow.webContents) return false;
+  const frame = event.senderFrame;
+  if (!frame) return false;
+  try {
+    return frame.parent === null && frame.top === frame;
+  } catch {
+    return false;
+  }
 }
 
 // 判断一个 file: 帧是否为“应用自带的内置静态页”（如 tab 视图加载的 src/error.html、
@@ -6770,14 +6778,7 @@ ipcMain.handle('get-memory-saver', (event) => {
 // 指标来自 app.getAppMetrics()（percentCPUUsage 是相对上一次调用的均值，因此渲染端
 // 固定 2s 轮询），内存单位 KB。标签进程用 webContents.getOSProcessId() 的 OS pid 关联，
 // 绝不能混用 getProcessId()（Chromium 内部 pid）。
-function isTaskManagerFrameSender(event) {
-  if (isMainSender(event)) return true;
-  const frame = event && event.senderFrame;
-  if (!frame || typeof frame.url !== 'string') return false;
-  let u;
-  try { u = new URL(frame.url); } catch { return false; }
-  return u.protocol === 'cosy:' && u.hostname === 'taskmanager';
-}
+const isTaskManagerFrameSender = internalFrame.makeInternalFrameSender({ isMainSender, host: 'taskmanager' });
 
 // 汇总各标签渲染进程 OS pid -> {id,title,index}，用于把进程指标关联到具体标签。
 // 视图已销毁 / pid 取不到的标签跳过，不让单个坏标签影响整页指标。
@@ -6824,74 +6825,25 @@ ipcMain.handle('end-task-manager-tab', (event, payload = {}) => {
 // 概览页按“网格卡片”展示全部标签，可搜索 / 切换 / 关闭 / 看缩略图。所有写入动作
 // 都只接受概览页自身帧或主窗口帧发起，且 id 必须是当前 tabs 里真实存在的标签。
 
-function isTabOverviewFrameSender(event) {
-  if (isMainSender(event)) return true;
-  const frame = event && event.senderFrame;
-  if (!frame || typeof frame.url !== 'string') return false;
-  let u;
-  try { u = new URL(frame.url); } catch { return false; }
-  return u.protocol === 'cosy:' && u.hostname === 'taboverview';
-}
+const isTabOverviewFrameSender = internalFrame.makeInternalFrameSender({ isMainSender, host: 'taboverview' });
 
 // 历史页帧守卫：只放行 cosy://history 内置帧（主窗口外壳也可直达，供面板跳转）。
-function isHistoryFrameSender(event) {
-  if (isMainSender(event)) return true;
-  const frame = event && event.senderFrame;
-  if (!frame || typeof frame.url !== 'string') return false;
-  let u;
-  try { u = new URL(frame.url); } catch { return false; }
-  return u.protocol === 'cosy:' && u.hostname === 'history';
-}
+const isHistoryFrameSender = internalFrame.makeInternalFrameSender({ isMainSender, host: 'history' });
 
 // 书签管理器帧守卫：只放行 cosy://bookmarks 内置帧（主窗口外壳也可直达）。
-function isBookmarksFrameSender(event) {
-  if (isMainSender(event)) return true;
-  const frame = event && event.senderFrame;
-  if (!frame || typeof frame.url !== 'string') return false;
-  let u;
-  try { u = new URL(frame.url); } catch { return false; }
-  return u.protocol === 'cosy:' && u.hostname === 'bookmarks';
-}
+const isBookmarksFrameSender = internalFrame.makeInternalFrameSender({ isMainSender, host: 'bookmarks' });
 
 // 稍后读帧守卫：只放行 cosy://readinglist 内置帧（主窗口外壳也可直达）。
-function isReadingListFrameSender(event) {
-  if (isMainSender(event)) return true;
-  const frame = event && event.senderFrame;
-  if (!frame || typeof frame.url !== 'string') return false;
-  let u;
-  try { u = new URL(frame.url); } catch { return false; }
-  return u.protocol === 'cosy:' && u.hostname === 'readinglist';
-}
+const isReadingListFrameSender = internalFrame.makeInternalFrameSender({ isMainSender, host: 'readinglist' });
 
 // 关于页帧守卫：只放行 cosy://about 内置帧（主窗口外壳也可直达）。
-function isAboutFrameSender(event) {
-  if (isMainSender(event)) return true;
-  const frame = event && event.senderFrame;
-  if (!frame || typeof frame.url !== 'string') return false;
-  let u;
-  try { u = new URL(frame.url); } catch { return false; }
-  return u.protocol === 'cosy:' && u.hostname === 'about';
-}
+const isAboutFrameSender = internalFrame.makeInternalFrameSender({ isMainSender, host: 'about' });
 
 // 快捷键速查页帧守卫：只放行 cosy://shortcuts 内置帧（主窗口外壳也可直达）。
-function isShortcutsFrameSender(event) {
-  if (isMainSender(event)) return true;
-  const frame = event && event.senderFrame;
-  if (!frame || typeof frame.url !== 'string') return false;
-  let u;
-  try { u = new URL(frame.url); } catch { return false; }
-  return u.protocol === 'cosy:' && u.hostname === 'shortcuts';
-}
+const isShortcutsFrameSender = internalFrame.makeInternalFrameSender({ isMainSender, host: 'shortcuts' });
 
 // 内部页导航帧守卫：只放行 cosy://pages 内置帧（主窗口外壳也可直达）。
-function isPagesFrameSender(event) {
-  if (isMainSender(event)) return true;
-  const frame = event && event.senderFrame;
-  if (!frame || typeof frame.url !== 'string') return false;
-  let u;
-  try { u = new URL(frame.url); } catch { return false; }
-  return u.protocol === 'cosy:' && u.hostname === 'pages';
-}
+const isPagesFrameSender = internalFrame.makeInternalFrameSender({ isMainSender, host: 'pages' });
 
 // 内部页登记表：cosy://<name> → 标题 + 说明。供 cosy://pages 导航渲染；
 // 说明仅作静态文案，不携带任何会话数据。
