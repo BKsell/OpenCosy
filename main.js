@@ -2437,86 +2437,14 @@ async function confirmAndOpenExternal(url, origin) {
 //  3. 用户在弹窗里勾选"记住对此网站的选择"后按 origin+scheme 持久化，设置页
 //     可查看 / 撤销，决定文件原子落盘。
 
-const protocolDecisionStorePath = path.join(app.getPath('userData'), 'protocol-decisions.json');
-const MAX_PROTOCOL_DECISIONS = 500;
-// 只有这两个协议允许在用户确认后交给系统处理器；其它外部协议没有商量余地。
-const CONFIRMABLE_EXTERNAL_SCHEMES = new Set(['mailto:', 'tel:']);
-// 子框架允许的协议集合。iframe 场景下 blob:/data: 有正当用途（预览、文档），
-// 但 file:/cosy:/任何外部协议都不允许。
-const SUBFRAME_WEB_SCHEMES = new Set(['http:', 'https:', 'blob:', 'data:', 'about:']);
-// key: `${origin} ${scheme}` -> { decision: 'allow'|'deny', updatedAt }
-const protocolDecisions = new Map();
-let protocolDecisionsLoaded = false;
-let protocolSaveTimer = null;
-
-function protocolDecisionKey(origin, scheme) {
-  return origin + ' ' + scheme;
-}
-
-function normalizeExternalScheme(url) {
-  try {
-    const scheme = new URL(url).protocol.toLowerCase();
-    // 协议名只允许 RFC 3986 字母开头的有限字符，挡掉伪造 / 控制字符输入。
-    if (!/^[a-z][a-z0-9+.-]{0,31}:$/.test(scheme)) return '';
-    return scheme;
-  } catch {
-    return '';
-  }
-}
-
-function loadProtocolDecisions() {
-  if (protocolDecisionsLoaded) return;
-  protocolDecisionsLoaded = true;
-  try {
-    const data = ledgerStore.readJSONStore(protocolDecisionStorePath, {});
-    const entries = data && typeof data === 'object' ? data.decisions : null;
-    if (!entries || typeof entries !== 'object') return;
-    for (const [k, v] of Object.entries(entries)) {
-      if (typeof k !== 'string' || !v || typeof v !== 'object') continue;
-      const sp = k.indexOf(' ');
-      if (sp <= 0) continue;
-      const origin = k.slice(0, sp);
-      const scheme = k.slice(sp + 1);
-      if (!isRememberableOrigin(origin)) continue;
-      if (!CONFIRMABLE_EXTERNAL_SCHEMES.has(scheme)) continue;
-      if (v.decision !== 'allow' && v.decision !== 'deny') continue;
-      if (protocolDecisions.size >= MAX_PROTOCOL_DECISIONS) break;
-      protocolDecisions.set(k, { decision: v.decision, updatedAt: Number(v.updatedAt) || Date.now() });
-    }
-  } catch {}
-}
-
-function persistProtocolDecisions() {
-  if (protocolSaveTimer) clearTimeout(protocolSaveTimer);
-  protocolSaveTimer = setTimeout(() => {
-    try {
-      const decisions = {};
-      for (const [k, v] of protocolDecisions) decisions[k] = v;
-      ledgerStore.writeJSONStore(protocolDecisionStorePath, { version: 1, decisions });
-    } catch {}
-  }, 300);
-}
-
-function getRememberedProtocolDecision(origin, scheme) {
-  loadProtocolDecisions();
-  if (!isRememberableOrigin(origin) || !CONFIRMABLE_EXTERNAL_SCHEMES.has(scheme)) return null;
-  const v = protocolDecisions.get(protocolDecisionKey(origin, scheme));
-  return v ? v.decision : null;
-}
-
-function rememberProtocolDecision(origin, scheme, decision) {
-  loadProtocolDecisions();
-  if (!isRememberableOrigin(origin)) return false;
-  if (!CONFIRMABLE_EXTERNAL_SCHEMES.has(scheme)) return false;
-  if (decision !== 'allow' && decision !== 'deny') return false;
-  if (protocolDecisions.size >= MAX_PROTOCOL_DECISIONS &&
-      !protocolDecisions.has(protocolDecisionKey(origin, scheme))) {
-    return false;
-  }
-  protocolDecisions.set(protocolDecisionKey(origin, scheme), { decision, updatedAt: Date.now() });
-  persistProtocolDecisions();
-  return true;
-}
+const permissionStore = require('./permissionstore');
+const {
+  CONFIRMABLE_EXTERNAL_SCHEMES,
+  getRememberedProtocolDecision,
+  rememberProtocolDecision,
+  listProtocolDecisions,
+  forgetProtocolDecision,
+} = permissionStore;
 
 // classifyFrameNavigation 判断一次（主/子框架）导航该如何处理：
 //   'in-pane'  ：浏览器内正常加载；
@@ -3534,7 +3462,6 @@ const {
 } = downloadHashes;
 
 
-const permissionStore = require('./permissionstore');
 permissionStore.bindSecurityRecorder(recordSecurityEvent);
 const {
   isRememberableOrigin,
@@ -8170,26 +8097,14 @@ ipcMain.handle('open-external-url', async (event, url) => {
 // 供设置页读取 / 撤销"站点 -> 外部协议"的记忆决定。
 ipcMain.handle('get-protocol-decisions', (event) => {
   if (!isMainSender(event)) return { ok: false, reason: 'unauthorized' };
-  loadProtocolDecisions();
-  const items = [];
-  for (const [k, v] of protocolDecisions) {
-    const sp = k.indexOf(' ');
-    items.push({ origin: k.slice(0, sp), scheme: k.slice(sp + 1), decision: v.decision, updatedAt: v.updatedAt });
-  }
-  items.sort((a, b) => b.updatedAt - a.updatedAt);
-  return { ok: true, items };
+  return { ok: true, items: listProtocolDecisions() };
 });
 
 ipcMain.handle('clear-protocol-decision', (event, data) => {
   if (!isMainSender(event)) return { ok: false, reason: 'unauthorized' };
   const origin = data && typeof data.origin === 'string' ? data.origin : '';
   const scheme = data && typeof data.scheme === 'string' ? data.scheme : '';
-  if (!isRememberableOrigin(origin) || !CONFIRMABLE_EXTERNAL_SCHEMES.has(scheme)) {
-    return { ok: false, reason: 'invalid key' };
-  }
-  const deleted = protocolDecisions.delete(protocolDecisionKey(origin, scheme));
-  if (deleted) persistProtocolDecisions();
-  return { ok: true, deleted };
+  return forgetProtocolDecision(origin, scheme);
 });
 
 ipcMain.on('clear-downloads', (event) => {
