@@ -1,4 +1,5 @@
 'use strict';
+const { originFromUrl } = require('./modutil');
 
 // devicerguard.js —— 串口 / HID / USB 设备“选择器”回调的统一收口内核。
 //
@@ -23,14 +24,6 @@ const KIND_USB = 'usb';
 const DECISION_CANCEL = 'cancel';
 
 const KNOWN_KINDS = new Set([KIND_SERIAL, KIND_HID, KIND_USB]);
-
-function originFromUrl(rawUrl) {
-  try {
-    return new URL(rawUrl || '').origin;
-  } catch {
-    return '';
-  }
-}
 
 // extractDeviceList 屏蔽三种事件回调形态差异，返回统一的设备数组。
 //   serial: 直接把 portList 作为第二参传入
