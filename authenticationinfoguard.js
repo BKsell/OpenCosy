@@ -1,5 +1,7 @@
 'use strict';
 
+const { headerKey } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -19,15 +21,6 @@ const BASE64_PATTERN = /^[A-Za-z0-9+/]{1,128}={0,2}$/;
 const NC_PATTERN = /^[0-9a-fA-F]{8}$/;
 const QOP_SET = new Set(['auth', 'auth-int']);
 const CONTROL_PATTERN = /[\u0000-\u001f\u007f]/;
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
 
 function deleteHeader(headers, name) {
   const key = headerKey(headers, name);
