@@ -1,4 +1,5 @@
 'use strict';
+const { isObj } = require('./modutil');
 
 // dohguard.js —— 安全 DNS（DNS-over-HTTPS）选择与校验内核（无 Electron 依赖，可单测）。
 //
@@ -30,10 +31,6 @@ const KNOWN_PROVIDERS = Object.freeze([
   { id: 'alidns', name: '阿里公共 DNS', template: 'https://dns.alidns.com/dns-query' },
   { id: 'dnspod', name: '腾讯 DNSPod', template: 'https://doh.pub/dns-query' },
 ]);
-
-function isObj(v) {
-  return v !== null && typeof v === 'object';
-}
 
 // 复用 PNA 内核的 IPv4 inet_aton 归一化与地址空间分类，避免本模块再维护一份
 // 短格式 / 进制解析，保证“混淆 IP 字面量”在各守卫处判定一致。
