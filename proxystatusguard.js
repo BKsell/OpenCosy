@@ -1,6 +1,6 @@
 'use strict';
 
-const { firstValue, headerKey } = require('./headerutil');
+const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -16,11 +16,6 @@ const REASON = {
 const HEADER = 'proxy-status';
 const MAX_VALUE_LENGTH = 1024;
 const LEAKY_PARAMS = new Set(['details', 'next-hop-ip', 'next-hop-protocol', 'proxy-internal-id']);
-
-function deleteHeader(headers, name) {
-  const key = headerKey(headers, name);
-  if (key) delete headers[key];
-}
 
 function splitItems(text) {
   const items = [];
