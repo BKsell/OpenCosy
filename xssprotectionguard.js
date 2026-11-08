@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerKey } = require('./headerutil');
+const { headerKey, headerText } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -9,14 +9,6 @@ const REASON = {
   LEGACY_DISABLED: 'legacy-disabled',
   MALFORMED: 'malformed',
 };
-
-function headerText(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return '';
-  const raw = headers[key];
-  const value = Array.isArray(raw) ? raw.join(', ') : raw;
-  return typeof value === 'string' ? value : '';
-}
 
 function inspectXSSProtection(headers) {
   const key = headerKey(headers, 'x-xss-protection');
