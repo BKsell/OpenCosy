@@ -1,5 +1,7 @@
 'use strict';
 
+const { listValues } = require('./modutil');
+
 const { headerKey } = require('./headerutil');
 
 const REASON = {
@@ -18,14 +20,6 @@ const MAX_ENTRY_LENGTH = 256;
 const MAX_WARNING_AGE_MS = 86400000;
 const CODE_ALLOWED = new Set(['110', '111', '112', '113', '199', '214', '299']);
 const PSEUDO_CODES = new Set(['1', '2', '3', '4', '5']);
-
-function listValues(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return [];
-  const raw = headers[key];
-  if (Array.isArray(raw)) return raw.filter((item) => typeof item === 'string');
-  return typeof raw === 'string' ? [raw] : [];
-}
 
 function splitWarnings(values) {
   const entries = [];
