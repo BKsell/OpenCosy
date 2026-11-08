@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerKey } = require('./headerutil');
+const { headerKey, rawValue } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -14,12 +14,6 @@ const HEADER = 'link';
 const MAX_ENTRIES = 8;
 const MAX_LENGTH = 1024;
 const ENTRY = /^<([^<>\s]{1,512})>(.*)$/;
-
-function rawValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return null;
-  return headers[key];
-}
 
 function safeUrl(url) {
   const lower = url.toLowerCase();
