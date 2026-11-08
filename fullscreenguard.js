@@ -1,4 +1,5 @@
 'use strict';
+const { pruneOlderThan, originFromUrl } = require('./modutil');
 
 // fullscreenguard.js —— HTML 全屏与键盘锁（navigator.keyboard.lock）的滥用收口内核。
 //
@@ -33,20 +34,6 @@ const KEYBOARD_LOCK_WINDOW_MS = 5000;
 const KEYBOARD_LOCK_LIMIT = 3;
 const FULLSCREEN_SWITCH_WINDOW_MS = 10000;
 const FULLSCREEN_SWITCH_LIMIT = 8;
-
-function originFromUrl(rawUrl) {
-  try {
-    return new URL(rawUrl || '').origin;
-  } catch {
-    return '';
-  }
-}
-
-function pruneOlderThan(list, cutoff) {
-  let i = 0;
-  while (i < list.length && list[i] < cutoff) i++;
-  if (i > 0) list.splice(0, i);
-}
 
 function createFullscreenState(now) {
   return {
