@@ -1,6 +1,6 @@
 'use strict';
 
-const { firstValue, headerKey } = require('./headerutil');
+const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -16,11 +16,6 @@ const REASON = {
 const HEADER = 'public-key-pins';
 const MAX_VALUE_LENGTH = 1024;
 const MAX_MAX_AGE = 2592000;
-
-function deleteHeader(headers, name) {
-  const key = headerKey(headers, name);
-  if (key) delete headers[key];
-}
 
 function inspectPublicKeyPins(value) {
   if (typeof value !== 'string') return { reason: REASON.MALFORMED, pins: [] };
