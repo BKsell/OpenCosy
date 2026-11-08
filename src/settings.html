@@ -3,263 +3,96 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 安全加固: Content Security Policy -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:;">
     <title>设置 - OpenCosy浏览器</title>
     <script src="constants.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-            background: #f3f3f3;
-            color: #333;
-            line-height: 1.6;
-        }
-
-        .settings-container {
-            position: relative;
-            background: rgba(255, 255, 255, 0.2);
-            backdrop-filter: blur(4px) saturate(200%);
-            border: 1px solid rgba(255, 255, 255, 0.9);
-            box-shadow:
-                0 12px 40px rgba(31, 38, 135, 0.3),
-                inset 0 6px 30px rgba(255, 255, 255, 0.4);
-            border-radius: 12px;
-            max-width: 800px;
-            margin: 40px auto;
-            padding: 40px 20px;
-        }
-
-        .settings-header {
-            text-align: center;
-            margin-bottom: 40px;
-        }
-
-        .settings-title {
-            font-size: 32px;
-            font-weight: 300;
-            color: #0078d4;
-            margin-bottom: 10px;
-        }
-
-        .settings-subtitle {
-            font-size: 16px;
-            color: #666;
-            opacity: 0.8;
-        }
-
-        .settings-section {
-            background: white;
-            border-radius: 8px;
-            padding: 30px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-
-        .section-title {
-            font-size: 20px;
-            font-weight: 600;
-            margin-bottom: 20px;
-            color: #0078d4;
-            border-bottom: 2px solid #f0f0f0;
-            padding-bottom: 10px;
-        }
-
-        .setting-item {
-            margin-bottom: 25px;
-            display: flex;
-            align-items: flex-start;
-            gap: 15px;
-        }
-
-        .setting-icon {
-            width: 24px;
-            height: 24px;
-            background: #ffffff;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #333333;
-            font-size: 12px;
-            flex-shrink: 0;
-            border: 1px solid #e0e0e0;
-        }
-
-        .setting-icon img {
-            filter: brightness(0) saturate(100%) invert(0%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(0%) contrast(100%);
-        }
-
-        .setting-content {
-            flex: 1;
-        }
-
-        .setting-label {
-            font-weight: 600;
-            margin-bottom: 5px;
-            display: block;
-        }
-
-        .setting-description {
-            font-size: 14px;
-            color: #666;
-            margin-bottom: 10px;
-        }
-
-        .radio-group {
-            display: flex;
-            gap: 20px;
-            flex-wrap: wrap;
-        }
-
-        .radio-option {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            cursor: pointer;
-        }
-
-        .radio-option input[type="radio"] {
-            margin: 0;
-        }
-
-        .text-input {
-            width: 100%;
-            max-width: 300px;
-            padding: 8px 12px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 14px;
-        }
-
-        .text-input:focus {
-            outline: none;
-            border-color: #0078d4;
-            box-shadow: 0 0 0 2px rgba(0,120,212,0.2);
-        }
-
-        .info-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-top: 10px;
-        }
-
-        .info-item {
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 6px;
-            border-left: 4px solid var(--theme-color, #0078d4);
-        }
-
-        .info-label {
-            font-size: 12px;
-            color: #666;
-            margin-bottom: 5px;
-        }
-
-        .info-value {
-            font-weight: 600;
-            font-size: 14px;
-        }
-
-        .link {
-            color: #0078d4;
-            text-decoration: none;
-        }
-
-        .link:hover {
-            text-decoration: underline;
-        }
-
-        .copyright {
-            text-align: center;
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 1px solid #e0e0e0;
-            color: #666;
-            font-size: 14px;
-        }
-
-        .save-button {
-            background: #0078d4;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            margin-top: 10px;
-        }
-
-        .save-button:hover {
-            background: #106ebe;
-        }
-
-        .toggle-switch {
-            position: relative;
-            display: inline-block;
-            width: 50px;
-            height: 26px;
-        }
-
-        .toggle-switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-            position: absolute;
-            z-index: 1;
-        }
-
-        .toggle-slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: #ccc;
-            transition: 0.3s;
-            border-radius: 26px;
-            z-index: 0;
-        }
-
-        .toggle-slider:before {
-            position: absolute;
-            content: "";
-            height: 20px;
-            width: 20px;
-            left: 3px;
-            bottom: 3px;
-            background-color: white;
-            transition: 0.3s;
-            border-radius: 50%;
-        }
-
-        .toggle-switch input:checked + .toggle-slider {
-            background-color: var(--theme-color, #0078d4);
-        }
-
-        .toggle-switch input:checked + .toggle-slider:before {
-            transform: translateX(24px);
-        }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #f3f3f3; color: #333; line-height: 1.6; transition: background 0.3s, color 0.3s; }
+        body.dark-mode { background: #1a1a1a; color: #e0e0e0; }
+        .settings-container { position: relative; background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(4px) saturate(200%); border: 1px solid rgba(255, 255, 255, 0.9); box-shadow: 0 12px 40px rgba(31, 38, 135, 0.3), inset 0 6px 30px rgba(255, 255, 255, 0.4); border-radius: 12px; max-width: 800px; margin: 40px auto; padding: 40px 20px; transition: background 0.3s, border 0.3s; }
+        body.dark-mode .settings-container { background: rgba(40, 40, 40, 0.8); border: 1px solid rgba(60, 60, 60, 0.9); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5), inset 0 6px 30px rgba(60, 60, 60, 0.4); }
+        .settings-header { text-align: center; margin-bottom: 40px; }
+        .settings-title { font-size: 32px; font-weight: 300; color: #0078d4; margin-bottom: 10px; transition: color 0.3s; }
+        body.dark-mode .settings-title { color: #4da3ff; }
+        .settings-subtitle { font-size: 16px; color: #666; opacity: 0.8; transition: color 0.3s; }
+        body.dark-mode .settings-subtitle { color: #999; }
+        .settings-section { background: white; border-radius: 8px; padding: 30px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); transition: background 0.3s; }
+        body.dark-mode .settings-section { background: #2d2d2d; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+        .section-title { font-size: 20px; font-weight: 600; margin-bottom: 20px; color: #0078d4; border-bottom: 2px solid #f0f0f0; padding-bottom: 10px; transition: color 0.3s, border-color 0.3s; }
+        body.dark-mode .section-title { color: #4da3ff; border-bottom-color: #444; }
+        .setting-item { margin-bottom: 25px; display: flex; align-items: flex-start; gap: 15px; }
+        .setting-icon { width: 24px; height: 24px; background: #ffffff; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #333333; font-size: 12px; flex-shrink: 0; border: 1px solid #e0e0e0; transition: background 0.3s, border-color 0.3s; }
+        body.dark-mode .setting-icon { background: #3d3d3d; border-color: #555; color: #e0e0e0; }
+        .setting-icon img { filter: brightness(0) saturate(100%) invert(0%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(0%) contrast(100%); }
+        body.dark-mode .setting-icon img { filter: brightness(0) saturate(100%) invert(100%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(100%) contrast(100%); }
+        .setting-content { flex: 1; }
+        .setting-label { font-weight: 600; margin-bottom: 5px; display: block; }
+        .setting-description { font-size: 14px; color: #666; margin-bottom: 10px; transition: color 0.3s; }
+        body.dark-mode .setting-description { color: #999; }
+        .radio-group { display: flex; gap: 20px; flex-wrap: wrap; }
+        .radio-option { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+        .radio-option input[type="radio"] { margin: 0; }
+        .text-input { width: 100%; max-width: 300px; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; background: white; color: #333; transition: background 0.3s, color 0.3s, border-color 0.3s; }
+        body.dark-mode .text-input { background: #3d3d3d; border-color: #555; color: #e0e0e0; }
+        .text-input:focus { outline: none; border-color: #0078d4; box-shadow: 0 0 0 2px rgba(0,120,212,0.2); }
+        .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-top: 10px; }
+        .info-item { background: #f8f9fa; padding: 15px; border-radius: 6px; border-left: 4px solid var(--theme-color, #0078d4); transition: background 0.3s; }
+        body.dark-mode .info-item { background: #3d3d3d; }
+        .info-label { font-size: 12px; color: #666; margin-bottom: 5px; transition: color 0.3s; }
+        body.dark-mode .info-label { color: #999; }
+        .info-value { font-weight: 600; font-size: 14px; }
+        .link { color: #0078d4; text-decoration: none; }
+        .link:hover { text-decoration: underline; }
+        .copyright { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #e0e0e0; color: #666; font-size: 14px; transition: border-color 0.3s, color 0.3s; }
+        body.dark-mode .copyright { border-top-color: #444; color: #999; }
+        .save-button { background: #0078d4; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px; margin-top: 10px; transition: background 0.3s; }
+        .save-button:hover { background: #106ebe; }
+        .toggle-switch { position: relative; display: inline-block; width: 50px; height: 26px; }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; position: absolute; z-index: 1; }
+        .toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: 0.3s; border-radius: 26px; z-index: 0; }
+        .toggle-slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 3px; background-color: white; transition: 0.3s; border-radius: 50%; }
+        .toggle-switch input:checked + .toggle-slider { background-color: var(--theme-color, #0078d4); }
+        .toggle-switch input:checked + .toggle-slider:before { transform: translateX(24px); }
+        .spellcheck-langs { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 12px; }
+        .spellcheck-langs.spellcheck-off { display: none; }
+        .spellcheck-langs label { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: normal; color: #444; cursor: pointer; }
+        body.dark-mode .spellcheck-langs label { color: #ccc; }
+        .spellcheck-langs input[type="checkbox"] { margin: 0; cursor: pointer; }
+        .spellcheck-langs label.spellcheck-unavailable { display: none; }
+        .protocol-decisions { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+        .protocol-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px; border: 1px solid rgba(0,0,0,0.1); border-radius: 8px; font-size: 13px; }
+        body.dark-mode .protocol-row { border-color: rgba(255,255,255,0.15); }
+        .protocol-row .protocol-site { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+        .protocol-row .protocol-origin { font-weight: 600; word-break: break-all; }
+        .protocol-row .protocol-meta { font-size: 12px; opacity: 0.7; }
+        .protocol-row .protocol-badge { padding: 1px 8px; border-radius: 10px; font-size: 12px; }
+        .protocol-badge.allow { background: rgba(76,175,80,0.15); color: #2e7d32; }
+        .protocol-badge.deny { background: rgba(244,67,54,0.15); color: #c62828; }
+        .protocol-row .protocol-clear { border: 1px solid currentColor; background: transparent; border-radius: 6px; padding: 3px 12px; font-size: 12px; cursor: pointer; opacity: 0.8; }
+        .protocol-row .protocol-clear:hover { opacity: 1; }
+        .settings-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 20px; }
+        .settings-search { flex: 1; min-width: 220px; padding: 9px 14px; border: 1px solid #ddd; border-radius: 20px; font-size: 14px; background: white; color: #333; outline: none; transition: border-color 0.2s, box-shadow 0.2s; }
+        body.dark-mode .settings-search { background: #3d3d3d; border-color: #555; color: #e0e0e0; }
+        .settings-search:focus { border-color: var(--theme-color, #0078d4); box-shadow: 0 0 0 2px rgba(0,120,212,0.2); }
+        .nav-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+        .nav-chip { padding: 6px 14px; border: 1px solid #d0d0d0; border-radius: 16px; background: transparent; color: #555; font-size: 13px; cursor: pointer; transition: all 0.2s; }
+        body.dark-mode .nav-chip { border-color: #555; color: #ccc; }
+        .nav-chip.active { border-color: var(--theme-color, #0078d4); color: var(--theme-color, #0078d4); font-weight: 600; }
+        .reset-button { padding: 6px 14px; border: 1px solid #d32f2f; border-radius: 16px; background: transparent; color: #d32f2f; font-size: 13px; cursor: pointer; }
+        .reset-button:hover { background: rgba(211,47,47,0.08); }
+        .settings-summary { font-size: 12px; color: #888; margin-bottom: 16px; }
+        .setting-item.filtered-out { display: none; }
+        .settings-section.filtered-out { display: none; }
+        .setting-item .match-mark { background: rgba(255,213,79,0.5); border-radius: 3px; padding: 0 2px; }
+        body.dark-mode .setting-item .match-mark { background: rgba(255,213,79,0.25); }
+        .reset-confirm-box { padding: 12px 14px; border: 1px solid rgba(211,47,47,0.4); border-radius: 8px; margin-bottom: 20px; font-size: 13px; display: none; }
+        .reset-confirm-box.show { display: block; }
         @media (max-width: 600px) {
-            .settings-container {
-                padding: 20px 10px;
-            }
-
-            .settings-section {
-                padding: 20px;
-            }
-
-            .radio-group {
-                flex-direction: column;
-                gap: 10px;
-            }
+            .settings-container { padding: 20px 10px; }
+            .settings-section { padding: 20px; }
+            .radio-group { flex-direction: column; gap: 10px; }
         }
     </style>
 </head>
@@ -269,14 +102,25 @@
             <h1 class="settings-title">OpenCosy浏览器设置</h1>
             <p class="settings-subtitle">个性化您的浏览体验</p>
         </div>
-
+        <div class="settings-toolbar">
+            <input type="text" class="settings-search" id="settingsSearch" placeholder="搜索设置项，例如 暗色、Cookie、DNS…" autocomplete="off">
+            <div class="nav-chips" id="navChips">
+                <button type="button" class="nav-chip active" data-section="">全部</button>
+            </div>
+            <button type="button" class="reset-button" id="resetSettingsBtn">恢复默认</button>
+        </div>
+        <div class="reset-confirm-box" id="resetConfirmBox">
+            确认要恢复全部设置为默认值吗？此操作会清空当前保存的所有设置并重新加载页面。
+            <button type="button" class="save-button" id="resetConfirmYes" style="margin-left:10px;">确认恢复</button>
+            <button type="button" class="reset-button" id="resetConfirmNo">取消</button>
+        </div>
+        <div class="settings-summary" id="settingsSummary"></div>
         <div class="settings-section">
             <h2 class="section-title">个性化设置</h2>
-
             <div class="setting-item">
                 <div class="setting-icon">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 20C7.59 20 4 16.41 4 12C4 7.59 7.59 4 12 4C16.41 4 20 7.59 20 12C20 16.41 16.41 20 12 20ZM12 6C10.34 6 9 7.34 9 9C9 10.66 10.34 12 12 12C13.66 12 15 10.66 15 9C15 7.34 13.66 6 12 6ZM12 18C9.79 18 8 16.21 8 14C8 11.79 9.79 10 12 10C14.21 10 16 11.79 16 14C16 16.21 14.21 18 12 18Z" fill="currentColor"/>
+                        <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 20C7.59 20 4 16.41 4 12C4 7.59 7.59 4 12 4C16.41 4 20 7.59 20 12C20 16.41 16.41 20 12 20ZM12 6C10.34 6 9 7.34 9 9C9 10.66 10.34 12 12 12C13.66 12 15 10.66 15 9C15 7.34 13.66 6 12 6ZM12 18C9.79 18 8 16.21 8 14C8 11.79 9.79 10 12 10C14.21 10 16 11.79 16 14C16 16.21 14.21 18 12 18Z" fill="currentColor" />
                     </svg>
                 </div>
                 <div class="setting-content">
@@ -285,11 +129,361 @@
                     <input type="color" id="themeColor" value="#0078d4" style="width: 100px; height: 40px; border: none; border-radius: 4px; cursor: pointer;">
                 </div>
             </div>
-
             <div class="setting-item">
                 <div class="setting-icon">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M19 12H5M19 12C20.1046 12 21 11.1046 21 10V6C21 4.89543 20.1046 4 19 4H5C3.89543 4 3 4.89543 3 6V10C3 11.1046 3.89543 12 5 12M19 12V18C19 19.1046 18.1046 20 17 20H7C5.89543 20 5 19.1046 5 18V12M9 16H15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M20 8.69V4H16.69L12 .69L7.31 4H4V8.69L.69 13L4 17.31V21H7.31L12 23.31L16.69 21H20V17.31L23.31 13L20 8.69ZM12 19.31V4.69L17.31 12L12 19.31Z" fill="currentColor" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">深色模式</label>
+                    <p class="setting-description">开启深色模式以减少眼睛疲劳，适合夜间浏览</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="darkMode">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" fill="currentColor" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">HTTPS-Only 模式</label>
+                    <p class="setting-description">自动把公网 http 站点升级为加密的 https 连接，失败时由你确认后再回退明文；关闭后所有站点按其原始协议访问</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="httpsOnly" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="3" y="6" width="18" height="12" rx="2" stroke="currentColor" stroke-width="2" />
+                        <path d="M7 6V3M12 6V3M17 6V3M7 21v-3M12 21v-3M17 21v-3" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                        <path d="M8 10v4M12 10v4M16 10v4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">内存节省（自动休眠后台标签）</label>
+                    <p class="setting-description">后台标签闲置 30 分钟后自动释放其内存，点回时重新加载；正在播放声音或被录屏共享的标签不会休眠</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="memorySaver" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2L4 6V12C4 16.4 7.4 20.5 12 22C16.6 20.5 20 16.4 20 12V6L12 2Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+                        <path d="M9 12L11 14L15 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">退出时自动清除浏览数据</label>
+                    <p class="setting-description">每次关闭浏览器后清空缓存、Cookie、站点存储、历史与下载记录，且不恢复上次标签页；适合公用电脑或注重隐私的场景</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="clearOnExit">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" stroke-width="2" />
+                        <path d="M3 9H21" stroke="currentColor" stroke-width="2" />
+                        <circle cx="7" cy="7" r="0.6" fill="currentColor" />
+                        <circle cx="9.5" cy="7" r="0.6" fill="currentColor" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">多个标签页时退出需确认</label>
+                    <p class="setting-description">仍有多个标签页打开时，点关闭按钮先弹确认，避免一次误关整窗丢失所有页面</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="confirmCloseMultiple">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" />
+                        <path d="M12 7v5l3 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                        <path d="M5 3L3 5M19 3l2 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">拦截第三方追踪器</label>
+                    <p class="setting-description">屏蔽常见分析、广告与跨站追踪请求（脚本 / 图片 / 请求等），不影响你直接打开任何网站；右下角盾牌显示本次拦截数</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="blockTrackers" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M21 8V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+                        <path d="M9 12h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">拦截第三方 Cookie</label>
+                    <p class="setting-description">网页在跨站（第三方）上下文试图种下的 Cookie 会被直接剥离，阻断广告商跨站追踪和部分 CSRF；不影响你直接登录的网站，可在“安全中心 → Cookie 加固”查看处理记录</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="blockThirdPartyCookies" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 3L4 5V11C4 15.4 7 19.3 12 21C17 19.3 20 15.4 20 11V5L12 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+                        <path d="M9.5 12L11.2 13.7L15 9.8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">加固 Cookie 的 SameSite 与前缀</label>
+                    <p class="setting-description">没有 SameSite 的 Cookie 自动补 SameSite=Lax（对齐现代 Chrome 默认）；SameSite=None 缺 Secure 时降级为 Lax；剥离 http 页面的 Secure Cookie 和不合法的 __Host-/__Secure- 前缀 Cookie</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="hardenCookies" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="3" y="4" width="18" height="12" rx="2" stroke="currentColor" stroke-width="2" />
+                        <path d="M7 20h10M12 16v4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                        <path d="M7 10l3 2-3 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">阻止公网网页访问内网/本机</label>
+                    <p class="setting-description">防止你打开的公网网页偷偷请求路由器后台、本机服务或云服务器元数据（169.254.169.254），阻断 CSRF 打内网与云凭据窃取；不影响你直接访问内网，也不影响内网页面之间的正常调用</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="blockLocalNetworkAccess" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" stroke-width="2" />
+                        <rect x="12" y="11" width="7" height="5" rx="1" fill="currentColor" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">允许网页画中画</label>
+                    <p class="setting-description">允许视频网站调用画中画（Picture-in-Picture）在离开页面后用悬浮小窗继续播放；关闭后通过 Permissions-Policy 全局禁用该能力，可避免视频站点借悬浮窗持续跟踪播放</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="allowPictureInPicture" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="3" y="4" width="18" height="13" rx="2" stroke="currentColor" stroke-width="2" />
+                        <path d="M7 21h10M9 8h6M9 11h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">收敛高熵 Client Hints</label>
+                    <p class="setting-description">自动剥离完整浏览器版本、操作系统小版本、CPU 架构/位数、设备型号等高熵 Sec-CH-UA-* 请求头，只保留兼容性所需的低熵基础头，降低被跨站指纹识别的概率（不影响页面渲染与兼容性）</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="reduceClientHints" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" />
+                        <path d="M12 7v5l3 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">剥离广告归因与兴趣主题信号</label>
+                    <p class="setting-description">移除 Sec-Browsing-Topics（兴趣主题）与 Attribution-Reporting-*（广告归因）等请求头，阻止广告商跨站追踪你的浏览主题与转化链</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="blockAdSignals" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M9 11l3-3 3 3M12 8v9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        <path d="M5 4h14v16H5z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">拦截超链接审计打点</label>
+                    <p class="setting-description">阻止页面用 &lt;a ping&gt; 或带 Ping-To 的请求在你点击链接时静默向第三方上报点击；仅取消打点请求，不影响正常跳转</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="blockHyperlinkPing" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M4 6h16M4 12h10M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">清理站点的 Accept-CH / Critical-CH 订阅</label>
+                    <p class="setting-description">移除响应头里的 Accept-CH 与会触发带新头重试的 Critical-CH，阻止站点“订阅”高熵客户端提示并放大指纹采集</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="stripAcceptCh" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M3 12a9 9 0 0 1 18 0M6 12a6 6 0 0 1 12 0M9 12a3 3 0 0 1 6 0" stroke="currentColor" stroke-width="2" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">WebRTC IP 暴露策略</label>
+                    <p class="setting-description">严格：WebRTC 只走默认公网接口，不暴露内网/真实公网 IP（防穿透 VPN，推荐）；均衡：允许 mDNS 混淆的内网候选，兼容部分 P2P；不干预：保持浏览器默认行为</p>
+                    <select id="webrtcMode"
+                        style="padding:8px 10px;border-radius:8px;border:1px solid var(--border-color,#dadce0);background:var(--input-bg,#fff);color:inherit;">
+                        <option value="strict">严格（不暴露内网 IP）</option>
+                        <option value="balanced">均衡（mDNS 混淆）</option>
+                        <option value="legacy">不干预（兼容旧 P2P）</option>
+                    </select>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+                        <circle cx="12" cy="9" r="2.5" stroke="currentColor" stroke-width="2" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">安全 DNS（DNS-over-HTTPS）</label>
+                    <p class="setting-description">把域名解析经 HTTPS 发往可信解析器，防止同一网络里的人明文窃听你访问的域名或用污染应答把你引向钓鱼站。自动：能加密则加密；强制：全部走加密解析。仅允许 https 且拒绝指向本机/内网/元数据地址的服务器</p>
+                    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+                        <select id="dohMode"
+                            style="padding:8px 10px;border-radius:8px;border:1px solid var(--border-color,#dadce0);background:var(--input-bg,#fff);color:inherit;">
+                            <option value="automatic">自动（能加密则加密，推荐）</option>
+                            <option value="secure">强制（始终加密解析）</option>
+                            <option value="off">关闭</option>
+                        </select>
+                        <select id="dohProvider"
+                            style="padding:8px 10px;border-radius:8px;border:1px solid var(--border-color,#dadce0);background:var(--input-bg,#fff);color:inherit;">
+                            <option value="cloudflare">Cloudflare (1.1.1.1)</option>
+                            <option value="google">Google Public DNS</option>
+                            <option value="quad9">Quad9 (9.9.9.9)</option>
+                            <option value="alidns">阿里公共 DNS</option>
+                            <option value="dnspod">腾讯 DNSPod</option>
+                            <option value="custom">自定义服务器…</option>
+                        </select>
+                    </div>
+                    <input type="url" id="dohCustomUrl" placeholder="自定义 DoH 模板，例如 https://dns.example.com/dns-query"
+                        style="margin-top:8px;width:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid var(--border-color,#dadce0);background:var(--input-bg,#fff);color:inherit;">
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 3L4 5V11C4 15.4 7 19.3 12 21C17 19.3 20 15.4 20 11V5L12 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+                        <path d="M9.5 12L11.2 13.7L15 9.8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">页面崩溃时自动恢复</label>
+                    <p class="setting-description">某个标签的渲染进程崩溃或内存不足时自动重新加载一次；反复崩溃则改为横幅提示，由你手动刷新，避免崩溃循环</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="crashRecovery" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M10 13a5 5 0 0 0 7.07.54l2.12-2.12a5 5 0 0 0-7.07-7.07L10.7 5.76" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                        <path d="M14 11a5 5 0 0 0-7.07-.54l-2.12 2.12a5 5 0 0 0 7.07 7.07l1.42-1.41" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">剥离链接中的追踪参数</label>
+                    <p class="setting-description">直接打开网页或跳转时，自动去除 utm_source、fbclid、gclid 等仅用于广告归因、对页面内容无意义的参数；不影响网址锚点（#）与登录回调</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="stripTrackingParams" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M4 19V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v14l-4-3H6a2 2 0 0 0-2 2Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+                        <path d="M9 7h4M9 10h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">拼写检查</label>
+                    <p class="setting-description">在网页输入框中检查拼写错误，右键错词可查看本地词典给出的替换建议或加入自定义词典；检查完全在本机完成，不会上传你输入的内容</p>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="spellcheckEnabled" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <div id="spellcheckLangs" class="spellcheck-langs">
+                        <label><input type="checkbox" class="spellcheck-lang" value="en-US" checked> 英语（美国）</label>
+                        <label><input type="checkbox" class="spellcheck-lang" value="en-GB"> 英语（英国）</label>
+                        <label><input type="checkbox" class="spellcheck-lang" value="zh-CN" checked> 中文（简体）</label>
+                        <label><input type="checkbox" class="spellcheck-lang" value="zh-TW"> 中文（繁体）</label>
+                        <label><input type="checkbox" class="spellcheck-lang" value="ja"> 日语</label>
+                        <label><input type="checkbox" class="spellcheck-lang" value="ko"> 韩语</label>
+                        <label><input type="checkbox" class="spellcheck-lang" value="fr-FR"> 法语</label>
+                        <label><input type="checkbox" class="spellcheck-lang" value="de-DE"> 德语</label>
+                        <label><input type="checkbox" class="spellcheck-lang" value="es-ES"> 西班牙语</label>
+                        <label><input type="checkbox" class="spellcheck-lang" value="ru-RU"> 俄语</label>
+                        <label><input type="checkbox" class="spellcheck-lang" value="pt-BR"> 葡萄牙语（巴西）</label>
+                        <label><input type="checkbox" class="spellcheck-lang" value="it-IT"> 意大利语</label>
+                    </div>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">外部应用唤起授权</label>
+                    <p class="setting-description">网页请求唤起 mailto: / tel: 等本机协议、且你勾选了“记住选择”时，会按网站记录在这里。其它协议（ms-*、smb、file 等）始终直接拦截，不会产生任何授权</p>
+                    <div id="protocolDecisions" class="protocol-decisions">
+                        <p class="setting-description protocol-empty">暂无已记住的选择</p>
+                    </div>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M19 12H5M19 12C20.1046 12 21 11.1046 21 10V6C21 4.89543 20.1046 4 19 4H5C3.89543 4 3 4.89543 3 6V10C3 11.1046 3.89543 12 5 12M19 12V18C19 19.1046 18.1046 20 17 20H7C5.89543 20 5 19.1046 5 18V12M9 16H15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
                     </svg>
                 </div>
                 <div class="setting-content">
@@ -302,10 +496,8 @@
                 </div>
             </div>
         </div>
-
         <div class="settings-section">
             <h2 class="section-title">常规设置</h2>
-
             <div class="setting-item">
                 <div class="setting-icon">
                     <img src="svg/home.svg" width="16" height="16" alt="默认标签页">
@@ -330,7 +522,6 @@
                     <input type="text" class="text-input" id="customUrl" placeholder="https://example.com" style="display: none; margin-top: 10px;">
                 </div>
             </div>
-
             <div class="setting-item">
                 <div class="setting-icon">
                     <img src="svg/oa.svg" width="16" height="16" alt="标签页布局">
@@ -350,7 +541,6 @@
                     </div>
                 </div>
             </div>
-
             <div class="setting-item">
                 <div class="setting-icon">
                     <img src="svg/backdrop.svg" width="16" height="16" alt="新标签页背景">
@@ -371,7 +561,6 @@
                     <input type="text" class="text-input" id="customBackgroundUrl" placeholder="输入图片URL或本地文件路径" style="display: none; margin-top: 10px;">
                 </div>
             </div>
-
             <div class="setting-item">
                 <div class="setting-icon">
                     <img src="svg/extensions.svg" width="16" height="16" alt="插件管理">
@@ -382,7 +571,46 @@
                     <button class="save-button" onclick="window.location.href='cosy://extensions'">管理插件</button>
                 </div>
             </div>
-
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <img src="svg/s.svg" width="16" height="16" alt="站点数据">
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">站点数据与 Cookie</label>
+                    <p class="setting-description">按网站查看、删除 Cookie，或清空指定站点的本地数据</p>
+                    <button class="save-button" onclick="window.location.href='cosy://sitedata'">管理站点数据</button>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <img src="svg/s.svg" width="16" height="16" alt="站点权限">
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">站点权限</label>
+                    <p class="setting-description">管理各网站“始终允许 / 始终拒绝”的摄像头、麦克风、定位、通知等权限</p>
+                    <button class="save-button" onclick="window.location.href='cosy://permissions'">管理站点权限</button>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <img src="svg/s.svg" width="16" height="16" alt="安全事件中心">
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">安全事件中心</label>
+                    <p class="setting-description">查看浏览器拦下的危险协议唤起、可执行文件下载、设备权限请求等安全事件</p>
+                    <button class="save-button" onclick="window.location.href='cosy://security'">打开安全事件中心</button>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-icon">
+                    <img src="svg/s.svg" width="16" height="16" alt="下载校验和">
+                </div>
+                <div class="setting-content">
+                    <label class="setting-label">下载文件校验和</label>
+                    <p class="setting-description">查看每次下载自动计算的 SHA-256，与官方公布值一键比对，防范安装包被掉包</p>
+                    <button class="save-button" onclick="window.location.href='cosy://hashes'">打开下载校验和</button>
+                </div>
+            </div>
             <div class="setting-item">
                 <div class="setting-icon">
                     <img src="svg/s.svg" width="16" height="16" alt="默认搜索引擎">
@@ -403,203 +631,413 @@
                             <input type="radio" name="searchEngine" value="baidu">
                             百度
                         </label>
+                        <label class="radio-option">
+                            <input type="radio" name="searchEngine" value="ddg">
+                            DuckDuckGo
+                        </label>
                     </div>
                 </div>
             </div>
         </div>
-
         <div class="settings-section">
             <h2 class="section-title">关于浏览器</h2>
-
             <div class="info-grid">
                 <div class="info-item">
                     <div class="info-label">软件版本</div>
                     <div class="info-value" id="about-version">OpenCosy浏览器 1.0.0</div>
                 </div>
-
                 <div class="info-item">
                     <div class="info-label">浏览器内核</div>
                     <div class="info-value" id="engine-version">正在检测...</div>
                 </div>
-
                 <div class="info-item">
                     <div class="info-label">技术支持</div>
                     <div class="info-value">热土工作室</div>
                 </div>
             </div>
         </div>
-
         <div class="copyright">
             © 2026 热土工作室 | Licensed under Apache 2.0
         </div>
-
         <button class="save-button" onclick="saveSettings()">保存设置</button>
     </div>
-
     <script>
+        const ALLOWED_SETTING_KEYS = new Set(['defaultTab', 'tabLayout', 'searchEngine', 'backgroundType', 'customUrl', 'customBackgroundUrl', 'themeColor', 'darkMode', 'httpsOnly', 'memorySaver', 'clearOnExit', 'confirmCloseMultiple', 'blockTrackers', 'blockThirdPartyCookies', 'hardenCookies', 'blockLocalNetworkAccess', 'reduceClientHints', 'blockAdSignals', 'blockHyperlinkPing', 'stripAcceptCh', 'allowPictureInPicture', 'webrtcMode', 'dohMode', 'dohProvider', 'dohCustomUrl', 'crashRecovery', 'stripTrackingParams', 'spellcheckEnabled', 'spellcheckLanguages']);
+        const ALLOWED_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'cosy:']);
+        const COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
+        const DEFAULT_SPELLCHECK_LANGS = ['en-US', 'zh-CN'];
+        // 这些键在 .inf 配置里保存为 true/false，导入时必须还原成布尔值，
+        // 否则字符串 'false' 会被当成真值，导致"关闭"类设置永远关不掉。
+        const BOOLEAN_SETTING_KEYS = new Set(['darkMode', 'httpsOnly', 'memorySaver', 'clearOnExit', 'confirmCloseMultiple', 'blockTrackers', 'blockThirdPartyCookies', 'hardenCookies', 'blockLocalNetworkAccess', 'reduceClientHints', 'blockAdSignals', 'blockHyperlinkPing', 'stripAcceptCh', 'allowPictureInPicture', 'crashRecovery', 'stripTrackingParams', 'spellcheckEnabled']);
+
+        // 安全 DNS 控件联动：关闭模式下禁用解析器选择；仅 custom 时启用自定义 URL。
+        (function syncDohControls() {
+            const modeEl = document.getElementById('dohMode');
+            const providerEl = document.getElementById('dohProvider');
+            const customEl = document.getElementById('dohCustomUrl');
+            if (!modeEl || !providerEl || !customEl) return;
+            function apply() {
+                const off = modeEl.value === 'off';
+                providerEl.disabled = off;
+                customEl.disabled = off || providerEl.value !== 'custom';
+                customEl.placeholder = off
+                    ? '安全 DNS 已关闭'
+                    : (providerEl.value === 'custom'
+                        ? '自定义 DoH 模板，例如 https://dns.example.com/dns-query'
+                        : '选择「自定义服务器…」后填写 https DoH 模板');
+            }
+            modeEl.addEventListener('change', apply);
+            providerEl.addEventListener('change', apply);
+            apply();
+        })();
+
+        function isSafeUrl(url) {
+            try {
+                const parsed = new URL(url);
+                return ALLOWED_PROTOCOLS.has(parsed.protocol);
+            } catch {
+                return false;
+            }
+        }
+
+        function isValidSettingKey(key) {
+            return ALLOWED_SETTING_KEYS.has(key);
+        }
+
+        function isValidColor(str) {
+            return typeof str === 'string' && COLOR_RE.test(str);
+        }
+
+        function applyDarkMode(isDark) {
+            if (isDark) {
+                document.body.classList.add('dark-mode');
+            } else {
+                document.body.classList.remove('dark-mode');
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
             detectEngineVersion();
             loadSettings();
-
             if (typeof COSY_CONSTANTS !== 'undefined' && COSY_CONSTANTS.APP_INFO) {
                 const aboutVersion = document.getElementById('about-version');
-                if (aboutVersion) {
-                    aboutVersion.textContent = `${COSY_CONSTANTS.APP_INFO.name} ${COSY_CONSTANTS.APP_INFO.fullVersion}`;
-                }
+                if (aboutVersion) aboutVersion.textContent = `${COSY_CONSTANTS.APP_INFO.name} ${COSY_CONSTANTS.APP_INFO.fullVersion}`;
             }
-
             document.querySelectorAll('input[name="defaultTab"]').forEach(radio => {
                 radio.addEventListener('change', function() {
-                    const customUrlInput = document.getElementById('customUrl');
-                    customUrlInput.style.display = this.value === 'custom' ? 'block' : 'none';
+                    document.getElementById('customUrl').style.display = this.value === 'custom' ? 'block' : 'none';
                 });
             });
-
             document.querySelectorAll('input[name="backgroundType"]').forEach(radio => {
                 radio.addEventListener('change', function() {
-                    const customBackgroundInput = document.getElementById('customBackgroundUrl');
-                    customBackgroundInput.style.display = this.value === 'custom' ? 'block' : 'none';
+                    document.getElementById('customBackgroundUrl').style.display = this.value === 'custom' ? 'block' : 'none';
                 });
             });
+            document.getElementById('darkMode').addEventListener('change', function() {
+                applyDarkMode(this.checked);
+            });
+            document.getElementById('spellcheckEnabled').addEventListener('change', syncSpellcheckUi);
+            // 勾选时即时限制语言数量：超过 5 种直接取消本次勾选，
+            // 避免用户勾了一大堆之后点保存才被弹窗打回。
+            document.querySelectorAll('.spellcheck-lang').forEach(cb => {
+                cb.addEventListener('change', function() {
+                    const checked = document.querySelectorAll('.spellcheck-lang:checked');
+                    if (checked.length > 5) {
+                        this.checked = false;
+                        alert('拼写检查语言最多选择 5 种');
+                    }
+                });
+            });
+            // 向主进程查询平台实际安装了词典的语言；没有词典的选项直接隐藏，
+            // 勾了也不生效的语言不展示给用户。
+            window.electronAPI.invoke('get-spellcheck-info').then(function(info) {
+                if (!info || !info.success) return;
+                const selectable = new Set(info.selectable || []);
+                document.querySelectorAll('.spellcheck-lang').forEach(function(cb) {
+                    if (!selectable.has(cb.value)) {
+                        cb.parentElement.classList.add('spellcheck-unavailable');
+                        cb.checked = false;
+                    }
+                });
+                // 主进程的实时状态优先于本地缓存（可能在别处被改过）。
+                document.getElementById('spellcheckEnabled').checked = info.enabled !== false;
+                const langs = Array.isArray(info.languages) && info.languages.length ? info.languages : DEFAULT_SPELLCHECK_LANGS;
+                const langSet = new Set(langs);
+                document.querySelectorAll('.spellcheck-lang').forEach(function(cb) {
+                    if (selectable.has(cb.value)) cb.checked = langSet.has(cb.value);
+                });
+                syncSpellcheckUi();
+            }).catch(function() { /* preload 不可用时静默，保留默认勾选 */ });
+            syncSpellcheckUi();
+            // 加载已记住的外部协议授权（mailto/tel 按站点决定）。
+            loadProtocolDecisions();
         });
+
+        function syncSpellcheckUi() {
+            const enabled = document.getElementById('spellcheckEnabled').checked;
+            document.getElementById('spellcheckLangs').classList.toggle('spellcheck-off', !enabled);
+        }
+
+        // 外部协议授权列表：从主进程读“站点 -> mailto/tel 决定”，支持逐条撤销。
+        function escapeHtmlText(s) {
+            return String(s).replace(/[&<>"']/g, function(ch) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+            });
+        }
+
+        function formatDecisionTime(ts) {
+            const n = Number(ts);
+            if (!n) return '';
+            try { return new Date(n).toLocaleString(); } catch { return ''; }
+        }
+
+        function renderProtocolDecisions(items) {
+            const box = document.getElementById('protocolDecisions');
+            if (!box) return;
+            if (!Array.isArray(items) || items.length === 0) {
+                box.innerHTML = '<p class="setting-description protocol-empty">暂无已记住的选择</p>';
+                return;
+            }
+            box.innerHTML = items.map(function(it) {
+                const allowed = it.decision === 'allow';
+                return '<div class="protocol-row">'
+                    + '<span class="protocol-site">'
+                    +   '<span class="protocol-origin">' + escapeHtmlText(it.origin) + '</span>'
+                    +   '<span class="protocol-meta">' + escapeHtmlText(it.scheme) + (it.updatedAt ? ' · ' + escapeHtmlText(formatDecisionTime(it.updatedAt)) : '') + '</span>'
+                    + '</span>'
+                    + '<span style="display:flex;align-items:center;gap:10px;">'
+                    +   '<span class="protocol-badge ' + (allowed ? 'allow' : 'deny') + '">' + (allowed ? '允许' : '拒绝') + '</span>'
+                    +   '<button type="button" class="protocol-clear" data-origin="' + encodeURIComponent(it.origin) + '" data-scheme="' + encodeURIComponent(it.scheme) + '">撤销</button>'
+                    + '</span>'
+                    + '</div>';
+            }).join('');
+            box.querySelectorAll('.protocol-clear').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    const origin = decodeURIComponent(btn.getAttribute('data-origin'));
+                    const scheme = decodeURIComponent(btn.getAttribute('data-scheme'));
+                    window.electronAPI.invoke('clear-protocol-decision', { origin: origin, scheme: scheme }).then(loadProtocolDecisions);
+                });
+            });
+        }
+
+        function loadProtocolDecisions() {
+            if (!window.electronAPI || !window.electronAPI.invoke) return;
+            window.electronAPI.invoke('get-protocol-decisions').then(function(res) {
+                if (res && res.ok) renderProtocolDecisions(res.items || []);
+            }).catch(function() { /* 通道不可用时保留空态 */ });
+        }
 
         function detectEngineVersion() {
             const engineVersion = document.getElementById('engine-version');
-
             if (window.chrome) {
                 const match = navigator.userAgent.match(/Chrome\/([0-9.]+)/);
-                if (match) {
-                    engineVersion.textContent = `Chromium ${match[1]}`;
-                } else {
-                    engineVersion.textContent = 'Chromium (版本未知)';
-                }
+                engineVersion.textContent = match ? `Chromium ${match[1]}` : 'Chromium (版本未知)';
             } else {
                 engineVersion.textContent = 'Electron 内置引擎';
             }
         }
 
         function loadSettings() {
-            const settings = JSON.parse(localStorage.getItem('cosySettings') || '{}');
+            let settings;
+            try {
+                settings = JSON.parse(localStorage.getItem('cosySettings') || '{}');
+            } catch {
+                settings = {};
+            }
 
-            if (settings.defaultTab) {
-                document.querySelector(`input[name="defaultTab"][value="${settings.defaultTab}"]`).checked = true;
+            const setRadio = (name, value) => {
+                const radios = document.querySelectorAll(`input[name="${name}"]`);
+                radios.forEach(radio => { radio.checked = radio.value === value; });
+            };
 
+            if (settings.defaultTab && isValidSettingKey('defaultTab')) {
+                setRadio('defaultTab', settings.defaultTab);
                 if (settings.defaultTab === 'custom' && settings.customUrl) {
                     document.getElementById('customUrl').value = settings.customUrl;
                     document.getElementById('customUrl').style.display = 'block';
                 }
             }
-
-            if (settings.tabLayout) {
-                document.querySelector(`input[name="tabLayout"][value="${settings.tabLayout}"]`).checked = true;
-            }
-
-            if (settings.searchEngine) {
-                document.querySelector(`input[name="searchEngine"][value="${settings.searchEngine}"]`).checked = true;
-            }
-
-            if (settings.backgroundType) {
-                document.querySelector(`input[name="backgroundType"][value="${settings.backgroundType}"]`).checked = true;
-
+            if (settings.tabLayout && isValidSettingKey('tabLayout')) setRadio('tabLayout', settings.tabLayout);
+            if (settings.searchEngine && isValidSettingKey('searchEngine')) setRadio('searchEngine', settings.searchEngine);
+            if (settings.backgroundType && isValidSettingKey('backgroundType')) {
+                setRadio('backgroundType', settings.backgroundType);
                 if (settings.backgroundType === 'custom' && settings.customBackgroundUrl) {
                     document.getElementById('customBackgroundUrl').value = settings.customBackgroundUrl;
                     document.getElementById('customBackgroundUrl').style.display = 'block';
                 }
             }
-
-            if (settings.themeColor) {
+            if (settings.themeColor && isValidSettingKey('themeColor') && isValidColor(settings.themeColor)) {
                 document.getElementById('themeColor').value = settings.themeColor;
             }
-
+            if (settings.darkMode && isValidSettingKey('darkMode')) {
+                document.getElementById('darkMode').checked = settings.darkMode === true || settings.darkMode === 'true';
+                applyDarkMode(settings.darkMode === true || settings.darkMode === 'true');
+            }
+            // 默认开启：仅在明确存了 false 时关闭。
+            document.getElementById('memorySaver').checked = settings.memorySaver !== false;
+            // HTTPS-Only 默认开启（与主进程运行时开关一致），仅在明确存 false 时关闭。
+            document.getElementById('httpsOnly').checked = settings.httpsOnly !== false;
+            // 这两项默认关闭，仅在明确存 true 时勾选。
+            document.getElementById('clearOnExit').checked = settings.clearOnExit === true;
+            document.getElementById('confirmCloseMultiple').checked = settings.confirmCloseMultiple === true;
+            // 追踪拦截与崩溃恢复默认开启，仅在明确存 false 时关闭。
+            document.getElementById('blockTrackers').checked = settings.blockTrackers !== false;
+            document.getElementById('blockThirdPartyCookies').checked = settings.blockThirdPartyCookies !== false;
+            document.getElementById('hardenCookies').checked = settings.hardenCookies !== false;
+            document.getElementById('blockLocalNetworkAccess').checked = settings.blockLocalNetworkAccess !== false;
+document.getElementById('allowPictureInPicture').checked = settings.allowPictureInPicture !== false;
+document.getElementById('reduceClientHints').checked = settings.reduceClientHints !== false;
+document.getElementById('blockAdSignals').checked = settings.blockAdSignals !== false;
+document.getElementById('blockHyperlinkPing').checked = settings.blockHyperlinkPing !== false;
+document.getElementById('stripAcceptCh').checked = settings.stripAcceptCh !== false;
+const allowedWebrtcModes = ['strict', 'balanced', 'legacy'];
+document.getElementById('webrtcMode').value = allowedWebrtcModes.includes(settings.webrtcMode) ? settings.webrtcMode : 'strict';
+const allowedDohModes = ['automatic', 'secure', 'off'];
+document.getElementById('dohMode').value = allowedDohModes.includes(settings.dohMode) ? settings.dohMode : 'automatic';
+const allowedDohProviders = ['cloudflare', 'google', 'quad9', 'alidns', 'dnspod', 'custom'];
+document.getElementById('dohProvider').value = allowedDohProviders.includes(settings.dohProvider) ? settings.dohProvider : 'cloudflare';
+document.getElementById('dohCustomUrl').value = typeof settings.dohCustomUrl === 'string' ? settings.dohCustomUrl : '';
+document.getElementById('dohMode').dispatchEvent(new Event('change'));
+            document.getElementById('crashRecovery').checked = settings.crashRecovery !== false;
+            document.getElementById('stripTrackingParams').checked = settings.stripTrackingParams !== false;
+            document.getElementById('spellcheckEnabled').checked = settings.spellcheckEnabled !== false;
+            const spellLangs = Array.isArray(settings.spellcheckLanguages) && settings.spellcheckLanguages.length
+                ? settings.spellcheckLanguages
+                : DEFAULT_SPELLCHECK_LANGS;
+            const spellLangSet = new Set(spellLangs);
+            document.querySelectorAll('.spellcheck-lang').forEach(cb => { cb.checked = spellLangSet.has(cb.value); });
+            syncSpellcheckUi();
             applyThemeColor(settings.themeColor || '#0078d4');
         }
 
         function saveSettings() {
-            const defaultTab = document.querySelector('input[name="defaultTab"]:checked').value;
-            const tabLayout = document.querySelector('input[name="tabLayout"]:checked').value;
-            const searchEngine = document.querySelector('input[name="searchEngine"]:checked').value;
-            const backgroundType = document.querySelector('input[name="backgroundType"]:checked').value;
+            const getChecked = (name) => {
+                const checked = document.querySelector(`input[name="${name}"]:checked`);
+                return checked ? checked.value : '';
+            };
+
+            const defaultTab = getChecked('defaultTab');
+            const tabLayout = getChecked('tabLayout');
+            const searchEngine = getChecked('searchEngine');
+            const backgroundType = getChecked('backgroundType');
             const customUrl = document.getElementById('customUrl').value;
             const customBackgroundUrl = document.getElementById('customBackgroundUrl').value;
             const themeColor = document.getElementById('themeColor').value;
+            const darkMode = document.getElementById('darkMode').checked;
+            const httpsOnly = document.getElementById('httpsOnly').checked;
+            const memorySaver = document.getElementById('memorySaver').checked;
+            const clearOnExit = document.getElementById('clearOnExit').checked;
+            const confirmCloseMultiple = document.getElementById('confirmCloseMultiple').checked;
+            const blockTrackers = document.getElementById('blockTrackers').checked;
+            const blockThirdPartyCookies = document.getElementById('blockThirdPartyCookies').checked;
+            const hardenCookies = document.getElementById('hardenCookies').checked;
+            const blockLocalNetworkAccess = document.getElementById('blockLocalNetworkAccess').checked;
+            const reduceClientHints = document.getElementById('reduceClientHints').checked;
+            const blockAdSignals = document.getElementById('blockAdSignals').checked;
+            const blockHyperlinkPing = document.getElementById('blockHyperlinkPing').checked;
+            const stripAcceptCh = document.getElementById('stripAcceptCh').checked;
+            const allowPictureInPicture = document.getElementById('allowPictureInPicture').checked;
+            const webrtcModeValue = document.getElementById('webrtcMode').value;
+            const webrtcMode = ['strict', 'balanced', 'legacy'].includes(webrtcModeValue) ? webrtcModeValue : 'strict';
+            const dohModeValue = document.getElementById('dohMode').value;
+            const dohMode = ['automatic', 'secure', 'off'].includes(dohModeValue) ? dohModeValue : 'automatic';
+            const dohProviderValue = document.getElementById('dohProvider').value;
+            const dohProvider = ['cloudflare', 'google', 'quad9', 'alidns', 'dnspod', 'custom'].includes(dohProviderValue) ? dohProviderValue : 'cloudflare';
+            const dohCustomUrl = document.getElementById('dohCustomUrl').value.trim();
+            if (dohProvider === 'custom' && dohMode !== 'off') {
+              let badCustom = !dohCustomUrl;
+              try {
+                const du = new URL(dohCustomUrl || 'x://');
+                if (du.protocol !== 'https:' || !du.hostname) badCustom = true;
+                if (/^(localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/i.test(du.hostname)) badCustom = true;
+              } catch { badCustom = true; }
+              if (badCustom) {
+                alert('自定义安全 DNS 必须是 https、指向公网服务器且非本机/内网地址。');
+                return;
+              }
+            }
+            const crashRecovery = document.getElementById('crashRecovery').checked;
+            const stripTrackingParams = document.getElementById('stripTrackingParams').checked;
+            const spellcheckEnabled = document.getElementById('spellcheckEnabled').checked;
+            const spellcheckLanguages = [...document.querySelectorAll('.spellcheck-lang:checked')]
+                .filter(cb => !cb.parentElement.classList.contains('spellcheck-unavailable'))
+                .map(cb => cb.value);
+            // 语言选择要与主进程限制保持一致：
+            // 开启拼写检查却一种语言都不选没有意义，且 Hunspell 同时加载过多
+            // 词典会明显拖慢输入，因此限制 1~5 种；主进程仍会再截断一次。
+            if (spellcheckEnabled && spellcheckLanguages.length === 0) {
+                alert('开启拼写检查时至少要选择一种语言');
+                return;
+            }
+            if (spellcheckLanguages.length > 5) {
+                alert('拼写检查语言最多选择 5 种，请取消部分勾选后再保存');
+                return;
+            }
+
+            if (customUrl && !isSafeUrl(customUrl)) {
+                alert('自定义网址必须是 http/https/file/cosy 协议');
+                return;
+            }
+
+            if (customBackgroundUrl && !isSafeUrl(customBackgroundUrl)) {
+                alert('自定义背景图片地址必须是 http/https/file/cosy 协议');
+                return;
+            }
 
             const settings = {
-                defaultTab: defaultTab,
-                tabLayout: tabLayout,
-                searchEngine: searchEngine,
-                backgroundType: backgroundType,
-                customUrl: defaultTab === 'custom' ? customUrl : '',
-                customBackgroundUrl: backgroundType === 'custom' ? customBackgroundUrl : '',
-                themeColor: themeColor
+                defaultTab,
+                tabLayout,
+                searchEngine,
+                backgroundType,
+                customUrl: (defaultTab === 'custom' && isSafeUrl(customUrl)) ? customUrl : '',
+                customBackgroundUrl: (backgroundType === 'custom' && isSafeUrl(customBackgroundUrl)) ? customBackgroundUrl : '',
+                themeColor,
+                darkMode,
+                httpsOnly,
+                memorySaver,
+                clearOnExit,
+                confirmCloseMultiple,
+                blockTrackers,
+                blockThirdPartyCookies,
+                hardenCookies,
+                blockLocalNetworkAccess,
+                reduceClientHints,
+                blockAdSignals,
+                blockHyperlinkPing,
+                stripAcceptCh,
+                allowPictureInPicture,
+                webrtcMode,
+                dohMode,
+                dohProvider,
+                dohCustomUrl,
+                crashRecovery,
+                stripTrackingParams,
+                spellcheckEnabled,
+                spellcheckLanguages
             };
 
             localStorage.setItem('cosySettings', JSON.stringify(settings));
-
-            const { ipcRenderer } = require('electron');
-            ipcRenderer.send('save-settings', settings);
-
+            window.electronAPI.send('save-settings', settings);
             applyThemeColor(themeColor);
-
             alert('设置已保存！标签页布局更改需要重启浏览器才能生效。');
         }
 
         function applyThemeColor(color) {
+            if (!isValidColor(color)) color = '#0078d4';
             document.documentElement.style.setProperty('--theme-color', color);
-
-            document.querySelectorAll('.settings-title, .section-title').forEach(element => {
-                element.style.color = color;
-            });
-
-            document.querySelectorAll('.save-button').forEach(element => {
-                element.style.background = color;
-            });
-
-            document.querySelectorAll('.save-button:hover').forEach(element => {
-                element.style.background = shadeColor(color, -10);
-            });
-
-            document.querySelectorAll('.info-item').forEach(element => {
-                element.style.borderLeft = `4px solid ${color}`;
-            });
-
-            const { ipcRenderer } = require('electron');
-            ipcRenderer.send('update-theme-color', color);
-        }
-
-        function shadeColor(color, percent) {
-            let R = parseInt(color.substring(1, 3), 16);
-            let G = parseInt(color.substring(3, 5), 16);
-            let B = parseInt(color.substring(5, 7), 16);
-
-            R = parseInt(R * (100 + percent) / 100);
-            G = parseInt(G * (100 + percent) / 100);
-            B = parseInt(B * (100 + percent) / 100);
-
-            R = (R < 255) ? R : 255;
-            G = (G < 255) ? G : 255;
-            B = (B < 255) ? B : 255;
-
-            R = Math.round(R);
-            G = Math.round(G);
-            B = Math.round(B);
-
-            const RR = ((R.toString(16).length === 1) ? '0' + R.toString(16) : R.toString(16));
-            const GG = ((G.toString(16).length === 1) ? '0' + G.toString(16) : G.toString(16));
-            const BB = ((B.toString(16).length === 1) ? '0' + B.toString(16) : B.toString(16));
-
-            return `#${RR}${GG}${BB}`;
+            document.querySelectorAll('.settings-title, .section-title').forEach(element => { element.style.color = color; });
+            document.querySelectorAll('.save-button').forEach(element => { element.style.background = color; });
+            document.querySelectorAll('.info-item').forEach(element => { element.style.borderLeft = `4px solid ${color}`; });
+            window.electronAPI.send('update-theme-color', color);
         }
 
         function exportConfig() {
             const settings = JSON.parse(localStorage.getItem('cosySettings') || '{}');
-
             let infContent = '[OpenCosyBrowserConfig]\n';
             for (const [key, value] of Object.entries(settings)) {
-                infContent += `${key}=${value}\n`;
+                if (isValidSettingKey(key)) infContent += `${key}=${value}\n`;
             }
-
-            const { ipcRenderer } = require('electron');
-            ipcRenderer.send('export-config', infContent);
+            window.electronAPI.send('export-config', infContent);
         }
 
         function importConfig() {
@@ -616,12 +1054,11 @@
                             const settings = parseInfContent(content);
                             if (settings) {
                                 localStorage.setItem('cosySettings', JSON.stringify(settings));
-
-                                const { ipcRenderer } = require('electron');
-                                ipcRenderer.send('save-settings', settings);
-
+                                window.electronAPI.send('save-settings', settings);
                                 loadSettings();
                                 alert('配置导入成功！');
+                            } else {
+                                alert('配置文件格式错误或没有有效设置！');
                             }
                         } catch (error) {
                             alert('配置文件格式错误！');
@@ -638,10 +1075,8 @@
             const lines = content.split('\n');
             const settings = {};
             let inSection = false;
-
             for (const line of lines) {
                 const trimmedLine = line.trim();
-
                 if (trimmedLine === '[OpenCosyBrowserConfig]') {
                     inSection = true;
                 } else if (inSection && trimmedLine && !trimmedLine.startsWith(';') && !trimmedLine.startsWith('#')) {
@@ -649,35 +1084,154 @@
                     if (equalsIndex > 0) {
                         const key = trimmedLine.substring(0, equalsIndex).trim();
                         const value = trimmedLine.substring(equalsIndex + 1).trim();
-                        settings[key] = value;
+                        if (isValidSettingKey(key)) {
+                            if (key === 'customUrl' && value && !isSafeUrl(value)) continue;
+                            if (key === 'customBackgroundUrl' && value && !isSafeUrl(value)) continue;
+                            if (key === 'themeColor' && value && !isValidColor(value)) continue;
+                            // .inf 里所有值都是字符串，布尔类设置必须还原，
+                            // 否则字符串 'false' 为真值会让"关闭"类选项永远关不掉。
+                            if (BOOLEAN_SETTING_KEYS.has(key)) {
+                                settings[key] = (value === 'true' || value === '1');
+                            } else if (key === 'spellcheckLanguages') {
+                                // .inf 里语言列表存成逗号分隔字符串，导回时拆回数组，
+                                // 非白名单语言直接丢弃，最终是否可用由主进程再校验一次。
+                                const langs = value.split(',').map(s => s.trim())
+                                    .filter(s => s && document.querySelectorAll(`.spellcheck-lang[value="${s}"]`).length);
+                                if (langs.length) settings[key] = langs.slice(0, 5);
+                            } else {
+                                settings[key] = value;
+                            }
+                        }
                     }
                 }
             }
-
             return Object.keys(settings).length > 0 ? settings : null;
         }
 
-        if (window.require) {
-            const { ipcRenderer } = require('electron');
+        if (window.electronAPI) {
+            window.electronAPI.on('export-config-success', (message) => { alert(message); });
+            window.electronAPI.on('export-config-canceled', () => {});
+            window.electronAPI.on('export-config-error', (message) => { alert(message); });
+        }
 
-            document.querySelectorAll('a[target="_blank"]').forEach(link => {
-                link.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    ipcRenderer.send('navigate-to-url', this.href);
-                });
-            });
+        // ===== 设置搜索 / 分组导航 / 恢复默认 =====
+        // 搜索：按设置项 label+description 全文匹配，匹配关键词加高亮；
+        // 分组：按 section 标题生成导航 chips，点击只显示对应分组；
+        // 恢复默认：二次确认后清空本地设置并通知主进程。
 
-            ipcRenderer.on('export-config-success', (event, message) => {
-                alert(message);
-            });
+        function sectionTitleOf(section) {
+            const h2 = section.querySelector('h2.section-title');
+            return h2 ? h2.textContent.trim() : '';
+        }
 
-            ipcRenderer.on('export-config-canceled', (event, message) => {
-            });
+        function highlightText(node, query) {
+            const text = node.textContent || '';
+            const idx = text.toLowerCase().indexOf(query.toLowerCase());
+            if (idx < 0) return;
+            node.textContent = text.slice(0, idx) + '\u0001' + text.slice(idx, idx + query.length) + '\u0002' + text.slice(idx + query.length);
+            // 用占位符标记后重建 span，避免直接 innerHTML 引入 XSS 面
+            const html = node.textContent
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/\u0001/g, '<span class="match-mark">')
+                .replace(/\u0002/g, '</span>');
+            node.innerHTML = html;
+        }
 
-            ipcRenderer.on('export-config-error', (event, message) => {
-                alert(message);
+        function clearHighlights(section) {
+            section.querySelectorAll('.match-mark').forEach(function(mark) {
+                const parent = mark.parentNode;
+                if (!parent) return;
+                const text = parent.textContent;
+                parent.innerHTML = '';
+                parent.textContent = text;
             });
         }
+
+        function buildNavChips() {
+            const chipBox = document.getElementById('navChips');
+            if (!chipBox) return;
+            const titles = [];
+            document.querySelectorAll('.settings-section').forEach(function(section) {
+                const t = sectionTitleOf(section);
+                if (t && !titles.includes(t)) titles.push(t);
+            });
+            titles.forEach(function(title) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'nav-chip';
+                btn.setAttribute('data-section', title);
+                btn.textContent = title;
+                chipBox.appendChild(btn);
+            });
+            chipBox.querySelectorAll('.nav-chip').forEach(function(chip) {
+                chip.addEventListener('click', function() {
+                    chipBox.querySelectorAll('.nav-chip').forEach(function(c) { c.classList.remove('active'); });
+                    chip.classList.add('active');
+                    applyFilters();
+                });
+            });
+        }
+
+        function activeSection() {
+            const chip = document.querySelector('#navChips .nav-chip.active');
+            return chip ? chip.getAttribute('data-section') || '' : '';
+        }
+
+        function applyFilters() {
+            const query = (document.getElementById('settingsSearch').value || '').trim();
+            const section = activeSection();
+            const summary = document.getElementById('settingsSummary');
+            let visibleItems = 0;
+            let totalItems = 0;
+            document.querySelectorAll('.settings-section').forEach(function(sec) {
+                const title = sectionTitleOf(sec);
+                const sectionMatches = !section || title === section;
+                clearHighlights(sec);
+                let anyItemVisible = false;
+                sec.querySelectorAll('.setting-item').forEach(function(item) {
+                    totalItems++;
+                    const label = item.querySelector('.setting-label');
+                    const desc = item.querySelector('.setting-description');
+                    const text = (label ? label.textContent : '') + ' ' + (desc ? desc.textContent : '');
+                    const matched = !query || text.toLowerCase().indexOf(query.toLowerCase()) >= 0;
+                    const show = sectionMatches && matched;
+                    item.classList.toggle('filtered-out', !show);
+                    if (show) {
+                        anyItemVisible = true;
+                        visibleItems++;
+                        if (query && label) highlightText(label, query);
+                        if (query && desc) highlightText(desc, query);
+                    }
+                });
+                sec.classList.toggle('filtered-out', !sectionMatches || !anyItemVisible);
+            });
+            if (summary) {
+                if (query) summary.textContent = '搜索「' + query + '」：' + visibleItems + '/' + totalItems + ' 个设置项';
+                else if (section) summary.textContent = '分组「' + section + '」：' + visibleItems + ' 个设置项';
+                else summary.textContent = '共 ' + totalItems + ' 个设置项';
+            }
+        }
+
+        function resetSettingsToDefault() {
+            localStorage.removeItem('cosySettings');
+            window.electronAPI.send('save-settings', {});
+            applyThemeColor('#0078d4');
+            location.reload();
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            buildNavChips();
+            applyFilters();
+            const searchEl = document.getElementById('settingsSearch');
+            if (searchEl) searchEl.addEventListener('input', applyFilters);
+            const resetBtn = document.getElementById('resetSettingsBtn');
+            const confirmBox = document.getElementById('resetConfirmBox');
+            if (resetBtn && confirmBox) {
+                resetBtn.addEventListener('click', function() { confirmBox.classList.add('show'); });
+                document.getElementById('resetConfirmYes').addEventListener('click', resetSettingsToDefault);
+                document.getElementById('resetConfirmNo').addEventListener('click', function() { confirmBox.classList.remove('show'); });
+            }
+        });
     </script>
 </body>
 </html>
