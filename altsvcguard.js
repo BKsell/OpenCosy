@@ -1,5 +1,7 @@
 'use strict';
 
+const { lowerKeys } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -13,13 +15,6 @@ const REASON = {
 const MAX_VALUE_LENGTH = 512;
 const MAX_ENTRIES = 8;
 const MAX_AUTHORITY_LENGTH = 200;
-
-function lowerKeys(headers) {
-  const map = {};
-  if (!headers || typeof headers !== 'object') return map;
-  for (const key of Object.keys(headers)) map[key.toLowerCase()] = key;
-  return map;
-}
 
 function requestHost(details) {
   try {
