@@ -1,4 +1,5 @@
 'use strict';
+const { pruneOlderThan, countSince } = require('./modutil');
 
 // mediaguard.js —— 媒体播放状态事件（media-started-playing / media-paused）收口内核。
 //
@@ -32,21 +33,6 @@ const MEDIA_BURST_LIMIT = 30;
 const MEDIA_LONG_WINDOW_MS = 10_000;
 const MEDIA_LONG_LIMIT = 200;
 const MEDIA_COOLDOWN_MS = 4_000;
-
-function pruneOlderThan(list, cutoff) {
-  let i = 0;
-  while (i < list.length && list[i] < cutoff) i++;
-  if (i > 0) list.splice(0, i);
-}
-
-function countSince(sortedTimes, cutoff) {
-  let n = 0;
-  for (let i = sortedTimes.length - 1; i >= 0; i--) {
-    if (sortedTimes[i] >= cutoff) n++;
-    else break;
-  }
-  return n;
-}
 
 function createMediaState(now) {
   return {
