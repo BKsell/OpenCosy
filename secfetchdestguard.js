@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerKey } = require('./headerutil');
+const { headerKey, rawValue } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -16,12 +16,6 @@ const ALLOWED = new Set([
   'iframe', 'image', 'manifest', 'object', 'paintworklet', 'report', 'script',
   'sharedworker', 'style', 'track', 'video', 'worker', 'xslt',
 ]);
-
-function rawValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return null;
-  return headers[key];
-}
 
 function single(raw) {
   if (Array.isArray(raw)) {
