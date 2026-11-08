@@ -1,5 +1,7 @@
 'use strict';
 
+const { headerValues } = require('./modutil');
+
 const REASON = {
   ok: 'ok',
   refreshHeader: 'refresh-header',
@@ -7,17 +9,6 @@ const REASON = {
   linkPreload: 'link-preload-cross-origin',
   linkPrefetch: 'link-prefetch-cross-origin',
 };
-
-function headerValues(headers, name) {
-  const target = String(name || '').toLowerCase();
-  for (const key of Object.keys(headers || {})) {
-    if (key.toLowerCase() !== target) continue;
-    const value = headers[key];
-    if (Array.isArray(value)) return value.slice();
-    if (typeof value === 'string') return [value];
-  }
-  return [];
-}
 
 function replaceHeader(headers, name, values) {
   for (const key of Object.keys(headers || {})) {
