@@ -1,5 +1,7 @@
 'use strict';
 
+const { headerKey } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -14,15 +16,6 @@ const MAX_VALUE_LENGTH = 256;
 const MAX_AGE_LIMIT = 86400;
 const STALE_LIMIT = 604800;
 const ALLOWED = new Set(['no-store', 'no-cache', 'max-age', 'stale-while-revalidate', 'stale-if-error']);
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
 
 function deleteHeader(headers, name) {
   const key = headerKey(headers, name);
