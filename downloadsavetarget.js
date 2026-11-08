@@ -29,6 +29,7 @@ function hasControlChar(value) {
   for (let i = 0; i < value.length; i += 1) {
     const code = value.charCodeAt(i);
     if (code < 0x20 || code === 0x7f) return true;
+    if (code >= 0x80 && code <= 0x9f) return true;
   }
   return false;
 }
