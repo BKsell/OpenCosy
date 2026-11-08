@@ -1,5 +1,7 @@
 'use strict';
 
+const { headerKey } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -12,15 +14,6 @@ const HEADER = 'baggage';
 const MAX_MEMBERS = 16;
 const MAX_LENGTH = 4096;
 const MEMBER = /^[A-Za-z0-9_.-]{1,64}=[\x20-\x7e]{0,256}(;[A-Za-z0-9_.-]{1,64}=[\x20-\x7e]{0,128}){0,3}$/;
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
 
 function rawValue(headers, name) {
   const key = headerKey(headers, name);
