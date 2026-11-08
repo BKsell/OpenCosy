@@ -1,6 +1,6 @@
 'use strict';
 
-const { countValues, headerKey } = require('./headerutil');
+const { countValues, deleteHeader, headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -11,13 +11,6 @@ const REASON = {
 };
 
 const MAX_SET_VALUES = 16;
-
-function deleteHeader(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return false;
-  delete headers[key];
-  return true;
-}
 
 function applySetCookie2Guard(headers) {
   const key = headerKey(headers, 'set-cookie2');
