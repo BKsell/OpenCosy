@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerKey } = require('./headerutil');
+const { headerKey, rawValue } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -14,12 +14,6 @@ const HEADER = 'baggage';
 const MAX_MEMBERS = 16;
 const MAX_LENGTH = 4096;
 const MEMBER = /^[A-Za-z0-9_.-]{1,64}=[\x20-\x7e]{0,256}(;[A-Za-z0-9_.-]{1,64}=[\x20-\x7e]{0,128}){0,3}$/;
-
-function rawValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return null;
-  return headers[key];
-}
 
 function applyBaggageGuard(headers) {
   const raw = rawValue(headers, HEADER);
