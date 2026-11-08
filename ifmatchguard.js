@@ -1,4 +1,6 @@
 'use strict';
+const { rawValue } = require('./headerutil');
+const { splitList } = require('./modutil');
 
 const { headerKey } = require('./headerutil');
 
@@ -13,18 +15,6 @@ const REASON = {
 const HEADER = 'if-match';
 const ETAG = /^(W\/)?"[!#$%&'*+.^_`|~0-9A-Za-z:\-]{1,128}"$/;
 const MAX_ENTRIES = 16;
-
-function rawValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return null;
-  return headers[key];
-}
-
-function splitList(raw) {
-  if (Array.isArray(raw)) return raw.map((v) => String(v)).join(',').split(',');
-  if (typeof raw !== 'string') return [];
-  return raw.split(',');
-}
 
 function applyIfMatchGuard(headers) {
   const raw = rawValue(headers, HEADER);
