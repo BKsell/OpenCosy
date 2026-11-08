@@ -1,5 +1,7 @@
 'use strict';
 
+const { headerKey } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -9,15 +11,6 @@ const REASON = {
 
 const ORIGIN_HEADER = 'access-control-allow-origin';
 const CREDENTIALS_HEADER = 'access-control-allow-credentials';
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
 
 function textValue(headers, name) {
   const key = headerKey(headers, name);
