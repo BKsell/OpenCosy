@@ -1,5 +1,7 @@
 'use strict';
 
+const { firstValue, headerKey } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -12,23 +14,6 @@ const HEADER = 'origin-agent-cluster';
 const STRICT = '?1';
 const LENIENT_VALUE = '?0';
 const MAX_VALUE_LENGTH = 32;
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
-
-function firstValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return '';
-  const raw = headers[key];
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  return typeof value === 'string' ? value : '';
-}
 
 function parseOriginAgentCluster(value) {
   if (typeof value !== 'string') return { reason: REASON.MALFORMED, strict: null };
