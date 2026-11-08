@@ -1,5 +1,7 @@
 'use strict';
 
+const { firstValue, headerKey } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -12,23 +14,6 @@ const WEAK_ALGORITHMS = new Set(['md5', 'sha', 'sha-1', 'sha1', 'adler32', 'crc3
 const STRONG_ALGORITHMS = new Set(['sha-256', 'sha-512', 'sha-384', 'sha-512/256', 'sha3-256', 'blake3']);
 const MAX_ENTRIES = 8;
 const MAX_VALUE_LENGTH = 1024;
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
-
-function firstValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return '';
-  const raw = headers[key];
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  return typeof value === 'string' ? value : '';
-}
 
 function normalizeAlgorithm(raw) {
   return raw.trim().toLowerCase();
