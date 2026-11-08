@@ -1,4 +1,5 @@
 'use strict';
+const { pruneOlderThan, countSince } = require('./modutil');
 
 // entryguard.js —— 导航条目提交事件（webContents 'navigation-entry-committed'）收口内核。
 //
@@ -57,21 +58,6 @@ function sanitizeEntryUrl(input) {
     truncated = true;
   }
   return { ok: true, url, truncated };
-}
-
-function pruneOlderThan(list, cutoff) {
-  let i = 0;
-  while (i < list.length && list[i] < cutoff) i++;
-  if (i > 0) list.splice(0, i);
-}
-
-function countSince(sortedTimes, cutoff) {
-  let n = 0;
-  for (let i = sortedTimes.length - 1; i >= 0; i--) {
-    if (sortedTimes[i] >= cutoff) n++;
-    else break;
-  }
-  return n;
 }
 
 function createEntryState(now) {
