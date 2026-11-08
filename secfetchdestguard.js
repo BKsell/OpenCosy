@@ -1,4 +1,6 @@
 'use strict';
+const { singleAlt } = require('./modutil');
+const single = singleAlt;
 
 const { headerKey, rawValue } = require('./headerutil');
 
@@ -16,15 +18,6 @@ const ALLOWED = new Set([
   'iframe', 'image', 'manifest', 'object', 'paintworklet', 'report', 'script',
   'sharedworker', 'style', 'track', 'video', 'worker', 'xslt',
 ]);
-
-function single(raw) {
-  if (Array.isArray(raw)) {
-    if (raw.length !== 1) return null;
-    return String(raw[0]).trim().toLowerCase();
-  }
-  if (typeof raw !== 'string') return null;
-  return raw.trim().toLowerCase();
-}
 
 function applySecFetchDestGuard(headers) {
   const raw = rawValue(headers, HEADER);
