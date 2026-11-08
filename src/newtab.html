@@ -3,188 +3,924 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 安全加固: Content Security Policy -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https:;">
     <title>新标签页 - OpenCosy浏览器</title>
     <script src="constants.js"></script>
+    <script src="jsonimportguard.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .background-container {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: url('Backdrop.jpg') center/cover no-repeat;
-            z-index: 1;
-        }
-
-        .background-container::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.3);
-            z-index: 1;
-        }
-
-        .newtab-container {
-            text-align: center;
-            max-width: 600px;
-            padding: 40px;
-            position: relative;
-            z-index: 2;
-        }
-
-        .logo {
-            font-size: 64px;
-            font-weight: 300;
-            margin-bottom: 10px;
-            text-shadow: 0 2px 15px rgba(0,0,0,0.5);
-            letter-spacing: 2px;
-        }
-
-        .subtitle {
-            font-size: 18px;
-            margin-bottom: 40px;
-            opacity: 0.9;
-            text-shadow: 0 1px 5px rgba(0,0,0,0.5);
-        }
-
-        .search-box {
-            width: 100%;
-            max-width: 600px;
-            margin: 0 auto;
-            position: relative;
-        }
-
-        .search-input {
-            width: 100%;
-            padding: 18px 30px;
-            font-size: 16px;
-            border: none;
-            border-radius: 50px;
-            outline: none;
-            background: rgba(255, 255, 255, 0.15);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
-            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-            color: #ffffff;
-            text-align: center;
-        }
-
-        .search-input:hover, .search-input:focus {
-            background: rgba(255, 255, 255, 0.25);
-            box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.3);
-            transform: scale(1.02);
-        }
-
-        .search-input::placeholder {
-            color: rgba(255, 255, 255, 0.7);
-        }
-
-        .footer {
-            position: absolute;
-            bottom: 20px;
-            font-size: 12px;
-            opacity: 0.7;
-            z-index: 2;
-            text-shadow: 0 1px 3px rgba(0,0,0,0.5);
-        }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; position: relative; overflow: hidden; }
+        .background-container { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: url('Backdrop.jpg') center/cover no-repeat; z-index: 1; }
+        .background-container::before { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.3); z-index: 1; }
+        .newtab-container { text-align: center; max-width: 760px; width: 100%; padding: 40px; position: relative; z-index: 2; }
+        .logo { font-size: 64px; font-weight: 300; margin-bottom: 10px; text-shadow: 0 2px 15px rgba(0,0,0,0.5); letter-spacing: 2px; }
+        .subtitle { font-size: 18px; margin-bottom: 40px; opacity: 0.9; text-shadow: 0 1px 5px rgba(0,0,0,0.5); }
+        .search-box { width: 100%; max-width: 600px; margin: 0 auto; position: relative; }
+        .search-input { width: 100%; padding: 18px 30px; font-size: 16px; border: none; border-radius: 50px; outline: none; background: rgba(255, 255, 255, 0.15); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.2); box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2); transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); color: #ffffff; text-align: center; }
+        .search-input:hover, .search-input:focus { background: rgba(255, 255, 255, 0.25); box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.3); transform: scale(1.02); }
+        .search-input::placeholder { color: rgba(255, 255, 255, 0.7); }
+        .quick-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 18px; margin-top: 36px; }
+        .quick-link { display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; opacity: 0.9; transition: transform 0.15s, opacity 0.15s; position: relative; }
+        .quick-link:hover { transform: translateY(-3px); opacity: 1; }
+        .quick-link-icon { width: 56px; height: 56px; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700; color: white; box-shadow: 0 4px 16px rgba(0,0,0,0.25); backdrop-filter: blur(8px); position: relative; overflow: hidden; }
+        .quick-link-icon .ql-favicon { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 16px; background: #fff; display: none; }
+        .quick-link-icon.has-favicon .ql-favicon { display: block; }
+        .quick-link-icon.has-favicon .ql-letter { display: none; }
+        .quick-link-icon.add { background: rgba(255,255,255,0.12); border: 2px dashed rgba(255,255,255,0.4); font-size: 28px; }
+        .quick-link-name { font-size: 12px; text-shadow: 0 1px 3px rgba(0,0,0,0.6); max-width: 72px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .quick-link .del, .quick-link .edit { position: absolute; width: 18px; height: 18px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; font-size: 12px; line-height: 18px; display: none; }
+        .quick-link .del { top: -6px; right: -6px; }
+        .quick-link .edit { top: -6px; right: 16px; font-size: 11px; }
+        .quick-link.custom:hover .del, .quick-link.custom:hover .edit { display: block; }
+        .quick-link.dragging { opacity: 0.35; }
+        .quick-link.drag-over .quick-link-icon { outline: 2px solid #93c5fd; outline-offset: 3px; }
+        .tile-menu { position: fixed; z-index: 30; min-width: 150px; padding: 6px; border-radius: 10px; background: rgba(20,20,30,0.94); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 40px rgba(0,0,0,0.45); display: none; }
+        .tile-menu.open { display: block; }
+        .tile-menu-item { padding: 7px 10px; font-size: 12px; border-radius: 6px; cursor: pointer; color: #fff; }
+        .tile-menu-item:hover { background: rgba(255,255,255,0.14); }
+        .tile-menu-item.danger { color: #fca5a5; }
+        .suggest-wrap { margin: 26px auto 0; max-width: 600px; }
+        .suggest-title { font-size: 12px; opacity: 0.75; margin-bottom: 10px; text-shadow: 0 1px 3px rgba(0,0,0,0.6); letter-spacing: 1px; }
+        .suggest-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+        .suggest-row:empty { display: none; }
+        .suggest-chip { display: inline-flex; align-items: center; gap: 8px; padding: 5px 8px 5px 6px; border-radius: 999px; background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.18); backdrop-filter: blur(8px); font-size: 12px; cursor: default; transition: background 0.15s; }
+        .suggest-chip:hover { background: rgba(255,255,255,0.22); }
+        .suggest-chip .sc-letter { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; flex-shrink: 0; }
+        .suggest-chip .sc-name { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-shadow: 0 1px 3px rgba(0,0,0,0.6); }
+        .suggest-chip .sc-add { width: 18px; height: 18px; border-radius: 50%; background: rgba(255,255,255,0.25); color: #fff; font-size: 13px; line-height: 16px; text-align: center; cursor: pointer; flex-shrink: 0; }
+        .suggest-chip .sc-add:hover { background: #4ade80; color: #10331c; }
+        .suggest-chip .sc-skip { width: 18px; height: 18px; border-radius: 50%; background: transparent; color: rgba(255,255,255,0.6); font-size: 13px; line-height: 16px; text-align: center; cursor: pointer; flex-shrink: 0; }
+        .suggest-chip .sc-skip:hover { background: rgba(255,255,255,0.25); color: #fff; }
+        .recent-wrap { margin: 18px auto 0; max-width: 600px; }
+        .recent-title { font-size: 12px; opacity: 0.75; margin-bottom: 10px; text-shadow: 0 1px 3px rgba(0,0,0,0.6); letter-spacing: 1px; }
+        .recent-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+        .recent-row:empty { display: none; }
+        .recent-chip { display: inline-flex; align-items: center; gap: 8px; padding: 5px 8px 5px 6px; border-radius: 999px; background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.18); backdrop-filter: blur(8px); font-size: 12px; cursor: pointer; transition: background 0.15s; }
+        .recent-chip:hover { background: rgba(255,255,255,0.24); }
+        .recent-chip .rc-letter { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; flex-shrink: 0; }
+        .recent-chip .rc-name { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-shadow: 0 1px 3px rgba(0,0,0,0.6); }
+        .recent-chip .rc-host { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.65; font-size: 11px; }
+        .footer { position: absolute; bottom: 20px; font-size: 12px; opacity: 0.7; z-index: 2; text-shadow: 0 1px 3px rgba(0,0,0,0.5); display: flex; gap: 14px; align-items: center; }
+        .net-pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-size: 11px; background: rgba(255,255,255,0.15); backdrop-filter: blur(6px); }
+        .net-dot { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 6px #4ade80; }
+        .net-pill.offline .net-dot { background: #f87171; box-shadow: 0 0 6px #f87171; }
+        .gear-btn { cursor: pointer; width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.15); transition: transform 0.3s; user-select: none; font-size: 13px; }
+        .gear-btn:hover { transform: rotate(90deg); background: rgba(255,255,255,0.3); }
+        .settings-panel { position: absolute; bottom: 56px; right: 20px; width: 260px; padding: 16px; border-radius: 14px; background: rgba(20,20,30,0.88); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 40px rgba(0,0,0,0.4); z-index: 10; display: none; text-align: left; }
+        .settings-panel.open { display: block; }
+        .settings-panel h4 { font-size: 11px; opacity: 0.6; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+        .settings-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-size: 13px; gap: 10px; }
+        .settings-row select { background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 3px 8px; font-size: 12px; outline: none; }
+        .settings-row select option { background: #222; color: #fff; }
+        .settings-row button { background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
+        .settings-row button:hover { background: rgba(255,255,255,0.25); }
+        .switch { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .switch .slider { position: absolute; inset: 0; background: rgba(255,255,255,0.2); border-radius: 20px; cursor: pointer; transition: 0.2s; }
+        .switch .slider::before { content: ''; position: absolute; width: 14px; height: 14px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: 0.2s; }
+        .switch input:checked + .slider { background: #4ade80; }
+        .switch input:checked + .slider::before { transform: translateX(16px); }
+        .search-hint { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); font-size: 11px; opacity: 0.7; }
+        kbd { background: rgba(0,0,0,0.4); padding: 1px 6px; border-radius: 4px; font-family: inherit; font-size: 11px; }
         @media (max-width: 768px) {
-            .logo {
-                font-size: 48px;
-            }
-
-            .subtitle {
-                font-size: 16px;
-            }
-
-            .search-input {
-                padding: 15px 20px;
-                font-size: 14px;
-            }
-
-            .newtab-container {
-                padding: 20px;
-            }
+            .logo { font-size: 48px; }
+            .subtitle { font-size: 16px; }
+            .search-input { padding: 15px 20px; font-size: 14px; }
+            .newtab-container { padding: 20px; }
+            .quick-link-icon { width: 48px; height: 48px; border-radius: 12px; font-size: 18px; }
+            .search-hint { display: none; }
         }
     </style>
 </head>
 <body>
     <div class="background-container" id="background-container"></div>
-
     <div class="newtab-container">
         <div class="logo">OpenCosy</div>
         <div class="subtitle">快速、安全、舒适</div>
-
         <div class="search-box">
-            <input type="text" class="search-input" placeholder="搜索网页或输入网址" id="search-input">
+            <input type="text" class="search-input" placeholder="搜索网页或输入网址" id="search-input" autocomplete="off">
+            <span class="search-hint"><kbd>/</kbd> 聚焦搜索</span>
+        </div>
+        <div class="quick-links" id="quick-links"></div>
+        <div class="suggest-wrap" id="suggest-wrap" style="display:none;">
+            <div class="suggest-title">根据浏览历史推荐 · 点 + 固定为磁贴</div>
+            <div class="suggest-row" id="suggest-row"></div>
+        </div>
+        <div class="recent-wrap" id="recent-wrap" style="display:none;">
+            <div class="recent-title">最近关闭 · 点击恢复</div>
+            <div class="recent-row" id="recent-row"></div>
         </div>
     </div>
-
     <div class="footer" id="footer">
-        OpenCosy浏览器
+        <span class="net-pill" id="net-pill"><span class="net-dot"></span><span id="net-text">已联网</span></span>
+        <span id="footer-name">OpenCosy浏览器</span>
+        <span class="gear-btn" id="gear-btn" title="新标签页设置">⚙</span>
     </div>
-
+    <div class="settings-panel" id="settings-panel">
+        <h4>新标签页设置</h4>
+        <div class="settings-row">
+            <span>默认搜索引擎</span>
+            <select id="sel-engine">
+                <option value="bing">Bing</option>
+                <option value="google">Google</option>
+                <option value="baidu">百度</option>
+                <option value="ddg">DuckDuckGo</option>
+            </select>
+        </div>
+        <div class="settings-row">
+            <span>按访问频率排序</span>
+            <label class="switch"><input type="checkbox" id="toggle-sort"><span class="slider"></span></label>
+        </div>
+        <div class="settings-row">
+            <span>显示历史推荐磁贴</span>
+            <label class="switch"><input type="checkbox" id="toggle-suggest"><span class="slider"></span></label>
+        </div>
+        <div class="settings-row">
+            <span>显示最近关闭</span>
+            <label class="switch"><input type="checkbox" id="toggle-recent"><span class="slider"></span></label>
+        </div>
+        <div class="settings-row">
+            <span>恢复默认磁贴</span>
+            <button id="btn-reset">重置</button>
+        </div>
+        <div class="settings-row">
+            <span>恢复被隐藏磁贴</span>
+            <button id="btn-unhide">恢复</button>
+        </div>
+        <div class="settings-row">
+            <span>磁贴备份</span>
+            <span style="display:flex;gap:6px;">
+                <button id="btn-export">导出</button>
+                <button id="btn-import">导入</button>
+            </span>
+        </div>
+        <input type="file" id="import-file" accept="application/json,.json" style="display:none;">
+    </div>
+    <div class="tile-menu" id="tile-menu"></div>
     <script>
+        const ALLOWED_PROTOCOLS = new Set(['http:', 'https:', 'file:', 'cosy:']);
+        const CUSTOM_KEY = 'cosyQuickLinks';
+        const VISIT_KEY = 'cosyQuickLinkVisits';
+        const DISMISS_KEY = 'cosySuggestDismiss';
+        const ORDER_KEY = 'cosyQuickLinkOrder';
+        const HIDDEN_KEY = 'cosyQuickLinkHidden';
+        const MAX_CUSTOM_LINKS = 24;
+        const MAX_SUGGESTIONS = 8;
+        const MAX_RECENT_CLOSED = 6;
+
+        // 当前正在拖拽的磁贴 URL；磁贴右键菜单的状态对象。
+        let dragSrcUrl = null;
+        let tileMenuTarget = null;
+
+        const DEFAULT_LINKS = [
+            { name: '热土工作室', url: 'https://rtstu.com',                  color: '#E65100', letter: '热' },
+            { name: 'bool-hybrid-array', url: 'https://pypi.org/project/bool-hybrid-array/', color: '#3776AB', letter: 'Py' },
+            { name: 'BKsell',   url: 'https://github.com/BKsell',       color: '#6e5494', letter: 'BK' },
+            { name: 'Gitee',    url: 'https://gitee.com/BKsell',         color: '#C71D23', letter: 'G' },
+            { name: 'GitHub',   url: 'https://github.com',              color: '#24292e', letter: 'G' },
+            { name: 'Bing',     url: 'https://www.bing.com',            color: '#00897B', letter: 'B' },
+            { name: '百度',     url: 'https://www.baidu.com',           color: '#C62828', letter: '百' },
+            { name: '哔哩哔哩', url: 'https://www.bilibili.com',        color: '#FB7299', letter: '哔' },
+            { name: 'GitCode',  url: 'https://gitcode.com/BKsell',      color: '#0B5FFF', letter: 'GC' },
+            { name: 'CSDN',     url: 'https://blog.csdn.net/BKsell',    color: '#FC5531', letter: 'C' },
+            { name: '维基百科', url: 'https://zh.wikipedia.org',         color: '#444444', letter: 'W' },
+            { name: 'YouTube',  url: 'https://www.youtube.com',         color: '#FF0000', letter: 'Y' },
+            { name: '知乎',     url: 'https://www.zhihu.com/people/50-78-41-74', color: '#0066FF', letter: '知' },
+            { name: '淘宝',     url: 'https://www.taobao.com',          color: '#FF6A00', letter: '淘' },
+            { name: 'Gmail',    url: 'https://mail.google.com',         color: '#1a73e8', letter: '@' },
+            { name: 'Outlook',  url: 'https://outlook.live.com',        color: '#0078d4', letter: 'O' },
+        ];
+
+        function isSafeUrl(url) {
+            try { return ALLOWED_PROTOCOLS.has(new URL(url).protocol); } catch { return false; }
+        }
+
+        function escapeCssUrl(url) {
+            return url.replace(/['"\\()]/g, '\\$&');
+        }
+
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+
         function navigateTo(url) {
+            if (!isSafeUrl(url)) return;
+            bumpVisit(url);
             window.location.href = url;
         }
 
-        document.getElementById('search-input').addEventListener('keypress', function(e) {
+        function loadCustomLinks() {
+            try {
+                const raw = JSON.parse(localStorage.getItem(CUSTOM_KEY) || '[]');
+                return Array.isArray(raw) ? raw.filter(l => l && l.url && isSafeUrl(l.url)) : [];
+            } catch { return []; }
+        }
+
+        function saveCustomLinks(links) {
+            localStorage.setItem(CUSTOM_KEY, JSON.stringify(links.slice(0, MAX_CUSTOM_LINKS)));
+        }
+
+        function loadVisits() {
+            try { return JSON.parse(localStorage.getItem(VISIT_KEY) || '{}') || {}; }
+            catch { return {}; }
+        }
+
+        function bumpVisit(url) {
+            const v = loadVisits();
+            v[url] = (v[url] || 0) + 1;
+            try { localStorage.setItem(VISIT_KEY, JSON.stringify(v)); } catch {}
+        }
+
+        function guessColor(url) {
+            let h = 0;
+            for (let i = 0; i < url.length; i++) h = (h * 31 + url.charCodeAt(i)) >>> 0;
+            return `hsl(${h % 360}, 60%, 45%)`;
+        }
+
+        // faviconUrl 只取站点自身的 /favicon.ico（第一方请求），不用第三方
+        // 聚合服务，避免把用户常访问的主机上报给 Google 之类；加载失败就回退字母块。
+        function faviconUrl(url) {
+            try {
+                const u = new URL(url);
+                if (u.protocol !== 'http:' && u.protocol !== 'https:') return '';
+                return `${u.protocol}//${u.host}/favicon.ico`;
+            } catch { return ''; }
+        }
+
+        function renderLink(link, custom) {
+            const el = document.createElement('div');
+            el.className = 'quick-link' + (custom ? ' custom' : '');
+            el.title = link.url;
+            el.draggable = true;
+            el.dataset.url = link.url;
+            el.tabIndex = 0;
+            el.setAttribute('role', 'button');
+            const fav = faviconUrl(link.url);
+            el.innerHTML = `
+                <div class="quick-link-icon" style="background:${escapeHtml(link.color)}">
+                    <span class="ql-letter">${escapeHtml(link.letter)}</span>
+                    ${fav ? `<img class="ql-favicon" alt="" loading="lazy" referrerpolicy="no-referrer" src="${escapeHtml(fav)}">` : ''}
+                </div>
+                <div class="quick-link-name">${escapeHtml(link.name)}</div>
+                ${custom ? '<span class="del" title="删除">×</span><span class="edit" title="重命名">✎</span>' : ''}
+            `;
+            const iconBox = el.querySelector('.quick-link-icon');
+            const favImg = el.querySelector('.ql-favicon');
+            if (favImg) {
+                favImg.addEventListener('load', () => {
+                    // 1x1 透明占位图也视为无图标，保留字母块。
+                    if (favImg.naturalWidth > 1) iconBox.classList.add('has-favicon');
+                });
+                favImg.addEventListener('error', () => favImg.remove());
+            }
+            el.addEventListener('click', e => {
+                if (e.target.classList.contains('del') || e.target.classList.contains('edit')) return;
+                if (e.ctrlKey || e.metaKey) return; // Ctrl/⌘+点击交给下面的“新标签页打开”
+                navigateTo(link.url);
+            });
+            // 中键 / Ctrl+点击：新标签页打开（现代浏览器磁贴惯例），不离开当前新标签页。
+            el.addEventListener('auxclick', e => {
+                if (e.button === 1) { e.preventDefault(); window.open(link.url, '_blank', 'noopener'); }
+            });
+            el.addEventListener('click', e => {
+                if ((e.ctrlKey || e.metaKey) &&
+                    !e.target.classList.contains('del') && !e.target.classList.contains('edit')) {
+                    e.preventDefault();
+                    window.open(link.url, '_blank', 'noopener');
+                }
+            });
+            el.addEventListener('keydown', e => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigateTo(link.url); }
+            });
+            el.addEventListener('contextmenu', e => {
+                e.preventDefault();
+                openTileMenu(e.clientX, e.clientY, link, custom);
+            });
+            // HTML5 拖拽排序：dragover 时高亮落点，drop 后按当前 DOM 顺序持久化。
+            el.addEventListener('dragstart', () => {
+                dragSrcUrl = link.url;
+                el.classList.add('dragging');
+            });
+            el.addEventListener('dragend', () => {
+                dragSrcUrl = null;
+                el.classList.remove('dragging');
+                document.querySelectorAll('.quick-link.drag-over')
+                    .forEach(n => n.classList.remove('drag-over'));
+            });
+            el.addEventListener('dragover', e => {
+                e.preventDefault();
+                if (dragSrcUrl && dragSrcUrl !== link.url) el.classList.add('drag-over');
+            });
+            el.addEventListener('dragleave', () => el.classList.remove('drag-over'));
+            el.addEventListener('drop', e => {
+                e.preventDefault();
+                el.classList.remove('drag-over');
+                if (!dragSrcUrl || dragSrcUrl === link.url) return;
+                reorderTiles(dragSrcUrl, link.url);
+            });
+            if (custom) {
+                el.querySelector('.del').addEventListener('click', e => {
+                    e.stopPropagation();
+                    const rest = loadCustomLinks().filter(l => l.url !== link.url);
+                    saveCustomLinks(rest);
+                    renderQuickLinks();
+                    renderSuggestions();
+                });
+                el.querySelector('.edit').addEventListener('click', e => {
+                    e.stopPropagation();
+                    const next = prompt('新名称：', link.name);
+                    if (next === null) return;
+                    const trimmed = next.trim().slice(0, 24);
+                    if (!trimmed) return;
+                    const links = loadCustomLinks().map(l =>
+                        l.url === link.url ? { ...l, name: trimmed, letter: trimmed.charAt(0).toUpperCase() } : l
+                    );
+                    saveCustomLinks(links);
+                    renderQuickLinks();
+                });
+            }
+            return el;
+        }
+
+        function renderAddTile() {
+            const el = document.createElement('div');
+            el.className = 'quick-link';
+            el.title = '添加快捷方式';
+            el.innerHTML = `
+                <div class="quick-link-icon add">+</div>
+                <div class="quick-link-name">添加</div>
+            `;
+            el.addEventListener('click', addCustomLink);
+            return el;
+        }
+
+        function addCustomLink() {
+            let url = prompt('输入网址 (https://...)：');
+            if (!url) return;
+            url = url.trim();
+            if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+            if (!isSafeUrl(url)) { alert('不支持的协议'); return; }
+            let name = prompt('显示名称：');
+            if (!name) name = url.replace(/^https?:\/\//, '').split('/')[0];
+            name = name.trim().slice(0, 24);
+            const links = loadCustomLinks();
+            if (links.some(l => l.url === url)) return;
+            if (links.length >= MAX_CUSTOM_LINKS) {
+                alert(`最多 ${MAX_CUSTOM_LINKS} 个自定义磁贴`);
+                return;
+            }
+            links.push({ name, url, color: guessColor(url), letter: name.charAt(0).toUpperCase() });
+            saveCustomLinks(links);
+            renderQuickLinks();
+        }
+
+        // ---- 历史推荐 ----
+        let cachedHistory = [];
+
+        async function fetchHistory() {
+            try {
+                if (!window.electronAPI || !window.electronAPI.invoke) return;
+                const res = await window.electronAPI.invoke('get-history');
+                if (res && res.success && Array.isArray(res.history)) cachedHistory = res.history;
+            } catch { cachedHistory = []; }
+        }
+
+        function loadDismissed() {
+            try {
+                const raw = JSON.parse(localStorage.getItem(DISMISS_KEY) || '[]');
+                return Array.isArray(raw) ? new Set(raw) : new Set();
+            } catch { return new Set(); }
+        }
+
+        function markDismissed(url) {
+            const set = loadDismissed();
+            set.add(url);
+            try { localStorage.setItem(DISMISS_KEY, JSON.stringify([...set].slice(-200))); } catch {}
+        }
+
+        function hostOf(raw) {
+            try { return new URL(raw).hostname.replace(/^www\./, ''); }
+            catch { return raw; }
+        }
+
+        function addSuggestion(url, name) {
+            if (!/^https?:/i.test(url) || !isSafeUrl(url)) return;
+            const links = loadCustomLinks();
+            if (links.length >= MAX_CUSTOM_LINKS || links.some(l => l.url === url)) return;
+            links.push({ name, url, color: guessColor(url), letter: name.charAt(0).toUpperCase() });
+            saveCustomLinks(links);
+        }
+
+        function renderSuggestions() {
+            const wrap = document.getElementById('suggest-wrap');
+            const row = document.getElementById('suggest-row');
+            if (!wrap || !row) return;
+            row.innerHTML = '';
+            const s = loadNTSettings();
+            if (s.suggestFromHistory === false) { wrap.style.display = 'none'; return; }
+
+            const custom = loadCustomLinks();
+            const defaultHosts = new Set(DEFAULT_LINKS.map(l => hostOf(l.url)));
+            const have = new Set(custom.map(l => l.url));
+            const dismissed = loadDismissed();
+            const byHost = new Map();
+
+            for (const h of cachedHistory) {
+                if (!h || !h.url || !/^https?:/i.test(h.url)) continue;
+                const host = hostOf(h.url);
+                if (!host || defaultHosts.has(host) || dismissed.has(h.url)) continue;
+                if (!byHost.has(host)) byHost.set(host, { url: h.url, name: h.title || host, ts: h.timestamp || 0 });
+            }
+            // 历史已按时间倒序，这里再按 ts 兜底，取前 N 个不同主机
+            const picks = [...byHost.values()]
+                .sort((a, b) => b.ts - a.ts)
+                .filter(p => !have.has(p.url))
+                .slice(0, MAX_SUGGESTIONS);
+
+            if (picks.length === 0) { wrap.style.display = 'none'; return; }
+            wrap.style.display = 'block';
+            for (const p of picks) {
+                const name = String(p.name).replace(/\s+[-–|].*$/, '').trim().slice(0, 40) || hostOf(p.url);
+                const chip = document.createElement('span');
+                chip.className = 'suggest-chip';
+                chip.title = p.url;
+                const letter = document.createElement('span');
+                letter.className = 'sc-letter';
+                letter.style.background = guessColor(p.url);
+                letter.textContent = escapeHtml(name.charAt(0).toUpperCase());
+                const nm = document.createElement('span');
+                nm.className = 'sc-name';
+                nm.textContent = name;
+                const add = document.createElement('span');
+                add.className = 'sc-add';
+                add.textContent = '+';
+                add.title = '添加为磁贴';
+                add.addEventListener('click', e => {
+                    e.stopPropagation();
+                    addSuggestion(p.url, name);
+                    renderQuickLinks();
+                    renderSuggestions();
+                });
+                const skip = document.createElement('span');
+                skip.className = 'sc-skip';
+                skip.textContent = '×';
+                skip.title = '不再推荐';
+                skip.addEventListener('click', e => {
+                    e.stopPropagation();
+                    markDismissed(p.url);
+                    renderSuggestions();
+                });
+                chip.appendChild(letter);
+                chip.appendChild(nm);
+                chip.appendChild(add);
+                chip.appendChild(skip);
+                row.appendChild(chip);
+            }
+        }
+
+        // ---- 最近关闭（Speed Dial 风格恢复条）----
+        // 数据源是主进程的 recentlyClosedTabs 快照（get-recently-closed 通道），
+        // 主进程侧已剥控制字符/限长、url 过 isSafeUrl 白名单且剔除 cosy:// 内置页，
+        // 这里只负责渲染与触发恢复，不做任何字段信任。
+        let cachedRecent = [];
+
+        async function fetchRecentlyClosed() {
+            try {
+                if (!window.electronAPI || !window.electronAPI.invoke) return;
+                const res = await window.electronAPI.invoke('get-recently-closed');
+                if (res && res.success && Array.isArray(res.items)) cachedRecent = res.items;
+            } catch { cachedRecent = []; }
+        }
+
+        function renderRecentlyClosed() {
+            const wrap = document.getElementById('recent-wrap');
+            const row = document.getElementById('recent-row');
+            if (!wrap || !row) return;
+            row.innerHTML = '';
+            const s = loadNTSettings();
+            if (s.showRecentlyClosed === false || cachedRecent.length === 0) {
+                wrap.style.display = 'none';
+                return;
+            }
+            wrap.style.display = 'block';
+            for (const it of cachedRecent.slice(0, MAX_RECENT_CLOSED)) {
+                if (!it || !it.url || !/^https?:/i.test(it.url) || !isSafeUrl(it.url)) continue;
+                const title = String(it.title || '').trim() || hostOf(it.url);
+                const chip = document.createElement('span');
+                chip.className = 'suggest-chip recent-chip';
+                chip.title = it.url;
+                const letter = document.createElement('span');
+                letter.className = 'sc-letter';
+                letter.style.background = guessColor(it.url);
+                letter.textContent = escapeHtml(title.charAt(0).toUpperCase());
+                const nm = document.createElement('span');
+                nm.className = 'sc-name';
+                nm.textContent = title.slice(0, 40);
+                chip.appendChild(letter);
+                chip.appendChild(nm);
+                chip.addEventListener('click', () => {
+                    navigateTo(it.url);
+                });
+                row.appendChild(chip);
+            }
+        }
+
+        async function reloadNewTabData() {
+            await fetchHistory();
+            await fetchRecentlyClosed();
+            renderQuickLinks();
+            renderSuggestions();
+            renderRecentlyClosed();
+        }
+
+        // ---- 磁贴排序 / 隐藏 / 备份 ----
+        function loadOrder() {
+            try {
+                const raw = JSON.parse(localStorage.getItem(ORDER_KEY) || '[]');
+                return Array.isArray(raw) ? raw.filter(u => typeof u === 'string') : [];
+            } catch { return []; }
+        }
+
+        function saveOrder(urls) {
+            try { localStorage.setItem(ORDER_KEY, JSON.stringify(urls.slice(0, 200))); } catch {}
+        }
+
+        function loadHidden() {
+            try {
+                const raw = JSON.parse(localStorage.getItem(HIDDEN_KEY) || '[]');
+                return Array.isArray(raw) ? new Set(raw) : new Set();
+            } catch { return new Set(); }
+        }
+
+        function saveHidden(set) {
+            try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...set].slice(-200))); } catch {}
+        }
+
+        function isCustomUrl(customs, url) {
+            return customs.some(l => l.url === url);
+        }
+
+        // reorderTiles 把 src 移动到 target 前面，结果写回 ORDER_KEY。
+        // 顺序数组对默认磁贴和自定义磁贴都生效；未在数组里的磁贴追加在后面。
+        function reorderTiles(srcUrl, targetUrl) {
+            const customs = loadCustomLinks();
+            const known = DEFAULT_LINKS.map(l => l.url).concat(customs.map(l => l.url));
+            const hidden = loadHidden();
+            const visible = known.filter(u => !hidden.has(u));
+            const saved = loadOrder().filter(u => visible.includes(u));
+            for (const u of visible) if (!saved.includes(u)) saved.push(u);
+            const from = saved.indexOf(srcUrl);
+            if (from === -1) return;
+            saved.splice(from, 1);
+            const to = saved.indexOf(targetUrl);
+            saved.splice(to === -1 ? saved.length : to, 0, srcUrl);
+            saveOrder(saved);
+            renderQuickLinks();
+        }
+
+        function hideTile(url) {
+            const set = loadHidden();
+            set.add(url);
+            saveHidden(set);
+            renderQuickLinks();
+        }
+
+        function unhideAllTiles() {
+            try { localStorage.removeItem(HIDDEN_KEY); } catch {}
+            renderQuickLinks();
+        }
+
+        function exportTiles() {
+            const payload = {
+                version: 1,
+                exportedAt: new Date().toISOString(),
+                customs: loadCustomLinks(),
+                order: loadOrder(),
+                hidden: [...loadHidden()],
+            };
+            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'opencosy-tiles.json';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+        }
+
+        function importTiles(file) {
+            const reader = new FileReader();
+            reader.onload = () => {
+                // 备份文件是“不可信外部数据”：走 jsonimportguard 内核解析，
+                // 深度/元素/大小/字段全部设限，url 仅放行 http(s) 白名单，
+                // 返回的已是净化后的磁贴数组（不再信任原始 JSON 的任何字段）。
+                const text = String(reader.result || '');
+                const parsed = (window.OpenCosyJsonImport && window.OpenCosyJsonImport.parseTiles)
+                    ? window.OpenCosyJsonImport.parseTiles(text)
+                    : null;
+                if (!parsed || !parsed.ok) {
+                    alert((parsed && parsed.error) || '文件不是有效的 JSON');
+                    return;
+                }
+                const incoming = parsed.items;
+                if (!incoming.length) { alert('备份文件里没有可导入的磁贴'); return; }
+                const links = loadCustomLinks();
+                let added = 0;
+                for (const item of incoming) {
+                    if (links.some(l => l.url === item.url)) continue;
+                    links.push({
+                        name: item.name, url: item.url,
+                        color: item.color || guessColor(item.url),
+                        letter: item.letter || item.name.charAt(0).toUpperCase(),
+                    });
+                    added++;
+                    if (links.length >= MAX_CUSTOM_LINKS) break;
+                }
+                saveCustomLinks(links);
+                if (parsed.order && parsed.order.length) saveOrder(parsed.order);
+                renderQuickLinks();
+                renderSuggestions();
+                alert(`已导入 ${added} 个磁贴`);
+            };
+            reader.onerror = () => alert('读取文件失败');
+            reader.readAsText(file);
+        }
+
+        // openTileMenu 是磁贴右键菜单：自定义磁贴可打开 / 重命名 / 删除，
+        // 默认磁贴可打开 / 隐藏（隐藏后可在设置面板恢复，不删任何内置数据）。
+        function openTileMenu(x, y, link, custom) {
+            const menu = document.getElementById('tile-menu');
+            if (!menu) return;
+            tileMenuTarget = { link, custom };
+            const items = [
+                { label: '打开', fn: () => navigateTo(link.url) },
+                { label: '在新标签页中打开', fn: () => window.open(link.url, '_blank', 'noopener') },
+            ];
+            if (custom) {
+                items.push({ label: '重命名', fn: () => renameCustomTile(link.url) });
+                items.push({ label: '删除磁贴', danger: true, fn: () => removeCustomTile(link.url) });
+            } else {
+                items.push({ label: '隐藏磁贴', danger: true, fn: () => hideTile(link.url) });
+            }
+            menu.innerHTML = '';
+            for (const it of items) {
+                const row = document.createElement('div');
+                row.className = 'tile-menu-item' + (it.danger ? ' danger' : '');
+                row.textContent = it.label;
+                row.addEventListener('click', () => { closeTileMenu(); it.fn(); });
+                menu.appendChild(row);
+            }
+            menu.classList.add('open');
+            const rect = menu.getBoundingClientRect();
+            const px = Math.min(x, window.innerWidth - rect.width - 8);
+            const py = Math.min(y, window.innerHeight - rect.height - 8);
+            menu.style.left = Math.max(8, px) + 'px';
+            menu.style.top = Math.max(8, py) + 'px';
+        }
+
+        function closeTileMenu() {
+            const menu = document.getElementById('tile-menu');
+            if (menu) menu.classList.remove('open');
+            tileMenuTarget = null;
+        }
+
+        function renameCustomTile(url) {
+            const links = loadCustomLinks();
+            const target = links.find(l => l.url === url);
+            if (!target) return;
+            const next = prompt('新名称：', target.name);
+            if (next === null) return;
+            const trimmed = next.trim().slice(0, 24);
+            if (!trimmed) return;
+            target.name = trimmed;
+            target.letter = trimmed.charAt(0).toUpperCase();
+            saveCustomLinks(links);
+            renderQuickLinks();
+        }
+
+        function removeCustomTile(url) {
+            saveCustomLinks(loadCustomLinks().filter(l => l.url !== url));
+            renderQuickLinks();
+            renderSuggestions();
+        }
+
+        // setupTileKeyboard 让磁贴支持方向键导航（现代新标签页惯例）：
+        // 左右在磁贴间移动，Home/End 跳到首尾，Enter 打开。
+        function setupTileKeyboard() {
+            const container = document.getElementById('quick-links');
+            if (!container) return;
+            container.addEventListener('keydown', e => {
+                const tiles = [...container.querySelectorAll('.quick-link')];
+                const idx = tiles.indexOf(document.activeElement);
+                if (idx === -1) return;
+                let next = -1;
+                if (e.key === 'ArrowRight') next = (idx + 1) % tiles.length;
+                else if (e.key === 'ArrowLeft') next = (idx - 1 + tiles.length) % tiles.length;
+                else if (e.key === 'Home') next = 0;
+                else if (e.key === 'End') next = tiles.length - 1;
+                if (next !== -1) {
+                    e.preventDefault();
+                    tiles[next].focus();
+                }
+            });
+        }
+
+        function renderQuickLinks() {
+            const container = document.getElementById('quick-links');
+            if (!container) return;
+            container.innerHTML = '';
+
+            const settings = loadNTSettings();
+            const hidden = loadHidden();
+            const customs = loadCustomLinks();
+            // 默认磁贴按访问次数排序（经常访问的靠前），没访问过的保持原顺序
+            const visits = loadVisits();
+            let defaults = DEFAULT_LINKS
+                .filter(l => !hidden.has(l.url))
+                .map((l, i) => ({ ...l, _v: visits[l.url] || 0, _i: i }));
+            if (settings.sortByVisits !== false) {
+                defaults = defaults.sort((a, b) => b._v - a._v || a._i - b._i);
+            }
+
+            // 一旦用户拖拽过（ORDER_KEY 有数据），就按保存的顺序合并默认与自定义磁贴；
+            // 顺序数组里没列到的磁贴按当前顺序追加在后面，保证新磁贴不会消失。
+            const savedOrder = loadOrder();
+            const byUrl = new Map();
+            for (const l of defaults) byUrl.set(l.url, { link: l, custom: false });
+            for (const l of customs) if (!hidden.has(l.url)) byUrl.set(l.url, { link: l, custom: true });
+            const ordered = [];
+            const seen = new Set();
+            if (savedOrder.length) {
+                for (const u of savedOrder) {
+                    const hit = byUrl.get(u);
+                    if (hit && !seen.has(u)) { ordered.push(hit); seen.add(u); }
+                }
+            }
+            for (const l of defaults) {
+                if (!seen.has(l.url)) { ordered.push({ link: l, custom: false }); seen.add(l.url); }
+            }
+            for (const l of customs) {
+                if (!hidden.has(l.url) && !seen.has(l.url)) {
+                    ordered.push({ link: l, custom: true }); seen.add(l.url);
+                }
+            }
+
+            for (const { link, custom } of ordered) container.appendChild(renderLink(link, custom));
+            container.appendChild(renderAddTile());
+        }
+
+        // ---- 新标签页设置面板 ----
+        const NTS_KEY = 'cosyNewtabSettings';
+        function loadNTSettings() {
+            try { return Object.assign({ sortByVisits: true, searchEngine: 'bing', suggestFromHistory: true, showRecentlyClosed: true },
+                JSON.parse(localStorage.getItem(NTS_KEY) || '{}')); }
+            catch { return { sortByVisits: true, searchEngine: 'bing', suggestFromHistory: true, showRecentlyClosed: true }; }
+        }
+        function saveNTSettings(patch) {
+            const s = Object.assign(loadNTSettings(), patch);
+            localStorage.setItem(NTS_KEY, JSON.stringify(s));
+            // 同步到全局 cosySettings 供搜索框读取
+            let global;
+            try { global = JSON.parse(localStorage.getItem('cosySettings') || '{}'); }
+            catch { global = {}; }
+            global.searchEngine = s.searchEngine;
+            localStorage.setItem('cosySettings', JSON.stringify(global));
+        }
+        function setupSettingsPanel() {
+            const gear = document.getElementById('gear-btn');
+            const panel = document.getElementById('settings-panel');
+            const sel = document.getElementById('sel-engine');
+            const tgl = document.getElementById('toggle-sort');
+            const tglSuggest = document.getElementById('toggle-suggest');
+            const tglRecent = document.getElementById('toggle-recent');
+            const rst = document.getElementById('btn-reset');
+            const btnUnhide = document.getElementById('btn-unhide');
+            const btnExport = document.getElementById('btn-export');
+            const btnImport = document.getElementById('btn-import');
+            const importFile = document.getElementById('import-file');
+            if (!gear || !panel) return;
+            const s = loadNTSettings();
+            sel.value = s.searchEngine;
+            tgl.checked = s.sortByVisits !== false;
+            tglSuggest.checked = s.suggestFromHistory !== false;
+            if (tglRecent) tglRecent.checked = s.showRecentlyClosed !== false;
+            gear.addEventListener('click', e => {
+                e.stopPropagation();
+                panel.classList.toggle('open');
+            });
+            document.addEventListener('click', e => {
+                if (!panel.contains(e.target) && e.target !== gear) panel.classList.remove('open');
+            });
+            sel.addEventListener('change', () => {
+                saveNTSettings({ searchEngine: sel.value });
+            });
+            tgl.addEventListener('change', () => {
+                saveNTSettings({ sortByVisits: tgl.checked });
+                renderQuickLinks();
+            });
+            tglSuggest.addEventListener('change', () => {
+                saveNTSettings({ suggestFromHistory: tglSuggest.checked });
+                renderSuggestions();
+            });
+            if (tglRecent) tglRecent.addEventListener('change', () => {
+                saveNTSettings({ showRecentlyClosed: tglRecent.checked });
+                renderRecentlyClosed();
+            });
+            rst.addEventListener('click', () => {
+                if (!confirm('清除所有自定义磁贴、排序、隐藏状态和访问记录？')) return;
+                localStorage.removeItem(CUSTOM_KEY);
+                localStorage.removeItem(VISIT_KEY);
+                localStorage.removeItem(DISMISS_KEY);
+                localStorage.removeItem(ORDER_KEY);
+                localStorage.removeItem(HIDDEN_KEY);
+                renderQuickLinks();
+                renderSuggestions();
+            });
+            if (btnUnhide) btnUnhide.addEventListener('click', unhideAllTiles);
+            if (btnExport) btnExport.addEventListener('click', exportTiles);
+            if (btnImport) btnImport.addEventListener('click', () => importFile && importFile.click());
+            if (importFile) importFile.addEventListener('change', () => {
+                const f = importFile.files && importFile.files[0];
+                if (f) importTiles(f);
+                importFile.value = '';
+            });
+            document.addEventListener('click', e => {
+                const menu = document.getElementById('tile-menu');
+                if (menu && menu.classList.contains('open') && !menu.contains(e.target)) closeTileMenu();
+            });
+            document.addEventListener('keydown', e => { if (e.key === 'Escape') closeTileMenu(); });
+            window.addEventListener('blur', closeTileMenu);
+        }
+
+        function updateNetworkPill() {
+            const pill = document.getElementById('net-pill');
+            const text = document.getElementById('net-text');
+            const online = navigator.onLine;
+            pill.classList.toggle('offline', !online);
+            text.textContent = online ? '已联网' : '离线';
+        }
+
+        function focusSearch() {
+            const s = document.getElementById('search-input');
+            if (s) { s.focus(); s.select(); }
+        }
+
+        // 搜索框“引擎快捷指令”（bang）：!g 词 -> Google，!b/!bd -> Bing/百度，
+        // !yt !bili !zhihu !tb !wiki 直接到对应站点搜索。命中且带关键词才生效，
+        // 单独一个 !g 不带词时忽略，回落到默认搜索。
+        const SEARCH_BANGS = {
+            g: 'https://www.google.com/search?q=', google: 'https://www.google.com/search?q=',
+            b: 'https://www.bing.com/search?q=', bing: 'https://www.bing.com/search?q=',
+            bd: 'https://www.baidu.com/s?wd=', baidu: 'https://www.baidu.com/s?wd=',
+            ddg: 'https://duckduckgo.com/?q=',
+            yt: 'https://www.youtube.com/results?search_query=', youtube: 'https://www.youtube.com/results?search_query=',
+            bili: 'https://search.bilibili.com/all?keyword=',
+            zhihu: 'https://www.zhihu.com/search?type=content&q=',
+            tb: 'https://s.taobao.com/search?q=', taobao: 'https://s.taobao.com/search?q=',
+            wiki: 'https://zh.wikipedia.org/w/index.php?search=',
+            gh: 'https://github.com/search?q=', github: 'https://github.com/search?q=',
+        };
+
+        function resolveBang(query) {
+            const m = /^!([a-z]+)\s+(.+)$/i.exec(query.trim());
+            if (!m) return null;
+            const base = SEARCH_BANGS[m[1].toLowerCase()];
+            const term = m[2].trim();
+            if (!base || !term) return null;
+            return base + encodeURIComponent(term);
+        }
+
+        function searchUrlForEngine(engine) {
+            switch (engine) {
+                case 'google': return 'https://www.google.com/search?q=';
+                case 'baidu': return 'https://www.baidu.com/s?wd=';
+                case 'ddg': return 'https://duckduckgo.com/?q=';
+                case 'bing':
+                default: return 'https://www.bing.com/search?q=';
+            }
+        }
+
+        document.getElementById('search-input').addEventListener('keydown', function(e) {
             if (e.key === 'Enter') {
                 const query = this.value.trim();
                 if (query) {
-                    let isValidProtocol = false;
-                    try {
-                        const urlObj = new URL(query);
-                        isValidProtocol = ['http:', 'https:', 'file:', 'cosy:'].includes(urlObj.protocol);
-                    } catch {}
-
-                    if (isValidProtocol) {
+                    if (isSafeUrl(query)) {
                         navigateTo(query);
-                    } else if (query.includes('.') && !query.includes(' ')) {
+                    } else if (query.includes('.') && !query.includes(' ') && !query.startsWith('!')) {
                         navigateTo('https://' + query);
                     } else {
-                        const settings = JSON.parse(localStorage.getItem('cosySettings') || '{}');
-                        const searchEngine = settings.searchEngine || 'bing';
-
-                        let searchUrl;
-                        switch (searchEngine) {
-                            case 'google':
-                                searchUrl = 'https://www.google.com/search?q=';
-                                break;
-                            case 'baidu':
-                                searchUrl = 'https://www.baidu.com/s?wd=';
-                                break;
-                            case 'bing':
-                            default:
-                                searchUrl = 'https://www.bing.com/search?q=';
-                                break;
-                        }
-
-                        navigateTo(searchUrl + encodeURIComponent(query));
+                        const bang = resolveBang(query);
+                        if (bang) { navigateTo(bang); return; }
+                        let settings;
+                        try { settings = JSON.parse(localStorage.getItem('cosySettings') || '{}'); }
+                        catch { settings = {}; }
+                        // 单独一个空 bang（如 "!g"）时去掉前缀再用默认引擎搜，避免把 "!g" 当关键词。
+                        const cleaned = query.replace(/^![a-z]+\s*/i, '').trim() || query;
+                        const searchUrl = searchUrlForEngine(settings.searchEngine || 'bing');
+                        navigateTo(searchUrl + encodeURIComponent(cleaned));
                     }
                 }
             }
@@ -195,27 +931,117 @@
         }
 
         function setBackgroundImage(imageUrl) {
-            const backgroundContainer = document.getElementById('background-container');
-            if (backgroundContainer) {
-                backgroundContainer.style.backgroundImage = `url('${imageUrl}')`;
+            const bg = document.getElementById('background-container');
+            if (bg && (isSafeUrl(imageUrl) || !imageUrl.includes('://'))) {
+                bg.style.backgroundImage = `url('${escapeCssUrl(imageUrl)}')`;
             }
         }
 
-        document.addEventListener('DOMContentLoaded', function() {
-            const searchInput = document.getElementById('search-input');
-            if (searchInput) {
-                searchInput.focus();
+        // ---- 最近关闭 ----
+        // 数据来自 get-recently-closed（主进程已净化字段并过 isSafeUrl 白名单），
+        // 这里只做 DOM 渲染（textContent，无 HTML 注入面），点击走受控通道恢复。
+        async function renderRecentlyClosed() {
+            const wrap = document.getElementById('recent-wrap');
+            const row = document.getElementById('recent-row');
+            if (!wrap || !row || !window.electronAPI || !window.electronAPI.invoke) return;
+            let items = [];
+            try {
+                const res = await window.electronAPI.invoke('get-recently-closed');
+                if (res && res.success && Array.isArray(res.items)) items = res.items;
+            } catch { items = []; }
+            row.innerHTML = '';
+            if (!items.length) { wrap.style.display = 'none'; return; }
+            wrap.style.display = 'block';
+            for (const it of items.slice(0, 6)) {
+                if (!it || typeof it.url !== 'string' || !isSafeUrl(it.url)) continue;
+                const host = hostOf(it.url);
+                const name = String(it.title || host).slice(0, 60) || host;
+                const chip = document.createElement('span');
+                chip.className = 'recent-chip';
+                chip.title = it.url;
+                const letter = document.createElement('span');
+                letter.className = 'rc-letter';
+                letter.style.background = guessColor(it.url);
+                letter.textContent = name.charAt(0).toUpperCase();
+                const nm = document.createElement('span');
+                nm.className = 'rc-name';
+                nm.textContent = name;
+                const hst = document.createElement('span');
+                hst.className = 'rc-host';
+                hst.textContent = host;
+                chip.addEventListener('click', () => {
+                    if (window.electronAPI && window.electronAPI.send) {
+                        window.electronAPI.send('reopen-tab-url', it.url);
+                    }
+                });
+                chip.appendChild(letter);
+                chip.appendChild(nm);
+                chip.appendChild(hst);
+                row.appendChild(chip);
             }
+            if (!row.children.length) wrap.style.display = 'none';
+        }
 
-            if (typeof COSY_CONSTANTS !== 'undefined' && COSY_CONSTANTS.APP_INFO) {
-                const footer = document.getElementById('footer');
-                if (footer) {
-                    footer.textContent = `${COSY_CONSTANTS.APP_INFO.name}`;
-                }
-            }
-
+        document.addEventListener('DOMContentLoaded', async function() {
+            renderQuickLinks();
+            setupTileKeyboard();
             setDefaultBackground();
+            updateNetworkPill();
+            setupSettingsPanel();
+            await fetchHistory();
+            await fetchRecentlyClosed();
+            renderSuggestions();
+            renderRecentlyClosed();
+            window.addEventListener('online', updateNetworkPill);
+            window.addEventListener('offline', updateNetworkPill);
+            window.addEventListener('keydown', e => {
+                if (e.key === '/' && document.activeElement.tagName !== 'INPUT') {
+                    e.preventDefault();
+                    focusSearch();
+                }
+            });
+            // 没设默认搜索就自动聚焦
+            if (!location.hash) focusSearch();
+            if (typeof COSY_CONSTANTS !== 'undefined' && COSY_CONSTANTS.APP_INFO) {
+                const f = document.getElementById('footer-name');
+                if (f) f.textContent = COSY_CONSTANTS.APP_INFO.name;
+            }
+            initQuickLinkStats();
         });
+
+        // ===== 拨号统计与一键全部打开 =====
+        // 独立自包含增强：读取自定义拨号数量/最近访问次数，
+        // 在磁贴区上方渲染统计行 + 「全部打开」按钮，不依赖既有渲染流程。
+        function initQuickLinkStats() {
+            const box = document.getElementById('quick-links');
+            if (!box || !window.electronAPI || !window.electronAPI.send) return;
+            let customs = [];
+            try {
+                customs = JSON.parse(localStorage.getItem('cosyQuickLinks') || '[]');
+            } catch { customs = []; }
+            if (!Array.isArray(customs) || customs.length === 0) return;
+            const safe = customs.filter(function(l) {
+                return l && typeof l.url === 'string' && /^(https?|file|cosy):/i.test(l.url);
+            });
+            if (safe.length === 0) return;
+            const bar = document.createElement('div');
+            bar.style.cssText = 'display:flex;align-items:center;gap:10px;justify-content:center;margin-top:22px;';
+            const pill = document.createElement('span');
+            pill.style.cssText = 'font-size:12px;opacity:0.85;text-shadow:0 1px 3px rgba(0,0,0,0.6);';
+            pill.textContent = '自定义拨号 ' + safe.length + ' 个';
+            const openAll = document.createElement('button');
+            openAll.type = 'button';
+            openAll.textContent = '全部打开';
+            openAll.style.cssText = 'padding:5px 14px;border:1px solid rgba(255,255,255,0.35);border-radius:999px;background:rgba(255,255,255,0.14);color:#fff;font-size:12px;cursor:pointer;backdrop-filter:blur(8px);transition:background 0.15s;';
+            openAll.addEventListener('click', function() {
+                safe.slice(0, 10).forEach(function(l) {
+                    window.electronAPI.send('open-new-tab', l.url);
+                });
+            });
+            bar.appendChild(pill);
+            bar.appendChild(openAll);
+            box.parentNode.insertBefore(bar, box.nextSibling);
+        }
     </script>
 </body>
 </html>
