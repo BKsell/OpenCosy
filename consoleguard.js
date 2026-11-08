@@ -1,4 +1,5 @@
 'use strict';
+const { pruneOlderThan, countSince } = require('./modutil');
 
 // consoleguard.js —— 渲染进程 console-message 事件的不可信输入收口内核。
 //
@@ -79,21 +80,6 @@ function sanitizeSourceLocation(sourceId, line) {
   let lineNo = 0;
   if (Number.isFinite(line) && line >= 0) lineNo = Math.min(Number(line), 0x7fffffff);
   return { sourceId: src.text, line: lineNo };
-}
-
-function pruneOlderThan(list, cutoff) {
-  let i = 0;
-  while (i < list.length && list[i] < cutoff) i++;
-  if (i > 0) list.splice(0, i);
-}
-
-function countSince(sortedTimes, cutoff) {
-  let n = 0;
-  for (let i = sortedTimes.length - 1; i >= 0; i--) {
-    if (sortedTimes[i] >= cutoff) n++;
-    else break;
-  }
-  return n;
 }
 
 function createConsoleState(now) {
