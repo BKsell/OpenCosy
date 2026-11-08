@@ -1,6 +1,6 @@
 'use strict';
 
-const { firstValue, headerKey } = require('./headerutil');
+const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -27,11 +27,6 @@ const HIGH_RISK_FEATURES = new Set([
   'topics',
   'interestgroupauction',
 ]);
-
-function deleteHeader(headers, name) {
-  const key = headerKey(headers, name);
-  if (key) delete headers[key];
-}
 
 function decodeToken(token) {
   const trimmed = token.trim();
