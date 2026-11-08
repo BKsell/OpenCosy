@@ -1,5 +1,7 @@
 'use strict';
 
+const { safeParse } = require('./modutil');
+
 // deeplinkguard.js —— 进程入口深链（命令行 argv / open-file / open-url）消毒内核。
 //
 // 威胁模型：
@@ -30,14 +32,6 @@ const CONTROL_RE = /[\x00-\x1f\x7f]/;
 
 function hasControlChar(s) {
   return typeof s !== 'string' || CONTROL_RE.test(s);
-}
-
-function safeParse(raw) {
-  try {
-    return new URL(raw);
-  } catch {
-    return null;
-  }
 }
 
 function isSwitchLike(s) {
