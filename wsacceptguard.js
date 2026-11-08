@@ -1,5 +1,8 @@
 'use strict';
 
+const { hasControlCharsV2 } = require('./modutil');
+const hasControlChars = hasControlCharsV2;
+
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
 const REASON = {
@@ -17,14 +20,6 @@ const PROTOCOL_HEADER = 'sec-websocket-protocol';
 const MAX_ACCEPT_LENGTH = 28;
 const MAX_PROTOCOL_LENGTH = 64;
 const MAX_PROTOCOLS = 4;
-
-function hasControlChars(text) {
-  for (const ch of text) {
-    const code = ch.charCodeAt(0);
-    if (code < 0x20 || code === 0x7f) return true;
-  }
-  return false;
-}
 
 function inspectAccept(value) {
   if (typeof value !== 'string') return { reason: REASON.MALFORMED };
