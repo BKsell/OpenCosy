@@ -1,5 +1,7 @@
 'use strict';
 
+const { lowerKeys } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -21,13 +23,6 @@ const HOP_HEADERS = [
 ];
 const HOP_SET = new Set(HOP_HEADERS);
 const CONNECTION_STOPWORDS = new Set(['close', 'keep-alive']);
-
-function lowerKeys(headers) {
-  const map = {};
-  if (!headers || typeof headers !== 'object') return map;
-  for (const key of Object.keys(headers)) map[key.toLowerCase()] = key;
-  return map;
-}
 
 function firstHeader(headers, name) {
   const keys = lowerKeys(headers);
