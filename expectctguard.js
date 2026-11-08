@@ -1,6 +1,6 @@
 'use strict';
 
-const { firstValue, headerKey } = require('./headerutil');
+const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -15,11 +15,6 @@ const REASON = {
 const HEADER = 'expect-ct';
 const MAX_VALUE_LENGTH = 512;
 const MAX_MAX_AGE = 86400;
-
-function deleteHeader(headers, name) {
-  const key = headerKey(headers, name);
-  if (key) delete headers[key];
-}
 
 function inspectExpectCt(value) {
   if (typeof value !== 'string') return { reason: REASON.MALFORMED, directives: [] };
