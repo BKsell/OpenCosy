@@ -1,6 +1,6 @@
 'use strict';
 
-const { firstValue, headerKey } = require('./headerutil');
+const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
 const crypto = require('node:crypto');
 
@@ -18,11 +18,6 @@ const HEADER = 'etag';
 const MAX_VALUE_LENGTH = 128;
 const MAX_INNER_LENGTH = 96;
 const PREDICTABLE_DIGITS = 6;
-
-function deleteHeader(headers, name) {
-  const key = headerKey(headers, name);
-  if (key) delete headers[key];
-}
 
 function opaqueTag(inner) {
   const hash = crypto.createHash('sha256').update(inner).digest('base64url');
