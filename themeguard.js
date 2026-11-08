@@ -1,4 +1,5 @@
 'use strict';
+const { pruneOlderThan, countSince } = require('./modutil');
 
 // themeguard.js —— did-change-theme-color（<meta name="theme-color">）收口内核。
 //
@@ -61,21 +62,6 @@ function normalizeThemeColor(input) {
     return { ok: true, color, empty: false };
   }
   return { ok: false, color: '', empty: false };
-}
-
-function pruneOlderThan(list, cutoff) {
-  let i = 0;
-  while (i < list.length && list[i] < cutoff) i++;
-  if (i > 0) list.splice(0, i);
-}
-
-function countSince(sortedTimes, cutoff) {
-  let n = 0;
-  for (let i = sortedTimes.length - 1; i >= 0; i--) {
-    if (sortedTimes[i] >= cutoff) n++;
-    else break;
-  }
-  return n;
 }
 
 function createThemeState(now) {
