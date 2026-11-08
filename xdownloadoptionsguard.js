@@ -1,5 +1,7 @@
 'use strict';
 
+const { headerKey } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -13,15 +15,6 @@ const REASON = {
 const HEADER = 'x-download-options';
 const SAFE_VALUE = 'noopen';
 const MAX_VALUE_LENGTH = 64;
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
 
 function values(headers, name) {
   const key = headerKey(headers, name);
