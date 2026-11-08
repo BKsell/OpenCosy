@@ -1,4 +1,5 @@
 'use strict';
+const { pruneOlderThan, countSince, resetCooldown } = require('./modutil');
 
 // findguard.js —— 页内查找（Ctrl+F → findInPage）IPC 请求的输入与频率收口内核。
 //
@@ -48,21 +49,6 @@ function normalizeFindQuery(raw) {
     return { ok: false, reason: REJECT_CONTROL, text: '' };
   }
   return { ok: true, reason: '', text: raw };
-}
-
-function pruneOlderThan(list, cutoff) {
-  let i = 0;
-  while (i < list.length && list[i] < cutoff) i++;
-  if (i > 0) list.splice(0, i);
-}
-
-function countSince(sortedTimes, cutoff) {
-  let n = 0;
-  for (let i = sortedTimes.length - 1; i >= 0; i--) {
-    if (sortedTimes[i] >= cutoff) n++;
-    else break;
-  }
-  return n;
 }
 
 function createFindState(now) {
@@ -162,10 +148,6 @@ function resetFind(state) {
   state.lastMatchCase = false;
   state.lastWholeWord = false;
   state.lastRunAt = 0;
-}
-
-function resetCooldown(state) {
-  if (state) state.cooldownUntil = 0;
 }
 
 function describeFindReason(reason) {
