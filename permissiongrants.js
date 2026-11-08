@@ -1,5 +1,8 @@
 'use strict';
 
+const { safeIntV2 } = require('./modutil');
+const safeInt = safeIntV2;
+
 const DEFAULT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const DEFAULT_MAX_PER_ORIGIN = 4;
 const DEFAULT_MAX_ORIGINS = 400;
@@ -22,12 +25,6 @@ const STATE = {
   EXPIRED: 'expired',
   UNKNOWN: 'unknown',
 };
-
-function safeInt(value, fallback) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.trunc(n);
-}
 
 function normalizeTtl(value) {
   const n = safeInt(value, DEFAULT_TTL_MS);
