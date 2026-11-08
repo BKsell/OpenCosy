@@ -1,5 +1,8 @@
 'use strict';
 
+const { hasControlCharsV2, listValues } = require('./modutil');
+const hasControlChars = hasControlCharsV2;
+
 const { deleteHeader, headerKey } = require('./headerutil');
 
 const REASON = {
@@ -15,22 +18,6 @@ const REASON = {
 const HEADER = 'x-download-options';
 const SAFE_VALUE = 'noopen';
 const MAX_VALUE_LENGTH = 64;
-
-function values(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return [];
-  const raw = headers[key];
-  if (Array.isArray(raw)) return raw.filter((item) => typeof item === 'string');
-  return typeof raw === 'string' ? [raw] : [];
-}
-
-function hasControlChars(text) {
-  for (const ch of text) {
-    const code = ch.charCodeAt(0);
-    if (code < 0x20 || code === 0x7f) return true;
-  }
-  return false;
-}
 
 function inspectDownloadOptions(rawValues) {
   if (!Array.isArray(rawValues) || rawValues.length === 0) {
