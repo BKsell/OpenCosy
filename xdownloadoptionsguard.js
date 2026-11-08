@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerKey } = require('./headerutil');
+const { deleteHeader, headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -22,11 +22,6 @@ function values(headers, name) {
   const raw = headers[key];
   if (Array.isArray(raw)) return raw.filter((item) => typeof item === 'string');
   return typeof raw === 'string' ? [raw] : [];
-}
-
-function deleteHeader(headers, name) {
-  const key = headerKey(headers, name);
-  if (key) delete headers[key];
 }
 
 function hasControlChars(text) {
