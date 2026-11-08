@@ -1,6 +1,6 @@
 'use strict';
 
-const { firstValue, headerKey } = require('./headerutil');
+const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -15,13 +15,6 @@ const REASON = {
 
 const MAX_VALUE_LENGTH = 48;
 const UNIT_PATTERN = /^(none|bytes|items)$/i;
-
-function deleteHeader(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return false;
-  delete headers[key];
-  return true;
-}
 
 function hasByteEvidence(headers) {
   return Boolean(headerKey(headers, 'content-length')) || Boolean(headerKey(headers, 'content-range'));
