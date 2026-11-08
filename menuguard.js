@@ -1,5 +1,5 @@
 'use strict';
-const { schemeOf } = require('./modutil');
+const { schemeOf, containsControlChar } = require('./modutil');
 
 // menuguard.js —— context-menu 事件 params 的统一净化内核。
 //
@@ -28,15 +28,6 @@ const MAX_SUGGESTIONS = 6;         // 与 UI 展示条数一致
 
 // hasControlChar 报告字符串是否含 C0 控制字符、DEL、Unicode 行/段分隔符或 BOM。
 // 普通空白（空格 / Tab）不算，但 CR/LF 算（它们能在菜单里折行伪造条目）。
-function hasControlChar(s) {
-  if (typeof s !== 'string') return false;
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    if (c < 0x20 || c === 0x7f) return true;
-    if (c === 0x2028 || c === 0x2029 || c === 0xfeff) return true;
-  }
-  return false;
-}
 
 // safeMenuUrl 校验要用于“打开链接 / 复制链接”的 URL：必须是 http(s)、无控制字符、
 // 不超长。返回 { ok, url }；不做静默改写。
