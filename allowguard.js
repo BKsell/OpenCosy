@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerKey } = require('./headerutil');
+const { headerKey, rawValue } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -14,12 +14,6 @@ const REASON = {
 const HEADER = 'allow';
 const TOKEN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 const MAX_ENTRIES = 16;
-
-function rawValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return null;
-  return headers[key];
-}
 
 function applyAllowGuard(headers) {
   const raw = rawValue(headers, HEADER);
