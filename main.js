@@ -8109,7 +8109,7 @@ function handleDownloadEvent(event, item, webContents) {
         downloadDiskSpace.describeDecision(diskDecision), originOfContents(webContents));
     }
     if (downloadInfo.savePath) {
-      const reusedCheck = downloadSaveTarget.auditSaveTarget(
+      const reusedCheck = downloadSaveTarget.auditSaveTargetReal(
         downloadRoot, downloadInfo.savePath, path.basename(downloadInfo.savePath),
       );
       if (!reusedCheck.ok) {
