@@ -1,4 +1,5 @@
 'use strict';
+const { pruneOlderThan, countSince, originFromUrl, resetCooldown } = require('./modutil');
 
 // dialogguard.js —— 网页 JS 模态对话框（alert/confirm/prompt）的滥用/DoS 收口内核。
 //
@@ -71,29 +72,6 @@ function normalizeMessage(rawMessage) {
     truncated = true;
   }
   return { message: s, changed, truncated, malformed: changed || truncated };
-}
-
-function originFromUrl(rawUrl) {
-  try {
-    return new URL(rawUrl || '').origin;
-  } catch {
-    return '';
-  }
-}
-
-function pruneOlderThan(list, cutoff) {
-  let i = 0;
-  while (i < list.length && list[i] < cutoff) i++;
-  if (i > 0) list.splice(0, i);
-}
-
-function countSince(sortedTimes, cutoff) {
-  let n = 0;
-  for (let i = sortedTimes.length - 1; i >= 0; i--) {
-    if (sortedTimes[i] >= cutoff) n++;
-    else break;
-  }
-  return n;
 }
 
 function createDialogState(now) {
@@ -201,10 +179,6 @@ function decideDialog(state, input, now) {
     decision: DIALOG_SHOW, reason: norm.malformed ? SUPPRESS_MALFORMED : '',
     origin, type, message: norm.message, cooldownUntil: 0, ...c,
   };
-}
-
-function resetCooldown(state) {
-  if (state) state.cooldownUntil = 0;
 }
 
 function describeDialogReason(reason) {
