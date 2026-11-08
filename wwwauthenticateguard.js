@@ -1,5 +1,7 @@
 'use strict';
 
+const { headerKey } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -15,15 +17,6 @@ const SCHEME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 const QUOTED = /^"(?:[^"\\\x00-\x1f\x7f]|\\.)*"/;
 const MAX_LENGTH = 1024;
 const MAX_CHALLENGES = 4;
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
 
 function hasControlChar(text) {
   for (let i = 0; i < text.length; i += 1) {
