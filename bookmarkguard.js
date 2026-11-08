@@ -1,5 +1,5 @@
 'use strict';
-const { stripControlChars, collapseSpaces } = require('./modutil');
+const { stripControlChars, collapseSpaces, fallbackTitleFor } = require('./modutil');
 
 // bookmarkguard.js —— 书签（收藏夹）落盘 / 读取 / 导入合并的“写入净化 + 逐条校验
 // + 去重 + 有界维护”内核。
@@ -98,13 +98,6 @@ function isValidISOTimestamp(v) {
 }
 
 // fallbackTitleFor 标题为空时用 URL 的 host 兜底，保证书签栏始终有可读文案。
-function fallbackTitleFor(u) {
-  try {
-    return u.hostname.replace(/^www\./i, '') || u.href;
-  } catch {
-    return u.href;
-  }
-}
 
 // sanitizeBookmarkItem 校验并规范化单条书签。input 期望 {url,title,addedDate}。
 //   - url 必须是合法 http/https，否则整条丢弃（ok=false 带 reason）；
