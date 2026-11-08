@@ -1,5 +1,7 @@
 'use strict';
 
+const { hasControlChars } = require('./modutil');
+
 const REASON = {
   OK: 'ok',
   EMPTY: 'empty',
@@ -18,14 +20,6 @@ const MAX_COOKIE_LENGTH = 4096;
 const MAX_AGE_SECONDS = 400 * 24 * 3600;
 const PUBLIC_SUFFIXES = new Set(['com', 'org', 'net', 'edu', 'gov', 'io', 'co', 'cn', 'uk', 'jp', 'de', 'fr', 'ru', 'br', 'in', 'au', 'ca']);
 const IPV4 = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
-
-function hasControlChars(value) {
-  for (let i = 0; i < value.length; i += 1) {
-    const code = value.charCodeAt(i);
-    if (code < 0x20 || code === 0x7f) return true;
-  }
-  return false;
-}
 
 function parseSetCookie(value) {
   if (typeof value !== 'string' || !value.trim()) return { ok: false, reason: REASON.EMPTY };
