@@ -1,5 +1,7 @@
 'use strict';
 
+const { hasControlChar } = require('./modutil');
+
 // ipcchannelguard.js —— 渲染层“原始 IPC 通道”（ipc-message / ipc-message-sync）收口。
 //
 // 威胁模型：
@@ -41,15 +43,6 @@ const SYNC_BURST_MAX = 8;
 const SYNC_LONG_WINDOW_MS = 60000;
 const SYNC_LONG_MAX = 40;
 const IPC_COOLDOWN_MS = 15000;
-
-function hasControlChar(s) {
-  if (typeof s !== 'string') return false;
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    if (c < 0x20 || c === 0x7f || c === 0x2028 || c === 0x2029 || c === 0xfeff) return true;
-  }
-  return false;
-}
 
 // isValidChannelName 校验原始通道名形态。
 function isValidChannelName(channel) {
