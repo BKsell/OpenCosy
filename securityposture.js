@@ -1,14 +1,8 @@
+const { asBytes } = require('./modutil');
+const toCount = asBytes;
 const GRADE_ORDER = ['A', 'B', 'C', 'D', 'F'];
 
 const SEVERITY = { HIGH: 'high', MEDIUM: 'medium', LOW: 'low' };
-
-function toCount(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n) || n < 0) {
-    return 0;
-  }
-  return Math.floor(n);
-}
 
 function gradeIndex(grade) {
   const idx = GRADE_ORDER.indexOf(String(grade || '').toUpperCase());
