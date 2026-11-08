@@ -1,5 +1,8 @@
 'use strict';
 
+const { splitItems } = require('./modutil');
+const splitPairs = splitItems;
+
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
 const REASON = {
@@ -26,23 +29,6 @@ function urlReason(url) {
   if (url.includes('@')) return REASON.ENDPOINT_CREDENTIALS;
   if (url.includes('..') || url.includes('\\')) return REASON.ENDPOINT_PATH_SHAPE;
   return REASON.OK;
-}
-
-function splitPairs(text) {
-  const items = [];
-  let current = '';
-  let inQuote = false;
-  for (const ch of text) {
-    if (ch === '"') inQuote = !inQuote;
-    if (ch === ',' && !inQuote) {
-      items.push(current);
-      current = '';
-      continue;
-    }
-    current += ch;
-  }
-  if (current.trim()) items.push(current);
-  return items;
 }
 
 function inspectReportingEndpoints(value) {
