@@ -1,6 +1,6 @@
 'use strict';
 
-const { firstValue, headerKey } = require('./headerutil');
+const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -16,11 +16,6 @@ const HEADER = 'upgrade';
 const CONNECTION_HEADER = 'connection';
 const MAX_VALUE_LENGTH = 256;
 const SAFE_PROTOCOLS = new Set(['websocket']);
-
-function deleteHeader(headers, name) {
-  const key = headerKey(headers, name);
-  if (key) delete headers[key];
-}
 
 function hasConnectionUpgrade(headers) {
   const value = firstValue(headers, CONNECTION_HEADER).toLowerCase();
