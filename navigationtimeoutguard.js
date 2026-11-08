@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasons } = require('./findingsview');
 
 const REASON = {
   OK: 'ok',
@@ -62,9 +63,8 @@ function auditTimeoutBatch(requests, options) {
 }
 
 function describeFindings(findings) {
-  const list = Array.isArray(findings) ? findings : [];
-  if (list.length === 0) return 'no timeout risk';
-  return list.slice(0, 8).map((f) => f.reason).join('; ');
+  return describeReasons(findings, 'no timeout risk',
+    (f) => f.reason);
 }
 
 module.exports = {
