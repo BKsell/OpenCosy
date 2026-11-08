@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasons } = require('./findingsview');
 
 const REASON = {
   OK: 'ok',
@@ -64,12 +65,8 @@ function auditSameSiteBatch(list) {
 }
 
 function describeFindings(findings) {
-  const list = Array.isArray(findings) ? findings : [];
-  if (list.length === 0) return 'no same-site risk';
-  return list
-    .slice(0, 8)
-    .map((f) => f.reason + '(' + String(f.target || '') + '<' + String(f.origin || '') + ')')
-    .join('; ');
+  return describeReasons(findings, 'no same-site risk',
+    (f) => f.reason + '(' + String(f.target || '') + '<' + String(f.origin || '') + ')');
 }
 
 module.exports = {
