@@ -1,5 +1,8 @@
 'use strict';
 
+const { safeInt, isPlainObject } = require('./modutil');
+const safeNonNegativeInt = safeInt;
+
 const path = require('path');
 
 const DEFAULT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -20,16 +23,6 @@ const REASON = {
   BAD_BYTES: 'bad-bytes',
   TOO_LARGE: 'too-large',
 };
-
-function isPlainObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function safeNonNegativeInt(value) {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null;
-  if (!Number.isInteger(value)) return null;
-  return value;
-}
 
 function normalizeHost(value) {
   if (typeof value !== 'string') return '';
