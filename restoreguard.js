@@ -1,4 +1,5 @@
 'use strict';
+const { stripControlChars, collapseSpaces } = require('./modutil');
 
 // restoreguard.js —— 退出 / 崩溃后“会话标签恢复”与“最近关闭标签”落盘读取的
 // 写入净化 + 逐条校验 + 有界维护内核。
@@ -47,14 +48,6 @@ const constants = Object.freeze({
   SKIP_URL_TOO_LONG,
   SKIP_BAD_TIME,
 });
-
-function stripControlChars(s) {
-  return String(s).replace(/[\u0000-\u001F\u007F]/g, '');
-}
-
-function collapseSpaces(s) {
-  return s.replace(/\s+/g, ' ').trim();
-}
 
 // sanitizeRestoreTitle 清洗恢复标签标题：制表 / 换行 / 回车先归一为空格，再删除其余
 // 控制字符，压空白，截断上界。非字符串给空串。
