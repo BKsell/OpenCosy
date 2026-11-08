@@ -1,4 +1,5 @@
 'use strict';
+const { pruneOlderThan, countSince, resetCooldown } = require('./modutil');
 
 // unloadguard.js —— 页面 beforeunload 强留页（will-prevent-unload）滥用收口内核。
 //
@@ -27,21 +28,6 @@ const UNLOAD_BURST_LIMIT = 2;
 const UNLOAD_LONG_WINDOW_MS = 60_000;
 const UNLOAD_LONG_LIMIT = 5;
 const UNLOAD_COOLDOWN_MS = 20_000;
-
-function pruneOlderThan(list, cutoff) {
-  let i = 0;
-  while (i < list.length && list[i] < cutoff) i++;
-  if (i > 0) list.splice(0, i);
-}
-
-function countSince(sortedTimes, cutoff) {
-  let n = 0;
-  for (let i = sortedTimes.length - 1; i >= 0; i--) {
-    if (sortedTimes[i] >= cutoff) n++;
-    else break;
-  }
-  return n;
-}
 
 function createUnloadState(now) {
   return {
@@ -103,10 +89,6 @@ function decideUnload(state, now) {
     decision: UNLOAD_ASK, reason: '',
     burstCount, longCount, cooldownUntil: 0,
   };
-}
-
-function resetCooldown(state) {
-  if (state) state.cooldownUntil = 0;
 }
 
 function describeUnloadReason(reason) {
