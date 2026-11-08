@@ -30,11 +30,7 @@ const DECISION_ALLOW = 'allow';
 // HTTPS-Only 的升级 / 例外判定复用纯内核 httpsonly.js（无正则、无 Electron 依赖），
 // 避免在管道里手写 'https://' + slice(7) 把显式 :80/:8080 端口一起带崩。
 const httpsOnly = require('./httpsonly');
-
-function isHttpUrl(url) {
-  return typeof url === 'string'
-    && (url.startsWith('http://') || url.startsWith('https://'));
-}
+const { isHttpUrl } = require('./modutil');
 
 function noop() {}
 

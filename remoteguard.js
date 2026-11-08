@@ -1,6 +1,6 @@
 'use strict';
 
-const { hasControlChar } = require('./modutil');
+const { hasControlChar, resetRateWindow: resetForNavigation } = require('./modutil');
 
 // remoteguard.js —— @electron/remote 桥事件与 desktopCapturer 枚举的深度防御内核。
 //
@@ -75,15 +75,6 @@ function createRemoteState() {
     hits: 0,
     blocked: 0,
   };
-}
-
-function resetForNavigation(st) {
-  if (!st) return;
-  st.burstStart = -1;
-  st.burstCount = 0;
-  st.longStart = -1;
-  st.longCount = 0;
-  st.cooldownUntil = 0;
 }
 
 function admitHit(st, now) {

@@ -1,5 +1,5 @@
 'use strict';
-const { schemeOf } = require('./modutil');
+const { schemeOf, httpOrigin: originFromUrl, resetRateWindow: resetForNavigation } = require('./modutil');
 
 // childwindowguard.js —— 网页意外创建的“原生子窗口”收口内核（did-create-window）。
 //
@@ -47,19 +47,6 @@ const REQUIRED_PREF_BASELINE = Object.freeze({
   // 新窗口没有理由带这些调试 / 提权通道。
   devTools: false,
 });
-
-function originFromUrl(rawUrl) {
-  if (typeof rawUrl !== 'string' || !rawUrl) return '';
-  try {
-    const u = new URL(rawUrl);
-    if (u.protocol === 'http:' || u.protocol === 'https:') {
-      return u.origin === 'null' ? '' : u.origin;
-    }
-    return '';
-  } catch {
-    return '';
-  }
-}
 
 // evaluateWebPreferences 把“实际创建出来的窗口”的 webPreferences 与基线比对。
 // 返回 { ok, violations: string[] }；prefs 缺字段时按 Electron 默认的安全值处理，
@@ -145,15 +132,6 @@ function createChildWindowState() {
 }
 
 // resetForNavigation 在顶层导航后调用：开窗洪泛属于页面行为，换文档后配额归零。
-function resetForNavigation(st) {
-  if (!st) return;
-  st.burstStart = -1;
-  st.burstCount = 0;
-  st.longStart = -1;
-  st.longCount = 0;
-  st.cooldownUntil = 0;
-}
-
 // admitChildWindow 为一次“子窗口已创建”事件计数，返回当前是否处于冷却（true 表示
 // 应当直接关闭该窗口）。冷却结束后窗口计数清零重新开始。
 function admitChildWindow(st, now) {

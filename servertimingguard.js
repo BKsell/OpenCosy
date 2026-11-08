@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerValues } = require('./modutil');
+const { headerValues, originOf } = require('./modutil');
 
 const REASON = {
   ok: 'ok',
@@ -14,16 +14,6 @@ function deleteHeader(headers, name) {
   const target = String(name || '').toLowerCase();
   for (const key of Object.keys(headers || {})) {
     if (key.toLowerCase() === target) delete headers[key];
-  }
-}
-
-function originOf(value) {
-  try {
-    const url = new URL(String(value || ''));
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
-    return `${url.protocol}//${url.host}`.toLowerCase();
-  } catch {
-    return '';
   }
 }
 

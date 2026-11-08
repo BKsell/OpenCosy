@@ -1,5 +1,7 @@
 'use strict';
 
+const { isHttpUrl } = require('./modutil');
+
 const REASON = Object.freeze({
   OK: 'ok',
   UNSAFE_METHOD: 'unsafe-method',
@@ -14,10 +16,6 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'POST', 'PUT', 'PATCH', 
 const UNSAFE_METHODS = new Set(['TRACE', 'TRACK', 'CONNECT']);
 const BLOCKED_SCHEMES = new Set(['ftp:', 'gopher:', 'ws:', 'wss:', 'file:']);
 const TOKEN = /^[A-Z][A-Z0-9_-]*$/;
-
-function isHttpUrl(url) {
-  return typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'));
-}
 
 function hasUserinfo(url) {
   if (typeof url !== 'string') return false;

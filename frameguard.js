@@ -1,6 +1,6 @@
 'use strict';
 
-const { containsControlChar } = require('./modutil');
+const { containsControlChar, httpOrigin: originFromUrl } = require('./modutil');
 
 // frameguard.js —— frame-created 事件的纯逻辑守卫内核（iframe / 子框架生命周期）。
 //
@@ -46,19 +46,6 @@ function schemeOf(rawUrl) {
   if (!rawUrl) return '';
   const m = /^([a-z][a-z0-9+.-]*:)/i.exec(rawUrl.trim());
   return m ? m[1].toLowerCase() : '';
-}
-
-function originFromUrl(rawUrl) {
-  if (typeof rawUrl !== 'string' || !rawUrl) return '';
-  try {
-    const u = new URL(rawUrl);
-    if (u.protocol === 'http:' || u.protocol === 'https:') {
-      return u.origin === 'null' ? '' : u.origin;
-    }
-    return '';
-  } catch {
-    return '';
-  }
 }
 
 function createFrameState() {

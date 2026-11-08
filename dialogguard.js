@@ -1,5 +1,5 @@
 'use strict';
-const { pruneOlderThan, countSince, originFromUrl, resetCooldown } = require('./modutil');
+const { pruneOlderThan, countSince, originFromUrl, resetCooldown, inCooldown } = require('./modutil');
 
 // dialogguard.js —— 网页 JS 模态对话框（alert/confirm/prompt）的滥用/DoS 收口内核。
 //
@@ -90,10 +90,6 @@ function createDialogState(now) {
     dupReportedAt: 0,
     createdAt: now || 0,
   };
-}
-
-function inCooldown(state, now) {
-  return !!state && state.cooldownUntil > now;
 }
 
 // decideDialog 裁决一次 JS 弹窗是否展示。

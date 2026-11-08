@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerValues } = require('./modutil');
+const { headerValues, originOf } = require('./modutil');
 
 const REASON = {
   ok: 'ok',
@@ -15,16 +15,6 @@ function replaceHeader(headers, name, values) {
     if (key.toLowerCase() === String(name).toLowerCase()) delete headers[key];
   }
   if (values.length) headers[name] = values;
-}
-
-function originOf(value) {
-  try {
-    const url = new URL(String(value || ''));
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
-    return `${url.protocol}//${url.host}`.toLowerCase();
-  } catch {
-    return '';
-  }
 }
 
 function parseRefreshTarget(value) {

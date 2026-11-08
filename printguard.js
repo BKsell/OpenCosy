@@ -1,5 +1,5 @@
 'use strict';
-const { pruneOlderThan, countSince, originFromUrl, resetCooldown } = require('./modutil');
+const { pruneOlderThan, countSince, originFromUrl, resetCooldown, inCooldown } = require('./modutil');
 
 // printguard.js —— 网页 window.print() 打印请求的滥用/DoS 收口内核。
 //
@@ -45,10 +45,6 @@ function createPrintState(now) {
 }
 
 // inCooldown 判断当前是否处于打印冷却期（不修改状态）。
-function inCooldown(state, now) {
-  return !!state && state.cooldownUntil > now;
-}
-
 // decidePrint 判定一次打印请求是否放行。
 // input: { originUrl?: string }
 // 返回 { decision, reason, origin, burstCount, longCount, cooldownUntil }。
