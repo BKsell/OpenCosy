@@ -1,4 +1,6 @@
 'use strict';
+const { singleAlt } = require('./modutil');
+const single = singleAlt;
 
 const { headerKey, rawValue } = require('./headerutil');
 
@@ -13,15 +15,6 @@ const REASON = {
 const HEADER = 'cross-origin-resource-policy';
 const ALLOWED = new Set(['same-site', 'same-origin']);
 const LEGACY_SAME_ORIGIN = 'same-origin';
-
-function single(raw) {
-  if (Array.isArray(raw)) {
-    if (raw.length !== 1) return null;
-    return String(raw[0]).trim().toLowerCase();
-  }
-  if (typeof raw !== 'string') return null;
-  return raw.trim().toLowerCase();
-}
 
 function applyCorpGuard(headers) {
   const raw = rawValue(headers, HEADER);
