@@ -1,5 +1,8 @@
 'use strict';
 
+const { hasControlCharV2 } = require('./modutil');
+const hasControlChar = hasControlCharV2;
+
 // pintabs.js —— 固定标签页（Pinned Tabs）纯逻辑内核。
 //
 // 背景：
@@ -36,13 +39,6 @@ const REJECT_LIMIT = 'limit-reached';
 
 // hasControlChar 判断字符串是否含 ASCII 控制字符（0x00-0x1F、0x7F）。
 // 固定 id 会进 IPC 与磁盘，控制字符没有合法用途，统一拒绝。
-function hasControlChar(s) {
-  for (let i = 0; i < s.length; i++) {
-    const code = s.charCodeAt(i);
-    if (code <= 0x1F || code === 0x7F) return true;
-  }
-  return false;
-}
 
 // sanitizePinId 校验单个标签 id：必须是非空字符串、不超长、不含控制字符。
 // 返回 { ok:true,value } 或 { ok:false,reason }。
