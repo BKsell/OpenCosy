@@ -1,5 +1,7 @@
 'use strict';
 
+const { headerKey } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -8,15 +10,6 @@ const REASON = {
 
 const HEADER = 'x-permitted-cross-domain-policies';
 const ALLOWED = new Set(['none', 'master-only', 'by-content-type', 'all']);
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
 
 function applyXpcdpGuard(headers) {
   const key = headerKey(headers, HEADER);
