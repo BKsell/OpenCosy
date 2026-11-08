@@ -1,5 +1,7 @@
 'use strict';
 
+const { normalizeCharset } = require('./modutil');
+
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
 const REASON = {
@@ -26,13 +28,6 @@ const KNOWN_CHARSETS = new Set([
   'utf-16le',
   'utf-16be',
 ]);
-
-function normalizeCharset(token) {
-  const text = token.trim().toLowerCase();
-  if (!text) return '';
-  const semi = text.indexOf(';');
-  return (semi >= 0 ? text.slice(0, semi) : text).trim();
-}
 
 function inspectAcceptCharset(value) {
   if (typeof value !== 'string') return { reason: REASON.MALFORMED, charsets: [] };
