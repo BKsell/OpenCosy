@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerKey } = require('./headerutil');
+const { headerKey, rawValue } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -13,12 +13,6 @@ const REASON = {
 const HEADER = 'cross-origin-resource-policy';
 const ALLOWED = new Set(['same-site', 'same-origin']);
 const LEGACY_SAME_ORIGIN = 'same-origin';
-
-function rawValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return null;
-  return headers[key];
-}
 
 function single(raw) {
   if (Array.isArray(raw)) {
