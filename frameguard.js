@@ -1,5 +1,7 @@
 'use strict';
 
+const { containsControlChar } = require('./modutil');
+
 // frameguard.js —— frame-created 事件的纯逻辑守卫内核（iframe / 子框架生命周期）。
 //
 // 威胁模型：
@@ -57,16 +59,6 @@ function originFromUrl(rawUrl) {
   } catch {
     return '';
   }
-}
-
-function containsControlChar(s) {
-  if (typeof s !== 'string') return false;
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    if (c < 0x20 || c === 0x7f) return true;
-    if (c === 0x2028 || c === 0x2029 || c === 0xfeff) return true;
-  }
-  return false;
 }
 
 function createFrameState() {
