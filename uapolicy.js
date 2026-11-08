@@ -1,5 +1,8 @@
 'use strict';
 
+const { hasControlCharV3 } = require('./modutil');
+const hasControlChar = hasControlCharV3;
+
 // uapolicy.js —— User-Agent 覆盖策略内核（防指纹 / 自定义标识）。
 //
 // 威胁模型：默认 UA 把 Electron + Chrome 精确版本 + 平台 + "OpenCosyBrowser/1.0.0"
@@ -44,13 +47,6 @@ const MODES = Object.freeze({
 const DEFAULT_POLICY = Object.freeze({ mode: MODES.DEFAULT, custom: '' });
 
 // hasControlChar 检测字符串里的控制字符（含 NUL 与各种不可见编排符）。
-function hasControlChar(s) {
-  for (let i = 0; i < s.length; i++) {
-    const code = s.charCodeAt(i);
-    if (code < 0x20 || code === 0x7f) return true;
-  }
-  return false;
-}
 
 // validateCustomUa 校验用户自定义 UA：必须非空、长度受限、无控制字符。
 // 不强制以 Mozilla/ 开头——有的内网应用要求固定简写 UA，但拒绝空串与脏字符。
