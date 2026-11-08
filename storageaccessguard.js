@@ -1,4 +1,5 @@
 'use strict';
+const { originFromUrl } = require('./modutil');
 
 // storageaccessguard.js —— 跨框架会话存储 / 缓存分区访问的观测与洪泛检测内核。
 //
@@ -42,14 +43,6 @@ const MAX_KEY_CHARS = 120;
 const MAX_STORAGE_BUCKETS = 2048;
 
 const KNOWN_KINDS = new Set([KIND_SESSION, KIND_CACHE]);
-
-function originFromUrl(rawUrl) {
-  try {
-    return new URL(rawUrl || '').origin;
-  } catch {
-    return '';
-  }
-}
 
 function clampToken(value, max) {
   if (value === null || value === undefined) return '';
