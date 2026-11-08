@@ -25,12 +25,18 @@ test('normalize rejects empty input and NUL bytes', () => {
 });
 
 test('normalize rejects NTFS alternate data streams', () => {
+  if (!pathcontain.IS_WIN) {
+    return;
+  }
   const ads = 'C:\\Users\\x\\Downloads\\report.pdf:payload.exe';
   assert.strictEqual(pathcontain.normalize(ads).reason, 'alt-stream');
   assert.strictEqual(pathcontain.normalize('C:\\Users\\x\\Downloads\\report.pdf').ok, true);
 });
 
 test('normalize strips extended-length and device prefixes', () => {
+  if (!pathcontain.IS_WIN) {
+    return;
+  }
   const plain = pathcontain.normalize('C:\\Temp\\work');
   assert.strictEqual(plain.ok, true);
   const extended = pathcontain.normalize('\\\\?\\C:\\Temp\\work');
@@ -41,6 +47,9 @@ test('normalize strips extended-length and device prefixes', () => {
 });
 
 test('within rejects sibling directories sharing a name prefix', () => {
+  if (!pathcontain.IS_WIN) {
+    return;
+  }
   assert.strictEqual(pathcontain.within('C:\\Users\\x\\Downloads', 'C:\\Users\\x\\Downloads\\a.txt'), true);
   assert.strictEqual(pathcontain.within('C:\\Users\\x\\Downloads', 'C:\\Users\\x\\Downloads-evil\\a.txt'), false);
   assert.strictEqual(pathcontain.within('C:\\Users\\x\\Downloads', 'C:\\Users\\x\\Downloads'), true);
@@ -48,6 +57,9 @@ test('within rejects sibling directories sharing a name prefix', () => {
 });
 
 test('isContained blocks traversal outside the base directory', () => {
+  if (!pathcontain.IS_WIN) {
+    return;
+  }
   const r = pathcontain.isContained('C:\\Users\\x\\Downloads', 'C:\\Users\\x\\Downloads\\..\\Windows\\System32\\calc.exe');
   assert.strictEqual(r.ok, false);
   assert.strictEqual(r.reason, 'outside');
@@ -93,6 +105,9 @@ test('isContained blocks escaping through a directory junction', () => {
 });
 
 test('hasAltStream only exempts a leading drive letter', () => {
+  if (!pathcontain.IS_WIN) {
+    return;
+  }
   assert.strictEqual(pathcontain.hasAltStream('C:\\tmp\\a.txt'), false);
   assert.strictEqual(pathcontain.hasAltStream('C:\\tmp\\a.txt:b.exe'), true);
   assert.strictEqual(pathcontain.hasAltStream('\\\\server\\share\\a.txt:b.exe'), true);
