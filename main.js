@@ -9735,7 +9735,7 @@ ipcMain.on('show-tab-context-menu', (event, payload) => {
   menu.append(new MenuItem({ type: 'separator' }));
   menu.append(new MenuItem({
     label: '关闭标签页',
-    click: () => closeTab(idx)
+    click: () => { closeTabsByIds([tab.id]); }
   }));
   menu.append(new MenuItem({
     label: '关闭其他标签页',
