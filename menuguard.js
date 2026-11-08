@@ -1,4 +1,5 @@
 'use strict';
+const { schemeOf } = require('./modutil');
 
 // menuguard.js —— context-menu 事件 params 的统一净化内核。
 //
@@ -24,12 +25,6 @@ const MAX_MENU_URL_CHARS = 4096;
 const MAX_MENU_TEXT_CHARS = 200;   // 菜单项展示文本上限
 const MAX_MENU_WORD_CHARS = 64;    // 单词 / 拼写建议词条上限
 const MAX_SUGGESTIONS = 6;         // 与 UI 展示条数一致
-
-function schemeOf(rawUrl) {
-  if (typeof rawUrl !== 'string' || !rawUrl) return '';
-  const m = /^([a-z][a-z0-9+.-]*:)/i.exec(rawUrl.trim());
-  return m ? m[1].toLowerCase() : '';
-}
 
 // hasControlChar 报告字符串是否含 C0 控制字符、DEL、Unicode 行/段分隔符或 BOM。
 // 普通空白（空格 / Tab）不算，但 CR/LF 算（它们能在菜单里折行伪造条目）。
