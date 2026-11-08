@@ -1,4 +1,5 @@
 'use strict';
+const { isObj } = require('./modutil');
 
 // permpolicy.js —— Permissions-Policy 响应头的可测试构建 / 解析内核。
 //
@@ -50,10 +51,6 @@ const ALL_FEATURES = new Set([...FORCED_DISABLE, ...CONFIGURABLE_FEATURES]);
 const ALLOW_TOKEN_SELF = 'self';
 const ALLOW_TOKEN_NONE = 'none';
 const ALLOW_TOKEN_ANY = '*';
-
-function isObj(v) {
-  return v !== null && typeof v === 'object';
-}
 
 // isValidFeatureName 仅接受已知特性，杜绝把任意字符串塞进响应头（头注入）。
 function isValidFeatureName(name) {
