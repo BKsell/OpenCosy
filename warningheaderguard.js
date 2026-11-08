@@ -1,5 +1,7 @@
 'use strict';
 
+const { headerKey } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -16,15 +18,6 @@ const MAX_ENTRY_LENGTH = 256;
 const MAX_WARNING_AGE_MS = 86400000;
 const CODE_ALLOWED = new Set(['110', '111', '112', '113', '199', '214', '299']);
 const PSEUDO_CODES = new Set(['1', '2', '3', '4', '5']);
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
 
 function listValues(headers, name) {
   const key = headerKey(headers, name);
