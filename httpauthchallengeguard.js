@@ -1,5 +1,7 @@
 'use strict';
 
+const { headerValues, setHeader } = require('./headerutil');
+
 const REASON = Object.freeze({
   OK: 'ok',
   PROXY_CHALLENGE: 'proxy-challenge',
@@ -12,27 +14,6 @@ const REASON = Object.freeze({
 
 const SILENT_SCHEMES = new Set(['NTLM', 'NEGOTIATE', 'KERBEROS']);
 const CHALLENGE_SPLIT = /(?=\b(?:Basic|Digest|Bearer|NTLM|Negotiate|Kerberos|AWS4-HMAC-SHA256)\b)/i;
-
-function headerValues(headers, name) {
-  if (!headers || typeof headers !== 'object') return [];
-  const lower = name.toLowerCase();
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() !== lower) continue;
-    const value = headers[key];
-    if (Array.isArray(value)) return value.map((v) => String(v));
-    if (value === undefined || value === null) return [];
-    return [String(value)];
-  }
-  return [];
-}
-
-function setHeader(headers, name, values) {
-  const lower = name.toLowerCase();
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) delete headers[key];
-  }
-  if (values && values.length) headers[name] = values;
-}
 
 function schemeOf(challenge) {
   const match = /^\s*([A-Za-z0-9_-]+)/.exec(String(challenge));
