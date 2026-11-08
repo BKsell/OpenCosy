@@ -1,4 +1,7 @@
 'use strict';
+const { rawValue } = require('./headerutil');
+const { singleAlt } = require('./modutil');
+const single = singleAlt;
 
 const { headerKey } = require('./headerutil');
 
@@ -14,21 +17,6 @@ const HEADER = 'content-type';
 const MEDIA = /^[A-Za-z0-9!#$%&'*+.^_`|~-]+\/[A-Za-z0-9!#$%&'*+.^_`|~-]{1,64}$/;
 const SAFE_PARAMS = new Set(['charset', 'boundary', 'type', 'start']);
 const MAX_LENGTH = 200;
-
-function rawValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return null;
-  return headers[key];
-}
-
-function single(raw) {
-  if (Array.isArray(raw)) {
-    if (raw.length !== 1) return null;
-    return String(raw[0]).trim();
-  }
-  if (typeof raw !== 'string') return null;
-  return raw.trim();
-}
 
 function applyContentTypeGuard(headers) {
   const raw = rawValue(headers, HEADER);
