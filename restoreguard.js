@@ -1,5 +1,5 @@
 'use strict';
-const { stripControlChars, collapseSpaces } = require('./modutil');
+const { stripControlChars, collapseSpaces, fallbackTitleFor } = require('./modutil');
 
 // restoreguard.js —— 退出 / 崩溃后“会话标签恢复”与“最近关闭标签”落盘读取的
 // 写入净化 + 逐条校验 + 有界维护内核。
@@ -81,14 +81,6 @@ function sanitizeRestoreUrl(rawUrl) {
     return { ok: false, url: '', reason: SKIP_BAD_URL };
   }
   return { ok: true, url: u.href, reason: '' };
-}
-
-function fallbackTitleFor(u) {
-  try {
-    return u.hostname.replace(/^www\./i, '') || u.href;
-  } catch {
-    return u.href;
-  }
 }
 
 // sanitizeSessionTab 校验并规范化单个待恢复标签 {url,title}。
