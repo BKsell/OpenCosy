@@ -1,5 +1,7 @@
 'use strict';
 
+const { hasControlChars } = require('./modutil');
+
 const REASON = {
   OK: 'ok',
   EMPTY: 'empty',
@@ -18,14 +20,6 @@ const REASON = {
 const MAX_ENTRIES = 10000;
 const MAX_NAME = 1024;
 const MAX_RATIO = 200;
-
-function hasControlChars(value) {
-  for (let i = 0; i < value.length; i += 1) {
-    const code = value.charCodeAt(i);
-    if (code < 0x20 || code === 0x7f) return true;
-  }
-  return false;
-}
 
 function inspectEntryName(name) {
   if (typeof name !== 'string' || !name) return { ok: false, reason: REASON.EMPTY };
