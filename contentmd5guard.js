@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerKey } = require('./headerutil');
+const { deleteHeader, headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -12,13 +12,6 @@ const REASON = {
 
 const MAX_VALUE_LENGTH = 64;
 const MD5_BASE64_PATTERN = /^[A-Za-z0-9+/]{22}==$/;
-
-function deleteHeader(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return false;
-  delete headers[key];
-  return true;
-}
 
 function inspectContentMd5(value) {
   if (value === undefined || value === null) return { reason: REASON.MISSING };
