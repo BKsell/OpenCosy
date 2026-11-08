@@ -1,4 +1,5 @@
 'use strict';
+const { originOf } = require('./modutil');
 
 const { firstValue, headerKey } = require('./headerutil');
 
@@ -12,16 +13,6 @@ const REASON = {
 
 const MAX_HEADER_LENGTH = 2048;
 const MAX_ENDPOINTS = 8;
-
-function originOf(value) {
-  try {
-    const parsed = new URL(value);
-    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return '';
-    return parsed.origin;
-  } catch {
-    return '';
-  }
-}
 
 function pageOrigin(details) {
   if (!details || typeof details.url !== 'string') return '';
