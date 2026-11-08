@@ -1,5 +1,7 @@
 'use strict';
 
+const { countValues, firstValue, headerKey } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -13,31 +15,6 @@ const HEADER = 'content-transfer-encoding';
 const MAX_VALUE_LENGTH = 64;
 const SAFE = new Set(['binary', '8bit', '7bit']);
 const LEGACY = new Set(['base64', 'quoted-printable', 'uuencode', 'x-uuencode']);
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
-
-function firstValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return '';
-  const raw = headers[key];
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  return typeof value === 'string' ? value : '';
-}
-
-function countValues(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return 0;
-  const raw = headers[key];
-  if (Array.isArray(raw)) return raw.length;
-  return typeof raw === 'string' ? 1 : 0;
-}
 
 function parseTransferEncoding(value) {
   if (typeof value !== 'string') return { reason: REASON.MALFORMED, token: null };
