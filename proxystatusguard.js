@@ -1,5 +1,7 @@
 'use strict';
 
+const { splitItems } = require('./modutil');
+
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
 const REASON = {
@@ -16,23 +18,6 @@ const REASON = {
 const HEADER = 'proxy-status';
 const MAX_VALUE_LENGTH = 1024;
 const LEAKY_PARAMS = new Set(['details', 'next-hop-ip', 'next-hop-protocol', 'proxy-internal-id']);
-
-function splitItems(text) {
-  const items = [];
-  let current = '';
-  let inQuote = false;
-  for (const ch of text) {
-    if (ch === '"') inQuote = !inQuote;
-    if (ch === ',' && !inQuote) {
-      items.push(current);
-      current = '';
-      continue;
-    }
-    current += ch;
-  }
-  if (current.trim()) items.push(current);
-  return items;
-}
 
 function parseItem(token) {
   const text = token.trim();
