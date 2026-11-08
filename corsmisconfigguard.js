@@ -1,5 +1,8 @@
 'use strict';
 
+const { tokensOf } = require('./modutil');
+const splitTokens = tokensOf;
+
 const { headerValues, setHeader } = require('./headerutil');
 
 const REASON = Object.freeze({
@@ -24,17 +27,6 @@ const SENSITIVE_EXPOSE = new Set([
 ]);
 
 const UNSAFE_METHODS = new Set(['TRACE', 'TRACK', 'CONNECT']);
-
-function splitTokens(values) {
-  const out = [];
-  for (const value of values) {
-    for (const token of String(value).split(',')) {
-      const trimmed = token.trim();
-      if (trimmed) out.push(trimmed);
-    }
-  }
-  return out;
-}
 
 function evaluateCors(headers) {
   const acao = headerValues(headers, 'Access-Control-Allow-Origin');
