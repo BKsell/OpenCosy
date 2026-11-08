@@ -1,6 +1,6 @@
 'use strict';
 
-const { firstValue, headerKey } = require('./headerutil');
+const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -28,11 +28,6 @@ const BOOLEAN_DIRECTIVES = new Set([
   'include-js-call-stacks-in-crash-reports',
   'cross-origin-isolated',
 ]);
-
-function deleteHeader(headers, name) {
-  const key = headerKey(headers, name);
-  if (key) delete headers[key];
-}
 
 function parseDirective(token) {
   const text = token.trim();
