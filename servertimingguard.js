@@ -1,5 +1,7 @@
 'use strict';
 
+const { headerValues } = require('./modutil');
+
 const REASON = {
   ok: 'ok',
   serverTiming: 'server-timing-exposed',
@@ -7,17 +9,6 @@ const REASON = {
   reportTo: 'reporting-endpoint',
   nel: 'network-error-logging',
 };
-
-function headerValues(headers, name) {
-  const target = String(name || '').toLowerCase();
-  for (const key of Object.keys(headers || {})) {
-    if (key.toLowerCase() !== target) continue;
-    const value = headers[key];
-    if (Array.isArray(value)) return value.slice();
-    if (typeof value === 'string') return [value];
-  }
-  return [];
-}
 
 function deleteHeader(headers, name) {
   const target = String(name || '').toLowerCase();
