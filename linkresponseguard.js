@@ -1,6 +1,6 @@
 'use strict';
 
-const { firstValue, headerKey } = require('./headerutil');
+const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -33,11 +33,6 @@ const ALLOWED_REL = new Set([
   'last',
   'up',
 ]);
-
-function deleteHeader(headers, name) {
-  const key = headerKey(headers, name);
-  if (key) delete headers[key];
-}
 
 function splitItems(text) {
   const items = [];
