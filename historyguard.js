@@ -1,4 +1,5 @@
 'use strict';
+const { stripControlChars, collapseSpaces } = require('./modutil');
 
 // historyguard.js —— 浏览器本地导航历史的“写入净化 + 有界维护 + 时间范围清理”内核。
 //
@@ -55,15 +56,9 @@ const constants = Object.freeze({
 
 // stripControlChars 去掉会破坏文本展示 / 文件行结构的控制字符，保留正常空白与
 // Unicode。NUL 一并移除，避免被 C 风格字符串截断的下游误读。
-function stripControlChars(s) {
-  return String(s).replace(/[\u0000-\u001F\u007F]/g, '');
-}
 
 // collapseSpaces 把连续空白（含被保留的普通空格）压成单个空格并去掉首尾空白，
 // 防止用大量空白做视觉填充。
-function collapseSpaces(s) {
-  return s.replace(/\s+/g, ' ').trim();
-}
 
 // sanitizeHistoryTitle 清洗页面标题：非字符串给空串、去控制字符、压空白、截断上界。
 function sanitizeHistoryTitle(rawTitle) {
