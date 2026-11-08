@@ -1,5 +1,8 @@
 'use strict';
 
+const { hasControlCharV2 } = require('./modutil');
+const hasControlChar = hasControlCharV2;
+
 // tabgroups.js —— 标签分组（Tab Groups）纯逻辑内核。
 //
 // 背景：
@@ -72,13 +75,6 @@ const REJECT_DUPLICATE = 'duplicate';
 const REJECT_EMPTY = 'empty-selection';
 
 // hasControlChar 判断字符串是否含 ASCII 控制字符（0x00-0x1F、0x7F）。
-function hasControlChar(s) {
-  for (let i = 0; i < s.length; i++) {
-    const code = s.charCodeAt(i);
-    if (code <= 0x1F || code === 0x7F) return true;
-  }
-  return false;
-}
 
 // sanitizeGroupId 校验组 id：非空字符串、不超长、不含控制字符。
 function sanitizeGroupId(raw) {
