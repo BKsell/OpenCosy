@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerKey } = require('./headerutil');
+const { headerKey, rawValue } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -14,12 +14,6 @@ const HEADER = 'tracestate';
 const MAX_ENTRIES = 32;
 const MAX_LENGTH = 512;
 const MEMBER = /^[a-z][a-z0-9_\-*/]{0,255}=[\x20-\x7e]{1,256}$/;
-
-function rawValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return null;
-  return headers[key];
-}
 
 function applyTraceStateGuard(headers) {
   const raw = rawValue(headers, HEADER);
