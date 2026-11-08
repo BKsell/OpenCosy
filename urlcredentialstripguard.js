@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasons } = require('./findingsview');
 
 const REASON = {
   OK: 'ok',
@@ -68,12 +69,8 @@ function auditUrlBatch(list, options) {
 }
 
 function describeFindings(findings) {
-  const list = Array.isArray(findings) ? findings : [];
-  if (list.length === 0) return 'no url credential risk';
-  return list
-    .slice(0, 8)
-    .map((f) => f.reason + '(' + String(f.url || '') + ')')
-    .join('; ');
+  return describeReasons(findings, 'no url credential risk',
+    (f) => f.reason + '(' + String(f.url || '') + ')');
 }
 
 module.exports = {
