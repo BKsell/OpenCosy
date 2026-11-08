@@ -1,6 +1,6 @@
 'use strict';
 
-const { firstValue, headerKey } = require('./headerutil');
+const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -17,11 +17,6 @@ const PROTOCOL_HEADER = 'sec-websocket-protocol';
 const MAX_ACCEPT_LENGTH = 28;
 const MAX_PROTOCOL_LENGTH = 64;
 const MAX_PROTOCOLS = 4;
-
-function deleteHeader(headers, name) {
-  const key = headerKey(headers, name);
-  if (key) delete headers[key];
-}
 
 function hasControlChars(text) {
   for (const ch of text) {
