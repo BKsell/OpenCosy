@@ -1,5 +1,7 @@
 'use strict';
 
+const { tokensOf } = require('./modutil');
+
 const { headerValues, setHeader } = require('./headerutil');
 
 const REASON = Object.freeze({
@@ -8,17 +10,6 @@ const REASON = Object.freeze({
   COOKIE_CACHEABLE: 'cookie-cacheable',
   PUBLIC_WITH_COOKIE: 'public-with-cookie',
 });
-
-function tokensOf(values) {
-  const out = [];
-  for (const value of values) {
-    for (const token of String(value).split(',')) {
-      const trimmed = token.trim();
-      if (trimmed) out.push(trimmed);
-    }
-  }
-  return out;
-}
 
 function evaluateCacheVary(headers) {
   const acao = headerValues(headers, 'Access-Control-Allow-Origin');
