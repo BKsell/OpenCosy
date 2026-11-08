@@ -1,4 +1,5 @@
 'use strict';
+const { originOf } = require('./modutil');
 
 const { firstValue, headerKey } = require('./headerutil');
 
@@ -11,16 +12,6 @@ const REASON = {
 };
 
 const MAX_VALUE_LENGTH = 512;
-
-function originOf(value) {
-  try {
-    const parsed = new URL(value);
-    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return '';
-    return parsed.origin;
-  } catch {
-    return '';
-  }
-}
 
 function hasControlChars(value) {
   for (let i = 0; i < value.length; i += 1) {
