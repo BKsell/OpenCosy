@@ -1,6 +1,6 @@
 'use strict';
 
-const { firstValue, headerKey } = require('./headerutil');
+const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -19,11 +19,6 @@ const MAX_MEMBERS = 8;
 const MAX_FWD = 3;
 const SAFE_PARAMS = new Set(['hit', 'fwd', 'fwd-status', 'ttl']);
 const SENSITIVE_PARAMS = new Set(['key', 'detail', 'collapsed', 'stored', 'cache-key', 'node']);
-
-function deleteHeader(headers, name) {
-  const key = headerKey(headers, name);
-  if (key) delete headers[key];
-}
 
 function isSafeName(name) {
   if (!name) return false;
