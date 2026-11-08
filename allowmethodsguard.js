@@ -1,4 +1,6 @@
 'use strict';
+const { splitList } = require('./modutil');
+const list = splitList;
 
 const { headerKey, rawValue } = require('./headerutil');
 
@@ -14,12 +16,6 @@ const HEADER = 'access-control-allow-methods';
 const METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'TRACE']);
 const TOKEN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 const DEFAULT = 'GET, HEAD, POST, OPTIONS';
-
-function list(raw) {
-  if (Array.isArray(raw)) return raw.map((v) => String(v)).join(',').split(',');
-  if (typeof raw !== 'string') return [];
-  return raw.split(',');
-}
 
 function applyAllowMethodsGuard(headers, options) {
   const raw = rawValue(headers, HEADER);
