@@ -1,6 +1,6 @@
 'use strict';
 
-const { firstValue, headerKey } = require('./headerutil');
+const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -19,11 +19,6 @@ const LEGACY_HEADER = 'report-to';
 const MAX_VALUE_LENGTH = 2048;
 const MAX_MAX_AGE = 2592000;
 const KNOWN_GROUPS = new Set(['default', 'csp-endpoint', 'nel', 'deprecation', 'intervention']);
-
-function deleteHeader(headers, name) {
-  const key = headerKey(headers, name);
-  if (key) delete headers[key];
-}
 
 function urlReason(url) {
   if (typeof url !== 'string' || !url) return REASON.MALFORMED;
