@@ -1,4 +1,5 @@
 'use strict';
+const { pruneOlderThan, countSince } = require('./modutil');
 
 // hoverguard.js —— 鼠标悬停链接（update-target-url）状态栏显示收口内核。
 //
@@ -69,21 +70,6 @@ function sanitizeHoverUrl(input) {
     truncated = true;
   }
   return { ok: true, url, truncated, empty: false };
-}
-
-function pruneOlderThan(list, cutoff) {
-  let i = 0;
-  while (i < list.length && list[i] < cutoff) i++;
-  if (i > 0) list.splice(0, i);
-}
-
-function countSince(sortedTimes, cutoff) {
-  let n = 0;
-  for (let i = sortedTimes.length - 1; i >= 0; i--) {
-    if (sortedTimes[i] >= cutoff) n++;
-    else break;
-  }
-  return n;
 }
 
 function createHoverState(now) {
