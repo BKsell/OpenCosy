@@ -1,4 +1,5 @@
 'use strict';
+const { originFromUrl } = require('./modutil');
 
 // displayguard.js —— 屏幕共享（getDisplayMedia）与蓝牙设备选择的默认拒绝策略内核。
 //
@@ -34,13 +35,6 @@ function normalizeMediaTypes(mediaTypes) {
 }
 
 // 安全地取来源 origin，失败返回空串（不抛异常）。
-function originFromUrl(rawUrl) {
-  try {
-    return new URL(rawUrl || '').origin;
-  } catch {
-    return '';
-  }
-}
 
 // decideDisplayMedia 判定一次屏幕共享请求。当前策略恒为拒绝，但给出稳定 reason，
 // 便于安全面板区分“只要音频”“要画面”“畸形请求”等情形。
