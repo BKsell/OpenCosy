@@ -1,5 +1,7 @@
 'use strict';
 
+const { parseUrl } = require('./modutil');
+
 // goneguard.js —— 渲染进程 / GPU 进程崩溃与页面无响应的处置策略（纯判定内核）。
 //
 // 威胁与稳定性模型：
@@ -21,15 +23,6 @@ const DEFAULT_WINDOW_MS = 60000;       // 计数窗口
 const DEFAULT_MAX_AUTO_RELOADS = 2;    // 窗口内自动重载上限
 const DEFAULT_RELOAD_COOLDOWN_MS = 3000; // 两次自动重载最小间隔
 const DEFAULT_UNRESPONSIVE_COOLDOWN_MS = 8000; // 无响应提示冷却
-
-function parseUrl(raw) {
-  if (typeof raw !== 'string' || raw === '') return null;
-  try {
-    return new URL(raw);
-  } catch {
-    return null;
-  }
-}
 
 // isReloadable 判断崩溃后是否允许自动重载该 URL。
 function isReloadable(rawUrl) {
