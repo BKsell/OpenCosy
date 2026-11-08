@@ -1,4 +1,5 @@
 'use strict';
+const { isObj } = require('./modutil');
 
 // fpguard.js —— 出站指纹与跨站追踪收敛（纯内核，无 Electron 依赖，可单测）。
 //
@@ -58,10 +59,6 @@ const DEFAULT_OPTIONS = Object.freeze({
   stripAcceptCh: true,
   webrtcMode: DEFAULT_WEBRTC_POLICY,
 });
-
-function isObj(v) {
-  return v !== null && typeof v === 'object';
-}
 
 // 头部名大小写不敏感地从对象中删除；返回被删的原始头部名（用于台账）。
 function deleteHeaderCaseInsensitive(headers, lowerName) {
