@@ -9677,8 +9677,11 @@ ipcMain.handle('browse-folder', async (event) => {
 ipcMain.on('show-context-menu', (event, data) => {
   if (!isMainSender(event)) return;
   const payload = data && typeof data === 'object' ? data : {};
-  const menu = createContextMenu(payload.menuType, payload.selectedText);
-  menu.popup();
+  const menuType = payload.menuType === 'selection' ? 'selection' : 'default';
+  const selectedText = typeof payload.selectedText === 'string' ? payload.selectedText.slice(0, 256) : '';
+  const menu = createContextMenu(menuType, selectedText);
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  menu.popup({ window: mainWindow });
 });
 
 // ===== 标签页右键菜单（原生 Tab 菜单）=====
