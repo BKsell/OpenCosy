@@ -1,5 +1,7 @@
 'use strict';
 
+const { headerKey } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -12,15 +14,6 @@ const HEADER = 'tracestate';
 const MAX_ENTRIES = 32;
 const MAX_LENGTH = 512;
 const MEMBER = /^[a-z][a-z0-9_\-*/]{0,255}=[\x20-\x7e]{1,256}$/;
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
 
 function rawValue(headers, name) {
   const key = headerKey(headers, name);
