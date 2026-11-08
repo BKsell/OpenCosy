@@ -203,8 +203,13 @@ async function hashLocalFileViaDialog() {
     return { ok: false, reason: 'canceled' };
   }
   const filePath = choice.filePaths[0];
-  const { sha256, size } = await hashFileSha256(filePath);
-  return { ok: true, filename: path.basename(filePath), size, sha256 };
+  let digest;
+  try {
+    digest = await hashFileSha256(filePath);
+  } catch (e) {
+    return { ok: false, reason: String(e && e.message || e) };
+  }
+  return { ok: true, filename: path.basename(filePath), size: digest.size, sha256: digest.sha256 };
 }
 
 module.exports = {
