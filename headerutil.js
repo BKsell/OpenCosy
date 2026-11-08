@@ -1,5 +1,7 @@
 'use strict';
 
+const { deleteHeader, headerText, headerValues, lowerKeys, rawValue, setHeader } = require('./headerutil');
+
 function headerKey(headers, name) {
   const lower = name.toLowerCase();
   if (!headers || typeof headers !== 'object') return '';
@@ -25,4 +27,4 @@ function countValues(headers, name) {
   return typeof raw === 'string' ? 1 : 0;
 }
 
-module.exports = { countValues, firstValue, headerKey };
+module.exports = { countValues, deleteHeader, firstValue, headerKey, headerText, headerValues, lowerKeys, rawValue, setHeader };
