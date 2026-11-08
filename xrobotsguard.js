@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerKey } = require('./headerutil');
+const { deleteHeader, headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -26,13 +26,6 @@ const TOKEN_DIRECTIVES = new Set([
   'indexifembedded',
 ]);
 const VALUE_DIRECTIVES = new Set(['max-snippet', 'max-image-preview', 'max-video-preview', 'unavailable_after']);
-
-function deleteHeader(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return false;
-  delete headers[key];
-  return true;
-}
 
 function inspectXRobotsTag(value) {
   if (value === undefined || value === null) return { reason: REASON.MISSING };
