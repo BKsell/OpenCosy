@@ -1,5 +1,7 @@
 'use strict';
 
+const { headerKey } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -12,15 +14,6 @@ const HEADER = 'want-digest';
 const STRONG = new Set(['sha-256', 'sha-512', 'sha-256-sess', 'sha-512-sess']);
 const WEAK = new Set(['md5', 'sha', 'sha-1', 'md5-sess', 'crc32']);
 const MAX_ENTRIES = 3;
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
 
 function rawValue(headers, name) {
   const key = headerKey(headers, name);
