@@ -230,13 +230,48 @@ function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function httpOrigin(rawUrl) {
+  if (typeof rawUrl !== 'string' || !rawUrl) return '';
+  try {
+    const u = new URL(rawUrl);
+    if (u.protocol === 'http:' || u.protocol === 'https:') {
+      return u.origin === 'null' ? '' : u.origin;
+    }
+    return '';
+  } catch {
+    return '';
+  }
+}
+
+function resetRateWindow(st) {
+  if (!st) return;
+  st.burstStart = -1;
+  st.burstCount = 0;
+  st.longStart = -1;
+  st.longCount = 0;
+  st.cooldownUntil = 0;
+}
+
+function inCooldown(state, now) {
+  return !!state && state.cooldownUntil > now;
+}
+
+function isHttpUrl(url) {
+  return typeof url === 'string'
+    && (url.startsWith('http://') || url.startsWith('https://'));
+}
+
 module.exports = {
   pruneOlderThan,
   singleAlt,
   countSince,
   single,
   originFromUrl,
+  httpOrigin,
   resetCooldown,
+  resetRateWindow,
+  inCooldown,
+  isHttpUrl,
   splitList,
   stripControlChars,
   collapseSpaces,
