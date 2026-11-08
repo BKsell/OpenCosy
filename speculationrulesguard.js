@@ -1,6 +1,6 @@
 'use strict';
 
-const { firstValue, headerKey } = require('./headerutil');
+const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -16,11 +16,6 @@ const REASON = {
 
 const HEADER = 'speculation-rules';
 const MAX_VALUE_LENGTH = 512;
-
-function deleteHeader(headers, name) {
-  const key = headerKey(headers, name);
-  if (key) delete headers[key];
-}
 
 function unquote(text) {
   const value = text.trim();
