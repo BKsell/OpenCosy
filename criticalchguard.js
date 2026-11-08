@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerKey } = require('./headerutil');
+const { headerKey, rawValue } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -13,12 +13,6 @@ const REASON = {
 const HEADER = 'critical-ch';
 const TOKEN = /^[a-z0-9!#$%&'*+.^_`|~-]{1,64}$/;
 const MAX_ENTRIES = 8;
-
-function rawValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return null;
-  return headers[key];
-}
 
 function applyCriticalChGuard(headers) {
   const raw = rawValue(headers, HEADER);
