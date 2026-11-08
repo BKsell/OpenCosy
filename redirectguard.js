@@ -1,5 +1,8 @@
 'use strict';
 
+const { safeParse } = require('./modutil');
+const safeParseUrl = safeParse;
+
 // redirectguard.js —— 服务端重定向链（will-redirect / will-frame-redirect）专用守卫。
 //
 // 为什么单独存在：
@@ -19,14 +22,6 @@ const REDIRECT_ALLOW = 'allow';
 const DANGEROUS_TARGET_SCHEMES = new Set([
   'file:', 'javascript:', 'data:', 'vbscript:', 'about:', 'cosy:', 'blob:',
 ]);
-
-function safeParseUrl(raw) {
-  try {
-    return new URL(raw);
-  } catch {
-    return null;
-  }
-}
 
 // registrable-ish 主机标签：取 host 最后两段做“站点”近似比较（足以判断跨站跳转，
 // 不依赖外部公共后缀表，避免引入数据文件）。IP/localhost 原样返回 host。
