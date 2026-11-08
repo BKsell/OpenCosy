@@ -1,5 +1,7 @@
 'use strict';
 
+const { headerValues, setHeader } = require('./headerutil');
+
 const REASON = Object.freeze({
   OK: 'ok',
   EXECUTABLE_INLINE: 'executable-inline',
@@ -26,27 +28,6 @@ const ARCHIVE_TYPES = new Set([
   'application/x-7z-compressed',
   'application/x-rar-compressed',
 ]);
-
-function headerValues(headers, name) {
-  if (!headers || typeof headers !== 'object') return [];
-  const lower = name.toLowerCase();
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() !== lower) continue;
-    const value = headers[key];
-    if (Array.isArray(value)) return value.map((v) => String(v));
-    if (value === undefined || value === null) return [];
-    return [String(value)];
-  }
-  return [];
-}
-
-function setHeader(headers, name, values) {
-  const lower = name.toLowerCase();
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) delete headers[key];
-  }
-  if (values && values.length) headers[name] = values;
-}
 
 function baseType(value) {
   return String(value).split(';')[0].trim().toLowerCase();
