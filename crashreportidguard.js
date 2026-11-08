@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasons } = require('./findingsview');
 
 const REASON = {
   OK: 'ok',
@@ -50,12 +51,8 @@ function auditCrashBatch(list, seen) {
 }
 
 function describeFindings(findings) {
-  const list = Array.isArray(findings) ? findings : [];
-  if (list.length === 0) return 'no crash report risk';
-  return list
-    .slice(0, 8)
-    .map((f) => f.reason + '(' + String(f.id || '') + ')')
-    .join('; ');
+  return describeReasons(findings, 'no crash report risk',
+    (f) => f.reason + '(' + String(f.id || '') + ')');
 }
 
 module.exports = {
