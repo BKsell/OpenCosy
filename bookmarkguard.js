@@ -1,4 +1,5 @@
 'use strict';
+const { stripControlChars, collapseSpaces } = require('./modutil');
 
 // bookmarkguard.js —— 书签（收藏夹）落盘 / 读取 / 导入合并的“写入净化 + 逐条校验
 // + 去重 + 有界维护”内核。
@@ -50,14 +51,8 @@ const constants = Object.freeze({
 
 // stripControlChars 去掉会破坏文本展示 / 文件结构的控制字符，保留正常空白与
 // Unicode；NUL 一并移除。
-function stripControlChars(s) {
-  return String(s).replace(/[\u0000-\u001F\u007F]/g, '');
-}
 
 // collapseSpaces 把连续空白压成单个空格并去掉首尾空白。
-function collapseSpaces(s) {
-  return s.replace(/\s+/g, ' ').trim();
-}
 
 // sanitizeBookmarkTitle 清洗书签标题：制表 / 换行 / 回车先归一为空格，再删除其余
 // 控制字符，最后压缩空白并截断上界。非字符串给空串（书签允许标题为空，由调用方
