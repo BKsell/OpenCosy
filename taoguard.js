@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerKey } = require('./headerutil');
+const { headerKey, rawValue } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -13,12 +13,6 @@ const REASON = {
 const HEADER = 'timing-allow-origin';
 const MAX_ORIGINS = 8;
 const ORIGIN = /^https:\/\/[A-Za-z0-9.-]{1,253}(:\d{1,5})?$/;
-
-function rawValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return null;
-  return headers[key];
-}
 
 function applyTimingAllowOriginGuard(headers) {
   const raw = rawValue(headers, HEADER);
