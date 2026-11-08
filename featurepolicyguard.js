@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerKey } = require('./headerutil');
+const { headerKey, rawValue } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -22,12 +22,6 @@ const FEATURES = new Set([
 ]);
 const ALLOWLIST_ITEM = /^'?(self|src|none|\*)'?$/i;
 const MAX_DIRECTIVES = 24;
-
-function rawValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return null;
-  return headers[key];
-}
 
 function splitDirectives(text) {
   const parts = [];
