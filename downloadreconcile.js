@@ -1,5 +1,8 @@
 'use strict';
 
+const { safeIntV2 } = require('./modutil');
+const safeInt = safeIntV2;
+
 const VERDICT = {
   OK: 'ok',
   SKIPPED: 'skipped',
@@ -9,12 +12,6 @@ const VERDICT = {
 };
 
 const DEFAULT_MAX_VERIFY = 200;
-
-function safeInt(value, fallback) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.trunc(n);
-}
 
 function describeVerdict(verdict) {
   switch (verdict) {
