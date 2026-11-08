@@ -1,5 +1,7 @@
 'use strict';
 
+const { safeInt, isPlainObject } = require('./modutil');
+
 const fs = require('fs');
 const path = require('path');
 const downloadResume = require('./downloadresume');
@@ -54,16 +56,6 @@ function describeJournalReject(reason) {
     case REASON.IO_ERROR: return '下载记录读写失败';
     default: return '未知下载记录问题';
   }
-}
-
-function isPlainObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function safeInt(value) {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null;
-  if (!Number.isInteger(value)) return null;
-  return value;
 }
 
 function cleanId(value) {
