@@ -1,5 +1,8 @@
 'use strict';
 
+const { hasControlCharV3 } = require('./modutil');
+const hasControlChar = hasControlCharV3;
+
 // searchprovider.js —— 默认搜索引擎 / 搜索建议提供方内核。
 //
 // 威胁模型：地址栏搜索 URL 若由 renderer 自由指定，被攻破的内置页或恶意书签
@@ -65,14 +68,6 @@ const allowedProviderHosts = Object.freeze([
 ]);
 
 const DEFAULT_PROVIDER_ID = 'bing';
-
-function hasControlChar(s) {
-  for (let i = 0; i < s.length; i++) {
-    const code = s.charCodeAt(i);
-    if (code < 0x20 || code === 0x7f) return true;
-  }
-  return false;
-}
 
 // hostAllowed：host 精确或子域匹配白名单（label 边界，防前缀伪装）。
 function hostAllowed(host, allow) {
