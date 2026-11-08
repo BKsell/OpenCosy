@@ -1,5 +1,7 @@
 'use strict';
 
+const { headerKey } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -30,15 +32,6 @@ const KNOWN_ATTRIBUTES = new Set([
 
 const MAX_COOKIE_LENGTH = 4096;
 const PROTECTED_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
 
 function splitCookie(text) {
   const parts = text.split(';');
