@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerKey } = require('./headerutil');
+const { deleteHeader, headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -10,13 +10,6 @@ const REASON = {
 };
 
 const LEGACY_HEADERS = ['x-webkit-csp', 'x-content-security-policy', 'x-webkit-csp-report-only'];
-
-function deleteHeader(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return false;
-  delete headers[key];
-  return true;
-}
 
 function collectLegacy(headers) {
   const removed = [];
