@@ -1,3 +1,4 @@
+const { asBytes } = require('./modutil');
 const EXPORT_VERSION = 1;
 const REDACTED_PATH = '[local-path]';
 const MAX_EXPORT_ENTRIES = 500;
@@ -9,14 +10,6 @@ function asText(value, limit = 200) {
   }
   const cleaned = value.replace(/[\u0000-\u001f\u007f]/g, '');
   return cleaned.length > limit ? `${cleaned.slice(0, limit)}…` : cleaned;
-}
-
-function asBytes(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n) || n < 0) {
-    return 0;
-  }
-  return Math.floor(n);
 }
 
 function hostOf(url) {
