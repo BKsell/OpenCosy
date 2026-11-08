@@ -1,4 +1,5 @@
 'use strict';
+const { originFromUrl } = require('./modutil');
 
 // devtoolsguard.js —— 开发者工具内“在浏览器打开链接”（devtools-open-url）的收口内核。
 //
@@ -37,14 +38,6 @@ const DANGEROUS_SCHEMES = new Set([
 // 允许转入受控标签页的标准 Web scheme。
 const SAFE_WEB_SCHEMES = new Set(['http:', 'https:']);
 const INTERNAL_SCHEME = 'cosy:';
-
-function originFromUrl(rawUrl) {
-  try {
-    return new URL(rawUrl || '').origin;
-  } catch {
-    return '';
-  }
-}
 
 // decideDevToolsUrl 判定一个 DevTools 请求打开的 URL。
 // 返回 { action, url, scheme, origin, reason }。
