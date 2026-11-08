@@ -1,5 +1,7 @@
 'use strict';
 
+const { headerKey } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -8,15 +10,6 @@ const REASON = {
 };
 
 const LEGACY_HEADERS = ['x-webkit-csp', 'x-content-security-policy', 'x-webkit-csp-report-only'];
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
 
 function deleteHeader(headers, name) {
   const key = headerKey(headers, name);
