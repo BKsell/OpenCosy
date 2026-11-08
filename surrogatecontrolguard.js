@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerKey } = require('./headerutil');
+const { deleteHeader, headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -16,13 +16,6 @@ const MAX_VALUE_LENGTH = 256;
 const MAX_AGE_LIMIT = 86400;
 const STALE_LIMIT = 604800;
 const ALLOWED = new Set(['no-store', 'no-cache', 'max-age', 'stale-while-revalidate', 'stale-if-error']);
-
-function deleteHeader(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return false;
-  delete headers[key];
-  return true;
-}
 
 function inspectSurrogateControl(value) {
   if (value === undefined || value === null) return { reason: REASON.MISSING };
