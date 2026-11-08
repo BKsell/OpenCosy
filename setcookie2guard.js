@@ -1,5 +1,7 @@
 'use strict';
 
+const { countValues, headerKey } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -9,23 +11,6 @@ const REASON = {
 };
 
 const MAX_SET_VALUES = 16;
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
-
-function countValues(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return 0;
-  const raw = headers[key];
-  if (Array.isArray(raw)) return raw.length;
-  return typeof raw === 'string' ? 1 : 0;
-}
 
 function deleteHeader(headers, name) {
   const key = headerKey(headers, name);
