@@ -1,4 +1,5 @@
 'use strict';
+const { pruneOlderThan, countSince, originFromUrl, resetCooldown } = require('./modutil');
 
 // printguard.js —— 网页 window.print() 打印请求的滥用/DoS 收口内核。
 //
@@ -28,20 +29,6 @@ const PRINT_BURST_LIMIT = 2;
 const PRINT_LONG_WINDOW_MS = 60_000;
 const PRINT_LONG_LIMIT = 5;
 const PRINT_COOLDOWN_MS = 30_000;
-
-function originFromUrl(rawUrl) {
-  try {
-    return new URL(rawUrl || '').origin;
-  } catch {
-    return '';
-  }
-}
-
-function pruneOlderThan(list, cutoff) {
-  let i = 0;
-  while (i < list.length && list[i] < cutoff) i++;
-  if (i > 0) list.splice(0, i);
-}
 
 function createPrintState(now) {
   return {
@@ -120,20 +107,8 @@ function decidePrint(state, input, now) {
   };
 }
 
-function countSince(sortedTimes, cutoff) {
-  let n = 0;
-  for (let i = sortedTimes.length - 1; i >= 0; i--) {
-    if (sortedTimes[i] >= cutoff) n++;
-    else break;
-  }
-  return n;
-}
-
 // resetCooldown 供“用户显式从某可信内部页打印”等场景手动解除（当前主流程不使用，
 // 预留以便设置页加白），返回解除后的状态。
-function resetCooldown(state) {
-  if (state) state.cooldownUntil = 0;
-}
 
 function describePrintReason(reason) {
   switch (reason) {
