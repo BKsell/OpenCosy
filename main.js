@@ -9405,7 +9405,10 @@ ipcMain.on('show-more-options-menu', (event, position) => {
       sendToRenderer('show-toast', n > 0 ? `已休眠 ${n} 个后台标签页` : '没有需要休眠的后台标签页');
     }
   }));
-  menu.popup({ window: mainWindow, x: position.x, y: position.y });
+  const pos = position && Number.isFinite(position.x) && Number.isFinite(position.y)
+    ? { x: Math.round(position.x), y: Math.round(position.y) }
+    : null;
+  menu.popup(pos ? { window: mainWindow, x: pos.x, y: pos.y } : { window: mainWindow });
 });
 
 function createContextMenu(menuType, selectedText = '') {
