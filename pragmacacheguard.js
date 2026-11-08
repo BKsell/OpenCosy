@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerKey } = require('./headerutil');
+const { deleteHeader, headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -13,13 +13,6 @@ const REASON = {
 
 const MAX_VALUE_LENGTH = 64;
 const ALLOWED_DIRECTIVES = new Set(['no-cache']);
-
-function deleteHeader(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return false;
-  delete headers[key];
-  return true;
-}
 
 function inspectPragma(value) {
   if (value === undefined || value === null) return { reason: REASON.MISSING };
