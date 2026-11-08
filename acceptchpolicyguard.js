@@ -1,5 +1,7 @@
 'use strict';
 
+const { headerKey } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -16,15 +18,6 @@ const MAX_HINTS = 16;
 const MAX_HINT_LENGTH = 32;
 const MAX_FIELD_LENGTH = 256;
 const HINT_TOKEN = /^[a-z][a-z0-9-]{1,31}$/;
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
 
 function tokensOf(headers, name) {
   const key = headerKey(headers, name);
