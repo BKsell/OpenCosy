@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasons } = require('./findingsview');
 
 const REASON = {
   OK: 'ok',
@@ -56,12 +57,8 @@ function auditMixedContentBatch(list, options) {
 }
 
 function describeFindings(findings) {
-  const list = Array.isArray(findings) ? findings : [];
-  if (list.length === 0) return 'no mixed content risk';
-  return list
-    .slice(0, 8)
-    .map((f) => f.reason + '(' + String(f.url || '') + ')')
-    .join('; ');
+  return describeReasons(findings, 'no mixed content risk',
+    (f) => f.reason + '(' + String(f.url || '') + ')');
 }
 
 module.exports = {
