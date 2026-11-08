@@ -1,5 +1,8 @@
 'use strict';
 
+const { normalizeCharset } = require('./modutil');
+const normalizeType = normalizeCharset;
+
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
 const REASON = {
@@ -22,13 +25,6 @@ const ALLOWED_TYPES = new Set([
   'application/apply-patch+yaml',
   'text/plain',
 ]);
-
-function normalizeType(token) {
-  const text = token.trim().toLowerCase();
-  if (!text) return '';
-  const semi = text.indexOf(';');
-  return (semi >= 0 ? text.slice(0, semi) : text).trim();
-}
 
 function inspectAcceptPatch(value) {
   if (typeof value !== 'string') return { reason: REASON.MALFORMED, types: [] };
