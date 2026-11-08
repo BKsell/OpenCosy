@@ -1,4 +1,5 @@
 'use strict';
+const { schemeOf } = require('./modutil');
 
 // popupguard.js —— window.open / target=_blank 弹窗的纯逻辑安全内核。
 //
@@ -55,11 +56,6 @@ function normalizeFeatures(features) {
 }
 
 // schemeOf 小写返回 URL 的协议（含冒号）；非法输入返回空串。
-function schemeOf(rawUrl) {
-  if (typeof rawUrl !== 'string' || !rawUrl) return '';
-  const m = /^([a-z][a-z0-9+.-]*:)/i.exec(rawUrl.trim());
-  return m ? m[1].toLowerCase() : '';
-}
 
 // originOf 尽可能取 URL 的源（scheme://host:port），失败返回空串。
 // about:blank 的“继承源”由调用方按当前页源处理，这里返回 'about' 便于区分。
