@@ -1,5 +1,7 @@
 'use strict';
 
+const { headerKey } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -7,15 +9,6 @@ const REASON = {
   LEGACY_DISABLED: 'legacy-disabled',
   MALFORMED: 'malformed',
 };
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
 
 function headerText(headers, name) {
   const key = headerKey(headers, name);
