@@ -1,5 +1,7 @@
 'use strict';
 
+const { firstValue, headerKey } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -15,23 +17,6 @@ const VERSION_RE = /^[0-9a-f]{2}$/;
 const TRACE_RE = /^[0-9a-f]{32}$/;
 const SPAN_RE = /^[0-9a-f]{16}$/;
 const FLAGS_RE = /^[0-9a-f]{2}$/;
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
-
-function firstValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return '';
-  const raw = headers[key];
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  return typeof value === 'string' ? value : '';
-}
 
 function inspectTraceparent(text) {
   if (text.length > MAX_LENGTH) return REASON.OVERLONG;
