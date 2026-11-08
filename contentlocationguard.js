@@ -1,5 +1,5 @@
 'use strict';
-const { originOf } = require('./modutil');
+const { originOf, hasControlChars } = require('./modutil');
 
 const { firstValue, headerKey } = require('./headerutil');
 
@@ -12,14 +12,6 @@ const REASON = {
 };
 
 const MAX_VALUE_LENGTH = 512;
-
-function hasControlChars(value) {
-  for (let i = 0; i < value.length; i += 1) {
-    const code = value.charCodeAt(i);
-    if (code < 0x20 || code === 0x7f) return true;
-  }
-  return false;
-}
 
 function inspectContentLocation(headers, details) {
   const value = firstValue(headers, 'content-location');
