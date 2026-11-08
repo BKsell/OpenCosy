@@ -1,4 +1,5 @@
 'use strict';
+const { schemeOf } = require('./modutil');
 
 // childwindowguard.js —— 网页意外创建的“原生子窗口”收口内核（did-create-window）。
 //
@@ -46,12 +47,6 @@ const REQUIRED_PREF_BASELINE = Object.freeze({
   // 新窗口没有理由带这些调试 / 提权通道。
   devTools: false,
 });
-
-function schemeOf(rawUrl) {
-  if (typeof rawUrl !== 'string' || !rawUrl) return '';
-  const m = /^([a-z][a-z0-9+.-]*:)/i.exec(rawUrl.trim());
-  return m ? m[1].toLowerCase() : '';
-}
 
 function originFromUrl(rawUrl) {
   if (typeof rawUrl !== 'string' || !rawUrl) return '';
