@@ -1,5 +1,8 @@
 'use strict';
 
+const { parseUrl } = require('./modutil');
+const safeParse = parseUrl;
+
 // webviewharden.js —— <webview> 挂载（will-attach-webview）的完整安全策略。
 //
 // 本应用用 WebContentsView 承载页面，从不使用 <webview>，默认 webviewTag=false。
@@ -16,15 +19,6 @@ const MAX_ADDITIONAL_ARGS = 16;
 const MAX_ARG_LENGTH = 128;
 // guest 分区不能与主浏览器会话重合，否则 guest 页面直接复用用户的登录态 / Cookie。
 const FORBIDDEN_PARTITIONS = new Set(['', 'default', 'persist:default']);
-
-function safeParse(raw) {
-  if (typeof raw !== 'string' || raw === '') return null;
-  try {
-    return new URL(raw);
-  } catch {
-    return null;
-  }
-}
 
 // reviewGuestSrc 只允许远程 http(s) 页面作为 webview guest。
 // file:/data:/blob:/cosy:/javascript: 等一律拒绝：
