@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerKey } = require('./headerutil');
+const { headerKey, headerText } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -12,14 +12,6 @@ const REASON = {
 };
 
 const MAX_VALUE_LENGTH = 256;
-
-function headerText(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return '';
-  const raw = headers[key];
-  const value = Array.isArray(raw) ? raw.join(', ') : raw;
-  return typeof value === 'string' ? value : '';
-}
 
 function scopePath(value) {
   const text = String(value || '').trim();
