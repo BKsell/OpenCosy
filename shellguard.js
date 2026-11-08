@@ -1,5 +1,7 @@
 'use strict';
 
+const { safeParse } = require('./modutil');
+
 // shellguard.js —— 交给系统 Shell 执行的“外部唤起”消毒内核。
 //
 // 威胁模型：
@@ -43,14 +45,6 @@ function containsControlChar(s) {
 function containsEncodedControl(s) {
   if (typeof s !== 'string') return false;
   return /%(?:0[0-9a-f]|1[0-9a-f]|7f)/i.test(s);
-}
-
-function safeParse(raw) {
-  try {
-    return new URL(raw);
-  } catch {
-    return null;
-  }
 }
 
 // 邮箱本地/域名部分允许的字符（保守白名单）。
