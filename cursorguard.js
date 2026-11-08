@@ -1,4 +1,5 @@
 'use strict';
+const { pruneOlderThan, countSince } = require('./modutil');
 
 // cursorguard.js —— 光标变更事件（webContents 'cursor-changed'）收口内核。
 //
@@ -69,21 +70,6 @@ function validateCustomImage(image) {
 function isValidScale(scale) {
   return typeof scale === 'number' && Number.isFinite(scale)
     && scale >= CURSOR_MIN_SCALE && scale <= CURSOR_MAX_SCALE;
-}
-
-function pruneOlderThan(list, cutoff) {
-  let i = 0;
-  while (i < list.length && list[i] < cutoff) i++;
-  if (i > 0) list.splice(0, i);
-}
-
-function countSince(sortedTimes, cutoff) {
-  let n = 0;
-  for (let i = sortedTimes.length - 1; i >= 0; i--) {
-    if (sortedTimes[i] >= cutoff) n++;
-    else break;
-  }
-  return n;
 }
 
 function createCursorState(now) {
