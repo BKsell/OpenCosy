@@ -1,5 +1,8 @@
 'use strict';
 
+const { hasControlCharsV2 } = require('./modutil');
+const hasControlChars = hasControlCharsV2;
+
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
 const crypto = require('node:crypto');
@@ -22,14 +25,6 @@ const PREDICTABLE_DIGITS = 6;
 function opaqueTag(inner) {
   const hash = crypto.createHash('sha256').update(inner).digest('base64url');
   return hash.slice(0, 22);
-}
-
-function hasControlChars(text) {
-  for (const ch of text) {
-    const code = ch.charCodeAt(0);
-    if (code < 0x20 || code === 0x7f) return true;
-  }
-  return false;
 }
 
 function hasUnsafePathShape(inner) {
