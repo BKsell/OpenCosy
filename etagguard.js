@@ -1,5 +1,7 @@
 'use strict';
 
+const { firstValue, headerKey } = require('./headerutil');
+
 const crypto = require('node:crypto');
 
 const REASON = {
@@ -16,23 +18,6 @@ const HEADER = 'etag';
 const MAX_VALUE_LENGTH = 128;
 const MAX_INNER_LENGTH = 96;
 const PREDICTABLE_DIGITS = 6;
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
-
-function firstValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return '';
-  const raw = headers[key];
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  return typeof value === 'string' ? value : '';
-}
 
 function deleteHeader(headers, name) {
   const key = headerKey(headers, name);
