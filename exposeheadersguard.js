@@ -1,5 +1,7 @@
 'use strict';
 
+const { headerKey } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -11,15 +13,6 @@ const REASON = {
 const HEADER = 'access-control-expose-headers';
 const TOKEN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 const MAX_ENTRIES = 32;
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
 
 function rawValue(headers, name) {
   const key = headerKey(headers, name);
