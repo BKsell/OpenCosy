@@ -99,3 +99,24 @@ test('descriptions are unique and non empty', () => {
   }
   assert.ok(target.describeSaveTargetReject('nope').length > 0);
 });
+
+test('auditSaveName 拒绝双向覆写与零宽字符', () => {
+  const T = require('./downloadsavetarget');
+  assert.strictEqual(T.auditSaveName('invoice\u202egnp.exe'), T.REASON.BAD_NAME);
+  assert.strictEqual(T.auditSaveName('mod\u200b.jar'), T.REASON.BAD_NAME);
+  assert.strictEqual(T.auditSaveName('a\ufeffb.txt'), T.REASON.BAD_NAME);
+  assert.strictEqual(T.auditSaveName('normal.tar.gz'), T.REASON.OK);
+});
+
+test('auditSaveTargetReal 拒绝父目录符号链接逃逸', () => {
+  const fsSync = require('fs');
+  const { auditSaveTargetReal, auditSaveTarget, REASON } = require('./downloadsavetarget');
+  const root = fsSync.mkdtempSync(require('os').tmpdir() + '/cosy-root-');
+  const outside = fsSync.mkdtempSync(require('os').tmpdir() + '/cosy-out-');
+  const linkedDir = root + '/linked';
+  fsSync.symlinkSync(outside, linkedDir);
+  const escaped = linkedDir + '/payload.bin';
+  assert.strictEqual(auditSaveTarget(root, escaped, 'payload.bin').reason, REASON.OK);
+  assert.strictEqual(auditSaveTargetReal(root, escaped, 'payload.bin').reason, REASON.OUTSIDE_ROOT);
+  assert.strictEqual(auditSaveTargetReal(root, root + '/fresh/payload.bin', 'payload.bin').reason, REASON.OK);
+});

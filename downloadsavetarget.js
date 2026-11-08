@@ -1,6 +1,8 @@
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
+const { hasInvisibleCodePoint } = require('./downloadname');
 
 const MAX_SAVE_NAME_CHARS = 180;
 const MAX_SAVE_PATH_CHARS = 1024;
@@ -14,6 +16,7 @@ const REASON = {
   OUTSIDE_ROOT: 'outside-root',
   RESERVED_NAME: 'reserved-name',
   BAD_EXTENSION_SHAPE: 'bad-extension-shape',
+  REALPATH_UNRESOLVED: 'realpath-unresolved',
 };
 
 const RESERVED_NAMES = new Set([
@@ -47,6 +50,7 @@ function auditSaveName(name) {
   if (typeof name !== 'string' || name.length === 0) return REASON.BAD_NAME;
   if (name.length > MAX_SAVE_NAME_CHARS) return REASON.BAD_NAME;
   if (hasControlChar(name)) return REASON.BAD_NAME;
+  if (hasInvisibleCodePoint(name)) return REASON.BAD_NAME;
   if (name.includes('/') || name.includes('\\')) return REASON.BAD_NAME;
   if (name === '.' || name === '..') return REASON.BAD_NAME;
   if (name.endsWith('.') || name.endsWith(' ')) return REASON.BAD_NAME;
@@ -104,9 +108,46 @@ function describeSaveTargetReject(reason) {
       return '下载文件名是系统保留设备名';
     case REASON.BAD_EXTENSION_SHAPE:
       return '下载文件名扩展名结构异常';
+    case REASON.REALPATH_UNRESOLVED:
+      return '下载保存路径的真实父目录无法解析';
     default:
       return '下载保存目标未通过校验';
   }
+}
+
+function auditSaveTargetReal(rootDir, targetPath, name, deps) {
+  const base = auditSaveTarget(rootDir, targetPath, name);
+  if (!base.ok) return base;
+  const existsFn = deps && typeof deps.existsSync === 'function' ? deps.existsSync : fs.existsSync;
+  const realpathFn = deps && typeof deps.realpathSync === 'function' ? deps.realpathSync : fs.realpathSync;
+  let rootReal;
+  try {
+    rootReal = realpathFn(path.resolve(rootDir));
+  } catch (e) {
+    return { ok: false, reason: REASON.REALPATH_UNRESOLVED, path: '', name: base.name };
+  }
+  let probe = path.dirname(base.path);
+  const tail = [];
+  while (!existsFn(probe)) {
+    const parent = path.dirname(probe);
+    if (parent === probe) {
+      return { ok: false, reason: REASON.REALPATH_UNRESOLVED, path: '', name: base.name };
+    }
+    tail.unshift(path.basename(probe));
+    probe = parent;
+  }
+  let probeReal;
+  try {
+    probeReal = realpathFn(probe);
+  } catch (e) {
+    return { ok: false, reason: REASON.REALPATH_UNRESOLVED, path: '', name: base.name };
+  }
+  const realTarget = path.join(probeReal, ...tail, base.name);
+  const relative = path.relative(rootReal, realTarget);
+  if (relative.length === 0 || relative.startsWith('..') || path.isAbsolute(relative)) {
+    return { ok: false, reason: REASON.OUTSIDE_ROOT, path: base.path, name: base.name };
+  }
+  return { ok: true, reason: REASON.OK, path: base.path, name: base.name };
 }
 
 module.exports = {
@@ -115,6 +156,7 @@ module.exports = {
   MAX_SAVE_PATH_CHARS,
   auditSaveName,
   auditSaveTarget,
+  auditSaveTargetReal,
   describeSaveTargetReject,
   hasAlternateDataStream,
   isReservedDeviceName,

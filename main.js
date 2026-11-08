@@ -8144,7 +8144,7 @@ function handleDownloadEvent(event, item, webContents) {
       let reservedTarget = '';
       for (let attempt = 0; attempt < 4 && !reservedTarget; attempt += 1) {
         const candidate = resolveUniqueDownloadPath(downloadRoot, finalFilename);
-        const saveCheck = downloadSaveTarget.auditSaveTarget(downloadRoot, candidate, path.basename(candidate));
+        const saveCheck = downloadSaveTarget.auditSaveTargetReal(downloadRoot, candidate, path.basename(candidate));
         if (!saveCheck.ok) {
           try { item.cancel(); } catch {}
           recordSecurityEvent('download-blocked', 'critical',
