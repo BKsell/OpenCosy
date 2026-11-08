@@ -1,4 +1,7 @@
 'use strict';
+const { rawValue } = require('./headerutil');
+const { singleAlt } = require('./modutil');
+const single = singleAlt;
 
 const { headerKey } = require('./headerutil');
 
@@ -12,21 +15,6 @@ const REASON = {
 
 const HEADER = 'x-requested-with';
 const EXPECTED = 'XMLHttpRequest';
-
-function rawValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return null;
-  return headers[key];
-}
-
-function single(raw) {
-  if (Array.isArray(raw)) {
-    if (raw.length !== 1) return null;
-    return String(raw[0]).trim();
-  }
-  if (typeof raw !== 'string') return null;
-  return raw.trim();
-}
 
 function applyXRequestedWithGuard(headers) {
   const raw = rawValue(headers, HEADER);
