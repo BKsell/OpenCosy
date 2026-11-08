@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerKey } = require('./headerutil');
+const { headerKey, rawValue } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -14,12 +14,6 @@ const HEADER = 'access-control-allow-methods';
 const METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'TRACE']);
 const TOKEN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 const DEFAULT = 'GET, HEAD, POST, OPTIONS';
-
-function rawValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return null;
-  return headers[key];
-}
 
 function list(raw) {
   if (Array.isArray(raw)) return raw.map((v) => String(v)).join(',').split(',');
