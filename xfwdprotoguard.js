@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerKey } = require('./headerutil');
+const { headerKey, rawValue } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -13,12 +13,6 @@ const REASON = {
 const HEADER = 'x-forwarded-proto';
 const SCHEMES = new Set(['http', 'https']);
 const MAX_HOPS = 4;
-
-function rawValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return null;
-  return headers[key];
-}
 
 function applyXForwardedProtoGuard(headers) {
   const raw = rawValue(headers, HEADER);
