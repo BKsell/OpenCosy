@@ -1,4 +1,6 @@
 'use strict';
+const { singleAlt } = require('./modutil');
+const single = singleAlt;
 
 const { headerKey, rawValue } = require('./headerutil');
 
@@ -12,15 +14,6 @@ const REASON = {
 
 const HEADER = 'sec-fetch-mode';
 const ALLOWED = new Set(['cors', 'no-cors', 'navigate', 'same-origin', 'websocket']);
-
-function single(raw) {
-  if (Array.isArray(raw)) {
-    if (raw.length !== 1) return null;
-    return String(raw[0]).trim().toLowerCase();
-  }
-  if (typeof raw !== 'string') return null;
-  return raw.trim().toLowerCase();
-}
 
 function applySecFetchModeGuard(headers) {
   const raw = rawValue(headers, HEADER);
