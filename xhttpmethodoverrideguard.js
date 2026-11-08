@@ -1,5 +1,7 @@
 'use strict';
 
+const { headerKey } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   MISSING: 'missing',
@@ -13,15 +15,6 @@ const HEADER = 'x-http-method-override';
 const ALLOWED = new Set(['DELETE', 'PATCH', 'PUT']);
 const TOKEN = /^[A-Za-z]{1,16}$/;
 const MAX_LENGTH = 16;
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
 
 function rawValue(headers, name) {
   const key = headerKey(headers, name);
