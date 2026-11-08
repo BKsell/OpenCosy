@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerKey } = require('./headerutil');
+const { headerKey, rawValue } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -14,12 +14,6 @@ const HEADER = 'want-digest';
 const STRONG = new Set(['sha-256', 'sha-512', 'sha-256-sess', 'sha-512-sess']);
 const WEAK = new Set(['md5', 'sha', 'sha-1', 'md5-sess', 'crc32']);
 const MAX_ENTRIES = 3;
-
-function rawValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return null;
-  return headers[key];
-}
 
 function applyWantDigestGuard(headers) {
   const raw = rawValue(headers, HEADER);
