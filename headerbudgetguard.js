@@ -1,5 +1,7 @@
 'use strict';
 
+const { headerKey } = require('./headerutil');
+
 const REASON = {
   OK: 'ok',
   EMPTY: 'empty-headers',
@@ -13,15 +15,6 @@ const MAX_HEADER_COUNT = 96;
 const MAX_TOTAL_BYTES = 32 * 1024;
 const MAX_VALUE_BYTES = 8 * 1024;
 const MAX_NAME_BYTES = 64;
-
-function headerKey(headers, name) {
-  const lower = name.toLowerCase();
-  if (!headers || typeof headers !== 'object') return '';
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return key;
-  }
-  return '';
-}
 
 function byteLength(value) {
   if (typeof value !== 'string') return 0;
