@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasons } = require('./findingsview');
 
 const REASON = {
   OK: 'ok',
@@ -60,12 +61,8 @@ function auditTransitionBatch(list) {
 }
 
 function describeFindings(findings) {
-  const list = Array.isArray(findings) ? findings : [];
-  if (list.length === 0) return 'no ssl strip risk';
-  return list
-    .slice(0, 8)
-    .map((f) => f.reason + '(' + String(f.url || '') + ')')
-    .join('; ');
+  return describeReasons(findings, 'no ssl strip risk',
+    (f) => f.reason + '(' + String(f.url || '') + ')');
 }
 
 module.exports = {
