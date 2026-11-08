@@ -1,4 +1,5 @@
 'use strict';
+const { originOf } = require('./modutil');
 
 const { firstValue, headerKey } = require('./headerutil');
 
@@ -59,16 +60,6 @@ function parseLink(entry) {
     params[name] = value;
   }
   return { href, params };
-}
-
-function originOf(value) {
-  try {
-    const parsed = new URL(value);
-    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return '';
-    return parsed.origin;
-  } catch {
-    return '';
-  }
 }
 
 function inspectLinks(headers, details) {
