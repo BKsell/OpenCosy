@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasons } = require('./findingsview');
 
 const REASON = {
   OK: 'ok',
@@ -83,12 +84,8 @@ function auditPinningBatch(list, now) {
 }
 
 function describeFindings(findings) {
-  const list = Array.isArray(findings) ? findings : [];
-  if (list.length === 0) return 'no pinning risk';
-  return list
-    .slice(0, 8)
-    .map((f) => f.reason + '(' + String(f.host || '') + ')')
-    .join('; ');
+  return describeReasons(findings, 'no pinning risk',
+    (f) => f.reason + '(' + String(f.host || '') + ')');
 }
 
 module.exports = {
