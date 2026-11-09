@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -47,30 +48,18 @@ function applyHtmlInjectionGuard(value, options) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.EMPTY:
-      return '待注入文本为空或不是字符串';
-    case REASON.TOO_LARGE:
-      return '待注入文本超过长度上限';
-    case REASON.NUL_BYTE:
-      return '待注入文本含空字节';
-    case REASON.SCRIPT_TAG:
-      return '待注入文本含 script 标签';
-    case REASON.IFRAME_TAG:
-      return '待注入文本含 iframe 标签';
-    case REASON.SVG_TAG:
-      return '待注入文本含 svg 标签';
-    case REASON.EVENT_HANDLER:
-      return '待注入文本含事件处理属性';
-    case REASON.JAVASCRIPT_URI:
-      return '待注入文本含脚本伪协议';
-    case REASON.DATA_HTML:
-      return '待注入文本含 data:text/html 地址';
-    case REASON.STYLE_EXPRESSION:
-      return '待注入文本含样式表达式';
-    default:
-      return '待注入文本不含标签';
-  }
+  return describeReasonFrom({
+    [REASON.EMPTY]: '待注入文本为空或不是字符串',
+    [REASON.TOO_LARGE]: '待注入文本超过长度上限',
+    [REASON.NUL_BYTE]: '待注入文本含空字节',
+    [REASON.SCRIPT_TAG]: '待注入文本含 script 标签',
+    [REASON.IFRAME_TAG]: '待注入文本含 iframe 标签',
+    [REASON.SVG_TAG]: '待注入文本含 svg 标签',
+    [REASON.EVENT_HANDLER]: '待注入文本含事件处理属性',
+    [REASON.JAVASCRIPT_URI]: '待注入文本含脚本伪协议',
+    [REASON.DATA_HTML]: '待注入文本含 data:text/html 地址',
+    [REASON.STYLE_EXPRESSION]: '待注入文本含样式表达式',
+  }, reason, '待注入文本不含标签');
 }
 
 module.exports = {
