@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -65,26 +66,16 @@ function applyIpcPayloadGuard(payload) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.FORBIDDEN_KEY:
-      return 'IPC 负载包含原型污染键名';
-    case REASON.TOO_DEEP:
-      return 'IPC 负载嵌套层级过深';
-    case REASON.TOO_MANY_KEYS:
-      return 'IPC 负载对象键数量过多';
-    case REASON.TOO_LONG_STRING:
-      return 'IPC 负载字符串超长';
-    case REASON.TOO_MANY_ITEMS:
-      return 'IPC 负载数组元素过多';
-    case REASON.UNSUPPORTED_TYPE:
-      return 'IPC 负载包含不可序列化类型';
-    case REASON.NOT_FINITE:
-      return 'IPC 负载包含非有限数值';
-    case REASON.CIRCULAR:
-      return 'IPC 负载存在循环引用';
-    default:
-      return 'IPC 负载结构合法';
-  }
+  return describeReasonFrom({
+    [REASON.FORBIDDEN_KEY]: 'IPC 负载包含原型污染键名',
+    [REASON.TOO_DEEP]: 'IPC 负载嵌套层级过深',
+    [REASON.TOO_MANY_KEYS]: 'IPC 负载对象键数量过多',
+    [REASON.TOO_LONG_STRING]: 'IPC 负载字符串超长',
+    [REASON.TOO_MANY_ITEMS]: 'IPC 负载数组元素过多',
+    [REASON.UNSUPPORTED_TYPE]: 'IPC 负载包含不可序列化类型',
+    [REASON.NOT_FINITE]: 'IPC 负载包含非有限数值',
+    [REASON.CIRCULAR]: 'IPC 负载存在循环引用',
+  }, reason, 'IPC 负载结构合法');
 }
 
 module.exports = {
