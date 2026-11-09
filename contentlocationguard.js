@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 const { originOf, hasControlChars } = require('./modutil');
 
 const { firstValue, headerKey } = require('./headerutil');
@@ -44,18 +45,12 @@ function applyContentLocationGuard(headers, details) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.CROSS_ORIGIN:
-      return 'Content-Location 指向其他源';
-    case REASON.MALFORMED:
-      return 'Content-Location 过长或含控制字符';
-    case REASON.BAD_SCHEME:
-      return 'Content-Location 使用非 HTTP(S) 目标';
-    case REASON.MISSING:
-      return '未声明 Content-Location';
-    default:
-      return 'Content-Location 与响应同源';
-  }
+  return describeReasonFrom({
+    [REASON.CROSS_ORIGIN]: 'Content-Location 指向其他源',
+    [REASON.MALFORMED]: 'Content-Location 过长或含控制字符',
+    [REASON.BAD_SCHEME]: 'Content-Location 使用非 HTTP(S) 目标',
+    [REASON.MISSING]: '未声明 Content-Location',
+  }, reason, 'Content-Location 与响应同源');
 }
 
 module.exports = {
