@@ -1817,13 +1817,7 @@ function persistFpLedger() {
 }
 
 // recordFpHit 按主机+类别登记一条被收敛的指纹/追踪信号。
-function recordFpHit(host, category, signals) {
-  if (!host) return;
-  loadFpLedger();
-  fpLedger.record(host, category, signals);
-  persistFpLedger();
-  sendToRenderer('fingerprint-blocked-updated', fpLedger.stats());
-}
+
 
 // applyCookieHardening 就地加固响应头里的 Set-Cookie，返回本次动作列表。
 // 任何异常都不阻断浏览：出错时保留原始响应头。
@@ -2298,30 +2292,7 @@ const headerGrades = [];
 let headerGradesLoaded = false;
 let headerGradeSaveTimer = null;
 
-function loadHeaderGrades() {
-  if (headerGradesLoaded) return;
-  headerGradesLoaded = true;
-  try {
-    const data = ledgerStore.readJSONStore(headerGradeStorePath, {});
-    const entries = Array.isArray(data && data.hosts) ? data.hosts : null;
-    if (!entries) return;
-    for (const h of entries) {
-      if (!h || typeof h !== 'object' || typeof h.host !== 'string' || !h.host) continue;
-      if (typeof h.grade !== 'string' || !/^[A-F]$/.test(h.grade)) continue;
-      headerGrades.push({
-        host: h.host.slice(0, 253),
-        time: Number(h.time) || Date.now(),
-        visits: Math.max(1, Number(h.visits) || 1),
-        grade: h.grade,
-        percent: Math.max(0, Math.min(100, Number(h.percent) || 0)),
-        insecureTransport: !!h.insecureTransport,
-        checks: Array.isArray(h.checks) ? h.checks.slice(0, 16) : [],
-        warnings: Array.isArray(h.warnings) ? h.warnings.slice(0, 16) : [],
-      });
-      if (headerGrades.length >= MAX_HEADER_GRADE_HOSTS) break;
-    }
-  } catch {}
-}
+
 
 function persistHeaderGrades() {
   if (headerGradeSaveTimer) clearTimeout(headerGradeSaveTimer);
@@ -2333,45 +2304,7 @@ function persistHeaderGrades() {
 }
 
 // recordHeaderGrade 对一次顶层文档响应评级并按 host 聚合。纯计算，不抛错。
-function recordHeaderGrade(url, rawHeaders) {
-  if (typeof url !== 'string' || !/^https?:/i.test(url)) return;
-  let result;
-  try {
-    result = headerGrade.gradeSecurityHeaders(url, rawHeaders);
-  } catch {
-    return;
-  }
-  if (!result || !result.host) return;
-  loadHeaderGrades();
-  const now = Date.now();
-  const idx = headerGrades.findIndex(h => h.host === result.host);
-  const record = {
-    host: result.host,
-    time: now,
-    visits: 1,
-    grade: result.grade,
-    percent: result.percent,
-    insecureTransport: !!result.insecureTransport,
-    checks: result.checks.map(c => ({
-      id: String(c.id), name: String(c.name), weight: Number(c.weight) || 0,
-      score: Number(c.score) || 0, status: String(c.status),
-      value: String(c.value || '').slice(0, 300), note: String(c.note || '').slice(0, 300),
-    })),
-    warnings: result.warnings.map(w => String(w).slice(0, 200)).slice(0, 16),
-  };
-  if (idx >= 0) {
-    record.visits = Math.min(Number.MAX_SAFE_INTEGER, (Number(headerGrades[idx].visits) || 1) + 1);
-    headerGrades.splice(idx, 1);
-    headerGrades.push(record);
-  } else {
-    headerGrades.push(record);
-  }
-  if (headerGrades.length > MAX_HEADER_GRADE_HOSTS) {
-    headerGrades.splice(0, headerGrades.length - MAX_HEADER_GRADE_HOSTS);
-  }
-  persistHeaderGrades();
-  sendToRenderer('header-grade-updated', { host: record.host, grade: record.grade, percent: record.percent });
-}
+
 
 function listHeaderGrades(limit = 200) {
   loadHeaderGrades();
@@ -2432,27 +2365,7 @@ function persistRequestLog() {
 }
 
 // recordRequestAttempt 由 onBeforeRequest 调用；任何异常都不影响浏览。
-function recordRequestAttempt(details, blocked) {
-  try {
-    if (!details || typeof details.url !== 'string') return;
-    if (!/^https?:/i.test(details.url)) return;
-    loadRequestLog();
-    requestLog.ingest(requestLogStore, {
-      url: details.url,
-      resourceType: details.resourceType,
-      blocked: !!blocked,
-      navigated: !blocked && details.resourceType === 'mainFrame',
-      time: Date.now(),
-    });
-    persistRequestLog();
-    if (requestLogNotifyTimer) return;
-    requestLogNotifyTimer = setTimeout(() => {
-      requestLogNotifyTimer = null;
-      sendToRenderer('request-log-updated', requestLog.stats(requestLogStore));
-    }, 2000);
-    requestLogNotifyTimer.unref?.();
-  } catch {}
-}
+
 
 function listRequestLogEntries(limit = 200) {
   loadRequestLog();
@@ -2490,33 +2403,7 @@ let brandSpoofsLoaded = false;
 let brandSpoofSaveTimer = null;
 let brandSpoofNotifyTimer = null;
 
-function loadBrandSpoofs() {
-  if (brandSpoofsLoaded) return;
-  brandSpoofsLoaded = true;
-  try {
-    const data = ledgerStore.readJSONStore(brandSpoofStorePath, {});
-    if (data && Array.isArray(data.hosts)) {
-      const now = Date.now();
-      for (const h of data.hosts) {
-        if (!h || typeof h !== 'object') continue;
-        if (typeof h.host !== 'string' || !h.host) continue;
-        if (!BRAND_SPOOF_REASONS.has(h.reason)) continue;
-        brandSpoofs.push({
-          host: String(h.host).slice(0, 253),
-          brand: String(h.brand || '').slice(0, 40),
-          reason: h.reason,
-          hint: String(h.hint || '').slice(0, 120),
-          firstTime: Number(h.firstTime) || now,
-          lastTime: Number(h.lastTime) || now,
-          count: Math.max(1, Number(h.count) || 1),
-        });
-      }
-      if (brandSpoofs.length > MAX_BRAND_SPOOF_HOSTS) {
-        brandSpoofs = brandSpoofs.slice(-MAX_BRAND_SPOOF_HOSTS);
-      }
-    }
-  } catch {}
-}
+
 
 function persistBrandSpoofs() {
   if (brandSpoofSaveTimer) clearTimeout(brandSpoofSaveTimer);
@@ -2529,47 +2416,7 @@ function persistBrandSpoofs() {
 
 // recordBrandSpoof 由 onBeforeRequest 顶层导航调用；入参来自纯模块，仍重新白名单化，
 // 防止脏数据写盘。任何异常都不影响浏览。
-function recordBrandSpoof(hit) {
-  try {
-    if (!hit || typeof hit !== 'object') return;
-    const host = String(hit.hostname || '').toLowerCase().replace(/\.$/, '').slice(0, 253);
-    if (!host || !BRAND_SPOOF_REASONS.has(hit.reason)) return;
-    const now = Date.now();
-    loadBrandSpoofs();
-    const idx = brandSpoofs.findIndex(h => h.host === host);
-    if (idx >= 0) {
-      const rec = brandSpoofs[idx];
-      rec.lastTime = now;
-      rec.count = Math.min(Number.MAX_SAFE_INTEGER, (Number(rec.count) || 1) + 1);
-      // 最近一次的原因/品牌更可信（同一主机可能命中多条规则）。
-      rec.reason = hit.reason;
-      rec.brand = String(hit.brand || rec.brand || '').slice(0, 40);
-      rec.hint = String(hit.hint || rec.hint || '').slice(0, 120);
-      brandSpoofs.splice(idx, 1);
-      brandSpoofs.push(rec);
-    } else {
-      brandSpoofs.push({
-        host,
-        brand: String(hit.brand || '').slice(0, 40),
-        reason: hit.reason,
-        hint: String(hit.hint || '').slice(0, 120),
-        firstTime: now,
-        lastTime: now,
-        count: 1,
-      });
-    }
-    if (brandSpoofs.length > MAX_BRAND_SPOOF_HOSTS) {
-      brandSpoofs.splice(0, brandSpoofs.length - MAX_BRAND_SPOOF_HOSTS);
-    }
-    persistBrandSpoofs();
-    if (brandSpoofNotifyTimer) return;
-    brandSpoofNotifyTimer = setTimeout(() => {
-      brandSpoofNotifyTimer = null;
-      sendToRenderer('brand-spoof-updated', getBrandSpoofStats());
-    }, 2000);
-    brandSpoofNotifyTimer.unref?.();
-  } catch {}
-}
+
 
 function listBrandSpoofEntries(limit = 200) {
   loadBrandSpoofs();
@@ -3154,6 +3001,32 @@ function getClientCertChoiceStats() {
 
 
 const downloadHashes = require('./downloadhashes');
+const securityledger = require('./securityledger');
+const { recordBrandSpoof, recordRequestAttempt, recordHeaderGrade, recordFpHit, loadBrandSpoofs, loadHeaderGrades } = securityledger;
+securityledger.bindDeps({
+  get BRAND_SPOOF_REASONS() { return BRAND_SPOOF_REASONS; },
+  get MAX_BRAND_SPOOF_HOSTS() { return MAX_BRAND_SPOOF_HOSTS; },
+  get MAX_HEADER_GRADE_HOSTS() { return MAX_HEADER_GRADE_HOSTS; },
+  get brandSpoofNotifyTimer() { return brandSpoofNotifyTimer; },
+  set brandSpoofNotifyTimer(v) { brandSpoofNotifyTimer = v; },
+  get brandSpoofStorePath() { return brandSpoofStorePath; },
+  get brandSpoofs() { return brandSpoofs; },
+  set brandSpoofs(v) { brandSpoofs = v; },
+  get brandSpoofsLoaded() { return brandSpoofsLoaded; },
+  set brandSpoofsLoaded(v) { brandSpoofsLoaded = v; },
+  get fpLedger() { return fpLedger; },
+  get headerGrade() { return headerGrade; },
+  get headerGradeStorePath() { return headerGradeStorePath; },
+  get headerGrades() { return headerGrades; },
+  get headerGradesLoaded() { return headerGradesLoaded; },
+  set headerGradesLoaded(v) { headerGradesLoaded = v; },
+  get ledgerStore() { return ledgerStore; },
+  get requestLog() { return requestLog; },
+  get requestLogNotifyTimer() { return requestLogNotifyTimer; },
+  set requestLogNotifyTimer(v) { requestLogNotifyTimer = v; },
+  get requestLogStore() { return requestLogStore; }
+});
+
 downloadHashes.bindRendererNotifier(sendToRenderer);
 downloadHashes.bindWindowHost(() => mainWindow);
 const {
