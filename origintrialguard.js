@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -108,30 +109,18 @@ function encodeToken(payload) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK:
-      return 'origin-trial 取值合规';
-    case REASON.MISSING:
-      return '响应未声明 origin-trial';
-    case REASON.MALFORMED:
-      return 'origin-trial 取值非法';
-    case REASON.OVERLONG:
-      return 'origin-trial 超长';
-    case REASON.TOO_MANY:
-      return 'origin-trial 令牌数量超出上限，已剥除';
-    case REASON.UNDECODABLE:
-      return 'origin-trial 令牌无法解码，已剔除';
-    case REASON.EXPIRED:
-      return 'origin-trial 令牌已过期，已剔除';
-    case REASON.FOREIGN_ORIGIN:
-      return 'origin-trial 令牌声明的来源与当前站点不符，已剔除';
-    case REASON.SUBDOMAIN_GRANT:
-      return 'origin-trial 令牌覆盖子域，已剔除';
-    case REASON.HIGH_RISK_FEATURE:
-      return 'origin-trial 令牌涉及高风险特性，已剔除';
-    default:
-      return 'origin-trial 未识别状态';
-  }
+  return describeReasonFrom({
+    [REASON.OK]: 'origin-trial 取值合规',
+    [REASON.MISSING]: '响应未声明 origin-trial',
+    [REASON.MALFORMED]: 'origin-trial 取值非法',
+    [REASON.OVERLONG]: 'origin-trial 超长',
+    [REASON.TOO_MANY]: 'origin-trial 令牌数量超出上限，已剥除',
+    [REASON.UNDECODABLE]: 'origin-trial 令牌无法解码，已剔除',
+    [REASON.EXPIRED]: 'origin-trial 令牌已过期，已剔除',
+    [REASON.FOREIGN_ORIGIN]: 'origin-trial 令牌声明的来源与当前站点不符，已剔除',
+    [REASON.SUBDOMAIN_GRANT]: 'origin-trial 令牌覆盖子域，已剔除',
+    [REASON.HIGH_RISK_FEATURE]: 'origin-trial 令牌涉及高风险特性，已剔除',
+  }, reason, 'origin-trial 未识别状态');
 }
 
 function applyOriginTrialGuard(headers, docOrigin, now) {
