@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { headerKey } = require('./headerutil');
 
@@ -45,20 +46,13 @@ function applyXContentTypeOptionsGuard(headers) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.MISSING:
-      return '缺少 X-Content-Type-Options，已补 nosniff';
-    case REASON.INVALID:
-      return 'X-Content-Type-Options 取值非法，已改为 nosniff';
-    case REASON.DUPLICATE:
-      return 'X-Content-Type-Options 重复，已合并';
-    case REASON.OVERLONG:
-      return 'X-Content-Type-Options 超长，已改为 nosniff';
-    case REASON.DOWNGRADED:
-      return 'X-Content-Type-Options 已规范化';
-    default:
-      return 'X-Content-Type-Options 通过校验';
-  }
+  return describeReasonFrom({
+    [REASON.MISSING]: '缺少 X-Content-Type-Options，已补 nosniff',
+    [REASON.INVALID]: 'X-Content-Type-Options 取值非法，已改为 nosniff',
+    [REASON.DUPLICATE]: 'X-Content-Type-Options 重复，已合并',
+    [REASON.OVERLONG]: 'X-Content-Type-Options 超长，已改为 nosniff',
+    [REASON.DOWNGRADED]: 'X-Content-Type-Options 已规范化',
+  }, reason, 'X-Content-Type-Options 通过校验');
 }
 
 module.exports = {
