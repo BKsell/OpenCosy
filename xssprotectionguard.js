@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { headerKey, headerText } = require('./headerutil');
 
@@ -30,18 +31,12 @@ function applyXSSProtectionGuard(headers) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.LEGACY_ENABLED:
-      return '旧版 XSS 过滤器会引入新的旁路风险';
-    case REASON.LEGACY_DISABLED:
-      return '站点显式关闭旧版 XSS 过滤器';
-    case REASON.MALFORMED:
-      return 'X-XSS-Protection 取值非法';
-    case REASON.MISSING:
-      return '响应未声明旧版 XSS 过滤器';
-    default:
-      return '旧版 XSS 过滤器已清理';
-  }
+  return describeReasonFrom({
+    [REASON.LEGACY_ENABLED]: '旧版 XSS 过滤器会引入新的旁路风险',
+    [REASON.LEGACY_DISABLED]: '站点显式关闭旧版 XSS 过滤器',
+    [REASON.MALFORMED]: 'X-XSS-Protection 取值非法',
+    [REASON.MISSING]: '响应未声明旧版 XSS 过滤器',
+  }, reason, '旧版 XSS 过滤器已清理');
 }
 
 module.exports = {
