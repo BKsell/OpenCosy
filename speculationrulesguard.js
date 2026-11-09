@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -61,28 +62,17 @@ function inspectSpeculationRules(value, docOrigin) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK:
-      return 'speculation-rules 合规';
-    case REASON.MISSING:
-      return '响应未声明 speculation-rules';
-    case REASON.MALFORMED:
-      return 'speculation-rules 取值非法';
-    case REASON.OVERLONG:
-      return 'speculation-rules 超长';
-    case REASON.MULTIPLE:
-      return 'speculation-rules 声明了多个来源，已剥除';
-    case REASON.INSECURE:
-      return 'speculation-rules 指向明文或本地资源，已剥除';
-    case REASON.CREDENTIALS:
-      return 'speculation-rules 来源内嵌凭据，已剥除';
-    case REASON.PATH_SHAPE:
-      return 'speculation-rules 来源包含路径穿越片段，已剥除';
-    case REASON.CROSS_ORIGIN:
-      return 'speculation-rules 来源跨源，已剥除';
-    default:
-      return 'speculation-rules 未识别状态';
-  }
+  return describeReasonFrom({
+    [REASON.OK]: 'speculation-rules 合规',
+    [REASON.MISSING]: '响应未声明 speculation-rules',
+    [REASON.MALFORMED]: 'speculation-rules 取值非法',
+    [REASON.OVERLONG]: 'speculation-rules 超长',
+    [REASON.MULTIPLE]: 'speculation-rules 声明了多个来源，已剥除',
+    [REASON.INSECURE]: 'speculation-rules 指向明文或本地资源，已剥除',
+    [REASON.CREDENTIALS]: 'speculation-rules 来源内嵌凭据，已剥除',
+    [REASON.PATH_SHAPE]: 'speculation-rules 来源包含路径穿越片段，已剥除',
+    [REASON.CROSS_ORIGIN]: 'speculation-rules 来源跨源，已剥除',
+  }, reason, 'speculation-rules 未识别状态');
 }
 
 function applySpeculationRulesGuard(headers, docOrigin) {
