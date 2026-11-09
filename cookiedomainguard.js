@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { hasControlChars } = require('./modutil');
 
@@ -83,30 +84,18 @@ function applyCookieDomainGuard(value, requestHost) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.EMPTY:
-      return 'Set-Cookie 为空';
-    case REASON.MALFORMED:
-      return 'Set-Cookie 格式非法';
-    case REASON.CONTROL:
-      return 'Set-Cookie 含控制字符';
-    case REASON.TOO_LONG:
-      return 'Set-Cookie 超过长度上限';
-    case REASON.DOMAIN_MISMATCH:
-      return 'Cookie 域与响应主机不匹配';
-    case REASON.PUBLIC_SUFFIX:
-      return 'Cookie 域为公共后缀或 IP';
-    case REASON.PREFIX_REQUIRES_SECURE:
-      return '前缀 Cookie 缺少 Secure';
-    case REASON.PREFIX_REQUIRES_HOST_ONLY:
-      return '__Host- Cookie 设置了域或非根路径';
-    case REASON.SAMESITE_NONE_INSECURE:
-      return 'SameSite=None 缺少 Secure';
-    case REASON.BAD_MAX_AGE:
-      return 'Cookie 有效期非法或过长';
-    default:
-      return 'Set-Cookie 属性合法';
-  }
+  return describeReasonFrom({
+    [REASON.EMPTY]: 'Set-Cookie 为空',
+    [REASON.MALFORMED]: 'Set-Cookie 格式非法',
+    [REASON.CONTROL]: 'Set-Cookie 含控制字符',
+    [REASON.TOO_LONG]: 'Set-Cookie 超过长度上限',
+    [REASON.DOMAIN_MISMATCH]: 'Cookie 域与响应主机不匹配',
+    [REASON.PUBLIC_SUFFIX]: 'Cookie 域为公共后缀或 IP',
+    [REASON.PREFIX_REQUIRES_SECURE]: '前缀 Cookie 缺少 Secure',
+    [REASON.PREFIX_REQUIRES_HOST_ONLY]: '__Host- Cookie 设置了域或非根路径',
+    [REASON.SAMESITE_NONE_INSECURE]: 'SameSite=None 缺少 Secure',
+    [REASON.BAD_MAX_AGE]: 'Cookie 有效期非法或过长',
+  }, reason, 'Set-Cookie 属性合法');
 }
 
 module.exports = {
