@@ -10,6 +10,8 @@ const REASON = {
   UNC: 'unc-path',
   TRAVERSAL: 'traversal',
   ENCODED_TRAVERSAL: 'encoded-traversal',
+  DRIVE_RELATIVE: 'drive-relative',
+  ALT_STREAM: 'alt-stream',
   OUTSIDE: 'outside-base',
 };
 
@@ -21,6 +23,18 @@ function hasControlChars(value) {
     if (code === 0) return true;
     if (code < 0x20 || code === 0x7f) return true;
   }
+  return false;
+}
+
+function decodeOnce(value) {
+  return value.replace(/%([0-9a-fA-F]{2})/g, (all, hex) => String.fromCharCode(parseInt(hex, 16)));
+}
+
+function looksEncodedSeparator(value) {
+  if (!/%[0-9a-fA-F]{2}/.test(value)) return false;
+  const decoded = decodeOnce(value).replace(/\\/g, '/').toLowerCase();
+  if (decoded.includes('..')) return true;
+  if (decoded.includes(':/') || decoded.startsWith('/')) return true;
   return false;
 }
 
@@ -39,11 +53,14 @@ function inspectPath(baseDir, target) {
   if (looksEncodedTraversal(input)) return { ok: false, reason: REASON.ENCODED_TRAVERSAL, resolved: '' };
   if (input.startsWith('//')) return { ok: false, reason: REASON.UNC, resolved: '' };
   if (input.startsWith('/') || /^[a-zA-Z]:\//.test(input)) return { ok: false, reason: REASON.ABSOLUTE, resolved: '' };
+  if (/^[a-zA-Z]:[^/]/.test(input)) return { ok: false, reason: REASON.DRIVE_RELATIVE, resolved: '' };
+  if (looksEncodedSeparator(input)) return { ok: false, reason: REASON.ENCODED_TRAVERSAL, resolved: '' };
   const segments = input.split('/');
   const cleaned = [];
   for (const segment of segments) {
     if (segment === '' || segment === '.') continue;
     if (segment === '..') return { ok: false, reason: REASON.TRAVERSAL, resolved: '' };
+    if (segment.includes(':')) return { ok: false, reason: REASON.ALT_STREAM, resolved: '' };
     cleaned.push(segment);
   }
   if (!base) return { ok: false, reason: REASON.EMPTY, resolved: '' };
@@ -70,6 +87,8 @@ function describeReason(reason) {
     [REASON.UNC]: '路径为 UNC 网络路径',
     [REASON.TRAVERSAL]: '路径包含上级目录片段',
     [REASON.ENCODED_TRAVERSAL]: '路径包含编码后的上级目录片段',
+    [REASON.DRIVE_RELATIVE]: '路径为未带分隔符的盘符相对路径',
+    [REASON.ALT_STREAM]: '路径包含 NTFS 备用数据流分隔符',
     [REASON.OUTSIDE]: '路径解析后落在根目录之外',
   }, reason, '路径位于允许的根目录之内');
 }
