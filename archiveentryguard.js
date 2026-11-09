@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { hasControlChars } = require('./modutil');
 
@@ -63,32 +64,19 @@ function applyArchiveEntryGuard(entries, meta) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.EMPTY:
-      return '压缩包为空或条目名为空';
-    case REASON.NOT_LIST:
-      return '压缩包条目不是列表';
-    case REASON.TOO_MANY_ENTRIES:
-      return '压缩包条目数量过多';
-    case REASON.TOO_LONG_NAME:
-      return '压缩包条目名过长';
-    case REASON.ABSOLUTE:
-      return '压缩包条目使用绝对路径';
-    case REASON.DRIVE:
-      return '压缩包条目带盘符';
-    case REASON.TRAVERSAL:
-      return '压缩包条目包含上级目录片段';
-    case REASON.BACKSLASH:
-      return '压缩包条目使用反斜杠分隔';
-    case REASON.CONTROL:
-      return '压缩包条目名含控制字符';
-    case REASON.DUPLICATE:
-      return '压缩包存在重复条目';
-    case REASON.BOMB_RATIO:
-      return '压缩包压缩比异常疑似压缩炸弹';
-    default:
-      return '压缩包条目结构安全';
-  }
+  return describeReasonFrom({
+    [REASON.EMPTY]: '压缩包为空或条目名为空',
+    [REASON.NOT_LIST]: '压缩包条目不是列表',
+    [REASON.TOO_MANY_ENTRIES]: '压缩包条目数量过多',
+    [REASON.TOO_LONG_NAME]: '压缩包条目名过长',
+    [REASON.ABSOLUTE]: '压缩包条目使用绝对路径',
+    [REASON.DRIVE]: '压缩包条目带盘符',
+    [REASON.TRAVERSAL]: '压缩包条目包含上级目录片段',
+    [REASON.BACKSLASH]: '压缩包条目使用反斜杠分隔',
+    [REASON.CONTROL]: '压缩包条目名含控制字符',
+    [REASON.DUPLICATE]: '压缩包存在重复条目',
+    [REASON.BOMB_RATIO]: '压缩包压缩比异常疑似压缩炸弹',
+  }, reason, '压缩包条目结构安全');
 }
 
 module.exports = {
