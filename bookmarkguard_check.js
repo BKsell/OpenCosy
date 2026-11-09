@@ -1,4 +1,5 @@
-const { stripControlChars, collapseSpaces, fallbackTitleFor } = require('./modutil');
+const { stripControlChars, collapseSpaces, sanitizeDisplayTitle, fallbackTitleFor } = require('./modutil');
+const urlEntry = require('./urlentryguard');
 
 
 // bookmarkguard.js —— 书签（收藏夹）落盘 / 读取 / 导入合并的“写入净化 + 逐条校验
@@ -58,35 +59,18 @@ const constants = Object.freeze({
 // 控制字符，最后压缩空白并截断上界。非字符串给空串（书签允许标题为空，由调用方
 // 决定是否回退用 host 展示）。
 function sanitizeBookmarkTitle(rawTitle) {
-  let t = typeof rawTitle === 'string' ? rawTitle : '';
-  t = t.replace(/[\t\n\r]+/g, ' ');
-  t = collapseSpaces(stripControlChars(t));
-  if (t.length > MAX_TITLE_CHARS) t = t.slice(0, MAX_TITLE_CHARS);
-  return t;
+  return sanitizeDisplayTitle(rawTitle, MAX_TITLE_CHARS);
 }
 
 // sanitizeBookmarkUrl 校验并规范化书签 URL。
 // 返回 {ok,url,reason}：只接受 http/https、可解析、长度有界、host 非空的地址。
 function sanitizeBookmarkUrl(rawUrl) {
-  if (typeof rawUrl !== 'string' || rawUrl.length === 0) {
-    return { ok: false, url: '', reason: SKIP_BAD_URL };
-  }
-  if (rawUrl.length > MAX_URL_CHARS) {
-    return { ok: false, url: '', reason: SKIP_URL_TOO_LONG };
-  }
-  let u;
-  try {
-    u = new URL(rawUrl);
-  } catch {
-    return { ok: false, url: '', reason: SKIP_BAD_URL };
-  }
-  if (!ALLOWED_PROTOCOLS.includes(u.protocol)) {
-    return { ok: false, url: '', reason: SKIP_BAD_PROTOCOL };
-  }
-  if (!u.hostname) {
-    return { ok: false, url: '', reason: SKIP_BAD_URL };
-  }
-  return { ok: true, url: u.href, reason: '' };
+  return urlEntry.sanitizeWebUrl(rawUrl, {
+    empty: SKIP_BAD_URL,
+    tooLong: SKIP_URL_TOO_LONG,
+    badUrl: SKIP_BAD_URL,
+    badProtocol: SKIP_BAD_PROTOCOL,
+  }, MAX_URL_CHARS);
 }
 
 // isValidISOTimestamp 判定一个值是否为可被 Date 解析、时间有限的 ISO 字符串。
