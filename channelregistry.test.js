@@ -11,7 +11,11 @@ const policy = require('./channelpolicy');
 const ROOT = __dirname;
 const MAIN_SOURCE = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8')
   + '\n' + fs.readFileSync(path.join(ROOT, 'permissionhandlers.js'), 'utf8')
-  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcregister.js'), 'utf8');
+  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcregister.js'), 'utf8')
+  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcwire.js'), 'utf8')
+  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcwire2.js'), 'utf8')
+  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcwire3.js'), 'utf8')
+  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcwire4.js'), 'utf8');
 const PRELOAD_SOURCE = fs.readFileSync(path.join(ROOT, 'preload.js'), 'utf8');
 
 const ANY_FRAME_CHANNELS = new Set(['report-csp-violation']);
