@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { headerKey } = require('./headerutil');
 
@@ -93,18 +94,12 @@ function applyHeaderBudgetGuard(headers) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.TOO_MANY:
-      return '响应头数量超过预算';
-    case REASON.TOO_LARGE:
-      return '响应头总字节数超过预算';
-    case REASON.OVERSIZE_VALUE:
-      return '单个响应头取值超过预算，已剥除';
-    case REASON.EMPTY_NAME:
-      return '响应头存在空名称';
-    default:
-      return '响应头体积在预算内';
-  }
+  return describeReasonFrom({
+    [REASON.TOO_MANY]: '响应头数量超过预算',
+    [REASON.TOO_LARGE]: '响应头总字节数超过预算',
+    [REASON.OVERSIZE_VALUE]: '单个响应头取值超过预算，已剥除',
+    [REASON.EMPTY_NAME]: '响应头存在空名称',
+  }, reason, '响应头体积在预算内');
 }
 
 module.exports = {
