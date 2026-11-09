@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -78,26 +79,16 @@ function inspectPublicKeyPins(value) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK:
-      return 'public-key-pins 取值合规但该响应头已废弃';
-    case REASON.MISSING:
-      return '响应未声明 public-key-pins';
-    case REASON.MALFORMED:
-      return 'public-key-pins 指令非法';
-    case REASON.OVERLONG:
-      return 'public-key-pins 超长';
-    case REASON.DEPRECATED:
-      return 'public-key-pins 已废弃且可致站点锁死，整头剥除';
-    case REASON.NO_BACKUP_PIN:
-      return 'public-key-pins 缺少备份钉，存在锁站风险';
-    case REASON.UNSAFE_MAX_AGE:
-      return 'public-key-pins 缓存时长超出上限';
-    case REASON.REPORT_URI:
-      return 'public-key-pins 携带上报地址';
-    default:
-      return 'public-key-pins 未识别状态';
-  }
+  return describeReasonFrom({
+    [REASON.OK]: 'public-key-pins 取值合规但该响应头已废弃',
+    [REASON.MISSING]: '响应未声明 public-key-pins',
+    [REASON.MALFORMED]: 'public-key-pins 指令非法',
+    [REASON.OVERLONG]: 'public-key-pins 超长',
+    [REASON.DEPRECATED]: 'public-key-pins 已废弃且可致站点锁死，整头剥除',
+    [REASON.NO_BACKUP_PIN]: 'public-key-pins 缺少备份钉，存在锁站风险',
+    [REASON.UNSAFE_MAX_AGE]: 'public-key-pins 缓存时长超出上限',
+    [REASON.REPORT_URI]: 'public-key-pins 携带上报地址',
+  }, reason, 'public-key-pins 未识别状态');
 }
 
 function applyPublicKeyPinsGuard(headers) {
