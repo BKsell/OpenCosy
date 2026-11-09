@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -92,26 +93,16 @@ function applyProxyConfigGuard(config) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.EMPTY:
-      return '代理配置为空';
-    case REASON.INVALID_MODE:
-      return '代理模式非法';
-    case REASON.INSECURE_PAC:
-      return 'PAC 脚本地址不是 HTTPS';
-    case REASON.PAC_FILE:
-      return 'PAC 脚本指向本地文件';
-    case REASON.USERINFO:
-      return '代理地址内嵌账号密码';
-    case REASON.BAD_SCHEME:
-      return '代理协议不受支持';
-    case REASON.BAD_HOST:
-      return '代理主机或端口非法';
-    case REASON.BAD_BYPASS:
-      return '代理绕过列表包含非法条目';
-    default:
-      return '代理配置合法';
-  }
+  return describeReasonFrom({
+    [REASON.EMPTY]: '代理配置为空',
+    [REASON.INVALID_MODE]: '代理模式非法',
+    [REASON.INSECURE_PAC]: 'PAC 脚本地址不是 HTTPS',
+    [REASON.PAC_FILE]: 'PAC 脚本指向本地文件',
+    [REASON.USERINFO]: '代理地址内嵌账号密码',
+    [REASON.BAD_SCHEME]: '代理协议不受支持',
+    [REASON.BAD_HOST]: '代理主机或端口非法',
+    [REASON.BAD_BYPASS]: '代理绕过列表包含非法条目',
+  }, reason, '代理配置合法');
 }
 
 module.exports = {
