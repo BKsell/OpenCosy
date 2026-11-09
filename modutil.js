@@ -137,6 +137,14 @@ function headerValues(headers, name) {
   return [];
 }
 
+function sanitizeDisplayTitle(rawTitle, maxChars) {
+  let t = typeof rawTitle === 'string' ? rawTitle : '';
+  t = t.replace(/[\t\n\r]+/g, ' ');
+  t = collapseSpaces(stripControlChars(t));
+  if (t.length > maxChars) t = t.slice(0, maxChars);
+  return t;
+}
+
 module.exports = Object.assign({}, require('./modutil_part2'), {
   pruneOlderThan,
   singleAlt,
@@ -147,6 +155,7 @@ module.exports = Object.assign({}, require('./modutil_part2'), {
   splitList,
   stripControlChars,
   collapseSpaces,
+  sanitizeDisplayTitle,
   schemeOf,
   originOf,
   isObj,
