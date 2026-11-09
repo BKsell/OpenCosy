@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -78,28 +79,17 @@ function inspectCredentialRequest(rawUrl, options) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK:
-      return '凭据请求来源与依赖方标识一致';
-    case REASON.MALFORMED:
-      return '凭据请求地址非法';
-    case REASON.UNSAFE_SCHEME:
-      return '凭据请求仅允许安全来源';
-    case REASON.OPAQUE_ORIGIN:
-      return '凭据请求来自不透明来源，已拒绝';
-    case REASON.EMBEDDED_CREDENTIALS:
-      return '来源地址内嵌凭据，已拒绝';
-    case REASON.RP_ID_MISMATCH:
-      return '依赖方标识与来源主机不匹配，已拒绝';
-    case REASON.RP_ID_SUFFIX_AMBIGUOUS:
-      return '依赖方标识为公共后缀，已拒绝';
-    case REASON.PUNYCODE_RP_ID:
-      return '依赖方标识为 punycode 同形域名，已拒绝';
-    case REASON.OVERLONG:
-      return '凭据请求地址超长，已拒绝';
-    default:
-      return '凭据请求未识别状态';
-  }
+  return describeReasonFrom({
+    [REASON.OK]: '凭据请求来源与依赖方标识一致',
+    [REASON.MALFORMED]: '凭据请求地址非法',
+    [REASON.UNSAFE_SCHEME]: '凭据请求仅允许安全来源',
+    [REASON.OPAQUE_ORIGIN]: '凭据请求来自不透明来源，已拒绝',
+    [REASON.EMBEDDED_CREDENTIALS]: '来源地址内嵌凭据，已拒绝',
+    [REASON.RP_ID_MISMATCH]: '依赖方标识与来源主机不匹配，已拒绝',
+    [REASON.RP_ID_SUFFIX_AMBIGUOUS]: '依赖方标识为公共后缀，已拒绝',
+    [REASON.PUNYCODE_RP_ID]: '依赖方标识为 punycode 同形域名，已拒绝',
+    [REASON.OVERLONG]: '凭据请求地址超长，已拒绝',
+  }, reason, '凭据请求未识别状态');
 }
 
 function applyCredentialRequestGuard(url, options) {
