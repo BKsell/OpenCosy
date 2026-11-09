@@ -1543,8 +1543,8 @@ function createNewVault(masterPassword) {
   vaultHandle = c.vault;
   vaultState = c.vault.exportState().state;
   persistVaultState();
-  if (!vaultUsePasswordMode) persistVaultKey(key);
-  return { ok: true, ...vaultStatusSnapshot() };
+  const keyPersisted = vaultUsePasswordMode ? true : persistVaultKey(key);
+  return { ok: true, keyPersisted, ...vaultStatusSnapshot() };
 }
 
 // unlockVault(masterPassword)：用自设主密码解锁（safeStorage 模式由启动自动解锁）。
@@ -6661,7 +6661,7 @@ function resolveUniqueDownloadPath(dir, filename) {
   } catch (scanError) {
     existingNames = [];
   }
-  const allocation = downloadPathCollision.planUniquePath({ dir, filename, taken: existingNames });
+  const allocation = downloadPathCollision.claimUniquePath({ dir, filename, taken: existingNames });
   if (!allocation.ok) {
     recordSecurityEvent('download-savepath', 'critical',
       `无法分配唯一下载文件名: ${downloadPathCollision.describeAllocation(allocation)}`, 'download-manager');
@@ -7204,11 +7204,15 @@ function handleDownloadEvent(event, item, webContents) {
       downloadDiskMonitor.release(downloadInfo.id);
       downloadSlotGuard.release(downloadInfo.id);
       if (state === 'completed') {
-        downloadByteQuota.settle(
+        const quotaSettled = downloadByteQuota.settle(
           downloadInfo.quotaHost || '',
           downloadInfo.quotaReserved || 0,
           Math.max(downloadInfo.quotaReserved || 0, downloadInfo.receivedBytes || 0),
         );
+        if (!quotaSettled) {
+          recordSecurityEvent('download-quota', 'warn',
+            `下载完成后实际字节超出配额预算，预留已回滚: ${downloadInfo.quotaHost || ''}`, 'download-manager');
+        }
       } else {
         downloadByteQuota.release(downloadInfo.quotaHost || '', downloadInfo.quotaReserved || 0);
       }
@@ -9478,8 +9482,8 @@ ipcMain.handle('vault-rekey', (event, payload = {}) => {
   const rr = vaultHandle.rekey(key, { kdf });
   if (!rr.ok) return { success: false, reason: rr.reason };
   persistVaultState();
-  if (!vaultUsePasswordMode) persistVaultKey(key);
-  return { success: true, ...rr, ...vaultStatusSnapshot() };
+  const keyPersisted = vaultUsePasswordMode ? true : persistVaultKey(key);
+  return { success: true, keyPersisted, ...rr, ...vaultStatusSnapshot() };
 });
 
 // vault-export-backup：返回密文 JSON 文本（不含密钥/明文），供用户自行保存。
