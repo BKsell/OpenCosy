@@ -185,7 +185,7 @@ d.ipcMain.handle('set-download-max-bytes', (event, payload = {}) => {
   try {
     const settingsPath = d.path.join(d.app.getPath('userData'), 'cosySettings.json');
     const cur = d.ledgerStore.readJSONStore(settingsPath, {});
-    d.ledgerStore.writeJSONStore(settingsPath, d.sanitizeSettings(Object.assign({}, cur, { downloadMaxBytes: d.downloadMaxByteses })), { pretty: true });
+    d.ledgerStore.writeJSONStore(settingsPath, d.sanitizeSettings(Object.assign({}, cur, { downloadMaxBytes: d.downloadMaxBytes })), { pretty: true });
   } catch (e) { console.error('保存下载体积上限失败:', e); }
   return { success: true, bytes: d.downloadMaxBytes };
 });
