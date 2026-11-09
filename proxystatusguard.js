@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { splitItems } = require('./modutil');
 
@@ -99,26 +100,16 @@ function inspectProxyStatus(value) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK:
-      return 'proxy-status 合规';
-    case REASON.MISSING:
-      return '响应未声明 proxy-status';
-    case REASON.MALFORMED:
-      return 'proxy-status 取值非法';
-    case REASON.OVERLONG:
-      return 'proxy-status 超长';
-    case REASON.DETAILS_LEAK:
-      return 'proxy-status 携带内部诊断细节，已剔除';
-    case REASON.INTERNAL_AGENT:
-      return 'proxy-status 暴露内部地址或路径形态的代理标识，已剔除';
-    case REASON.CREDENTIALS:
-      return 'proxy-status 代理标识内嵌凭据，已剔除';
-    case REASON.DUPLICATE:
-      return 'proxy-status 重复条目已去重';
-    default:
-      return 'proxy-status 未识别状态';
-  }
+  return describeReasonFrom({
+    [REASON.OK]: 'proxy-status 合规',
+    [REASON.MISSING]: '响应未声明 proxy-status',
+    [REASON.MALFORMED]: 'proxy-status 取值非法',
+    [REASON.OVERLONG]: 'proxy-status 超长',
+    [REASON.DETAILS_LEAK]: 'proxy-status 携带内部诊断细节，已剔除',
+    [REASON.INTERNAL_AGENT]: 'proxy-status 暴露内部地址或路径形态的代理标识，已剔除',
+    [REASON.CREDENTIALS]: 'proxy-status 代理标识内嵌凭据，已剔除',
+    [REASON.DUPLICATE]: 'proxy-status 重复条目已去重',
+  }, reason, 'proxy-status 未识别状态');
 }
 
 function applyProxyStatusGuard(headers) {
