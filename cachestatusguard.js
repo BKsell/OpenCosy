@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -129,26 +130,16 @@ function inspectCacheStatus(value) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK:
-      return 'cache-status 合规';
-    case REASON.MISSING:
-      return '响应未声明 cache-status';
-    case REASON.MALFORMED:
-      return 'cache-status 取值非法，已剥除';
-    case REASON.OVERLONG:
-      return 'cache-status 超长，已剥除';
-    case REASON.SUSPICIOUS_NAME:
-      return 'cache-status 缓存标识可识别内部主机，已剥除';
-    case REASON.SENSITIVE_PARAM:
-      return 'cache-status 含敏感参数，已剥离';
-    case REASON.FORWARD_CHAIN:
-      return 'cache-status 转发跳数过长，已剥离';
-    case REASON.TOO_MANY:
-      return 'cache-status 成员过多，已截断';
-    default:
-      return 'cache-status 未识别状态';
-  }
+  return describeReasonFrom({
+    [REASON.OK]: 'cache-status 合规',
+    [REASON.MISSING]: '响应未声明 cache-status',
+    [REASON.MALFORMED]: 'cache-status 取值非法，已剥除',
+    [REASON.OVERLONG]: 'cache-status 超长，已剥除',
+    [REASON.SUSPICIOUS_NAME]: 'cache-status 缓存标识可识别内部主机，已剥除',
+    [REASON.SENSITIVE_PARAM]: 'cache-status 含敏感参数，已剥离',
+    [REASON.FORWARD_CHAIN]: 'cache-status 转发跳数过长，已剥离',
+    [REASON.TOO_MANY]: 'cache-status 成员过多，已截断',
+  }, reason, 'cache-status 未识别状态');
 }
 
 function applyCacheStatusGuard(headers) {
