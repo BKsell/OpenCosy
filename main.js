@@ -2808,6 +2808,17 @@ const securityledger = require('./securityledger');
 const downloadsbridge = require('./downloadsbridge');
 const vaultmain = require('./vaultmain');
 const readerbridge = require('./readerbridge');
+const extensionstoremain = require('./extensionstoremain');
+const { copyExtensionToStorage, validateExtensionFolder } = extensionstoremain;
+extensionstoremain.bindDeps({
+  get extensionStore() { return extensionStore; },
+  get extensionsPath() { return extensionsPath; },
+  get fs() { return fs; },
+  get fsSync() { return fsSync; },
+  get path() { return path; },
+  get recordSecurityEvent() { return recordSecurityEvent; }
+});
+
 const { sanitizeReaderNodes, enterReaderMode, sanitizeReaderArticle, clampReaderInt, openReaderTab } = readerbridge;
 readerbridge.bindDeps({
   get READER_PAGE_URL() { return READER_PAGE_URL; },
@@ -5172,34 +5183,7 @@ async function saveExtensionsConfig(config) {
   } catch (e) { console.error('保存插件配置失败:', e); return false; }
 }
 
-async function validateExtensionFolder(folderPath) {
-  try {
-    const manifestPath = path.join(folderPath, 'manifest.json');
-    if (!fsSync.existsSync(manifestPath)) return { valid: false, error: '文件夹中未找到manifest.json文件' };
-    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
-    if (!manifest.name) return { valid: false, error: 'manifest.json中缺少name字段' };
-    if (!manifest.version) return { valid: false, error: 'manifest.json中缺少version字段' };
-    if (!manifest.manifest_version) return { valid: false, error: 'manifest_version字段缺失' };
-    if (manifest.permissions && Array.isArray(manifest.permissions)) {
-      const dangerousPermissions = ['<all_urls>', 'tabs', 'history', 'bookmarks', 'cookies', 'webRequest', 'webRequestBlocking', 'proxy', 'management', 'debugger', 'nativeMessaging'];
-      if (manifest.permissions.some(p => dangerousPermissions.includes(p))) {
-        const requested = manifest.permissions
-          .filter(p => dangerousPermissions.includes(p))
-          .slice(0, 8).join(', ');
-        recordSecurityEvent('extension-blocked', 'critical',
-          `扩展 ${manifest.name || '(未命名)'} 请求危险权限被拒绝: ${requested}`,
-          `extension:${manifestPath || ''}`);
-        return { valid: false, error: '插件请求了危险权限，已被拒绝加载' };
-      }
-    }
-    return { valid: true, manifest };
-  } catch (e) {
-    recordSecurityEvent('extension-blocked', 'warn',
-      `扩展 manifest.json 读取或解析失败: ${e && e.message ? e.message : e}`,
-      `extension:${folderPath || ''}`);
-    return { valid: false, error: '读取manifest.json失败: ' + e.message };
-  }
-}
+
 
 // 条目名安全判定统一走 extensionstore 内核（含穿越、ADS 冒号、控制字符、超长名）。
 const isSafeEntryName = extensionStore.isSafeEntryName;
@@ -5212,60 +5196,7 @@ const isSafeEntryName = extensionStore.isSafeEntryName;
 //  2. 每个目标路径用 resolveWithinRoot 收口，防止条目名或目录深度拼接触底扩展根。
 //  3. 复制受深度 / 条目数 / 总字节预算约束，防止恶意目录耗尽磁盘。
 // 返回 { ok:true } 或 { ok:false, reason }，越界预算类问题整单中止（不装半截扩展）。
-async function copyExtensionToStorage(sourcePath, extensionId) {
-  const targetRoot = extensionStore.resolveExtensionDir(extensionsPath, extensionId);
-  if (!targetRoot) return { ok: false, reason: 'invalid-extension-id' };
-  const budget = extensionStore.createCopyBudget();
 
-  async function walk(srcDir, depth, relSegments) {
-    const files = await fs.readdir(srcDir);
-    for (const file of files) {
-      const srcFile = path.join(srcDir, file);
-      let stat;
-      try {
-        stat = await fs.lstat(srcFile);
-      } catch {
-        return { ok: false, reason: 'stat-failed' };
-      }
-      const verdict = extensionStore.classifyCopyEntry({
-        name: file,
-        symlink: stat.isSymbolicLink(),
-        directory: stat.isDirectory(),
-        size: stat.size,
-      }, depth, budget);
-
-      if (verdict.action === extensionStore.COPY_SKIP) continue;
-      if (verdict.action === extensionStore.COPY_REJECT) {
-        return { ok: false, reason: verdict.reason };
-      }
-      const destFile = extensionStore.resolveWithinRoot.apply(
-        null, [targetRoot].concat(relSegments, [file]));
-      if (!destFile) return { ok: false, reason: 'target-outside-root' };
-
-      if (verdict.action === extensionStore.COPY_ACCEPT_DIR) {
-        await fs.mkdir(destFile, { recursive: true });
-        const sub = await walk(srcFile, depth + 1, relSegments.concat([file]));
-        if (!sub.ok) return sub;
-      } else {
-        await fs.copyFile(srcFile, destFile);
-      }
-    }
-    return { ok: true };
-  }
-
-  try {
-    await fs.mkdir(targetRoot, { recursive: true });
-    const result = await walk(sourcePath, 1, []);
-    if (!result.ok) {
-      await fs.rm(targetRoot, { recursive: true, force: true }).catch(() => {});
-    }
-    return result;
-  } catch (e) {
-    console.error('复制插件失败:', e);
-    await fs.rm(targetRoot, { recursive: true, force: true }).catch(() => {});
-    return { ok: false, reason: 'copy-exception' };
-  }
-}
 
 async function loadEnabledExtensions() {
   try {
