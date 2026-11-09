@@ -2827,7 +2827,10 @@ readerbridge.bindDeps({
   set readerArticle(v) { readerArticle = v; },
   get readerCore() { return readerCore; },
   get tabs() { return tabs; }
-});
+,
+  get createNewTab() { return createNewTab; },
+  get getUrlProtocol() { return getUrlProtocol; },
+  get switchToTab() { return switchToTab; }});
 
 const { executeCleanPlan, initVaultOnStartup, createNewVault, unlockVault, vaultStatusSnapshot, enumerateSiteStorage } = vaultmain;
 vaultmain.bindDeps({
@@ -2844,7 +2847,13 @@ vaultmain.bindDeps({
   set vaultState(v) { vaultState = v; },
   get vaultUsePasswordMode() { return vaultUsePasswordMode; },
   set vaultUsePasswordMode(v) { vaultUsePasswordMode = v; }
-});
+,
+  get loadVaultStateFromDisk() { return loadVaultStateFromDisk; },
+  get persistCleanAudit() { return persistCleanAudit; },
+  get persistVaultKey() { return persistVaultKey; },
+  get persistVaultState() { return persistVaultState; },
+  get safeStorage() { return safeStorage; },
+  get session() { return session; }});
 
 const { performDownloadOpen, confirmDownloadDecision, getDownloadJournal, loadDownloadRisks, loadDownloads, journalDownloadState, downloadNotifyDeps } = downloadsbridge;
 downloadsbridge.bindDeps({
@@ -2868,7 +2877,14 @@ downloadsbridge.bindDeps({
   get recordSecurityEvent() { return recordSecurityEvent; },
   get shellGuard() { return shellGuard; },
   get urlResolve() { return urlResolve; }
-});
+,
+  get app() { return app; },
+  get dialog() { return dialog; },
+  get downloadJournalFileProbe() { return downloadJournalFileProbe; },
+  get downloadsStorePath() { return downloadsStorePath; },
+  get isInSafeDirs() { return isInSafeDirs; },
+  get sendToRenderer() { return sendToRenderer; },
+  get shell() { return shell; }});
 
 const { recordBrandSpoof, recordRequestAttempt, recordHeaderGrade, recordFpHit, loadBrandSpoofs, loadHeaderGrades } = securityledger;
 securityledger.bindDeps({
@@ -2893,7 +2909,15 @@ securityledger.bindDeps({
   get requestLogNotifyTimer() { return requestLogNotifyTimer; },
   set requestLogNotifyTimer(v) { requestLogNotifyTimer = v; },
   get requestLogStore() { return requestLogStore; }
-});
+,
+  get getBrandSpoofStats() { return getBrandSpoofStats; },
+  get loadFpLedger() { return loadFpLedger; },
+  get loadRequestLog() { return loadRequestLog; },
+  get persistBrandSpoofs() { return persistBrandSpoofs; },
+  get persistFpLedger() { return persistFpLedger; },
+  get persistHeaderGrades() { return persistHeaderGrades; },
+  get persistRequestLog() { return persistRequestLog; },
+  get sendToRenderer() { return sendToRenderer; }});
 
 downloadHashes.bindRendererNotifier(sendToRenderer);
 downloadHashes.bindWindowHost(() => mainWindow);

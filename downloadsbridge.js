@@ -8,7 +8,7 @@ function bindDeps(next) {
 
 function performDownloadOpen(resolved, opts) {
   const options = opts || {};
-  if (!isInSafeDirs(resolved) || !d.fsSync.existsSync(resolved)) {
+  if (!d.isInSafeDirs(resolved) || !d.fsSync.existsSync(resolved)) {
     return { ok: false, action: 'missing' };
   }
   const originUrl = d.downloadOriginByPath.has(resolved)
@@ -19,7 +19,7 @@ function performDownloadOpen(resolved, opts) {
   if (target.action === d.dloadOpen.ACTION.BLOCK) {
     d.recordSecurityEvent('download-open-blocked', 'warn',
       `打开下载项被文件名判定拦截: ${baseName}`, '');
-    sendToRenderer('show-toast', '已阻止打开：文件名不安全');
+    d.sendToRenderer('show-toast', '已阻止打开：文件名不安全');
     return { ok: false, action: 'block', reason: target.reason };
   }
   // 交给系统打开前再走一次路径消毒（控制字符 / UNC / 穿越）。可执行文件是否
@@ -28,7 +28,7 @@ function performDownloadOpen(resolved, opts) {
   if (!launchReview.ok) {
     d.recordSecurityEvent('download-blocked', 'warn',
       `打开本地文件被路径消毒拦截（${shellGuard.describeReason(launchReview.reason)}）`, '');
-    sendToRenderer('show-toast', '已阻止打开：文件路径不安全');
+    d.sendToRenderer('show-toast', '已阻止打开：文件路径不安全');
     return { ok: false, action: 'block', reason: launchReview.reason };
   }
   // 本地网页 / 磁盘镜像这类“打开即获得本地来源或直接挂载”的类型只定位，
@@ -36,7 +36,7 @@ function performDownloadOpen(resolved, opts) {
   if (target.action === d.dloadOpen.ACTION.REVEAL) {
     d.recordSecurityEvent('download-open-blocked', 'info',
       `下载项仅定位不执行: ${baseName}`, '');
-    shell.showItemInFolder(resolved);
+    d.shell.showItemInFolder(resolved);
     return { ok: true, action: 'reveal' };
   }
   if (target.action === d.dloadOpen.ACTION.CONFIRM) {
@@ -45,7 +45,7 @@ function performDownloadOpen(resolved, opts) {
     const advice = (target.reasons && target.reasons.length)
       ? target.reasons.join('\n')
       : '该文件是可执行程序或脚本，来自互联网（或来源不明），可能会危害您的计算机或更改系统设置。';
-    const choice = dialog.showMessageBoxSync(mainWindow, {
+    const choice = d.dialog.showMessageBoxSync(mainWindow, {
       type: 'warning',
       buttons: ['取消', '仍然运行'],
       defaultId: 0,
@@ -67,7 +67,7 @@ function performDownloadOpen(resolved, opts) {
       return { ok: false, action: 'cancel' };
     }
   }
-  shell.openPath(resolved);
+  d.shell.openPath(resolved);
   return { ok: true, action: 'open' };
 }
 
@@ -85,7 +85,7 @@ function confirmDownloadDecision(analysis, originUrl) {
     '',
     '此文件可能会运行程序、更改系统设置，或经过伪装诱导打开。请仅在确认来源可信时保存。',
   ].join('\n');
-  const choice = dialog.showMessageBoxSync(mainWindow, {
+  const choice = d.dialog.showMessageBoxSync(mainWindow, {
     type: 'warning',
     buttons: ['取消下载', '仍然保存'],
     defaultId: 0,
@@ -100,9 +100,9 @@ function confirmDownloadDecision(analysis, originUrl) {
 
 function getDownloadJournal() {
   if (d.downloadJournal) return d.downloadJournal;
-  const downloadsRoot = app.getPath('downloads');
+  const downloadsRoot = d.app.getPath('downloads');
   d.downloadJournal = d.downloadJournalModule.createDownloadJournal({
-    filePath: d.path.join(app.getPath('userData'), 'download-journal.json'),
+    filePath: d.path.join(d.app.getPath('userData'), 'download-journal.json'),
     rootDir: downloadsRoot,
   });
   const loaded = d.downloadJournal.load();
@@ -110,7 +110,7 @@ function getDownloadJournal() {
     d.recordSecurityEvent('download-journal', 'warn',
       `下载台账载入时丢弃 ${loaded.rejected.length} 条非法记录`, 'download-journal');
   }
-  const reconciled = d.downloadJournal.reconcile(downloadJournalFileProbe());
+  const reconciled = d.downloadJournal.reconcile(d.downloadJournalFileProbe());
   if (!reconciled.ok) {
     d.recordSecurityEvent('download-journal', 'warn',
       `下载台账落盘文件核对结果未能保存: ${downloadJournalModule.describeJournalReject(reconciled.reason)}`,
@@ -153,7 +153,7 @@ function loadDownloadRisks() {
 
 function loadDownloads() {
   try {
-    const p = downloadsStorePath();
+    const p = d.downloadsStorePath();
     if (!d.fsSync.existsSync(p)) return;
     const parsed = d.ledgerStore.readJSONStore(p, null);
     if (!Array.isArray(parsed)) {

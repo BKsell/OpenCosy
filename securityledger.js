@@ -38,11 +38,11 @@ function recordBrandSpoof(hit) {
     if (d.brandSpoofs.length > d.MAX_BRAND_SPOOF_HOSTS) {
       d.brandSpoofs.splice(0, d.brandSpoofs.length - d.MAX_BRAND_SPOOF_HOSTS);
     }
-    persistBrandSpoofs();
+    d.persistBrandSpoofs();
     if (d.brandSpoofNotifyTimer) return;
     d.brandSpoofNotifyTimer = setTimeout(() => {
       d.brandSpoofNotifyTimer = null;
-      sendToRenderer('brand-spoof-updated', getBrandSpoofStats());
+      d.sendToRenderer('brand-spoof-updated', d.getBrandSpoofStats());
     }, 2000);
     d.brandSpoofNotifyTimer.unref?.();
   } catch {}
@@ -52,7 +52,7 @@ function recordRequestAttempt(details, blocked) {
   try {
     if (!details || typeof details.url !== 'string') return;
     if (!/^https?:/i.test(details.url)) return;
-    loadRequestLog();
+    d.loadRequestLog();
     d.requestLog.ingest(d.requestLogStore, {
       url: details.url,
       resourceType: details.resourceType,
@@ -60,11 +60,11 @@ function recordRequestAttempt(details, blocked) {
       navigated: !blocked && details.resourceType === 'mainFrame',
       time: Date.now(),
     });
-    persistRequestLog();
+    d.persistRequestLog();
     if (d.requestLogNotifyTimer) return;
     d.requestLogNotifyTimer = setTimeout(() => {
       d.requestLogNotifyTimer = null;
-      sendToRenderer('request-log-updated', d.requestLog.stats(d.requestLogStore));
+      d.sendToRenderer('request-log-updated', d.requestLog.stats(d.requestLogStore));
     }, 2000);
     d.requestLogNotifyTimer.unref?.();
   } catch {}
@@ -106,16 +106,16 @@ function recordHeaderGrade(url, rawHeaders) {
   if (d.headerGrades.length > d.MAX_HEADER_GRADE_HOSTS) {
     d.headerGrades.splice(0, d.headerGrades.length - d.MAX_HEADER_GRADE_HOSTS);
   }
-  persistHeaderGrades();
-  sendToRenderer('header-grade-updated', { host: record.host, grade: record.grade, percent: record.percent });
+  d.persistHeaderGrades();
+  d.sendToRenderer('header-grade-updated', { host: record.host, grade: record.grade, percent: record.percent });
 }
 
 function recordFpHit(host, category, signals) {
   if (!host) return;
-  loadFpLedger();
+  d.loadFpLedger();
   d.fpLedger.record(host, category, signals);
-  persistFpLedger();
-  sendToRenderer('fingerprint-blocked-updated', d.fpLedger.stats());
+  d.persistFpLedger();
+  d.sendToRenderer('fingerprint-blocked-updated', d.fpLedger.stats());
 }
 
 function loadBrandSpoofs() {

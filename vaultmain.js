@@ -33,7 +33,7 @@ async function executeCleanPlan(plan) {
   const storageTypes = plan.actions;
   for (const t of filtered.targets) {
     try {
-      const ses = session.defaultSession;
+      const ses = d.session.defaultSession;
       const origin = String(t.origin || '');
       if (origin === '') continue;
       // 按 origin + 类型做最小化清理：全部类型用 clearStorageData({ origin })，
@@ -67,12 +67,12 @@ async function executeCleanPlan(plan) {
     actions: storageTypes,
     source: 'cleaner-ui',
   });
-  persistCleanAudit();
+  d.persistCleanAudit();
   return { ok: true, cleaned: cleaned.length, failed, audit: audit.ok ? audit.entry : null };
 }
 
 function initVaultOnStartup() {
-  loadVaultStateFromDisk();
+  d.loadVaultStateFromDisk();
   if (!d.fsSync.existsSync(d.vaultKeyPath)) return { ok: true, unlocked: false, reason: 'no-key' };
   try {
     const raw = JSON.parse(d.fsSync.readFileSync(d.vaultKeyPath, 'utf8'));
@@ -82,9 +82,9 @@ function initVaultOnStartup() {
         '保险库密钥未经系统加密保护，已拒绝自动解锁', 'vault');
       return { ok: true, unlocked: false, reason: 'untrusted-key' };
     }
-    if (!safeStorage.isEncryptionAvailable()) return { ok: true, unlocked: false, reason: 'no-safe-storage' };
+    if (!d.safeStorage.isEncryptionAvailable()) return { ok: true, unlocked: false, reason: 'no-safe-storage' };
     const wrapped = Buffer.from(raw.wrapped, 'base64');
-    const hex = safeStorage.decryptString(wrapped);
+    const hex = d.safeStorage.decryptString(wrapped);
     const key = Buffer.from(hex, 'hex');
     if (key.length < d.vaultCore.MIN_MASTER_KEY_BYTES) return { ok: true, unlocked: false };
     if (!d.vaultState) return { ok: true, unlocked: false };
@@ -107,7 +107,7 @@ function createNewVault(masterPassword) {
     kdf = d.vaultCore.KDF_PBKDF2;
     d.vaultUsePasswordMode = true;
   } else {
-    if (!safeStorage.isEncryptionAvailable()) {
+    if (!d.safeStorage.isEncryptionAvailable()) {
       d.recordSecurityEvent('vault-key', 'critical',
         '缺少可用的系统加密，创建保险库必须设置主密码', 'vault');
       return { ok: false, reason: 'password-required' };
@@ -118,8 +118,8 @@ function createNewVault(masterPassword) {
   if (!c.ok) return c;
   d.vaultHandle = c.vault;
   d.vaultState = c.vault.exportState().state;
-  persistVaultState();
-  const keyPersisted = d.vaultUsePasswordMode ? true : persistVaultKey(key);
+  d.persistVaultState();
+  const keyPersisted = d.vaultUsePasswordMode ? true : d.persistVaultKey(key);
   return { ok: true, keyPersisted, ...vaultStatusSnapshot() };
 }
 
@@ -147,7 +147,7 @@ function vaultStatusSnapshot() {
     ok: true,
     unlocked,
     passwordMode: d.vaultUsePasswordMode,
-    storageAvailable: safeStorage.isEncryptionAvailable(),
+    storageAvailable: d.safeStorage.isEncryptionAvailable(),
     hasVault: !!d.vaultState,
     entries,
   };
@@ -155,7 +155,7 @@ function vaultStatusSnapshot() {
 
 function enumerateSiteStorage() {
   const out = [];
-  const ses = session.defaultSession;
+  const ses = d.session.defaultSession;
   // 1) clearStorageData 支持的类型无法枚举，改用 storageData 不可得；
   //    这里列出“可确认存在”的 origin 维度信息由 plan 阶段补充。
   // 2) service workers：遍历 registrations。

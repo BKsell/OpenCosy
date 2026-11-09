@@ -34,7 +34,7 @@ async function enterReaderMode() {
   const tab = d.tabs[d.currentTabIndex];
   const wc = tab && tab.view && !tab.view.webContents.isDestroyed() ? tab.view.webContents : null;
   if (!wc) return { ok: false, error: '当前标签不可用' };
-  if (getUrlProtocol(tab.url) !== 'https:' && getUrlProtocol(tab.url) !== 'http:') {
+  if (d.getUrlProtocol(tab.url) !== 'https:' && d.getUrlProtocol(tab.url) !== 'http:') {
     return { ok: false, error: '阅读模式仅支持 http(s) 网页' };
   }
   let raw = null;
@@ -76,10 +76,10 @@ function clampReaderInt(value, max) {
 function openReaderTab() {
   const existing = d.tabs.findIndex(t => t && t.url === d.READER_PAGE_URL);
   if (existing >= 0) {
-    if (existing !== d.currentTabIndex) switchToTab(existing);
+    if (existing !== d.currentTabIndex) d.switchToTab(existing);
     return d.tabs[existing];
   }
-  return createNewTab(d.READER_PAGE_URL);
+  return d.createNewTab(d.READER_PAGE_URL);
 }
 
 module.exports = { sanitizeReaderNodes, enterReaderMode, sanitizeReaderArticle, clampReaderInt, openReaderTab, bindDeps };
