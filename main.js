@@ -2148,104 +2148,7 @@ function rejectAuthChallenge(nonce) {
 // sanitizeCertPickList 只把证书的非敏感摘要给渲染层，绝不传证书对象本体。
 
 
-function setupNetworkAuth() {
-  loadClientCertChoices();
 
-  // HTTP/代理身份认证。isProxy 时走 407 判定，否则按 401 主/子框架判定。
-  app.on('login', (loginEvent, webContents, request, authInfo, callback) => {
-    loginEvent.preventDefault();
-    const info = authInfo || {};
-    const isProxy = info.isProxy === true;
-    const verdict = isProxy
-      ? netAuthGuard.classifyProxyAuth({ url: request && request.url, authInfo: info })
-      : netAuthGuard.classifyServerAuth({
-          url: request && request.url,
-          // Electron 41 在 response details 里给 resourceType；缺省时按子框架
-          // fail-closed，不允许在无法确认顶层的情况下弹框（可能泄露凭据）。
-          isMainFrame: request && request.resourceType === 'mainFrame',
-          authInfo: info,
-        });
-    authStats.recordEvent({ decision: verdict.decision, reason: verdict.reason, scheme: verdict.scheme });
-
-    if (verdict.decision !== 'prompt') {
-      failAuthCallback(callback);
-      recordSecurityEvent('auth-blocked', 'warn',
-        `${isProxy ? '代理' : '服务器'}认证被拦截：${verdict.reason}（${verdict.scheme || '未知方案'}）`,
-        isProxy ? (verdict.host || 'proxy') : verdict.key);
-      return;
-    }
-
-    const gate = authLimiter.request(verdict.key, Date.now());
-    if (!gate.allow) {
-      authStats.recordRateLimited();
-      failAuthCallback(callback);
-      recordSecurityEvent('auth-rate-limited', 'warn',
-        `认证弹框过频已临时冷却：${verdict.key}（${gate.reason}）`, verdict.key);
-      return;
-    }
-
-    // 有界待处理队列：超过上限直接取消最旧的同类挑战，防止 401 风暴堆积。
-    if (pendingAuthChallenges.size >= netAuthGuard.MAX_PENDING_PROMPTS) {
-      const oldest = pendingAuthChallenges.keys().next().value;
-      rejectAuthChallenge(oldest);
-    }
-
-    const nonce = netAuthNonce();
-    const timer = setTimeout(() => {
-      if (!pendingAuthChallenges.has(nonce)) return;
-      pendingAuthChallenges.delete(nonce);
-      failAuthCallback(callback);
-    }, netAuthGuard.AUTH_PROMPT_TIMEOUT_MS);
-    pendingAuthChallenges.set(nonce, { callback, timer, key: verdict.key, kind: 'login' });
-
-    sendToRenderer('network-auth-required', {
-      nonce,
-      isProxy,
-      host: verdict.host || '',
-      key: verdict.key,
-      scheme: verdict.scheme,
-      schemeLabel: netAuthGuard.describeAuthScheme(verdict.scheme),
-      realm: verdict.realm || '',
-      origin: authEventOrigin(webContents),
-    });
-  });
-
-  // TLS 客户端证书：默认不发送，除非用户为该主机明确记住过一张证书的指纹。
-  session.defaultSession.on('select-client-certificate', (certEvent, webContents, url, certificateList, callback) => {
-    certEvent.preventDefault();
-    const hostname = urlResolve.safeHostname(url);
-    const remembered = hostname ? clientCertStore.get(hostname) : null;
-    const pick = netAuthGuard.chooseClientCertificate({
-      certificateList,
-      rememberedFingerprint: remembered ? remembered.fingerprint : '',
-    });
-    if (pick.index >= 0 && certificateList[pick.index]) {
-      try { callback(certificateList[pick.index]); } catch { try { callback(); } catch {} }
-      return;
-    }
-    authStats.recordCertSuppressed();
-    recordSecurityEvent('client-cert-blocked', 'info',
-      `未自动发送客户端证书：${hostname || '未知主机'}（${pick.reason}）`, url);
-
-    if (pendingAuthChallenges.size >= netAuthGuard.MAX_PENDING_PROMPTS) {
-      try { callback(); } catch {}
-      return;
-    }
-    const nonce = netAuthNonce();
-    const timer = setTimeout(() => {
-      if (!pendingAuthChallenges.has(nonce)) return;
-      pendingAuthChallenges.delete(nonce);
-      try { callback(); } catch {}
-    }, netAuthGuard.AUTH_PROMPT_TIMEOUT_MS);
-    pendingAuthChallenges.set(nonce, { callback, timer, key: url, kind: 'cert', certificateList, hostname });
-    sendToRenderer('client-cert-required', {
-      nonce,
-      host: hostname,
-      origin: authEventOrigin(webContents),
-      certificates: sanitizeCertPickList(certificateList),
-    });
-  });
-}
 
 // 渲染层提交账号口令。只接受主界面，且 nonce 必须仍在待处理表里。
 ipcMain.handle('submit-network-auth', (event, payload = {}) => {
@@ -2425,6 +2328,31 @@ const certledger = require('./certledger');
 const tabactions = require('./tabactions');
 const headerpipeline = require('./headerpipeline');
 const searchmain = require('./searchmain');
+const netauthmain = require('./netauthmain');
+const { setupNetworkAuth } = netauthmain;
+netauthmain.bindDeps({
+  get app() { return app; },
+  get authEventOrigin() { return authEventOrigin; },
+  get authLimiter() { return authLimiter; },
+  get authStats() { return authStats; },
+  get clientCertStore() { return clientCertStore; },
+  get failAuthCallback() { return failAuthCallback; },
+  get loadClientCertChoices() { return loadClientCertChoices; },
+  get netAuthGuard() { return netAuthGuard; },
+  get netAuthNonce() { return netAuthNonce; },
+  get pendingAuthChallenges() { return pendingAuthChallenges; },
+  get recordSecurityEvent() { return recordSecurityEvent; },
+  get rejectAuthChallenge() { return rejectAuthChallenge; },
+  get sanitizeCertPickList() { return sanitizeCertPickList; },
+  get sendToRenderer() { return sendToRenderer; },
+  get session() { return session; },
+  get urlResolve() { return urlResolve; },
+  get webContents() { return webContents; }
+,
+  get netAuthGuard() { return netAuthGuard; },
+  get pendingAuthChallenges() { return pendingAuthChallenges; },
+  get webContents() { return webContents; }});
+
 const { fetchSearchSuggestions, generateUserAgent } = searchmain;
 searchmain.bindDeps({
   get SUGGEST_MAX_ITEMS() { return SUGGEST_MAX_ITEMS; },
