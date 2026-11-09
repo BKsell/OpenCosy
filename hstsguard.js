@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { firstValue, headerKey } = require('./headerutil');
 
@@ -58,18 +59,12 @@ function applyHstsGuard(headers) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.DISABLED:
-      return '站点 HSTS 有效期过短或等于 0';
-    case REASON.MALFORMED:
-      return 'HSTS 头格式非法或缺 max-age';
-    case REASON.DUPLICATE:
-      return 'HSTS 头重复声明同一指令';
-    case REASON.MISSING:
-      return '站点未声明 HSTS';
-    default:
-      return 'HSTS 策略有效';
-  }
+  return describeReasonFrom({
+    [REASON.DISABLED]: '站点 HSTS 有效期过短或等于 0',
+    [REASON.MALFORMED]: 'HSTS 头格式非法或缺 max-age',
+    [REASON.DUPLICATE]: 'HSTS 头重复声明同一指令',
+    [REASON.MISSING]: '站点未声明 HSTS',
+  }, reason, 'HSTS 策略有效');
 }
 
 module.exports = {
