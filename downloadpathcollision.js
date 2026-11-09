@@ -1,5 +1,6 @@
 'use strict';
 
+const fs = require('node:fs');
 const path = require('node:path');
 
 const MAX_ATTEMPTS = 1000;
@@ -13,6 +14,7 @@ const REASON = Object.freeze({
   EXHAUSTED: 'exhausted',
   INVALID_NAME: 'invalid-name',
   INVALID_DIR: 'invalid-dir',
+  CLAIM_FAILED: 'claim-failed',
 });
 
 function foldName(name) {
@@ -123,6 +125,46 @@ function planUniquePath(input) {
   };
 }
 
+function claimUniquePath(input, options) {
+  const fsSync = (options && options.fs) || fs;
+  const source = input && typeof input === 'object' ? input : {};
+  const caseInsensitive = source.caseInsensitive !== false;
+  const taken = normalizeTaken(source.taken);
+  const limited = source.maxAttempts === undefined ? MAX_ATTEMPTS : Number(source.maxAttempts);
+  const maxAttempts = Number.isFinite(limited) && limited > 0 ? Math.floor(limited) : MAX_ATTEMPTS;
+  const planInput = { ...source, taken, maxAttempts };
+  for (let round = 0; round < maxAttempts; round += 1) {
+    const plan = planUniquePath(planInput);
+    if (!plan.ok) return { ...plan, claimed: false };
+    try {
+      const fd = fsSync.openSync(plan.path, 'wx', 0o600);
+      fsSync.closeSync(fd);
+      return { ...plan, claimed: true };
+    } catch (claimError) {
+      if (!claimError || claimError.code !== 'EEXIST') {
+        return {
+          ok: false,
+          reason: REASON.CLAIM_FAILED,
+          name: '',
+          path: '',
+          attempts: plan.attempts,
+          claimed: false,
+          error: claimError,
+        };
+      }
+      taken.add(caseInsensitive ? foldName(plan.name) : plan.name);
+    }
+  }
+  return {
+    ok: false,
+    reason: REASON.EXHAUSTED,
+    name: '',
+    path: '',
+    attempts: maxAttempts,
+    claimed: false,
+  };
+}
+
 function describeAllocation(plan) {
   if (!plan || typeof plan !== 'object') return '下载文件名分配结果缺失';
   switch (plan.reason) {
@@ -179,6 +221,7 @@ module.exports = {
   truncateToBytes,
   normalizeTaken,
   planUniquePath,
+  claimUniquePath,
   describeAllocation,
   reserveIndex,
 };
