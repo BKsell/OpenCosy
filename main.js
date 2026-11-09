@@ -1495,22 +1495,9 @@ const cookieLedger = cookieGuard.createCookieLedger(MAX_COOKIE_LEDGER);
 let cookieLedgerLoaded = false;
 let cookieLedgerSaveTimer = null;
 
-function loadCookieLedger() {
-  if (cookieLedgerLoaded) return;
-  cookieLedgerLoaded = true;
-  try {
-    cookieLedger.load(ledgerStore.readJSONStore(cookieLedgerStorePath, {}));
-  } catch {}
-}
 
-function persistCookieLedger() {
-  if (cookieLedgerSaveTimer) clearTimeout(cookieLedgerSaveTimer);
-  cookieLedgerSaveTimer = setTimeout(() => {
-    try {
-      ledgerStore.writeJSONStore(cookieLedgerStorePath, cookieLedger.toJSON());
-    } catch {}
-  }, 300);
-}
+
+
 
 // ===== PNA 私有网络访问拦截台账（pna-access.json / cosy://security 面板）=====
 const pnaLedgerStorePath = path.join(app.getPath('userData'), 'pna-access.json');
@@ -2329,6 +2316,22 @@ const tabactions = require('./tabactions');
 const headerpipeline = require('./headerpipeline');
 const searchmain = require('./searchmain');
 const netauthmain = require('./netauthmain');
+const cookieledger = require('./cookieledger');
+const { loadCookieLedger, persistCookieLedger, normalizeCookieDomain, pickCookieFields, removeCookieEntry, cookieOriginSchemes } = cookieledger;
+cookieledger.bindDeps({
+  get cookieLedger() { return cookieLedger; },
+  get cookieLedgerLoaded() { return cookieLedgerLoaded; },
+  set cookieLedgerLoaded(v) { cookieLedgerLoaded = v; },
+  get cookieLedgerSaveTimer() { return cookieLedgerSaveTimer; },
+  set cookieLedgerSaveTimer(v) { cookieLedgerSaveTimer = v; },
+  get cookieLedgerStorePath() { return cookieLedgerStorePath; },
+  get ledgerStore() { return ledgerStore; },
+  get path() { return path; },
+  get session() { return session; }
+,
+  get path() { return path; },
+  get session() { return session; }});
+
 const { setupNetworkAuth } = netauthmain;
 netauthmain.bindDeps({
   get app() { return app; },
@@ -6069,45 +6072,13 @@ const SITE_DATA_MAX_ROWS = 500;
 const SITE_DATA_MAX_NAMES = 10;
 const SITE_DATA_SEARCH_MAX = 200;
 
-function normalizeCookieDomain(domain) {
-  if (typeof domain !== 'string' || !domain) return '';
-  return domain.startsWith('.') ? domain.slice(1) : domain;
-}
 
-function cookieOriginSchemes(cookie) {
-  // secure cookie 只能在 https 下删除；非 secure 的在两种 scheme 都试一次。
-  return cookie.secure ? ['https'] : ['https', 'http'];
-}
 
-async function removeCookieEntry(cookie) {
-  const host = normalizeCookieDomain(cookie.domain);
-  const urlPath = cookie.path && cookie.path.startsWith('/') ? cookie.path : '/';
-  let lastError = null;
-  for (const scheme of cookieOriginSchemes(cookie)) {
-    try {
-      await session.defaultSession.cookies.remove(`${scheme}://${host}${urlPath}`, cookie.name);
-      return;
-    } catch (e) {
-      lastError = e;
-    }
-  }
-  throw lastError || new Error('删除 Cookie 失败');
-}
 
-function pickCookieFields(c) {
-  return {
-    name: c.name,
-    value: c.value,
-    domain: c.domain,
-    path: c.path,
-    secure: !!c.secure,
-    httpOnly: !!c.httpOnly,
-    session: !!c.session,
-    hostOnly: !!c.hostOnly,
-    sameSite: c.sameSite || 'unspecified',
-    expirationDate: typeof c.expirationDate === 'number' ? c.expirationDate : null,
-  };
-}
+
+
+
+
 
 // 汇总每个域名下的 Cookie 数量与名称样本，供管理页列表使用。
 ipcMain.handle('list-site-data', async (event, payload = {}) => {
