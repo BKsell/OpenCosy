@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -57,24 +58,15 @@ function inspectUpgrade(value) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK:
-      return 'upgrade 协议合规';
-    case REASON.MISSING:
-      return '响应未声明 upgrade';
-    case REASON.MALFORMED:
-      return 'upgrade 取值非法';
-    case REASON.OVERLONG:
-      return 'upgrade 超长';
-    case REASON.INSECURE_PROTOCOL:
-      return 'upgrade 声明明文或旧式协议，已剔除';
-    case REASON.UNKNOWN_PROTOCOL:
-      return 'upgrade 协议不在白名单，已剔除';
-    case REASON.WITHOUT_CONNECTION:
-      return 'upgrade 缺少 connection: upgrade 配对，已剥除';
-    default:
-      return 'upgrade 未识别状态';
-  }
+  return describeReasonFrom({
+    [REASON.OK]: 'upgrade 协议合规',
+    [REASON.MISSING]: '响应未声明 upgrade',
+    [REASON.MALFORMED]: 'upgrade 取值非法',
+    [REASON.OVERLONG]: 'upgrade 超长',
+    [REASON.INSECURE_PROTOCOL]: 'upgrade 声明明文或旧式协议，已剔除',
+    [REASON.UNKNOWN_PROTOCOL]: 'upgrade 协议不在白名单，已剔除',
+    [REASON.WITHOUT_CONNECTION]: 'upgrade 缺少 connection: upgrade 配对，已剥除',
+  }, reason, 'upgrade 未识别状态');
 }
 
 function applyUpgradeHeaderGuard(headers) {
