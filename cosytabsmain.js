@@ -1,3 +1,5 @@
+const { readStoredSection } = require('./modutil');
+
 let d = {};
 function bindDeps(x) {
   d = x;
@@ -20,14 +22,8 @@ function persistPins() {
   d.pinSaveTimer = setTimeout(savePinsNow, 400);
 }
 function loadStoredPins() {
-  try {
-    const data = d.ledgerStore.readJSONStore(d.pinStorePath, null);
-    if (!data || typeof data !== 'object') return [];
-    return d.pinTabs.sanitizeStoredPinEntries(data.entries);
-  } catch (e) {
-    console.error('读取固定标签失败:', e);
-    return [];
-  }
+  return readStoredSection(d.ledgerStore.readJSONStore, d.pinStorePath,
+    data => d.pinTabs.sanitizeStoredPinEntries(data.entries), '读取固定标签失败:');
 }
 function clearStoredPins() {
   try {
