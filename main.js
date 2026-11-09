@@ -2438,6 +2438,7 @@ async function confirmAndOpenExternal(url, origin) {
 //     可查看 / 撤销，决定文件原子落盘。
 
 const permissionStore = require('./permissionstore');
+const protocolRate = require('./protocolrate');
 const {
   CONFIRMABLE_EXTERNAL_SCHEMES,
   getRememberedProtocolDecision,
@@ -2472,8 +2473,16 @@ function originOfContents(contents) {
 
 // launchExternalWithPrompt 是所有"页面想唤起外部程序"的唯一出口。
 // remembered 决定直接兑现，否则弹原生确认框；remember=true 时按 origin+scheme 记忆。
+const protocolRateLimiter = protocolRate.createLimiter();
+
 async function launchExternalWithPrompt(url, origin, remember) {
   const scheme = normalizeExternalScheme(url);
+  const gate = protocolRate.check(protocolRateLimiter, origin || '', scheme || '', String(url || ''), Date.now());
+  if (!gate.ok) {
+    recordSecurityEvent('protocol-throttled', 'warn',
+      `${protocolRate.describeReason(gate.reason)}，已抑制本次唤起: ${String(url).slice(0, 120)}`, origin);
+    return { ok: false, reason: gate.reason };
+  }
   if (!scheme || !CONFIRMABLE_EXTERNAL_SCHEMES.has(scheme)) {
     recordSecurityEvent('protocol-blocked', 'warn',
       `尝试打开不可确认的外部协议 ${scheme || '(无效)'}: ${url}`, origin);
