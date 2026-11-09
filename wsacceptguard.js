@@ -1,0 +1,122 @@
+'use strict';
+const { describeReasonFrom } = require('./reasontext');
+
+const { hasControlCharsV2 } = require('./modutil');
+const hasControlChars = hasControlCharsV2;
+
+const { deleteHeader, firstValue, headerKey } = require('./headerutil');
+
+const REASON = {
+  OK: 'ok',
+  MISSING: 'missing',
+  MALFORMED: 'malformed',
+  OVERLONG: 'overlong',
+  DUPLICATE: 'duplicate',
+  TOO_MANY: 'too-many',
+  UNSAFE_CHARS: 'unsafe-chars',
+};
+
+const ACCEPT_HEADER = 'sec-websocket-accept';
+const PROTOCOL_HEADER = 'sec-websocket-protocol';
+const MAX_ACCEPT_LENGTH = 28;
+const MAX_PROTOCOL_LENGTH = 64;
+const MAX_PROTOCOLS = 4;
+
+function inspectAccept(value) {
+  if (typeof value !== 'string') return { reason: REASON.MALFORMED };
+  const text = value.trim();
+  if (!text) return { reason: REASON.MALFORMED };
+  if (hasControlChars(text)) return { reason: REASON.UNSAFE_CHARS };
+  if (text.length > MAX_ACCEPT_LENGTH) return { reason: REASON.OVERLONG };
+  if (!/^[A-Za-z0-9+/]{27}=$/.test(text)) return { reason: REASON.MALFORMED };
+  return { reason: REASON.OK };
+}
+
+function inspectProtocols(value) {
+  if (typeof value !== 'string') return { reason: REASON.MALFORMED, protocols: [] };
+  const text = value.trim();
+  if (!text) return { reason: REASON.MALFORMED, protocols: [] };
+  const seen = new Set();
+  const protocols = [];
+  let reason = REASON.OK;
+  for (const raw of text.split(',')) {
+    const protocol = raw.trim();
+    if (!protocol) continue;
+    if (protocol.length > MAX_PROTOCOL_LENGTH) {
+      if (reason === REASON.OK) reason = REASON.OVERLONG;
+      continue;
+    }
+    if (hasControlChars(protocol)) {
+      if (reason === REASON.OK) reason = REASON.UNSAFE_CHARS;
+      continue;
+    }
+    if (!/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(protocol)) {
+      if (reason === REASON.OK) reason = REASON.MALFORMED;
+      continue;
+    }
+    const lower = protocol.toLowerCase();
+    if (seen.has(lower)) {
+      if (reason === REASON.OK) reason = REASON.DUPLICATE;
+      continue;
+    }
+    if (protocols.length >= MAX_PROTOCOLS) {
+      if (reason === REASON.OK) reason = REASON.TOO_MANY;
+      continue;
+    }
+    seen.add(lower);
+    protocols.push(protocol);
+  }
+  if (protocols.length === 0 && reason === REASON.OK) reason = REASON.MALFORMED;
+  return { reason, protocols };
+}
+
+function describeReason(reason) {
+  return describeReasonFrom({
+    [REASON.OK]: 'websocket 握手头合规',
+    [REASON.MISSING]: '响应未声明 websocket 握手头',
+    [REASON.MALFORMED]: 'websocket 握手头取值非法，已剥除',
+    [REASON.OVERLONG]: 'websocket 握手头超长，已剥除',
+    [REASON.DUPLICATE]: 'websocket 子协议重复，已去重',
+    [REASON.TOO_MANY]: 'websocket 子协议过多，已截断',
+    [REASON.UNSAFE_CHARS]: 'websocket 握手头含控制字符，已剥除',
+  }, reason, 'websocket 握手头未识别状态');
+}
+
+function applySecWebSocketAcceptGuard(headers) {
+  const value = firstValue(headers, ACCEPT_HEADER);
+  if (!value) return { changed: false, reason: REASON.MISSING, findings: [] };
+  const result = inspectAccept(value);
+  const findings = [{ reason: result.reason }];
+  if (result.reason === REASON.OK) {
+    return { changed: false, reason: REASON.OK, findings };
+  }
+  deleteHeader(headers, ACCEPT_HEADER);
+  return { changed: true, reason: result.reason, findings };
+}
+
+function applySecWebSocketProtocolGuard(headers) {
+  const value = firstValue(headers, PROTOCOL_HEADER);
+  if (!value) return { changed: false, reason: REASON.MISSING, findings: [] };
+  const result = inspectProtocols(value);
+  const findings = [{ reason: result.reason, protocols: result.protocols }];
+  if (result.reason === REASON.OK) {
+    return { changed: false, reason: REASON.OK, findings };
+  }
+  if (result.protocols.length === 0) {
+    deleteHeader(headers, PROTOCOL_HEADER);
+  } else {
+    headers[headerKey(headers, PROTOCOL_HEADER)] = [result.protocols.join(', ')];
+  }
+  return { changed: true, reason: result.reason, findings };
+}
+
+module.exports = {
+  REASON,
+  ACCEPT_HEADER,
+  PROTOCOL_HEADER,
+  inspectAccept,
+  inspectProtocols,
+  applySecWebSocketAcceptGuard,
+  applySecWebSocketProtocolGuard,
+  describeReason,
+};
