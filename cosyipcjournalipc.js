@@ -13,8 +13,8 @@ d.ipcMain.handle('set-download-rate-limit', (event, payload = {}) => {
   d.downloadRateLimit = Math.floor(Math.min(raw, 1024 * 1024 * 1024)); // 封顶 1 GiB/s
   d.persistRateLimitState();
   // 已在进行中的下载项逐个应用新限速（未开始的在 will-download 时套用）。
-  for (const d of d.downloads) {
-    if (d.item && d.isItemValid) d.applyRateLimitToItem(d.item);
+  for (const rec of d.downloads) {
+    if (rec.item && rec.isItemValid) d.applyRateLimitToItem(rec.item);
   }
   return { success: true, bytesPerSecond: d.downloadRateLimit };
 });
