@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -49,28 +50,17 @@ function applySvgScriptGuard(content) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.EMPTY:
-      return 'SVG 内容为空';
-    case REASON.TOO_LARGE:
-      return 'SVG 超过体积上限';
-    case REASON.SCRIPT_TAG:
-      return 'SVG 包含 script 标签';
-    case REASON.EVENT_HANDLER:
-      return 'SVG 包含事件处理属性';
-    case REASON.FOREIGN_OBJECT:
-      return 'SVG 包含 foreignObject 节点';
-    case REASON.JAVASCRIPT_URI:
-      return 'SVG 引用脚本伪协议地址';
-    case REASON.IFRAME_EMBED:
-      return 'SVG 包含 iframe 或 embed';
-    case REASON.ENTITY_DECL:
-      return 'SVG 包含实体声明';
-    case REASON.EXTERNAL_DTD:
-      return 'SVG 引用外部 DTD';
-    default:
-      return 'SVG 内容安全';
-  }
+  return describeReasonFrom({
+    [REASON.EMPTY]: 'SVG 内容为空',
+    [REASON.TOO_LARGE]: 'SVG 超过体积上限',
+    [REASON.SCRIPT_TAG]: 'SVG 包含 script 标签',
+    [REASON.EVENT_HANDLER]: 'SVG 包含事件处理属性',
+    [REASON.FOREIGN_OBJECT]: 'SVG 包含 foreignObject 节点',
+    [REASON.JAVASCRIPT_URI]: 'SVG 引用脚本伪协议地址',
+    [REASON.IFRAME_EMBED]: 'SVG 包含 iframe 或 embed',
+    [REASON.ENTITY_DECL]: 'SVG 包含实体声明',
+    [REASON.EXTERNAL_DTD]: 'SVG 引用外部 DTD',
+  }, reason, 'SVG 内容安全');
 }
 
 module.exports = {
