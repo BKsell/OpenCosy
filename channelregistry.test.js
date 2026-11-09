@@ -28,7 +28,8 @@ const MAIN_SOURCE = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8')
   + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcnetguard.js'), 'utf8')
   + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcdownloadshelf.js'), 'utf8')
   + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipctabsurface.js'), 'utf8')
-  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcsettingspanel.js'), 'utf8');
+  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcsettingspanel.js'), 'utf8')
+  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcvaultipc.js'), 'utf8');
 const PRELOAD_SOURCE = fs.readFileSync(path.join(ROOT, 'preload.js'), 'utf8');
 
 const ANY_FRAME_CHANNELS = new Set(['report-csp-violation']);
