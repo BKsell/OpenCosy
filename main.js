@@ -2317,6 +2317,25 @@ const headerpipeline = require('./headerpipeline');
 const searchmain = require('./searchmain');
 const netauthmain = require('./netauthmain');
 const cookieledger = require('./cookieledger');
+const tabgroups = require('./tabgroups');
+const { applyTabGroupArrangement, broadcastTabGroups, clearStoredTabGroups, loadStoredTabGroups, persistTabGroups, saveTabGroupsNow, reorderTabsByGroupPlan, tabGroupError, tabGroupIsPinned, tabGroupOrder, tabKeepsAlive } = tabgroups;
+tabgroups.bindDeps({
+  get currentTabIndex() { return currentTabIndex; },
+  set currentTabIndex(v) { currentTabIndex = v; },
+  get findTabIndexById() { return findTabIndexById; },
+  get fsSync() { return fsSync; },
+  get ledgerStore() { return ledgerStore; },
+  get pinModel() { return pinModel; },
+  get sendToRenderer() { return sendToRenderer; },
+  get tabGroupModel() { return tabGroupModel; },
+  get tabGroupSaveTimer() { return tabGroupSaveTimer; },
+  set tabGroupSaveTimer(v) { tabGroupSaveTimer = v; },
+  get tabGroupStorePath() { return tabGroupStorePath; },
+  get tabGroups() { return tabGroups; },
+  get tabOrderDiff() { return tabOrderDiff; },
+  get tabs() { return tabs; }
+});
+
 const { loadCookieLedger, persistCookieLedger, normalizeCookieDomain, pickCookieFields, removeCookieEntry, cookieOriginSchemes } = cookieledger;
 cookieledger.bindDeps({
   get cookieLedger() { return cookieLedger; },
@@ -2997,21 +3016,7 @@ const MEMORY_SAVER_SWEEP_MS = 60 * 1000;    // 每分钟扫描一次
 let memorySaverTimer = null;
 
 // tabKeepsAlive 判断标签是否必须常驻、不能被休眠。
-function tabKeepsAlive(tab) {
-  if (!tab) return true;
-  const idx = tabs.indexOf(tab);
-  if (idx === currentTabIndex) return true;            // 正在看的标签
-  if (tab.discarded || tab.crashed || !tab.view) return true; // 已休眠/崩溃/无视图
-  if (tab.isLoading) return true;                      // 正在加载，打断会留下半成品
-  try {
-    if (tab.view.webContents.isCurrentlyAudible() && !tab.muted) return true; // 正在放声音
-  } catch {}
-  try {
-    if (tab.view.webContents.isBeingCaptured()) return true; // 正在录屏/共享标签
-  } catch {}
-  if (tab.url.startsWith('cosy://')) return true;      // 内置页面很轻且承载 UI 状态
-  return false;
-}
+
 
 // discardTab 回收一个后台标签的渲染进程并保留标签壳。
 function discardTab(tab, reason = 'idle') {
@@ -3488,99 +3493,34 @@ let tabGroupSaveTimer = null;
 
 // tabGroupIsPinned 判定标签是否固定：固定标签与分组互斥（内核同规则），
 // 固定优先，分组只作用于非固定区。
-function tabGroupIsPinned(tabId) {
-  const idx = findTabIndexById(tabId);
-  return idx >= 0 && !!tabs[idx].pinned;
-}
 
-function saveTabGroupsNow() {
-  try {
-    ledgerStore.writeJSONStore(tabGroupStorePath, {
-      version: 1,
-      groups: tabGroupModel.serialize(),
-    });
-  } catch (e) {
-    console.error('保存标签分组失败:', e);
-  }
-}
 
-function persistTabGroups() {
-  if (tabGroupSaveTimer) clearTimeout(tabGroupSaveTimer);
-  tabGroupSaveTimer = setTimeout(saveTabGroupsNow, 400);
-}
 
-function loadStoredTabGroups() {
-  try {
-    const data = ledgerStore.readJSONStore(tabGroupStorePath, null);
-    if (!data || typeof data !== 'object') return [];
-    return tabGroups.sanitizeStoredGroups(data.groups);
-  } catch (e) {
-    console.error('读取标签分组失败:', e);
-    return [];
-  }
-}
 
-function clearStoredTabGroups() {
-  try {
-    if (fsSync.existsSync(tabGroupStorePath)) fsSync.unlinkSync(tabGroupStorePath);
-  } catch (e) {
-    console.error('清除标签分组失败:', e);
-  }
-}
+
+
+
+
+
 
 // tabGroupOrder 依据内核 arrangeTabs 计算“目标标签 id 顺序”：固定区最前、
 // 已分组标签按组聚类、未分组标签保持原相对顺序垫后。渲染层按此顺序渲染。
-function tabGroupOrder() {
-  return tabGroups.arrangeTabs(
-    tabs.map(t => ({ id: t.id, pinned: !!t.pinned })),
-    tabGroupModel,
-    { isPinnedFn: tabGroupIsPinned }
-  );
-}
+
 
 // broadcastTabGroups 把分组快照（分组列表 + 编排后的标签顺序）推给渲染层。
 // 快照只含纯数据，绝不暴露 Tab 对象 / WebContents。
-function broadcastTabGroups() {
-  sendToRenderer('tab-groups-changed', {
-    groups: tabGroupModel.serialize(),
-    order: tabGroupOrder(),
-  });
-}
+
 
 // reorderTabsByGroupPlan 依据目标顺序对 tabs 数组做物理重排（Tab 对象挂在
 // Tab.view 上，随元素移动，无需重建视图），并修正当前标签索引。最后让渲染层
 // 按新顺序渲染。返回是否发生了顺序变化。
-function reorderTabsByGroupPlan(targetOrder) {
-  if (!Array.isArray(targetOrder) || targetOrder.length !== tabs.length) return false;
-  const byId = new Map(tabs.map(t => [t.id, t]));
-  const next = targetOrder.map(id => byId.get(id));
-  if (next.some(t => !t)) return false; // 目标顺序与当前标签不一致时不擅动
-  const currentTab = tabs[currentTabIndex];
-  for (let i = 0; i < tabs.length; i++) tabs[i] = next[i];
-  if (currentTab) {
-    const ni = tabs.indexOf(currentTab);
-    if (ni >= 0) currentTabIndex = ni;
-  }
-  return true;
-}
+
 
 // applyTabGroupArrangement 是“按分组重排标签栏”的唯一权威入口：用内核计算目标
 // 顺序，再用 taborderdiff 求出最小移动指令（只移动需要挪位的标签，已有序的原地
 // 不动），物理重排后广播。任何分组结构变化（建组 / 加标签 / 移出 / 解散 / 组间
 // 移动）都调用它，避免渲染层各自猜测顺序。
-function applyTabGroupArrangement() {
-  const target = tabGroupOrder();
-  const before = tabs.map(t => t.id);
-  const diff = tabOrderDiff.diffOrder(before, target);
-  if (!diff.ok) return;
-  if (diff.unchanged) return;
-  // 目标顺序与当前标签集合必须一致（diff 已确认 created/removed 为空才可重排）。
-  if (diff.created.length > 0 || diff.removed.length > 0) return;
-  if (reorderTabsByGroupPlan(target)) {
-    broadcastTabGroups();
-    sendToRenderer('pins-order-changed', { ids: pinModel.ids() });
-  }
-}
+
 
 // rehydrateTabGroups 在启动会话恢复出标签之后调用：读取磁盘分组清单，按“组内
 // 标签 id 与本次打开的非固定标签匹配”重水合模型（不匹配的组内标签剔除，变空的
@@ -3599,9 +3539,7 @@ function rehydrateTabGroups() {
 }
 
 // tabGroupError 把内核拒绝原因转成渲染层可读的 { ok:false, reason }。
-function tabGroupError(r) {
-  return { ok: false, reason: r && r.reason ? tabGroups.describeReject(r.reason) : '分组操作失败' };
-}
+
 
 ipcMain.handle('get-tab-groups', (event) => {
   if (!isMainSender(event)) return { groups: [], order: [] };
