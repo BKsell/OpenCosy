@@ -908,58 +908,14 @@ function persistDownloads() {
   }
 }
 
-function loadDownloads() {
-  try {
-    const p = downloadsStorePath();
-    if (!fsSync.existsSync(p)) return;
-    const parsed = ledgerStore.readJSONStore(p, null);
-    if (!Array.isArray(parsed)) {
-      recordSecurityEvent('downloads-load', 'warn', '下载台账文件结构非法，已忽略', '');
-      return;
-    }
-    const clean = [];
-    for (const raw of parsed.slice(0, MAX_PERSISTED_DOWNLOADS)) {
-      const rec = downloadShelf.sanitizeDownloadRecord(raw, downloadShelf.ShelfLimits);
-      if (rec && rec.id != null) clean.push(rec);
-    }
-    downloads.length = 0;
-    downloads.push(...clean);
-  } catch (e) {
-    recordSecurityEvent('downloads-load', 'error',
-      '下载台账读取失败: ' + String((e && e.message) || e).slice(0, 160), '');
-  }
-}
+
 
 // ===== 下载系统通知（downloadnotify 内核的 Electron 接线）=====
 // 窗口最小化 / 失焦时用户看不到底部下载栏，完成与失败都要弹系统通知（Chrome、
 // Edge 同款行为）。通知内容已由 downloadnotify 内核净化：剥控制字符与 CSI 序列、
 // 按字节截断、不落完整本地路径、失败不给原始异常，这里只把内核产出接到 Electron
 // Notification 与点击动作上（完成点开文件，失败只聚焦窗口并留给用户显式重试）。
-function downloadNotifyDeps() {
-  return {
-    isSupported: () => !!(Notification && Notification.isSupported && Notification.isSupported()),
-    showNotification(note, onClick) {
-      const n = new Notification({
-        title: String((note && note.title) || ''),
-        body: String((note && note.body) || ''),
-        silent: !!(note && note.silent),
-      });
-      if (typeof onClick === 'function') n.on('click', onClick);
-      n.show();
-    },
-    openPath(savePath) {
-      if (!savePath) return;
-      performDownloadOpen(path.resolve(String(savePath)), { notifySource: true });
-    },
-    focusWindow() {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.show();
-        mainWindow.focus();
-      }
-    },
-  };
-}
+
 
 // notifyDownloadResult 把一次下载结果接成系统通知；通知失败只审计，不打断下载流程。
 function notifyDownloadResult(kind, info) {
@@ -3002,6 +2958,31 @@ function getClientCertChoiceStats() {
 
 const downloadHashes = require('./downloadhashes');
 const securityledger = require('./securityledger');
+const downloadsbridge = require('./downloadsbridge');
+const { performDownloadOpen, confirmDownloadDecision, getDownloadJournal, loadDownloadRisks, loadDownloads, journalDownloadState, downloadNotifyDeps } = downloadsbridge;
+downloadsbridge.bindDeps({
+  get MAX_DOWNLOAD_RISK_RECORDS() { return MAX_DOWNLOAD_RISK_RECORDS; },
+  get MAX_PERSISTED_DOWNLOADS() { return MAX_PERSISTED_DOWNLOADS; },
+  get dloadGuard() { return dloadGuard; },
+  get dloadOpen() { return dloadOpen; },
+  get downloadJournal() { return downloadJournal; },
+  set downloadJournal(v) { downloadJournal = v; },
+  get downloadJournalModule() { return downloadJournalModule; },
+  get downloadOriginByPath() { return downloadOriginByPath; },
+  get downloadRiskLoaded() { return downloadRiskLoaded; },
+  set downloadRiskLoaded(v) { downloadRiskLoaded = v; },
+  get downloadRiskRecords() { return downloadRiskRecords; },
+  get downloadRiskStorePath() { return downloadRiskStorePath; },
+  get downloadShelf() { return downloadShelf; },
+  get downloads() { return downloads; },
+  get fsSync() { return fsSync; },
+  get ledgerStore() { return ledgerStore; },
+  get path() { return path; },
+  get recordSecurityEvent() { return recordSecurityEvent; },
+  get shellGuard() { return shellGuard; },
+  get urlResolve() { return urlResolve; }
+});
+
 const { recordBrandSpoof, recordRequestAttempt, recordHeaderGrade, recordFpHit, loadBrandSpoofs, loadHeaderGrades } = securityledger;
 securityledger.bindDeps({
   get BRAND_SPOOF_REASONS() { return BRAND_SPOOF_REASONS; },
@@ -4350,33 +4331,7 @@ const downloadRiskRecords = [];
 let downloadRiskLoaded = false;
 let downloadRiskSaveTimer = null;
 
-function loadDownloadRisks() {
-  if (downloadRiskLoaded) return;
-  downloadRiskLoaded = true;
-  try {
-    const data = ledgerStore.readJSONStore(downloadRiskStorePath, {});
-    const entries = Array.isArray(data && data.records) ? data.records : null;
-    if (!entries) return;
-    for (const r of entries) {
-      if (!r || typeof r !== 'object') continue;
-      if (typeof r.filename !== 'string' || !r.filename) continue;
-      downloadRiskRecords.push({
-        time: Number(r.time) || Date.now(),
-        filename: String(r.filename).slice(0, 255),
-        host: typeof r.host === 'string' ? String(r.host).slice(0, 255) : '',
-        decision: ['allow', 'warn', 'confirm', 'reject'].includes(r.decision) ? r.decision : 'warn',
-        action: ['saved', 'confirmed', 'cancelled', 'rejected'].includes(r.action) ? r.action : 'saved',
-        ext: typeof r.ext === 'string' ? String(r.ext).slice(0, 32) : '',
-        risks: Array.isArray(r.risks) ? r.risks.slice(0, 20).map(x => ({
-          id: typeof x.id === 'string' ? x.id : 'unknown',
-          severity: ['allow', 'warn', 'confirm', 'reject'].includes(x.severity) ? x.severity : 'warn',
-          message: typeof x.message === 'string' ? x.message.slice(0, 300) : '',
-        })) : [],
-      });
-      if (downloadRiskRecords.length >= MAX_DOWNLOAD_RISK_RECORDS) break;
-    }
-  } catch {}
-}
+
 
 function persistDownloadRisks() {
   if (downloadRiskSaveTimer) clearTimeout(downloadRiskSaveTimer);
@@ -4426,32 +4381,7 @@ function analyzeDownloadSafety(filename, mime) {
 }
 
 // confirmDownloadDecision 针对需要确认的下载弹出原生对话框，列出具体命中原因。
-function confirmDownloadDecision(analysis, originUrl) {
-  const host = urlResolve.safeHost(originUrl, originUrl || '未知来源');
-  const lines = analysis.risks
-    .filter(r => r.severity === dloadGuard.DECISION.CONFIRM)
-    .map(r => `• ${r.message}`)
-    .slice(0, 6);
-  const detail = [
-    `文件：${analysis.displayName}`,
-    `来源：${host}`,
-    '',
-    ...lines,
-    '',
-    '此文件可能会运行程序、更改系统设置，或经过伪装诱导打开。请仅在确认来源可信时保存。',
-  ].join('\n');
-  const choice = dialog.showMessageBoxSync(mainWindow, {
-    type: 'warning',
-    buttons: ['取消下载', '仍然保存'],
-    defaultId: 0,
-    cancelId: 0,
-    title: '安全提示：存在风险的下载',
-    message: '该下载可能会损害您的计算机或经过类型伪装，是否仍要保存？',
-    detail,
-    noLink: true,
-  });
-  return choice === 1;
-}
+
 
 
 // handleDownloadEvent 是所有 session 共用的 will-download 处理器。历史上它只挂在
@@ -4506,49 +4436,9 @@ function downloadJournalFileProbe() {
   };
 }
 
-function getDownloadJournal() {
-  if (downloadJournal) return downloadJournal;
-  const downloadsRoot = app.getPath('downloads');
-  downloadJournal = downloadJournalModule.createDownloadJournal({
-    filePath: path.join(app.getPath('userData'), 'download-journal.json'),
-    rootDir: downloadsRoot,
-  });
-  const loaded = downloadJournal.load();
-  if (loaded.rejected.length > 0) {
-    recordSecurityEvent('download-journal', 'warn',
-      `下载台账载入时丢弃 ${loaded.rejected.length} 条非法记录`, 'download-journal');
-  }
-  const reconciled = downloadJournal.reconcile(downloadJournalFileProbe());
-  if (!reconciled.ok) {
-    recordSecurityEvent('download-journal', 'warn',
-      `下载台账落盘文件核对结果未能保存: ${downloadJournalModule.describeJournalReject(reconciled.reason)}`,
-      'download-journal');
-  } else if (reconciled.changes.length > 0) {
-    recordSecurityEvent('download-journal', 'info',
-      `下载台账文件核对: ${downloadReconcileModule.summarizeReconcile(reconciled.summary)}`,
-      'download-journal');
-  }
-  return downloadJournal;
-}
 
-function journalDownloadState(downloadInfo, fallbackState) {
-  if (!downloadInfo || !downloadInfo.id) return null;
-  const state = downloadInfo.status === 'complete' ? downloadJournalModule.STATE.COMPLETE
-    : downloadInfo.status === 'error' ? downloadJournalModule.STATE.ERROR
-    : fallbackState || downloadJournalModule.STATE.DOWNLOADING;
-  return {
-    id: downloadInfo.id,
-    url: downloadInfo.url || '',
-    filename: downloadInfo.filename || '',
-    host: downloadInfo.quotaHost || '',
-    savePath: downloadInfo.savePath || '',
-    partPath: downloadInfo.status === 'error' && downloadInfo.savePath ? `${downloadInfo.savePath}.crdownload` : '',
-    totalBytes: Number.isFinite(downloadInfo.totalBytes) ? downloadInfo.totalBytes : 0,
-    receivedBytes: Number.isFinite(downloadInfo.receivedBytes) ? downloadInfo.receivedBytes : 0,
-    state,
-    startedAt: downloadInfo.startTime || Date.now(),
-  };
-}
+
+
 
 const managedDownloadSessions = new WeakSet();
 
@@ -5240,70 +5130,7 @@ ipcMain.on('remove-download', (event, id) => {
 // performDownloadOpen 是“打开已下载文件”的唯一执行出口：下载列表 IPC 与系统
 // 通知点击都走这里。判定交给 dloadopen 内核（文件名伪装、来源、容器类型），
 // UI（确认框）与系统调用留在这里，避免通知点击绕过来源确认与路径消毒。
-function performDownloadOpen(resolved, opts) {
-  const options = opts || {};
-  if (!isInSafeDirs(resolved) || !fsSync.existsSync(resolved)) {
-    return { ok: false, action: 'missing' };
-  }
-  const originUrl = downloadOriginByPath.has(resolved)
-    ? downloadOriginByPath.get(resolved)
-    : null;
-  const baseName = path.basename(resolved);
-  const target = dloadOpen.decideOpenTarget({ filePath: resolved, filename: baseName, hostUrl: originUrl });
-  if (target.action === dloadOpen.ACTION.BLOCK) {
-    recordSecurityEvent('download-open-blocked', 'warn',
-      `打开下载项被文件名判定拦截: ${baseName}`, '');
-    sendToRenderer('show-toast', '已阻止打开：文件名不安全');
-    return { ok: false, action: 'block', reason: target.reason };
-  }
-  // 交给系统打开前再走一次路径消毒（控制字符 / UNC / 穿越）。可执行文件是否
-  // 允许运行已由上面的来源确认决定，这里只挡畸形与越界路径。
-  const launchReview = shellGuard.reviewLocalLaunchPath(resolved, true);
-  if (!launchReview.ok) {
-    recordSecurityEvent('download-blocked', 'warn',
-      `打开本地文件被路径消毒拦截（${shellGuard.describeReason(launchReview.reason)}）`, '');
-    sendToRenderer('show-toast', '已阻止打开：文件路径不安全');
-    return { ok: false, action: 'block', reason: launchReview.reason };
-  }
-  // 本地网页 / 磁盘镜像这类“打开即获得本地来源或直接挂载”的类型只定位，
-  // 用户需要时自己在浏览器 / 资源管理器里显式打开。
-  if (target.action === dloadOpen.ACTION.REVEAL) {
-    recordSecurityEvent('download-open-blocked', 'info',
-      `下载项仅定位不执行: ${baseName}`, '');
-    shell.showItemInFolder(resolved);
-    return { ok: true, action: 'reveal' };
-  }
-  if (target.action === dloadOpen.ACTION.CONFIRM) {
-    const host = originUrl ? urlResolve.safeHost(originUrl, originUrl) : '未知来源';
-    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isMinimized()) mainWindow.restore();
-    const advice = (target.reasons && target.reasons.length)
-      ? target.reasons.join('\n')
-      : '该文件是可执行程序或脚本，来自互联网（或来源不明），可能会危害您的计算机或更改系统设置。';
-    const choice = dialog.showMessageBoxSync(mainWindow, {
-      type: 'warning',
-      buttons: ['取消', '仍然运行'],
-      defaultId: 0,
-      cancelId: 0,
-      title: '安全提示：运行来自互联网的程序',
-      message: `确定要打开 "${baseName}" 吗？`,
-      detail: [
-        `来源：${host}`,
-        '',
-        advice,
-        '',
-        '请仅在确认其来源可信时运行。',
-      ].join('\n').replace(/\n{3,}/g, '\n\n'),
-      noLink: true,
-    });
-    if (choice !== 1) {
-      recordSecurityEvent('download-open-blocked', 'info',
-        `用户取消运行来自互联网的文件: ${baseName}`, host);
-      return { ok: false, action: 'cancel' };
-    }
-  }
-  shell.openPath(resolved);
-  return { ok: true, action: 'open' };
-}
+
 
 ipcMain.on('open-file', (event, filePath) => {
   if (!isMainSender(event)) return;
