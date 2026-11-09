@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { deleteHeader, headerKey } = require('./headerutil');
 
@@ -86,30 +87,18 @@ function applyAuthenticationInfoGuard(headers) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK:
-      return 'Authentication-Info 参数合法';
-    case REASON.MISSING:
-      return '未声明 Authentication-Info';
-    case REASON.CONTROL_CHARS:
-      return 'Authentication-Info 含控制字符';
-    case REASON.UNKNOWN_PARAM:
-      return 'Authentication-Info 含未知参数';
-    case REASON.BAD_BASE64:
-      return 'Authentication-Info rspauth 不是合法 base64';
-    case REASON.BAD_NC:
-      return 'Authentication-Info nc 不是 8 位十六进制';
-    case REASON.BAD_QOP:
-      return 'Authentication-Info qop 取值非法';
-    case REASON.NONCE_TOO_LONG:
-      return 'Authentication-Info nonce 超长';
-    case REASON.OVERLONG:
-      return 'Authentication-Info 取值超长';
-    case REASON.MALFORMED:
-      return 'Authentication-Info 取值无法解析';
-    default:
-      return 'Authentication-Info 未知状态';
-  }
+  return describeReasonFrom({
+    [REASON.OK]: 'Authentication-Info 参数合法',
+    [REASON.MISSING]: '未声明 Authentication-Info',
+    [REASON.CONTROL_CHARS]: 'Authentication-Info 含控制字符',
+    [REASON.UNKNOWN_PARAM]: 'Authentication-Info 含未知参数',
+    [REASON.BAD_BASE64]: 'Authentication-Info rspauth 不是合法 base64',
+    [REASON.BAD_NC]: 'Authentication-Info nc 不是 8 位十六进制',
+    [REASON.BAD_QOP]: 'Authentication-Info qop 取值非法',
+    [REASON.NONCE_TOO_LONG]: 'Authentication-Info nonce 超长',
+    [REASON.OVERLONG]: 'Authentication-Info 取值超长',
+    [REASON.MALFORMED]: 'Authentication-Info 取值无法解析',
+  }, reason, 'Authentication-Info 未知状态');
 }
 
 module.exports = {
