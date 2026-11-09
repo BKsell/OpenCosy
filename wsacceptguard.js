@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { hasControlCharsV2 } = require('./modutil');
 const hasControlChars = hasControlCharsV2;
@@ -70,24 +71,15 @@ function inspectProtocols(value) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK:
-      return 'websocket 握手头合规';
-    case REASON.MISSING:
-      return '响应未声明 websocket 握手头';
-    case REASON.MALFORMED:
-      return 'websocket 握手头取值非法，已剥除';
-    case REASON.OVERLONG:
-      return 'websocket 握手头超长，已剥除';
-    case REASON.DUPLICATE:
-      return 'websocket 子协议重复，已去重';
-    case REASON.TOO_MANY:
-      return 'websocket 子协议过多，已截断';
-    case REASON.UNSAFE_CHARS:
-      return 'websocket 握手头含控制字符，已剥除';
-    default:
-      return 'websocket 握手头未识别状态';
-  }
+  return describeReasonFrom({
+    [REASON.OK]: 'websocket 握手头合规',
+    [REASON.MISSING]: '响应未声明 websocket 握手头',
+    [REASON.MALFORMED]: 'websocket 握手头取值非法，已剥除',
+    [REASON.OVERLONG]: 'websocket 握手头超长，已剥除',
+    [REASON.DUPLICATE]: 'websocket 子协议重复，已去重',
+    [REASON.TOO_MANY]: 'websocket 子协议过多，已截断',
+    [REASON.UNSAFE_CHARS]: 'websocket 握手头含控制字符，已剥除',
+  }, reason, 'websocket 握手头未识别状态');
 }
 
 function applySecWebSocketAcceptGuard(headers) {
