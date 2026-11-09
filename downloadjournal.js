@@ -26,7 +26,7 @@ function createDownloadJournal(options = {}) {
 
   function partStats(target) {
     try {
-      const stat = fsImpl.statSync(target);
+      const stat = fsImpl.lstatSync(target);
       if (!stat.isFile()) return null;
       return stat.size;
     } catch {
