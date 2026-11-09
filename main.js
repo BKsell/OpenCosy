@@ -1029,17 +1029,11 @@ function getCurrentTabWebContents() {
   return tab?.view?.webContents || null;
 }
 
-function zoomIn() {
-  adjustCurrentZoom({ delta: 'in' });
-}
 
-function zoomOut() {
-  adjustCurrentZoom({ delta: 'out' });
-}
 
-function resetZoom() {
-  adjustCurrentZoom({ factor: 1 });
-}
+
+
+
 
 function toggleDevTools() {
   const wc = getCurrentTabWebContents();
@@ -2585,6 +2579,47 @@ const readerbridge = require('./readerbridge');
 const extensionstoremain = require('./extensionstoremain');
 const externalcall = require('./externalcall');
 const certledger = require('./certledger');
+const tabactions = require('./tabactions');
+const { tabOverviewItem, closeTab, switchToTab, createNewTab, adjustCurrentZoom, updateBrowserViewBounds, clampZoomFactor, applySavedZoom, resetZoom, zoomIn, zoomOut, persistZoomFactors, loadZoomFactors } = tabactions;
+tabactions.bindDeps({
+  get COLLAPSED_TAB_BAR_WIDTH() { return COLLAPSED_TAB_BAR_WIDTH; },
+  get DEFAULT_TAB_BAR_HEIGHT_HORIZONTAL() { return DEFAULT_TAB_BAR_HEIGHT_HORIZONTAL; },
+  get DEFAULT_TAB_BAR_WIDTH_VERTICAL() { return DEFAULT_TAB_BAR_WIDTH_VERTICAL; },
+  get MAX_REMEMBERED_ORIGINS() { return MAX_REMEMBERED_ORIGINS; },
+  get MAX_ZOOM_FACTOR() { return MAX_ZOOM_FACTOR; },
+  get MIN_ZOOM_FACTOR() { return MIN_ZOOM_FACTOR; },
+  get addToRecentlyClosed() { return addToRecentlyClosed; },
+  get applyFind() { return applyFind; },
+  get currentTabIndex() { return currentTabIndex; },
+  set currentTabIndex(v) { currentTabIndex = v; },
+  get findState() { return findState; },
+  get getCurrentTabWebContents() { return getCurrentTabWebContents; },
+  get getDefaultTabUrl() { return getDefaultTabUrl; },
+  get getTabLayout() { return getTabLayout; },
+  get getUrlProtocol() { return getUrlProtocol; },
+  get isSafeUrl() { return isSafeUrl; },
+  get isTabBarCollapsed() { return isTabBarCollapsed; },
+  get ledgerStore() { return ledgerStore; },
+  get loadTabContent() { return loadTabContent; },
+  get mainWindow() { return mainWindow; },
+  get originOfUrl() { return originOfUrl; },
+  get path() { return path; },
+  get persistPins() { return persistPins; },
+  get persistTabGroups() { return persistTabGroups; },
+  get pinModel() { return pinModel; },
+  get popupOpenTimes() { return popupOpenTimes; },
+  get pushNavState() { return pushNavState; },
+  get rebuildCrashedTab() { return rebuildCrashedTab; },
+  get reloadDiscardedTab() { return reloadDiscardedTab; },
+  get sendToRenderer() { return sendToRenderer; },
+  get tabGroupModel() { return tabGroupModel; },
+  get tabs() { return tabs; },
+  get zoomFactorsByOrigin() { return zoomFactorsByOrigin; },
+  get zoomSaveTimer() { return zoomSaveTimer; },
+  set zoomSaveTimer(v) { zoomSaveTimer = v; },
+  get zoomStorePath() { return zoomStorePath; }
+});
+
 const { loadCertExceptions, persistCertExceptions, addCertException, removeCertException, clearCertExceptions, certExceptionAllowed, getCertExceptionStats, listCertExceptionEntries, sanitizeCertPickList, makeCertChallenge, consumeCertChallenge, failAuthCallback, authEventOrigin, netAuthNonce } = certledger;
 certledger.bindDeps({
   get CERT_CHALLENGE_TTL() { return CERT_CHALLENGE_TTL; },
@@ -2965,25 +3000,7 @@ function getUrlProtocol(url) {
   return urlResolve.safeProtocol(url);
 }
 
-function createNewTab(url = 'cosy://newtab') {
-  if (!isSafeUrl(url)) url = 'cosy://newtab';
-  const tabId = Date.now().toString() + Math.random().toString(36).slice(2, 6);
-  const tab = new Tab(tabId, url);
 
-  if (getUrlProtocol(url) === 'cosy:') {
-    tab.favicon = 'file://' + path.join(__dirname, 'ico.png');
-  } else {
-    tab.favicon = 'file://' + path.join(__dirname, 'src', 'loading.gif');
-  }
-
-  tabs.push(tab);
-  currentTabIndex = tabs.length - 1;
-  sendToRenderer('tab-created', { id: tab.id, url: tab.url, title: tab.title, favicon: tab.favicon, pinned: !!tab.pinned });
-  loadTabContent(tab);
-  sendToRenderer('tab-switched', { id: tab.id, index: currentTabIndex });
-  setTimeout(updateBrowserViewBounds, 0);
-  return tab;
-}
 
 const TASK_MANAGER_URL = 'cosy://taskmanager';
 
@@ -3309,35 +3326,7 @@ const INTERNAL_PAGES = {
 
 // tabOverviewItem 输出单标签的概览数据。字段做类型收口，避免脏标题 / 长 URL
 // 破坏网格布局；分组信息从 tabGroupModel 实时取，标签被改组后概览自动跟随。
-function tabOverviewItem(tab, index) {
-  const groupId = tabGroupModel.groupOf(tab.id);
-  let groupName = '';
-  let groupColor = '';
-  if (groupId) {
-    const g = tabGroupModel.getGroup(groupId);
-    if (g) {
-      groupName = String(g.title || '');
-      groupColor = String(g.color || '');
-    }
-  }
-  const wc = tab && tab.view && tab.view.webContents;
-  return {
-    id: String(tab.id),
-    index,
-    title: String(tab.title || tab.url || '未命名标签页').slice(0, 300),
-    url: String(tab.url || '').slice(0, 1000),
-    favicon: typeof tab.favicon === 'string' ? tab.favicon.slice(0, 1000) : '',
-    active: index === currentTabIndex,
-    pinned: !!tab.pinned,
-    muted: !!tab.muted,
-    crashed: !!tab.crashed,
-    discarded: !!tab.discarded,
-    groupId: groupId || '',
-    groupName: groupName.slice(0, 60),
-    groupColor: groupColor.slice(0, 40),
-    alive: !!(wc && !wc.isDestroyed()),
-  };
-}
+
 
 ipcMain.handle('tab-overview-snapshot', (event) => {
   if (!isTabOverviewFrameSender(event)) return { ok: false, error: 'denied' };
@@ -3456,81 +3445,11 @@ function showCosyError(tab, code, message, reason) {
   sendToRenderer('tab-updated', { id: tab.id, url: tab.url, title: tab.title });
 }
 
-function updateBrowserViewBounds() {
-  if (tabs.length > 0 && currentTabIndex >= 0) {
-    const tab = tabs[currentTabIndex];
-    if (tab && tab.view) {
-      const [width, height] = mainWindow.getSize();
-      const tabLayout = getTabLayout();
 
-      let x, y, w, h;
-      if (tabLayout === 'vertical') {
-        const tabBarWidth = isTabBarCollapsed ? COLLAPSED_TAB_BAR_WIDTH : DEFAULT_TAB_BAR_WIDTH_VERTICAL;
-        x = tabBarWidth; y = 75; w = width - tabBarWidth; h = height - 75;
-      } else {
-        x = 0; y = DEFAULT_TAB_BAR_HEIGHT_HORIZONTAL; w = width; h = height - DEFAULT_TAB_BAR_HEIGHT_HORIZONTAL;
-      }
-      tab.view.setBounds({ x, y, width: w, height: h });
-    }
-  }
-}
 
-function switchToTab(tabIndex) {
-  if (tabIndex >= 0 && tabIndex < tabs.length) {
-    const prevContents = getCurrentTabWebContents();
-    currentTabIndex = tabIndex;
-    const tab = tabs[tabIndex];
-    tab.lastActiveAt = Date.now();
-    // 后台崩溃的标签在此刻才重建视图，避免坏页面在后台空转。
-    if (tab.crashed) rebuildCrashedTab(tab);
-    // 被内存节省休眠的标签切回时按原 URL 唤醒重载。
-    if (tab.discarded) reloadDiscardedTab(tab);
-    if (tab.view) {
-      mainWindow.contentView.addChildView(tab.view);
-      updateBrowserViewBounds();
-    }
-    sendToRenderer('tab-switched', { id: tab.id, index: tabIndex });
-    pushNavState(tab);
 
-    // 换标签时清掉旧标签上残留的查找高亮；若查找栏仍开着且有内容，
-    // 在新标签上从头自动重查，保持“查找跟随当前标签”的浏览器惯例。
-    const nextContents = getCurrentTabWebContents();
-    if (prevContents && prevContents !== nextContents) {
-      try { prevContents.stopFindInPage('clearSelection'); } catch (_) { /* 视图已销毁 */ }
-    }
-    if (findState.text && nextContents) applyFind(true);
-  }
-}
 
-function closeTab(tabIndex) {
-  if (tabIndex >= 0 && tabIndex < tabs.length) {
-    const tab = tabs[tabIndex];
-    // 单独关闭一个固定标签视为用户明确要去掉它：同步移出固定集合并落盘，
-    // 否则下次启动会被固定清单按 URL 重新拉回。批量关闭从不包含固定标签，
-    // 因此固定的长期页不会被“关闭其他/左侧/右侧”顺手清掉。
-    if (tab.pinned) {
-      pinModel.unpin(tab.id);
-      tab.pinned = false;
-      persistPins();
-    }
-    addToRecentlyClosed(tab);
-    popupOpenTimes.delete(tab.id);
-    // 标签分组同步：关闭的标签若在组内，移出成员；组因此变空则自动解散
-    // （与 Chrome 一致：最后一个标签关闭后组消失）。
-    tabGroupModel.onTabClosed(tab.id, true);
-    if (tab.view) tab.view.webContents.destroy();
-    tabs.splice(tabIndex, 1);
-    if (tabs.length === 0) {
-      createNewTab(getDefaultTabUrl());
-      currentTabIndex = 0;
-    } else if (currentTabIndex >= tabs.length) {
-      currentTabIndex = tabs.length - 1;
-    }
-    if (tabs.length > 0) switchToTab(currentTabIndex);
-    persistTabGroups();
-    sendToRenderer('tab-closed', tabIndex);
-  }
-}
+
 
 // ===== 固定标签页（Pinned Tabs）=====
 // 权威固定集合由 pintabs 纯内核维护；这里负责把固定状态落到 Tab 对象、把固定
@@ -4505,10 +4424,7 @@ const MAX_REMEMBERED_ORIGINS = 500;
 const zoomStorePath = path.join(app.getPath('userData'), 'zoom-store.json');
 let zoomSaveTimer = null;
 
-function clampZoomFactor(f) {
-  if (!Number.isFinite(f)) return 1;
-  return Math.min(MAX_ZOOM_FACTOR, Math.max(MIN_ZOOM_FACTOR, f));
-}
+
 
 function originOfUrl(u) {
   return urlResolve.safeOrigin(u, '');
@@ -4516,70 +4432,17 @@ function originOfUrl(u) {
 
 // loadZoomFactors 启动时从 userData 读取按站点记忆的缩放（对齐 Chrome 跨重启保留缩放）。
 // 文件损坏 / 被外部塞非法内容时静默丢弃，绝不因此影响浏览器启动。
-function loadZoomFactors() {
-  try {
-    // 有界读：缺失 / 损坏 / 被撑大的 zoom 台账回落 null，直接 return，不影响启动。
-    const data = ledgerStore.readJSONStore(zoomStorePath, null);
-    if (!data || typeof data !== 'object' || !data.origins || typeof data.origins !== 'object') return;
-    for (const [origin, factor] of Object.entries(data.origins)) {
-      if (typeof origin !== 'string' || !/^https?:|^cosy:/.test(origin)) continue;
-      if (typeof factor !== 'number' || !Number.isFinite(factor)) continue;
-      zoomFactorsByOrigin.set(origin, clampZoomFactor(factor));
-      if (zoomFactorsByOrigin.size >= MAX_REMEMBERED_ORIGINS) break;
-    }
-  } catch {}
-}
+
 
 // persistZoomFactors 防抖落盘，避免连续放大缩小频繁写文件。
-function persistZoomFactors() {
-  if (zoomSaveTimer) clearTimeout(zoomSaveTimer);
-  zoomSaveTimer = setTimeout(() => {
-    try {
-      const origins = {};
-      for (const [origin, factor] of zoomFactorsByOrigin) origins[origin] = factor;
-      ledgerStore.writeJSONStore(zoomStorePath, { version: 1, origins });
-    } catch {}
-  }, 400);
-}
 
-function applySavedZoom(tab) {
-  if (!tab || !tab.view || !tab.view.webContents) return;
-  const origin = originOfUrl(tab.url);
-  if (origin && zoomFactorsByOrigin.has(origin)) {
-    tab.view.webContents.setZoomFactor(zoomFactorsByOrigin.get(origin));
-  }
-}
+
+
 
 // adjustCurrentZoom 是菜单快捷键与 IPC 共用的唯一缩放入口：
 // 统一用 setZoomFactor（不要混用 setZoomLevel，二者写同一底层值会互相覆盖），
 // 计算结果按 origin 记忆、导航恢复、并持久化到磁盘。
-function adjustCurrentZoom({ delta, factor: explicit } = {}) {
-  const tab = tabs[currentTabIndex];
-  if (!tab || !tab.view || !tab.view.webContents) return null;
-  const wc = tab.view.webContents;
-  const origin = originOfUrl(tab.url);
-  let factor = 1;
-  try { factor = wc.getZoomFactor(); } catch { factor = (origin && zoomFactorsByOrigin.get(origin)) || 1; }
-  if (!Number.isFinite(factor) || factor <= 0) factor = 1;
 
-  if (typeof explicit === 'number' && Number.isFinite(explicit)) {
-    factor = explicit;
-  } else if (delta === 'in') {
-    factor *= 1.1;
-  } else if (delta === 'out') {
-    factor /= 1.1;
-  }
-  factor = clampZoomFactor(Math.round(factor * 1000) / 1000);
-  wc.setZoomFactor(factor);
-  if (origin) {
-    zoomFactorsByOrigin.set(origin, factor);
-    persistZoomFactors();
-  }
-  const percent = Math.round(factor * 100);
-  // 通知渲染层显示缩放百分比浮层（对齐 Chrome 放大/缩小时的 OSD）。
-  sendToRenderer('zoom-level-changed', { percent, factor });
-  return { factor, percent };
-}
 
 ipcMain.handle('set-tab-muted', (event, payload = {}) => {
   if (!isMainSender(event)) return { success: false };
