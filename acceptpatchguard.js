@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { normalizeCharset } = require('./modutil');
 const normalizeType = normalizeCharset;
@@ -67,26 +68,16 @@ function inspectAcceptPatch(value) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK:
-      return 'accept-patch 合规';
-    case REASON.MISSING:
-      return '响应未声明 accept-patch';
-    case REASON.MALFORMED:
-      return 'accept-patch 取值非法';
-    case REASON.OVERLONG:
-      return 'accept-patch 超长';
-    case REASON.WILDCARD:
-      return 'accept-patch 接受通配补丁类型，已剔除';
-    case REASON.UNSAFE_TYPE:
-      return 'accept-patch 接受可执行或可渲染类型，已剔除';
-    case REASON.UNKNOWN_TYPE:
-      return 'accept-patch 类型不在白名单，已剔除';
-    case REASON.DUPLICATE:
-      return 'accept-patch 重复类型已去重';
-    default:
-      return 'accept-patch 未识别状态';
-  }
+  return describeReasonFrom({
+    [REASON.OK]: 'accept-patch 合规',
+    [REASON.MISSING]: '响应未声明 accept-patch',
+    [REASON.MALFORMED]: 'accept-patch 取值非法',
+    [REASON.OVERLONG]: 'accept-patch 超长',
+    [REASON.WILDCARD]: 'accept-patch 接受通配补丁类型，已剔除',
+    [REASON.UNSAFE_TYPE]: 'accept-patch 接受可执行或可渲染类型，已剔除',
+    [REASON.UNKNOWN_TYPE]: 'accept-patch 类型不在白名单，已剔除',
+    [REASON.DUPLICATE]: 'accept-patch 重复类型已去重',
+  }, reason, 'accept-patch 未识别状态');
 }
 
 function applyAcceptPatchGuard(headers) {
