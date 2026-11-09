@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { countValues, deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -59,24 +60,15 @@ function applyXuaCompatibleGuard(headers) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK:
-      return 'X-UA-Compatible 已收敛为现代模式';
-    case REASON.MISSING:
-      return '未声明 X-UA-Compatible';
-    case REASON.LEGACY_MODE:
-      return 'X-UA-Compatible 强制旧版渲染引擎';
-    case REASON.CHROME_FRAME:
-      return 'X-UA-Compatible 声明 Chrome Frame';
-    case REASON.MULTI_VALUE:
-      return 'X-UA-Compatible 出现多个冲突取值';
-    case REASON.OVERLONG:
-      return 'X-UA-Compatible 取值超长';
-    case REASON.MALFORMED:
-      return 'X-UA-Compatible 取值无法解析';
-    default:
-      return 'X-UA-Compatible 未知状态';
-  }
+  return describeReasonFrom({
+    [REASON.OK]: 'X-UA-Compatible 已收敛为现代模式',
+    [REASON.MISSING]: '未声明 X-UA-Compatible',
+    [REASON.LEGACY_MODE]: 'X-UA-Compatible 强制旧版渲染引擎',
+    [REASON.CHROME_FRAME]: 'X-UA-Compatible 声明 Chrome Frame',
+    [REASON.MULTI_VALUE]: 'X-UA-Compatible 出现多个冲突取值',
+    [REASON.OVERLONG]: 'X-UA-Compatible 取值超长',
+    [REASON.MALFORMED]: 'X-UA-Compatible 取值无法解析',
+  }, reason, 'X-UA-Compatible 未知状态');
 }
 
 module.exports = {
