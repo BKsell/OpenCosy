@@ -1422,180 +1422,27 @@ function persistVaultKey(keyBuf) {
 
 // initVaultOnStartup：启动时尝试用 safeStorage 包层自动解锁；无 keychain 时
 // 保留锁定态（vault:status 会报告 locked，由 UI 引导用户输主密码）。
-function initVaultOnStartup() {
-  loadVaultStateFromDisk();
-  if (!fsSync.existsSync(vaultKeyPath)) return { ok: true, unlocked: false, reason: 'no-key' };
-  try {
-    const raw = JSON.parse(fsSync.readFileSync(vaultKeyPath, 'utf8'));
-    if (!raw || raw.v !== 1 || typeof raw.wrapped !== 'string') return { ok: true, unlocked: false };
-    if (raw.s !== 'safe') {
-      recordSecurityEvent('vault-key', 'critical',
-        '保险库密钥未经系统加密保护，已拒绝自动解锁', 'vault');
-      return { ok: true, unlocked: false, reason: 'untrusted-key' };
-    }
-    if (!safeStorage.isEncryptionAvailable()) return { ok: true, unlocked: false, reason: 'no-safe-storage' };
-    const wrapped = Buffer.from(raw.wrapped, 'base64');
-    const hex = safeStorage.decryptString(wrapped);
-    const key = Buffer.from(hex, 'hex');
-    if (key.length < vaultCore.MIN_MASTER_KEY_BYTES) return { ok: true, unlocked: false };
-    if (!vaultState) return { ok: true, unlocked: false };
-    const loaded = vaultCore.loadVault(JSON.stringify(vaultState), key);
-    if (loaded.ok) {
-      vaultHandle = loaded.vault;
-      vaultUsePasswordMode = false;
-      return { ok: true, unlocked: true };
-    }
-  } catch (e) { console.error('自动解锁保险库失败:', e); }
-  return { ok: true, unlocked: false };
-}
+
 
 // vaultStatusSnapshot 给 UI 的只读快照；绝不外泄条目密文 / 主密钥。
-function vaultStatusSnapshot() {
-  const unlocked = !!(vaultHandle && !vaultHandle.locked());
-  let entries = [];
-  if (unlocked) {
-    const l = vaultHandle.list();
-    if (l.ok) entries = l.entries;
-  }
-  return {
-    ok: true,
-    unlocked,
-    passwordMode: vaultUsePasswordMode,
-    storageAvailable: safeStorage.isEncryptionAvailable(),
-    hasVault: !!vaultState,
-    entries,
-  };
-}
+
 
 // createNewVault(masterPassword)：全新创建（或强制重建）。主密钥优先用
 // safeStorage 随机密钥；自设密码模式用 PBKDF2 慢化。返回结果不包含密钥。
-function createNewVault(masterPassword) {
-  let key;
-  let kdf = vaultCore.KDF_HKDF;
-  vaultUsePasswordMode = false;
-  if (typeof masterPassword === 'string' && masterPassword.length > 0) {
-    key = Buffer.from(masterPassword, 'utf8');
-    kdf = vaultCore.KDF_PBKDF2;
-    vaultUsePasswordMode = true;
-  } else {
-    if (!safeStorage.isEncryptionAvailable()) {
-      recordSecurityEvent('vault-key', 'critical',
-        '缺少可用的系统加密，创建保险库必须设置主密码', 'vault');
-      return { ok: false, reason: 'password-required' };
-    }
-    key = crypto.randomBytes(32);
-  }
-  const c = vaultCore.createVault(key, { kdf });
-  if (!c.ok) return c;
-  vaultHandle = c.vault;
-  vaultState = c.vault.exportState().state;
-  persistVaultState();
-  const keyPersisted = vaultUsePasswordMode ? true : persistVaultKey(key);
-  return { ok: true, keyPersisted, ...vaultStatusSnapshot() };
-}
+
 
 // unlockVault(masterPassword)：用自设主密码解锁（safeStorage 模式由启动自动解锁）。
-function unlockVault(masterPassword) {
-  if (typeof masterPassword !== 'string' || masterPassword === '') {
-    return { ok: false, reason: 'bad-password' };
-  }
-  if (!vaultState) return { ok: false, reason: 'no-vault' };
-  const key = Buffer.from(masterPassword, 'utf8');
-  const loaded = vaultCore.loadVault(JSON.stringify(vaultState), key);
-  if (!loaded.ok) return { ok: false, reason: loaded.reason };
-  vaultHandle = loaded.vault;
-  vaultUsePasswordMode = true;
-  return { ok: true, ...vaultStatusSnapshot() };
-}
+
 
 // executeCleanPlan：按已确认的计划执行清理。返回摘要；失败项记入审计。
 // 安全设计：不信任渲染进程传来的 targets 白名单（防 UI 被篡改后越权清理），
 // 而是按计划条件（mode/host/since/storageTypes）在 main 侧重新枚举 + 纯内核
 // 过滤生成权威目标集，再与计划摘要（sites/targetCount）核对一致才执行。
-async function executeCleanPlan(plan) {
-  if (!plan || typeof plan !== 'object') return { ok: false, reason: 'bad-plan' };
-  if (!Array.isArray(plan.actions) || plan.actions.length === 0) return { ok: false, reason: 'bad-plan' };
-  const src = enumerateSiteStorage();
-  const filtered = cleanerCore.filterSiteEntries(src.entries, {
-    matchMode: plan.mode,
-    host: plan.host,
-    since: plan.since,
-    storageTypes: plan.storageTypes,
-  });
-  if (!filtered.ok) return { ...filtered };
-  // 摘要核对：renderer 传来的计划（sites/targetCount/bytes）必须与 main 重算结果一致；
-  // 不一致说明计划在途中被改过（或数据已变化），拒绝执行。
-  if (typeof plan.sites === 'number' && filtered.sites !== plan.sites) {
-    return { ok: false, reason: 'plan-mismatch', expected: filtered.sites, got: plan.sites };
-  }
-  if (typeof plan.targetCount === 'number' && filtered.targets.length !== plan.targetCount) {
-    return { ok: false, reason: 'plan-mismatch', expected: filtered.targets.length, got: plan.targetCount };
-  }
-  if (typeof plan.totalBytes === 'number' && filtered.totalBytes !== plan.totalBytes) {
-    return { ok: false, reason: 'plan-mismatch', expected: filtered.totalBytes, got: plan.totalBytes };
-  }
-  const cleaned = [];
-  const failed = [];
-  const storageTypes = plan.actions;
-  for (const t of filtered.targets) {
-    try {
-      const ses = session.defaultSession;
-      const origin = String(t.origin || '');
-      if (origin === '') continue;
-      // 按 origin + 类型做最小化清理：全部类型用 clearStorageData({ origin })，
-      // 否则逐类型调用。
-      const opts = { origin };
-      if (!storageTypes.includes('all')) {
-        const mapped = storageTypes.map((a) => cleanerCore.classifyStorageType(a))
-          .filter((a) => a !== '' && a !== 'all');
-        if (mapped.length === 0) { failed.push({ origin, reason: 'no-actions' }); continue; }
-        for (const st of mapped) {
-          try {
-            const res = await ses.clearStorageData({ origin, storages: [st] });
-            void res;
-          } catch (e) { failed.push({ origin, storageType: st, reason: String(e && e.message || e) }); }
-        }
-      } else {
-        try {
-          const res = await ses.clearStorageData({ origin });
-          void res;
-        } catch (e) { failed.push({ origin, reason: String(e && e.message || e) }); }
-      }
-      cleaned.push(t.origin);
-    } catch (e) { failed.push({ origin: t.origin, reason: String(e && e.message || e) }); }
-  }
-  const audit = cleanerCore.recordCleanAudit(cleanAuditLog, {
-    mode: filtered.mode,
-    host: filtered.host,
-    sites: filtered.sites,
-    targetCount: filtered.targets.length,
-    bytes: filtered.totalBytes,
-    actions: storageTypes,
-    source: 'cleaner-ui',
-  });
-  persistCleanAudit();
-  return { ok: true, cleaned: cleaned.length, failed, audit: audit.ok ? audit.entry : null };
-}
+
 
 // enumerateSiteStorage：枚举默认会话全部 origin 的存储占用（粗略字节）。
 // cookies 无 API 可枚举 origin 级，用 session.cookies 逐个列举（受限）。
-function enumerateSiteStorage() {
-  const out = [];
-  const ses = session.defaultSession;
-  // 1) clearStorageData 支持的类型无法枚举，改用 storageData 不可得；
-  //    这里列出“可确认存在”的 origin 维度信息由 plan 阶段补充。
-  // 2) service workers：遍历 registrations。
-  try {
-    const sw = ses.serviceWorkers;
-    const regs = sw.getAllRunning() || {};
-    for (const id of Object.keys(regs)) {
-      const reg = regs[id];
-      const scope = reg && reg.scope ? reg.scope : '';
-      if (scope) out.push({ origin: scope, storageType: 'serviceworkers', bytes: 0, lastAccessed: Date.now() });
-    }
-  } catch {}
-  return { ok: true, entries: out };
-}
+
 
 // maybeFallbackAfterUpgradeFailure 在“HTTPS-Only 升级后加载失败”时，判断并执行
 // 一次性的、用户知情的 http 回退。返回 true 表示已接手（弹过框 / 已回退），调用方
@@ -2959,6 +2806,24 @@ function getClientCertChoiceStats() {
 const downloadHashes = require('./downloadhashes');
 const securityledger = require('./securityledger');
 const downloadsbridge = require('./downloadsbridge');
+const vaultmain = require('./vaultmain');
+const { executeCleanPlan, initVaultOnStartup, createNewVault, unlockVault, vaultStatusSnapshot, enumerateSiteStorage } = vaultmain;
+vaultmain.bindDeps({
+  get cleanAuditLog() { return cleanAuditLog; },
+  get cleanerCore() { return cleanerCore; },
+  get crypto() { return crypto; },
+  get fsSync() { return fsSync; },
+  get recordSecurityEvent() { return recordSecurityEvent; },
+  get vaultCore() { return vaultCore; },
+  get vaultHandle() { return vaultHandle; },
+  set vaultHandle(v) { vaultHandle = v; },
+  get vaultKeyPath() { return vaultKeyPath; },
+  get vaultState() { return vaultState; },
+  set vaultState(v) { vaultState = v; },
+  get vaultUsePasswordMode() { return vaultUsePasswordMode; },
+  set vaultUsePasswordMode(v) { vaultUsePasswordMode = v; }
+});
+
 const { performDownloadOpen, confirmDownloadDecision, getDownloadJournal, loadDownloadRisks, loadDownloads, journalDownloadState, downloadNotifyDeps } = downloadsbridge;
 downloadsbridge.bindDeps({
   get MAX_DOWNLOAD_RISK_RECORDS() { return MAX_DOWNLOAD_RISK_RECORDS; },
