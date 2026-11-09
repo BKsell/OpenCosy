@@ -82,6 +82,9 @@ function applyUpgradeHeaderGuard(headers) {
   }
   if (result.protocols.length === 0) {
     deleteHeader(headers, HEADER);
+  } else if (!hasConnectionUpgrade(headers)) {
+    deleteHeader(headers, HEADER);
+    return { changed: true, reason: REASON.WITHOUT_CONNECTION, protocols: [] };
   } else {
     headers[headerKey(headers, HEADER)] = [result.protocols.join(', ')];
   }
