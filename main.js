@@ -723,25 +723,7 @@ function originOf(u) {
   return urlResolve.safeOrigin(u, null);
 }
 
-function trimReferrerHeader(details, headers) {
-  const referrer = headers['Referer'] || headers['referer'];
-  if (!referrer) return;
-  const fromOrigin = originOf(referrer);
-  const toOrigin = originOf(details.url);
-  if (!fromOrigin || !toOrigin) return;
-  if (fromOrigin === toOrigin) return; // 同源不裁剪
-  const fromHttps = referrer.startsWith('https://');
-  const toHttp = details.url.startsWith('http://');
-  if (fromHttps && toHttp) {
-    delete headers['Referer'];
-    delete headers['referer'];
-    return;
-  }
-  // 跨源：只暴露源，不暴露路径与查询串。
-  const trimmed = fromOrigin === 'null' ? '' : fromOrigin + '/';
-  headers['Referer'] = trimmed;
-  delete headers['referer'];
-}
+
 
 // clearOnExit：退出时自动清空缓存 / Cookie / 站点存储 / 历史 / 下载记录（隐私模式）。
 // confirmCloseMultiple：仍有多个标签页时点 × 先二次确认，防止误关整窗。
@@ -1618,37 +1600,7 @@ function persistFpLedger() {
 
 // applyCookieHardening 就地加固响应头里的 Set-Cookie，返回本次动作列表。
 // 任何异常都不阻断浏览：出错时保留原始响应头。
-function applyCookieHardening(headers, details) {
-  try {
-    const setCookieKey = Object.prototype.hasOwnProperty.call(headers, 'set-cookie')
-      ? 'set-cookie'
-      : (Object.prototype.hasOwnProperty.call(headers, 'Set-Cookie') ? 'Set-Cookie' : '');
-    if (!setCookieKey) return [];
-    const original = cookieGuard.extractSetCookieHeaders(headers);
-    if (!original.length) return [];
 
-    const result = cookieGuard.hardenSetCookieHeader(original, details, {
-      blockThirdParty: blockThirdPartyCookies,
-      hardenSameSite: hardenCookies,
-    });
-    headers[setCookieKey] = result.lines;
-    if (!result.actions.length) return [];
-
-    loadCookieLedger();
-    cookieLedger.addMany(result.actions);
-    persistCookieLedger();
-    for (const a of result.actions) {
-      // SameSite 补全是静默改写，只进台账不刷安全事件；剥离类才登记事件。
-      if (a.action === 'samesite-default-lax') continue;
-      recordSecurityEvent('cookie-blocked', 'warn',
-        `已剥离不安全的 Cookie「${a.name}」（${a.reason}）`, a.host);
-    }
-    sendToRenderer('cookie-hardening-updated', cookieLedger.stats());
-    return result.actions;
-  } catch {
-    return [];
-  }
-}
 
 function applyWebRtcPolicy() {
   // WebRTC ICE 候选默认可能暴露内网/真实公网 IP（可穿透 VPN）。
@@ -1692,41 +1644,7 @@ function dohStatus() {
 
 // applySecureDns 在启动 / 设置变更时把安全 DNS 策略下发给宿主解析器。
 // 老版本 Electron 没有 setHostResolverControls 时静默降级为关闭，不阻断浏览。
-function applySecureDns() {
-  loadDohLedger();
-  const resolved = dohGuard.resolveControls({
-    mode: dohMode,
-    provider: dohProvider,
-    customUrl: dohCustomUrl,
-  });
-  const sess = session.defaultSession;
-  if (typeof sess.setHostResolverControls !== 'function') {
-    dohActive = false;
-    dohLedger.add({ mode: dohMode, event: 'unsupported', detail: 'no setHostResolverControls' });
-    persistDohLedger();
-    return;
-  }
-  try {
-    sess.setHostResolverControls(resolved.controls);
-    dohActive = resolved.mode !== dohGuard.SECURE_DNS_MODES.OFF;
-    if (resolved.warning) {
-      dohLedger.add({ mode: resolved.mode, event: 'fallback', detail: resolved.warning });
-      recordSecurityEvent('fingerprint-blocked', 'warn',
-        `安全 DNS 自定义服务器非法（${resolved.warning}），已回退到自动模式`, '');
-    } else {
-      dohLedger.add({
-        mode: resolved.mode,
-        event: 'applied',
-        detail: resolved.template || resolved.mode,
-      });
-    }
-    persistDohLedger();
-  } catch (e) {
-    dohActive = false;
-    dohLedger.add({ mode: dohMode, event: 'error', detail: String(e && e.message || e).slice(0, 200) });
-    persistDohLedger();
-  }
-}
+
 
 // LOCAL_UI_CSP：自有 UI（cosy:// / file://）页面统一的严 CSP，defaultSession 与
 // 隔离 / 访客会话共用，避免两套手写策略漂移。
@@ -1787,43 +1705,7 @@ const { hardenResponseHeaders } = require('./responseharden').create({
 // 历史上隔离会话只补了前两项，漏掉 fpGuard 清洗，导致“本该更隐私的隔离分区”
 // 反而继续外发高熵指纹头。options.recordFp 仅控制是否把命中聚合进指纹台账
 // （分区会话不重复计数），但清洗动作在所有会话上恒为开启。
-function applyOutboundHeaderHardening(targetSession, options) {
-  const recordFp = !!(options && options.recordFp);
-  targetSession.webRequest.onBeforeSendHeaders((details, callback) => {
-    const headers = details.requestHeaders || {};
-    headers['DNT'] = '1';
-    headers['Sec-GPC'] = '1';
-    headers['Upgrade-Insecure-Requests'] = '1';
-    // UA 覆盖：非 default 策略时把请求头里的 User-Agent 换成策略取值。
-    // 顶层导航的 UA 由 session.setUserAgent（applyUaPolicyToSession）兜底，
-    // 这里覆盖 fetch/XHR/子资源等所有子请求，统计只计实际改写次数。
-    if (uaPolicyState.mode !== uaPolicyCore.MODES.DEFAULT) {
-      headers['User-Agent'] = resolveEffectiveUa();
-      uaOverrideCount = uaPolicyCore.countUaOverrides(uaOverrideCount);
-      uaLastOverrideAt = Date.now();
-    }
-    try { trimReferrerHeader(details, headers); } catch {}
-    try {
-      const removed = fpGuard.sanitizeOutboundHeaders(details, headers, {
-        reduceClientHints,
-        blockAdSignals,
-        blockHyperlinkPing,
-        stripAcceptCh,
-        webrtcMode,
-      });
-      if (recordFp) {
-        const host = fpGuard.hostOf(details.url);
-        if (host && removed.clientHints.length) {
-          recordFpHit(host, 'client-hints', removed.clientHints);
-        }
-        if (host && removed.adSignals.length) {
-          recordFpHit(host, 'ad-signals', removed.adSignals);
-        }
-      }
-    } catch {}
-    callback({ requestHeaders: headers });
-  });
-}
+
 
 // applyWebRequestFiltering：在任意会话上挂统一的 onBeforeRequest 过滤。
 // Electron 的 webRequest 处理器按会话注册、不会从 defaultSession 继承，因此
@@ -1833,38 +1715,7 @@ function applyOutboundHeaderHardening(targetSession, options) {
 // 阻断 / 升级 / 安全审计在所有会话上行为一致。
 // buildRequestPipelineDeps 组装纯决策内核所需的守卫 / 台账 / 横幅能力。
 // 三个开关是可变设置（用户可在设置页切换），用 getter 保证每次判定都读到当前值。
-function buildRequestPipelineDeps() {
-  return {
-    flags: {
-      get blockHyperlinkPing() { return blockHyperlinkPing; },
-      get blockLocalNetworkAccess() { return blockLocalNetworkAccess; },
-      get httpsOnlyEnabled() { return httpsOnlyEnabled; },
-    },
-    guards: {
-      isHyperlinkPing: fpGuard.isHyperlinkPing.bind(fpGuard),
-      hostOf: fpGuard.hostOf.bind(fpGuard),
-      isTrackerRequest,
-      evaluatePnaRequest: pnaGuard.evaluatePnaRequest.bind(pnaGuard),
-      evaluateRequestMethod: requestMethodGuard.evaluateRequestMethod.bind(requestMethodGuard),
-      evaluatePluginResource: pluginResourceGuard.evaluatePluginResource.bind(pluginResourceGuard),
-      classifyMixedContent: mixedGuard.classifyMixedContent.bind(mixedGuard),
-      stripTrackingFromUrl,
-      analyzeHostForSpoof,
-      analyzeBrand: brandGuard.analyzeBrand.bind(brandGuard),
-      analyzePhish: phishUrl.analyze.bind(phishUrl),
-      isPrivateNetworkHost,
-      isHttpException: isHttpExceptionHost,
-    },
-    record: {
-      fpHit: recordFpHit,
-      securityEvent: recordSecurityEvent,
-      blockedTracker: recordBlockedTracker,
-      pnaBlock: recordPnaBlock,
-      brandSpoof: recordBrandSpoof,
-    },
-    notify: { sendToRenderer },
-  };
-}
+
 
 function applyWebRequestFiltering(targetSession, options) {
   // options.logRequests 仅控制是否把请求量计入默认会话的连接统计（分区不重复计数）；
@@ -1874,15 +1725,7 @@ function applyWebRequestFiltering(targetSession, options) {
   requestPipeline.applyPipeline(targetSession.webRequest, buildRequestPipelineDeps(), noteAttempt);
 }
 
-function setupSecurityHeaders() {
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    const headers = hardenResponseHeaders(details.responseHeaders, details, { grade: true });
-    callback({ responseHeaders: headers });
-  });
-  // 默认会话聚合指纹命中与请求量统计；三套过滤与隔离会话共用同一内核，避免行为分叉。
-  applyOutboundHeaderHardening(session.defaultSession, { recordFp: true });
-  applyWebRequestFiltering(session.defaultSession, { logRequests: true });
-}
+
 
 // 注意：'openExternal' 不再自动放行。网页调 window.openExternal / <a href="ms-*:">
 // 之前只要在这个集合里就会被静默拉系统程序，等于把 Follina 那类协议投毒开放给任意站点。
@@ -2580,6 +2423,74 @@ const extensionstoremain = require('./extensionstoremain');
 const externalcall = require('./externalcall');
 const certledger = require('./certledger');
 const tabactions = require('./tabactions');
+const headerpipeline = require('./headerpipeline');
+const { applyOutboundHeaderHardening, applySecureDns, applyCookieHardening, buildRequestPipelineDeps, setupSecurityHeaders, trimReferrerHeader } = headerpipeline;
+headerpipeline.bindDeps({
+  get analyzeHostForSpoof() { return analyzeHostForSpoof; },
+  get applyWebRequestFiltering() { return applyWebRequestFiltering; },
+  get blockAdSignals() { return blockAdSignals; },
+  get blockHyperlinkPing() { return blockHyperlinkPing; },
+  get blockLocalNetworkAccess() { return blockLocalNetworkAccess; },
+  get blockThirdPartyCookies() { return blockThirdPartyCookies; },
+  get brandGuard() { return brandGuard; },
+  get cookieGuard() { return cookieGuard; },
+  get cookieLedger() { return cookieLedger; },
+  get dohActive() { return dohActive; },
+  set dohActive(v) { dohActive = v; },
+  get dohCustomUrl() { return dohCustomUrl; },
+  get dohGuard() { return dohGuard; },
+  get dohLedger() { return dohLedger; },
+  get dohMode() { return dohMode; },
+  get dohProvider() { return dohProvider; },
+  get fpGuard() { return fpGuard; },
+  get hardenCookies() { return hardenCookies; },
+  get hardenResponseHeaders() { return hardenResponseHeaders; },
+  get httpsOnlyEnabled() { return httpsOnlyEnabled; },
+  get isHttpExceptionHost() { return isHttpExceptionHost; },
+  get isPrivateNetworkHost() { return isPrivateNetworkHost; },
+  get isTrackerRequest() { return isTrackerRequest; },
+  get loadCookieLedger() { return loadCookieLedger; },
+  get loadDohLedger() { return loadDohLedger; },
+  get mixedGuard() { return mixedGuard; },
+  get originOf() { return originOf; },
+  get persistCookieLedger() { return persistCookieLedger; },
+  get persistDohLedger() { return persistDohLedger; },
+  get phishUrl() { return phishUrl; },
+  get pluginResourceGuard() { return pluginResourceGuard; },
+  get pnaGuard() { return pnaGuard; },
+  get recordBlockedTracker() { return recordBlockedTracker; },
+  get recordBrandSpoof() { return recordBrandSpoof; },
+  get recordFpHit() { return recordFpHit; },
+  get recordPnaBlock() { return recordPnaBlock; },
+  get recordSecurityEvent() { return recordSecurityEvent; },
+  get reduceClientHints() { return reduceClientHints; },
+  get requestMethodGuard() { return requestMethodGuard; },
+  get resolveEffectiveUa() { return resolveEffectiveUa; },
+  get sendToRenderer() { return sendToRenderer; },
+  get session() { return session; },
+  get stripAcceptCh() { return stripAcceptCh; },
+  get stripTrackingFromUrl() { return stripTrackingFromUrl; },
+  get uaLastOverrideAt() { return uaLastOverrideAt; },
+  set uaLastOverrideAt(v) { uaLastOverrideAt = v; },
+  get uaOverrideCount() { return uaOverrideCount; },
+  set uaOverrideCount(v) { uaOverrideCount = v; },
+  get uaPolicyCore() { return uaPolicyCore; },
+  get uaPolicyState() { return uaPolicyState; },
+  get webrtcMode() { return webrtcMode; }
+,
+  get analyzeHostForSpoof() { return analyzeHostForSpoof; },
+  get blockAdSignals() { return blockAdSignals; },
+  get blockHyperlinkPing() { return blockHyperlinkPing; },
+  get blockLocalNetworkAccess() { return blockLocalNetworkAccess; },
+  get httpsOnlyEnabled() { return httpsOnlyEnabled; },
+  get isPrivateNetworkHost() { return isPrivateNetworkHost; },
+  get isTrackerRequest() { return isTrackerRequest; },
+  get reduceClientHints() { return reduceClientHints; },
+  get sendToRenderer() { return sendToRenderer; },
+  get stripAcceptCh() { return stripAcceptCh; },
+  get stripTrackingFromUrl() { return stripTrackingFromUrl; },
+  get webrtcMode() { return webrtcMode; }});
+
 const { tabOverviewItem, closeTab, switchToTab, createNewTab, adjustCurrentZoom, updateBrowserViewBounds, clampZoomFactor, applySavedZoom, resetZoom, zoomIn, zoomOut, persistZoomFactors, loadZoomFactors } = tabactions;
 tabactions.bindDeps({
   get COLLAPSED_TAB_BAR_WIDTH() { return COLLAPSED_TAB_BAR_WIDTH; },
