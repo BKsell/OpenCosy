@@ -7061,7 +7061,8 @@ function handleDownloadEvent(event, item, webContents) {
     }
     downloadInfo.quotaHost = chainCheck.finalHost || dlHost || 'unknown-host';
     downloadInfo.quotaReserved = 0;
-    const quotaCheck = downloadByteQuota.reserve(downloadInfo.quotaHost, totalBytes);
+    const quotaDeclared = Number.isFinite(totalBytes) && totalBytes > 0 ? totalBytes : 0;
+    const quotaCheck = downloadByteQuota.reserve(downloadInfo.quotaHost, quotaDeclared);
     if (!quotaCheck.ok) {
       try { item.cancel(); } catch {}
       recordSecurityEvent('download-quota', 'warn',
@@ -7099,12 +7100,36 @@ function handleDownloadEvent(event, item, webContents) {
         const sizeDecision = downloadSizeGuard.decideProgress(receivedBytes, downloadMaxBytes);
         if (sizeDecision.action === downloadSizeGuard.ACTION.CANCEL) {
           try { item.cancel(); } catch {}
+          downloadInfo.status = 'error';
+          downloadInfo.receivedBytes = receivedBytes;
+          if (Number.isFinite(totalBytes) && totalBytes > 0) downloadInfo.totalBytes = totalBytes;
           const described = downloadSizeGuard.describe(sizeDecision);
           recordSecurityEvent('download-size', 'critical', `下载体积超过上限已中断: ${described}`,
             originOfContents(webContents));
+          sendToRenderer('download-status-changed', { id: downloadInfo.id, status: 'error' });
           sendToRenderer('show-toast', `下载体积超过上限，已中断：${described}`);
           sendShelf();
           return;
+        }
+        const quotaDelta = receivedBytes - (downloadInfo.quotaReserved || 0);
+        if (quotaDelta > 0) {
+          const topUp = downloadByteQuota.reserve(downloadInfo.quotaHost || '', quotaDelta);
+          if (!topUp.ok) {
+            try { item.cancel(); } catch {}
+            downloadInfo.status = 'error';
+            const described = downloadQuotaCore.describeQuotaReject(topUp.reason, downloadInfo.quotaHost);
+            recordSecurityEvent('download-quota', 'warn', `下载字节配额拒绝: ${described}`,
+              originOfContents(webContents));
+            recordDownloadRisk({
+              filename: downloadInfo.filename || '(quota-exceeded)', host: downloadInfo.quotaHost || '',
+              decision: 'reject', action: 'rejected', ext: '', risks: [topUp.reason],
+            });
+            sendToRenderer('download-status-changed', { id: downloadInfo.id, status: 'error' });
+            sendToRenderer('show-toast', `下载超出字节配额，已取消：${described}`);
+            sendShelf();
+            return;
+          }
+          downloadInfo.quotaReserved = (downloadInfo.quotaReserved || 0) + quotaDelta;
         }
         let liveFreeBytes = downloadInfo.diskFreeBytes;
         try {
@@ -7298,6 +7323,20 @@ function handleDownloadEvent(event, item, webContents) {
 // session 注册两次，一次下载会触发两轮回调：弹两次确认框、写两条台账、落盘后补两次
 // MOTW。defaultSession 走 setupDownloadManager、分区走 session-created，理论上互斥，
 // 但仍用 WeakSet 做幂等兜底（session 回收后条目自动消失，不泄漏）。
+function downloadJournalFileProbe() {
+  return {
+    exists: (target) => {
+      try { return fsSync.lstatSync(target).isFile(); } catch { return false; }
+    },
+    sizeOf: (target) => {
+      try {
+        const stat = fsSync.lstatSync(target);
+        return stat.isFile() ? stat.size : null;
+      } catch { return null; }
+    },
+  };
+}
+
 function getDownloadJournal() {
   if (downloadJournal) return downloadJournal;
   const downloadsRoot = app.getPath('downloads');
@@ -7310,17 +7349,7 @@ function getDownloadJournal() {
     recordSecurityEvent('download-journal', 'warn',
       `下载台账载入时丢弃 ${loaded.rejected.length} 条非法记录`, 'download-journal');
   }
-  const reconciled = downloadJournal.reconcile({
-    exists: (target) => {
-      try { return fsSync.statSync(target).isFile(); } catch { return false; }
-    },
-    sizeOf: (target) => {
-      try {
-        const stat = fsSync.statSync(target);
-        return stat.isFile() ? stat.size : null;
-      } catch { return null; }
-    },
-  });
+  const reconciled = downloadJournal.reconcile(downloadJournalFileProbe());
   if (!reconciled.ok) {
     recordSecurityEvent('download-journal', 'warn',
       `下载台账落盘文件核对结果未能保存: ${downloadJournalModule.describeJournalReject(reconciled.reason)}`,
@@ -9664,17 +9693,7 @@ ipcMain.handle('get-download-journal', (event, payload = {}) => {
 
 ipcMain.handle('reconcile-download-journal', (event) => {
   if (!isMainSender(event)) return { success: false };
-  const result = getDownloadJournal().reconcile({
-    exists: (target) => {
-      try { return fsSync.statSync(target).isFile(); } catch { return false; }
-    },
-    sizeOf: (target) => {
-      try {
-        const stat = fsSync.statSync(target);
-        return stat.isFile() ? stat.size : null;
-      } catch { return null; }
-    },
-  });
+  const result = getDownloadJournal().reconcile(downloadJournalFileProbe());
   return {
     success: result.ok,
     summary: result.summary,
