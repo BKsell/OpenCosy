@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -107,28 +108,17 @@ function inspectDigest(value) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK:
-      return '摘要头合规';
-    case REASON.MISSING:
-      return '响应未声明摘要头';
-    case REASON.MALFORMED:
-      return '摘要头取值非法，已剥除';
-    case REASON.OVERLONG:
-      return '摘要头超长，已剥除';
-    case REASON.WEAK_ALGORITHM:
-      return '摘要使用弱算法，已剥除';
-    case REASON.UNSUPPORTED_ALGORITHM:
-      return '摘要使用不支持的算法，已剥除';
-    case REASON.DUPLICATE_MEMBER:
-      return '摘要重复算法成员，已去重';
-    case REASON.TOO_MANY:
-      return '摘要成员过多，已截断';
-    case REASON.EMPTY:
-      return '摘要头为空，已剥除';
-    default:
-      return '摘要头未识别状态';
-  }
+  return describeReasonFrom({
+    [REASON.OK]: '摘要头合规',
+    [REASON.MISSING]: '响应未声明摘要头',
+    [REASON.MALFORMED]: '摘要头取值非法，已剥除',
+    [REASON.OVERLONG]: '摘要头超长，已剥除',
+    [REASON.WEAK_ALGORITHM]: '摘要使用弱算法，已剥除',
+    [REASON.UNSUPPORTED_ALGORITHM]: '摘要使用不支持的算法，已剥除',
+    [REASON.DUPLICATE_MEMBER]: '摘要重复算法成员，已去重',
+    [REASON.TOO_MANY]: '摘要成员过多，已截断',
+    [REASON.EMPTY]: '摘要头为空，已剥除',
+  }, reason, '摘要头未识别状态');
 }
 
 function applyDigestGuard(headers, name) {
