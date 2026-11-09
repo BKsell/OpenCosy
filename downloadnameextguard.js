@@ -168,22 +168,7 @@ function applyDownloadNameGuard(headers) {
   return { changed, verdict: { reason }, names, forcedAttachment };
 }
 
-function describeReason(reason) {
-  switch (reason) {
-    case REASON.ok: return 'download name acceptable';
-    case REASON.doubleExtension: return 'executable hidden behind a decoy extension';
-    case REASON.bidiOverride: return 'name carries a bidi override';
-    case REASON.controlChars: return 'name carries control characters';
-    case REASON.trailingDotSpace: return 'name ends with dots or spaces';
-    case REASON.reservedDevice: return 'name maps to a reserved device';
-    case REASON.hiddenFile: return 'name resolves to a hidden file';
-    case REASON.tooLong: return 'name exceeds the length budget';
-    case REASON.malformed: return 'Content-Disposition cannot be parsed';
-    default: return 'unknown download name verdict';
-  }
-}
-
-module.exports = {
+module.exports = Object.assign({}, require('./downloadnameextguard_part2'), {
   REASON,
   MAX_NAME_LENGTH,
   EXECUTABLE_EXTENSIONS,
@@ -191,5 +176,4 @@ module.exports = {
   inspectDownloadName,
   parseDisposition,
   applyDownloadNameGuard,
-  describeReason,
-};
+});
