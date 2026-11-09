@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { deleteHeader, headerKey } = require('./headerutil');
 
@@ -85,24 +86,15 @@ function applyXRobotsGuard(headers) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK:
-      return 'X-Robots-Tag 指令合法';
-    case REASON.MISSING:
-      return '未声明 X-Robots-Tag';
-    case REASON.UNKNOWN_DIRECTIVE:
-      return 'X-Robots-Tag 使用未知指令';
-    case REASON.BAD_DATE:
-      return 'X-Robots-Tag unavailable_after 日期非法';
-    case REASON.BAD_RANGE:
-      return 'X-Robots-Tag 数值指令越界';
-    case REASON.OVERLONG:
-      return 'X-Robots-Tag 取值超长';
-    case REASON.MALFORMED:
-      return 'X-Robots-Tag 取值无法解析';
-    default:
-      return 'X-Robots-Tag 未知状态';
-  }
+  return describeReasonFrom({
+    [REASON.OK]: 'X-Robots-Tag 指令合法',
+    [REASON.MISSING]: '未声明 X-Robots-Tag',
+    [REASON.UNKNOWN_DIRECTIVE]: 'X-Robots-Tag 使用未知指令',
+    [REASON.BAD_DATE]: 'X-Robots-Tag unavailable_after 日期非法',
+    [REASON.BAD_RANGE]: 'X-Robots-Tag 数值指令越界',
+    [REASON.OVERLONG]: 'X-Robots-Tag 取值超长',
+    [REASON.MALFORMED]: 'X-Robots-Tag 取值无法解析',
+  }, reason, 'X-Robots-Tag 未知状态');
 }
 
 module.exports = {
