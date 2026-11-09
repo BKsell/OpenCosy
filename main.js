@@ -204,7 +204,6 @@ const permissionRiskReport = require('./permissionriskreport');
 const downloadDiskSpace = require('./downloaddiskspace');
 const downloadDiskMonitorModule = require('./downloaddiskmonitor');
 const downloadPathCollision = require('./downloadpathcollision');
-const downloadSizeGuard = require('./downloadsizeguard');
 const downloadHostGuard = require('./downloadhostguard');
 const downloadSlotReservation = require('./downloadslotreservation');
 const downloadFinishGuard = require('./downloadfinishguard');
@@ -285,6 +284,15 @@ const securityBoundaryHub = require('./securityboundaryhub');
 const ledgerStore = require('./ledgerstore');
 const securityHeadersGuard = require('./securityheadersguard');
 const downloadSourceTrustGuard = require('./downloadsourcetrustguard');
+const setCookieAttrGuard = require('./setcookieattrguard');
+const certPinningGuard = require('./certpinningguard');
+const dohResolverGuard = require('./dohresolverguard');
+const requestHeaderLeakGuard = require('./requestheaderleakguard');
+const urlCredentialStripGuard = require('./urlcredentialstripguard');
+const sameSiteEnforcementGuard = require('./samesiteenforcementguard');
+const sslStripGuard = require('./sslstripguard');
+const mixedContentReportGuard = require('./mixedcontentreportguard');
+const crashReportIdGuard = require('./crashreportidguard');
 const navigationTimeoutGuard = require('./navigationtimeoutguard');
 const { pathToFileURL } = require('url');
 
@@ -723,7 +731,25 @@ function originOf(u) {
   return urlResolve.safeOrigin(u, null);
 }
 
-
+function trimReferrerHeader(details, headers) {
+  const referrer = headers['Referer'] || headers['referer'];
+  if (!referrer) return;
+  const fromOrigin = originOf(referrer);
+  const toOrigin = originOf(details.url);
+  if (!fromOrigin || !toOrigin) return;
+  if (fromOrigin === toOrigin) return; // 同源不裁剪
+  const fromHttps = referrer.startsWith('https://');
+  const toHttp = details.url.startsWith('http://');
+  if (fromHttps && toHttp) {
+    delete headers['Referer'];
+    delete headers['referer'];
+    return;
+  }
+  // 跨源：只暴露源，不暴露路径与查询串。
+  const trimmed = fromOrigin === 'null' ? '' : fromOrigin + '/';
+  headers['Referer'] = trimmed;
+  delete headers['referer'];
+}
 
 // clearOnExit：退出时自动清空缓存 / Cookie / 站点存储 / 历史 / 下载记录（隐私模式）。
 // confirmCloseMultiple：仍有多个标签页时点 × 先二次确认，防止误关整窗。
@@ -890,14 +916,58 @@ function persistDownloads() {
   }
 }
 
-
+function loadDownloads() {
+  try {
+    const p = downloadsStorePath();
+    if (!fsSync.existsSync(p)) return;
+    const parsed = ledgerStore.readJSONStore(p, null);
+    if (!Array.isArray(parsed)) {
+      recordSecurityEvent('downloads-load', 'warn', '下载台账文件结构非法，已忽略', '');
+      return;
+    }
+    const clean = [];
+    for (const raw of parsed.slice(0, MAX_PERSISTED_DOWNLOADS)) {
+      const rec = downloadShelf.sanitizeDownloadRecord(raw, downloadShelf.ShelfLimits);
+      if (rec && rec.id != null) clean.push(rec);
+    }
+    downloads.length = 0;
+    downloads.push(...clean);
+  } catch (e) {
+    recordSecurityEvent('downloads-load', 'error',
+      '下载台账读取失败: ' + String((e && e.message) || e).slice(0, 160), '');
+  }
+}
 
 // ===== 下载系统通知（downloadnotify 内核的 Electron 接线）=====
 // 窗口最小化 / 失焦时用户看不到底部下载栏，完成与失败都要弹系统通知（Chrome、
 // Edge 同款行为）。通知内容已由 downloadnotify 内核净化：剥控制字符与 CSI 序列、
 // 按字节截断、不落完整本地路径、失败不给原始异常，这里只把内核产出接到 Electron
 // Notification 与点击动作上（完成点开文件，失败只聚焦窗口并留给用户显式重试）。
-
+function downloadNotifyDeps() {
+  return {
+    isSupported: () => !!(Notification && Notification.isSupported && Notification.isSupported()),
+    showNotification(note, onClick) {
+      const n = new Notification({
+        title: String((note && note.title) || ''),
+        body: String((note && note.body) || ''),
+        silent: !!(note && note.silent),
+      });
+      if (typeof onClick === 'function') n.on('click', onClick);
+      n.show();
+    },
+    openPath(savePath) {
+      if (!savePath) return;
+      performDownloadOpen(path.resolve(String(savePath)), { notifySource: true });
+    },
+    focusWindow() {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    },
+  };
+}
 
 // notifyDownloadResult 把一次下载结果接成系统通知；通知失败只审计，不打断下载流程。
 function notifyDownloadResult(kind, info) {
@@ -1011,11 +1081,17 @@ function getCurrentTabWebContents() {
   return tab?.view?.webContents || null;
 }
 
+function zoomIn() {
+  adjustCurrentZoom({ delta: 'in' });
+}
 
+function zoomOut() {
+  adjustCurrentZoom({ delta: 'out' });
+}
 
-
-
-
+function resetZoom() {
+  adjustCurrentZoom({ factor: 1 });
+}
 
 function toggleDevTools() {
   const wc = getCurrentTabWebContents();
@@ -1289,7 +1365,6 @@ let uaPolicyState = { ...uaPolicyCore.DEFAULT_POLICY };
 let uaOverrideCount = 0;
 let uaLastOverrideAt = 0;
 let downloadRateLimit = 0; // 字节/秒；0 = 不限速
-let downloadMaxBytes = downloadSizeGuard.DEFAULT_LIMIT_BYTES; // 单次下载体积上限；0 = 不限
 const downloadDiskMonitor = downloadDiskMonitorModule.createDiskMonitor({ minFreeBytes: downloadDiskSpace.MIN_FREE_BYTES });
 const downloadSlotGuard = downloadSlotReservation.createSlotReservation();
 
@@ -1339,22 +1414,12 @@ function applyRateLimitToItem(item) {
   try { item.setRate(downloadRateLimit); } catch {}
 }
 
-let atomicWriteSeq = 0;
-
 function atomicWriteJSON(filePath, obj) {
   const dir = path.dirname(filePath);
-  const tmp = path.join(dir, '.' + path.basename(filePath) + '.tmp-' + process.pid + '-'
-    + (atomicWriteSeq += 1) + '-' + Date.now().toString(36));
-  let fd = null;
-  try {
-    fd = fsSync.openSync(tmp, 'wx', 0o600);
-    fsSync.writeFileSync(fd, JSON.stringify(obj), 'utf8');
-    fsSync.fsyncSync(fd);
-    fsSync.closeSync(fd);
-    fd = null;
-    fsSync.renameSync(tmp, filePath);
-  } catch (e) {
-    if (fd !== null) { try { fsSync.closeSync(fd); } catch {} }
+  const tmp = path.join(dir, '.' + path.basename(filePath) + '.tmp-' + process.pid);
+  fsSync.writeFileSync(tmp, JSON.stringify(obj), 'utf8');
+  try { fsSync.renameSync(tmp, filePath); }
+  catch (e) {
     try { fsSync.unlinkSync(tmp); } catch {}
     throw e;
   }
@@ -1384,41 +1449,182 @@ function persistCleanAudit() {
 }
 
 function persistVaultKey(keyBuf) {
-  if (!safeStorage.isEncryptionAvailable()) {
-    recordSecurityEvent('vault-key', 'critical',
-      '系统加密不可用，拒绝以明文形式落盘保险库主密钥', 'vault');
-    return false;
-  }
   try {
-    const wrapped = safeStorage.encryptString(keyBuf.toString('hex'));
-    atomicWriteJSON(vaultKeyPath, { v: 1, s: 'safe', wrapped: wrapped.toString('base64') });
-    return true;
-  } catch (e) { console.error('写入保险库密钥失败:', e); return false; }
+    let wrapped = keyBuf;
+    if (safeStorage.isEncryptionAvailable()) {
+      wrapped = safeStorage.encryptString(keyBuf.toString('hex'));
+    }
+    atomicWriteJSON(vaultKeyPath, { v: 1, wrapped: wrapped.toString('base64') });
+  } catch (e) { console.error('写入保险库密钥失败:', e); }
 }
 
 // initVaultOnStartup：启动时尝试用 safeStorage 包层自动解锁；无 keychain 时
 // 保留锁定态（vault:status 会报告 locked，由 UI 引导用户输主密码）。
-
+function initVaultOnStartup() {
+  loadVaultStateFromDisk();
+  if (!fsSync.existsSync(vaultKeyPath)) return { ok: true, unlocked: false, reason: 'no-key' };
+  try {
+    const raw = JSON.parse(fsSync.readFileSync(vaultKeyPath, 'utf8'));
+    if (!raw || raw.v !== 1 || typeof raw.wrapped !== 'string') return { ok: true, unlocked: false };
+    const wrapped = Buffer.from(raw.wrapped, 'base64');
+    const hex = safeStorage.isEncryptionAvailable()
+      ? safeStorage.decryptString(wrapped)
+      : wrapped.toString('utf8');
+    const key = Buffer.from(hex, 'hex');
+    if (key.length < vaultCore.MIN_MASTER_KEY_BYTES) return { ok: true, unlocked: false };
+    if (!vaultState) return { ok: true, unlocked: false };
+    const loaded = vaultCore.loadVault(JSON.stringify(vaultState), key);
+    if (loaded.ok) {
+      vaultHandle = loaded.vault;
+      vaultUsePasswordMode = false;
+      return { ok: true, unlocked: true };
+    }
+  } catch (e) { console.error('自动解锁保险库失败:', e); }
+  return { ok: true, unlocked: false };
+}
 
 // vaultStatusSnapshot 给 UI 的只读快照；绝不外泄条目密文 / 主密钥。
-
+function vaultStatusSnapshot() {
+  const unlocked = !!(vaultHandle && !vaultHandle.locked());
+  let entries = [];
+  if (unlocked) {
+    const l = vaultHandle.list();
+    if (l.ok) entries = l.entries;
+  }
+  return {
+    ok: true,
+    unlocked,
+    passwordMode: vaultUsePasswordMode,
+    storageAvailable: safeStorage.isEncryptionAvailable(),
+    hasVault: !!vaultState,
+    entries,
+  };
+}
 
 // createNewVault(masterPassword)：全新创建（或强制重建）。主密钥优先用
 // safeStorage 随机密钥；自设密码模式用 PBKDF2 慢化。返回结果不包含密钥。
-
+function createNewVault(masterPassword) {
+  let key;
+  let kdf = vaultCore.KDF_HKDF;
+  vaultUsePasswordMode = false;
+  if (typeof masterPassword === 'string' && masterPassword.length > 0) {
+    key = Buffer.from(masterPassword, 'utf8');
+    kdf = vaultCore.KDF_PBKDF2;
+    vaultUsePasswordMode = true;
+  } else {
+    key = crypto.randomBytes(32);
+  }
+  const c = vaultCore.createVault(key, { kdf });
+  if (!c.ok) return c;
+  vaultHandle = c.vault;
+  vaultState = c.vault.exportState().state;
+  persistVaultState();
+  if (!vaultUsePasswordMode) persistVaultKey(key);
+  return { ok: true, ...vaultStatusSnapshot() };
+}
 
 // unlockVault(masterPassword)：用自设主密码解锁（safeStorage 模式由启动自动解锁）。
-
+function unlockVault(masterPassword) {
+  if (typeof masterPassword !== 'string' || masterPassword === '') {
+    return { ok: false, reason: 'bad-password' };
+  }
+  if (!vaultState) return { ok: false, reason: 'no-vault' };
+  const key = Buffer.from(masterPassword, 'utf8');
+  const loaded = vaultCore.loadVault(JSON.stringify(vaultState), key);
+  if (!loaded.ok) return { ok: false, reason: loaded.reason };
+  vaultHandle = loaded.vault;
+  vaultUsePasswordMode = true;
+  return { ok: true, ...vaultStatusSnapshot() };
+}
 
 // executeCleanPlan：按已确认的计划执行清理。返回摘要；失败项记入审计。
 // 安全设计：不信任渲染进程传来的 targets 白名单（防 UI 被篡改后越权清理），
 // 而是按计划条件（mode/host/since/storageTypes）在 main 侧重新枚举 + 纯内核
 // 过滤生成权威目标集，再与计划摘要（sites/targetCount）核对一致才执行。
-
+async function executeCleanPlan(plan) {
+  if (!plan || typeof plan !== 'object') return { ok: false, reason: 'bad-plan' };
+  if (!Array.isArray(plan.actions) || plan.actions.length === 0) return { ok: false, reason: 'bad-plan' };
+  const src = enumerateSiteStorage();
+  const filtered = cleanerCore.filterSiteEntries(src.entries, {
+    matchMode: plan.mode,
+    host: plan.host,
+    since: plan.since,
+    storageTypes: plan.storageTypes,
+  });
+  if (!filtered.ok) return { ...filtered };
+  // 摘要核对：renderer 传来的计划（sites/targetCount/bytes）必须与 main 重算结果一致；
+  // 不一致说明计划在途中被改过（或数据已变化），拒绝执行。
+  if (typeof plan.sites === 'number' && filtered.sites !== plan.sites) {
+    return { ok: false, reason: 'plan-mismatch', expected: filtered.sites, got: plan.sites };
+  }
+  if (typeof plan.targetCount === 'number' && filtered.targets.length !== plan.targetCount) {
+    return { ok: false, reason: 'plan-mismatch', expected: filtered.targets.length, got: plan.targetCount };
+  }
+  if (typeof plan.totalBytes === 'number' && filtered.totalBytes !== plan.totalBytes) {
+    return { ok: false, reason: 'plan-mismatch', expected: filtered.totalBytes, got: plan.totalBytes };
+  }
+  const cleaned = [];
+  const failed = [];
+  const storageTypes = plan.actions;
+  for (const t of filtered.targets) {
+    try {
+      const ses = session.defaultSession;
+      const origin = String(t.origin || '');
+      if (origin === '') continue;
+      // 按 origin + 类型做最小化清理：全部类型用 clearStorageData({ origin })，
+      // 否则逐类型调用。
+      const opts = { origin };
+      if (!storageTypes.includes('all')) {
+        const mapped = storageTypes.map((a) => cleanerCore.classifyStorageType(a))
+          .filter((a) => a !== '' && a !== 'all');
+        if (mapped.length === 0) { failed.push({ origin, reason: 'no-actions' }); continue; }
+        for (const st of mapped) {
+          try {
+            const res = await ses.clearStorageData({ origin, storages: [st] });
+            void res;
+          } catch (e) { failed.push({ origin, storageType: st, reason: String(e && e.message || e) }); }
+        }
+      } else {
+        try {
+          const res = await ses.clearStorageData({ origin });
+          void res;
+        } catch (e) { failed.push({ origin, reason: String(e && e.message || e) }); }
+      }
+      cleaned.push(t.origin);
+    } catch (e) { failed.push({ origin: t.origin, reason: String(e && e.message || e) }); }
+  }
+  const audit = cleanerCore.recordCleanAudit(cleanAuditLog, {
+    mode: filtered.mode,
+    host: filtered.host,
+    sites: filtered.sites,
+    targetCount: filtered.targets.length,
+    bytes: filtered.totalBytes,
+    actions: storageTypes,
+    source: 'cleaner-ui',
+  });
+  persistCleanAudit();
+  return { ok: true, cleaned: cleaned.length, failed, audit: audit.ok ? audit.entry : null };
+}
 
 // enumerateSiteStorage：枚举默认会话全部 origin 的存储占用（粗略字节）。
 // cookies 无 API 可枚举 origin 级，用 session.cookies 逐个列举（受限）。
-
+function enumerateSiteStorage() {
+  const out = [];
+  const ses = session.defaultSession;
+  // 1) clearStorageData 支持的类型无法枚举，改用 storageData 不可得；
+  //    这里列出“可确认存在”的 origin 维度信息由 plan 阶段补充。
+  // 2) service workers：遍历 registrations。
+  try {
+    const sw = ses.serviceWorkers;
+    const regs = sw.getAllRunning() || {};
+    for (const id of Object.keys(regs)) {
+      const reg = regs[id];
+      const scope = reg && reg.scope ? reg.scope : '';
+      if (scope) out.push({ origin: scope, storageType: 'serviceworkers', bytes: 0, lastAccessed: Date.now() });
+    }
+  } catch {}
+  return { ok: true, entries: out };
+}
 
 // maybeFallbackAfterUpgradeFailure 在“HTTPS-Only 升级后加载失败”时，判断并执行
 // 一次性的、用户知情的 http 回退。返回 true 表示已接手（弹过框 / 已回退），调用方
@@ -1495,9 +1701,22 @@ const cookieLedger = cookieGuard.createCookieLedger(MAX_COOKIE_LEDGER);
 let cookieLedgerLoaded = false;
 let cookieLedgerSaveTimer = null;
 
+function loadCookieLedger() {
+  if (cookieLedgerLoaded) return;
+  cookieLedgerLoaded = true;
+  try {
+    cookieLedger.load(ledgerStore.readJSONStore(cookieLedgerStorePath, {}));
+  } catch {}
+}
 
-
-
+function persistCookieLedger() {
+  if (cookieLedgerSaveTimer) clearTimeout(cookieLedgerSaveTimer);
+  cookieLedgerSaveTimer = setTimeout(() => {
+    try {
+      ledgerStore.writeJSONStore(cookieLedgerStorePath, cookieLedger.toJSON());
+    } catch {}
+  }, 300);
+}
 
 // ===== PNA 私有网络访问拦截台账（pna-access.json / cosy://security 面板）=====
 const pnaLedgerStorePath = path.join(app.getPath('userData'), 'pna-access.json');
@@ -1583,11 +1802,47 @@ function persistFpLedger() {
 }
 
 // recordFpHit 按主机+类别登记一条被收敛的指纹/追踪信号。
-
+function recordFpHit(host, category, signals) {
+  if (!host) return;
+  loadFpLedger();
+  fpLedger.record(host, category, signals);
+  persistFpLedger();
+  sendToRenderer('fingerprint-blocked-updated', fpLedger.stats());
+}
 
 // applyCookieHardening 就地加固响应头里的 Set-Cookie，返回本次动作列表。
 // 任何异常都不阻断浏览：出错时保留原始响应头。
+function applyCookieHardening(headers, details) {
+  try {
+    const setCookieKey = Object.prototype.hasOwnProperty.call(headers, 'set-cookie')
+      ? 'set-cookie'
+      : (Object.prototype.hasOwnProperty.call(headers, 'Set-Cookie') ? 'Set-Cookie' : '');
+    if (!setCookieKey) return [];
+    const original = cookieGuard.extractSetCookieHeaders(headers);
+    if (!original.length) return [];
 
+    const result = cookieGuard.hardenSetCookieHeader(original, details, {
+      blockThirdParty: blockThirdPartyCookies,
+      hardenSameSite: hardenCookies,
+    });
+    headers[setCookieKey] = result.lines;
+    if (!result.actions.length) return [];
+
+    loadCookieLedger();
+    cookieLedger.addMany(result.actions);
+    persistCookieLedger();
+    for (const a of result.actions) {
+      // SameSite 补全是静默改写，只进台账不刷安全事件；剥离类才登记事件。
+      if (a.action === 'samesite-default-lax') continue;
+      recordSecurityEvent('cookie-blocked', 'warn',
+        `已剥离不安全的 Cookie「${a.name}」（${a.reason}）`, a.host);
+    }
+    sendToRenderer('cookie-hardening-updated', cookieLedger.stats());
+    return result.actions;
+  } catch {
+    return [];
+  }
+}
 
 function applyWebRtcPolicy() {
   // WebRTC ICE 候选默认可能暴露内网/真实公网 IP（可穿透 VPN）。
@@ -1631,7 +1886,41 @@ function dohStatus() {
 
 // applySecureDns 在启动 / 设置变更时把安全 DNS 策略下发给宿主解析器。
 // 老版本 Electron 没有 setHostResolverControls 时静默降级为关闭，不阻断浏览。
-
+function applySecureDns() {
+  loadDohLedger();
+  const resolved = dohGuard.resolveControls({
+    mode: dohMode,
+    provider: dohProvider,
+    customUrl: dohCustomUrl,
+  });
+  const sess = session.defaultSession;
+  if (typeof sess.setHostResolverControls !== 'function') {
+    dohActive = false;
+    dohLedger.add({ mode: dohMode, event: 'unsupported', detail: 'no setHostResolverControls' });
+    persistDohLedger();
+    return;
+  }
+  try {
+    sess.setHostResolverControls(resolved.controls);
+    dohActive = resolved.mode !== dohGuard.SECURE_DNS_MODES.OFF;
+    if (resolved.warning) {
+      dohLedger.add({ mode: resolved.mode, event: 'fallback', detail: resolved.warning });
+      recordSecurityEvent('fingerprint-blocked', 'warn',
+        `安全 DNS 自定义服务器非法（${resolved.warning}），已回退到自动模式`, '');
+    } else {
+      dohLedger.add({
+        mode: resolved.mode,
+        event: 'applied',
+        detail: resolved.template || resolved.mode,
+      });
+    }
+    persistDohLedger();
+  } catch (e) {
+    dohActive = false;
+    dohLedger.add({ mode: dohMode, event: 'error', detail: String(e && e.message || e).slice(0, 200) });
+    persistDohLedger();
+  }
+}
 
 // LOCAL_UI_CSP：自有 UI（cosy:// / file://）页面统一的严 CSP，defaultSession 与
 // 隔离 / 访客会话共用，避免两套手写策略漂移。
@@ -1655,34 +1944,354 @@ const LOCAL_UI_CSP =
 // hardenResponseHeaders：把一份“服务器原始响应头”就地加固后返回。defaultSession 与
 // 每个非默认会话（访客 / 隔离 partition）共用同一套变换，杜绝只加固主会话的纵深缺口。
 // options.grade=true 时对远端顶层文档记一条安全头评级（仅 defaultSession 需要记账）。
-const { hardenResponseHeaders } = require('./responseharden').create({
-  LOCAL_UI_CSP, acacGuard, acceptChGuard, acceptChLifetimeGuard, acceptCharsetGuard, acceptEncodingGuard,
-  acceptLanguageGuard, acceptPatchGuard, acceptRangesGuard, ageClockGuard, allowHeaderGuard, allowHeadersGuard,
-  allowMethodsGuard, altSvcGuard, applyCookieHardening, attributionGuard, authChallengeGuard, authenticationInfoGuard,
-  baggageGuard, cacheAuthGuard, cacheStatusGuard, cacheVaryGuard, chMobileGuard, chPlatformGuard,
-  charsetGuard, clearSiteDataGuard, coepGuard, connectionGuard, contentBaseGuard, contentDigestGuard,
-  contentDispositionGuard, contentEncodingGuard, contentLanguageGuard, contentLocationGuard, contentMd5Guard, contentRangeGuard,
-  contentTypeGuard, cookieJarGuard, coopGuard, corpGuard, corsGuard, credentialRequestGuard,
-  criticalChGuard, crossDomainPolicyGuard, crossOriginPolicyGuard, cspReportOnlyGuard, digestGuard, dnsPrefetchGuard,
-  dntGuard, documentPolicyGuard, downloadNameGuard, earlyHintGuard, etagGuard, expectCtGuard,
-  expiresGuard, exposeHeadersGuard, featurePolicyGuard, fileSystemAccessGuard, forwardedGuard, fpGuard,
-  frameOptionsGuard, headerBudgetGuard, headerInjectionGuard, hopByHopGuard, hstsGuard, ifMatchGuard,
-  ifModifiedSinceGuard, ifNoneMatchGuard, ifRangeGuard, ifUnmodifiedSinceGuard, keepAliveGuard, lastModifiedGuard,
-  legacyPinGuard, linkPreloadGuard, linkResponseGuard, maxAgeGuard, mimeExecGuard, nelReportGuard,
-  noSniffGuard, noteGuardDenied, noteGuardResult, originAgentClusterGuard, originTrialGuard, permissionsPolicyGuard,
-  pragmaCacheGuard, priorityGuard, protocol, proxyAuthGuard, proxyAuthenticateGuard, proxyStatusGuard,
-  publicKeyPinsGuard, rangeGuard, recordFpHit, recordHeaderGrade, recordSecurityEvent: (...args) => recordSecurityEvent(...args), referrerPolicyGuard,
-  refreshGuard, reportingEndpointsGuard, reportingGuard, retryAfterGuard, saveDataGuard, secFetchDestGuard,
-  secFetchModeGuard, secFetchSiteGuard, secFetchUserGuard, secGpcGuard, secWebSocketGuard, securityBoundaryHub,
-  securityHeadersGuard, serverBannerGuard, serverTimingGuard, serviceWorkerAllowedGuard, setCookie2Guard, setCookiePrefixGuard,
-  sourceMapGuard, speculationRulesGuard, surrogateControlGuard, taoOriginGuard, teGuard, timingAllowOriginGuard,
-  traceStateGuard, traceparentGuard, trailerFieldGuard, transferEncodingGuard, trueClientIpGuard, upgradeGuard,
-  viaGuard, wantDigestGuard, warningHeaderGuard, wwwAuthenticateGuard, xContentTypeOptionsGuard, xDownloadOptionsGuard,
-  xMethodOverrideGuard, xOriginalUrlGuard, xRealIpGuard, xRequestIdGuard, xRequestedWithGuard, xRobotsGuard,
-  xWebKitCspGuard, xfwdForGuard, xfwdHostGuard, xfwdPortGuard, xfwdProtoGuard, xpcdpGuard,
-  xssProtectionGuard, xuaCompatibleGuard,
-  readAllowPictureInPicture: () => allowPictureInPicture, readStripAcceptCh: () => stripAcceptCh,
-});
+function hardenResponseHeaders(rawHeaders, details, options) {
+  const headers = rawHeaders || {};
+  const grade = !!(options && options.grade);
+  // 安全头评级必须在下面任何 setIfMissing 之前完成，反映服务器原始姿态；
+  // 只评远端顶层文档，不评我们自己强制注入的 cosy:// 页面与第三方子资源。
+  if (grade && details.resourceType === 'mainFrame' && /^https?:/i.test(details.url)) {
+    recordHeaderGrade(details.url, headers);
+  }
+  // 移除站点下发的 Accept-CH / Critical-CH：阻止其订阅高熵 Client Hints，
+  // Critical-CH 还会触发带新头的重试，一并清掉以掐断放大通道。
+  try {
+    const removedCh = fpGuard.stripAcceptClientHints(headers, { stripAcceptCh });
+    if (removedCh.length) {
+      recordFpHit(fpGuard.hostOf(details.url), 'accept-ch', removedCh);
+    }
+  } catch {}
+  try {
+    const hopResult = hopByHopGuard.applyHopByHopGuard(headers);
+    if (hopResult.changed && grade) {
+      recordSecurityEvent('protocol-blocked', 'warn',
+        `hop:${hopResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const corsResult = corsGuard.applyCorsGuard(headers);
+    if (corsResult.changed && grade) {
+      recordSecurityEvent('origin-boundary-blocked', 'warn',
+        `cors:${corsResult.verdict.reason}`, fpGuard.hostOf(details.url));
+    }
+    const authResult = authChallengeGuard.applyAuthChallengeGuard(headers, details);
+    if (authResult.changed && grade) {
+      recordSecurityEvent('auth-blocked', 'warn',
+        `challenge:${authResult.verdict.reason}`, fpGuard.hostOf(details.url));
+    }
+    const mimeResult = mimeExecGuard.applyContentDispositionGuard(headers, details);
+    if (mimeResult.changed && grade) {
+      recordSecurityEvent('download-blocked', 'warn',
+        `mime:${mimeResult.verdict.reason}`, fpGuard.hostOf(details.url));
+    }
+    const cacheResult = cacheVaryGuard.applyCacheVaryGuard(headers);
+    if (cacheResult.changed && grade) {
+      recordSecurityEvent('cookie-blocked', 'warn',
+        `cache:${cacheResult.verdict.reason}`, fpGuard.hostOf(details.url));
+    }
+    const jarResult = cookieJarGuard.applyCookieJarHardening(headers);
+    if (jarResult.changed && grade) {
+      recordSecurityEvent('cookie-blocked', 'warn',
+        `jar:${jarResult.verdict.reason}`, fpGuard.hostOf(details.url));
+    }
+    const nameResult = downloadNameGuard.applyDownloadNameGuard(headers);
+    if (nameResult.changed && grade) {
+      recordSecurityEvent('download-blocked', 'warn',
+        `name:${nameResult.verdict.reason}`, fpGuard.hostOf(details.url));
+    }
+    const refreshResult = refreshGuard.applyRefreshHeaderGuard(headers, details);
+    if (refreshResult.changed && grade) {
+      recordSecurityEvent('origin-boundary-blocked', 'warn',
+        `refresh:${refreshResult.findings[0].reason}`, fpGuard.hostOf(details.url));
+    }
+    const timingResult = serverTimingGuard.applyServerTimingGuard(headers, details);
+    if (timingResult.changed && grade) {
+      recordSecurityEvent('origin-boundary-blocked', 'warn',
+        `timing:${timingResult.findings[0].reason}`, fpGuard.hostOf(details.url));
+    }
+    const rangeResult = contentRangeGuard.applyContentRangeGuard(headers);
+    if (rangeResult.changed && grade) {
+      recordSecurityEvent('download-blocked', 'warn',
+        `range:${rangeResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const charsetResult = noteGuardResult('charset:', charsetGuard.applyCharsetGuard(headers), details.url, grade);
+    const proxyAuthResult = proxyAuthGuard.applyProxyAuthGuard(headers, details);
+    if (proxyAuthResult.changed && grade) {
+      recordSecurityEvent('auth-blocked', 'warn',
+        `proxy:${proxyAuthResult.findings[0].reason}`, fpGuard.hostOf(details.url));
+    }
+    const altSvcResult = altSvcGuard.applyAltSvcGuard(headers, details);
+    if (altSvcResult.changed && grade) {
+      recordSecurityEvent('origin-boundary-blocked', 'warn',
+        `alt-svc:${altSvcResult.reason}`, fpGuard.hostOf(details.url));
+    }
+
+    const nelResult = nelReportGuard.applyReportingGuard(headers, details);
+    if (nelResult.changed && grade) {
+      recordSecurityEvent('origin-boundary-blocked', 'warn',
+        `reporting:${nelResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const linkResult = linkPreloadGuard.applyLinkPreloadGuard(headers, details);
+    if (linkResult.changed && grade) {
+      recordSecurityEvent('origin-boundary-blocked', 'warn',
+        `link:${linkResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const contentLocationResult = contentLocationGuard.applyContentLocationGuard(headers, details);
+    if (contentLocationResult.changed && grade) {
+      recordSecurityEvent('origin-boundary-blocked', 'warn',
+        `content-location:${contentLocationResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const digestResult = digestGuard.applyDigestGuard(headers);
+    if (digestResult.changed && grade) {
+      recordSecurityEvent('protocol-blocked', 'warn',
+        `digest:${digestResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const encodingResult = contentEncodingGuard.applyContentEncodingGuard(headers);
+    if (encodingResult.changed && grade) {
+      recordSecurityEvent('protocol-blocked', 'warn',
+        `content-encoding:${encodingResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const legacyPinResult = legacyPinGuard.applyLegacyPinninguard(headers);
+    if (legacyPinResult.changed && grade) {
+      recordSecurityEvent('protocol-blocked', 'warn',
+        `legacy-pin:${legacyPinResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const bannerResult = serverBannerGuard.applyServerBannerStripGuard(headers);
+    if (bannerResult.changed && grade) {
+      recordSecurityEvent('fingerprint-blocked', 'warn',
+        `banner:${bannerResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const permissionsPolicyResult = permissionsPolicyGuard.applyPermissionsPolicyGuard(headers);
+    if (permissionsPolicyResult.changed && grade) {
+      recordSecurityEvent('origin-boundary-blocked', 'warn',
+        `permissions-policy:${permissionsPolicyResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const frameOptionsResult = frameOptionsGuard.applyFrameOptionsGuard(headers);
+    if (frameOptionsResult.changed && grade) {
+      recordSecurityEvent('origin-boundary-blocked', 'warn',
+        `x-frame-options:${frameOptionsResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const contentDispositionResult = contentDispositionGuard.applyContentDispositionGuard(headers);
+    if (contentDispositionResult.changed && grade) {
+      recordSecurityEvent('download-blocked', 'warn',
+        `content-disposition:${contentDispositionResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const cacheAuthResult = cacheAuthGuard.applyAuthCacheGuard(headers);
+    if (cacheAuthResult.changed && grade) {
+      recordSecurityEvent('auth-blocked', 'warn',
+        `cache-auth:${cacheAuthResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const xssProtectionResult = xssProtectionGuard.applyXSSProtectionGuard(headers);
+    if (xssProtectionResult.changed && grade) {
+      recordSecurityEvent('protocol-blocked', 'warn',
+        `x-xss-protection:${xssProtectionResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const clearSiteDataResult = clearSiteDataGuard.applyClearSiteDataGuard(headers);
+    if (clearSiteDataResult.changed && grade) {
+      recordSecurityEvent('storage-cross-access', 'warn',
+        `clear-site-data:${clearSiteDataResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const serviceWorkerAllowedResult = serviceWorkerAllowedGuard.applyServiceWorkerAllowedGuard(headers);
+    if (serviceWorkerAllowedResult.changed && grade) {
+      recordSecurityEvent('origin-boundary-blocked', 'warn',
+        `service-worker-allowed:${serviceWorkerAllowedResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const referrerPolicyResult = referrerPolicyGuard.applyReferrerPolicyGuard(headers);
+    if (referrerPolicyResult.changed && grade) {
+      recordSecurityEvent('origin-boundary-blocked', 'warn',
+        `referrer-policy:${referrerPolicyResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const crossOriginPolicyResult = crossOriginPolicyGuard.applyCrossOriginPolicyGuard(headers);
+    if (crossOriginPolicyResult.changed && grade) {
+      recordSecurityEvent('origin-boundary-blocked', 'warn',
+        `cross-origin-policy:${(crossOriginPolicyResult.findings[0] || {}).reason || 'ok'}`, fpGuard.hostOf(details.url));
+    }
+    const setCookiePrefixResult = setCookiePrefixGuard.applySetCookiePrefixGuard(headers);
+    if (setCookiePrefixResult.changed && grade) {
+      recordSecurityEvent('storage-cross-access', 'warn',
+        `set-cookie-prefix:${setCookiePrefixResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const retryAfterResult = retryAfterGuard.applyRetryAfterGuard(headers);
+    if (retryAfterResult.changed && grade) {
+      recordSecurityEvent('protocol-blocked', 'warn',
+        `retry-after:${retryAfterResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const xContentTypeOptionsResult = xContentTypeOptionsGuard.applyXContentTypeOptionsGuard(headers);
+    if (xContentTypeOptionsResult.changed && grade) {
+      recordSecurityEvent('protocol-blocked', 'warn',
+        `x-content-type-options:${xContentTypeOptionsResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const wwwAuthenticateResult = wwwAuthenticateGuard.applyWwwAuthenticateGuard(headers, 'WWW-Authenticate');
+    if (wwwAuthenticateResult.changed && grade) {
+      recordSecurityEvent('auth-blocked', 'warn',
+        `www-authenticate:${wwwAuthenticateResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const proxyAuthenticateResult = wwwAuthenticateGuard.applyWwwAuthenticateGuard(headers, 'Proxy-Authenticate');
+    if (proxyAuthenticateResult.changed && grade) {
+      recordSecurityEvent('auth-blocked', 'warn',
+        `proxy-authenticate:${proxyAuthenticateResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const timingAllowOriginResult = timingAllowOriginGuard.applyTimingAllowOriginGuard(headers);
+    if (timingAllowOriginResult.changed && grade) {
+      recordSecurityEvent('origin-boundary-blocked', 'warn',
+        `timing-allow-origin:${timingAllowOriginResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const headerInjectionResult = headerInjectionGuard.applyHeaderInjectionGuard(headers);
+    if (headerInjectionResult.changed && grade) {
+      recordSecurityEvent('protocol-blocked', 'warn',
+        `header-injection:${headerInjectionResult.reason}`, fpGuard.hostOf(details.url));
+    }
+    const documentPolicyResult = noteGuardResult('document-policy:', documentPolicyGuard.applyDocumentPolicyGuard(headers), details.url, grade);
+    const contentDigestResult = noteGuardResult('content-digest:', contentDigestGuard.applyContentDigestGuard(headers), details.url, grade);
+    const reprDigestResult = noteGuardResult('repr-digest:', contentDigestGuard.applyReprDigestGuard(headers), details.url, grade);
+    const cacheStatusResult = noteGuardResult('cache-status:', cacheStatusGuard.applyCacheStatusGuard(headers), details.url, grade);
+    const etagResult = noteGuardResult('etag:', etagGuard.applyETagGuard(headers), details.url, grade);
+    const trailerFieldResult = noteGuardResult('trailer:', trailerFieldGuard.applyTrailerFieldGuard(headers), details.url, grade);
+    const secWebSocketAcceptResult = noteGuardResult('websocket-accept:', secWebSocketGuard.applySecWebSocketAcceptGuard(headers), details.url, grade);
+    const secWebSocketProtocolResult = noteGuardResult('websocket-protocol:', secWebSocketGuard.applySecWebSocketProtocolGuard(headers), details.url, grade);
+    const xDownloadOptionsResult = noteGuardResult('x-download-options:', xDownloadOptionsGuard.applyXDownloadOptionsGuard(headers), details.url, grade);
+    const fileSystemAccessResult = noteGuardDenied('file-system-access:', fileSystemAccessGuard.inspectFileSystemAccess(details.url), details.url, grade);
+    const credentialRequestResult = noteGuardDenied('credential-request:', credentialRequestGuard.inspectCredentialRequest(details.url), details.url, grade);
+    if (grade) {
+      const priorityResult = noteGuardResult('priority:', priorityGuard.applyPriorityGuard(headers), details.url, true);
+      const linkResponseResult = noteGuardResult('link:', linkResponseGuard.applyLinkResponseGuard(headers, details.url), details.url, true);
+      const acceptPatchResult = noteGuardResult('accept-patch:', acceptPatchGuard.applyAcceptPatchGuard(headers), details.url, true);
+      const speculationRulesResult = noteGuardResult('speculation-rules:', speculationRulesGuard.applySpeculationRulesGuard(headers, details.url), details.url, true);
+      const proxyStatusResult = noteGuardResult('proxy-status:', proxyStatusGuard.applyProxyStatusGuard(headers), details.url, true);
+      const acceptCharsetResult = noteGuardResult('accept-charset:', acceptCharsetGuard.applyAcceptCharsetGuard(headers), details.url, true);
+      const reportingEndpointsResult = noteGuardResult('reporting-endpoints:', reportingGuard.applyReportingEndpointsGuard(headers), details.url, true);
+      const reportToResult = noteGuardResult('report-to:', reportingGuard.applyReportToGuard(headers), details.url, true);
+      const upgradeResult = noteGuardResult('upgrade:', upgradeGuard.applyUpgradeHeaderGuard(headers), details.url, true);
+      const expectCtResult = noteGuardResult('expect-ct:', expectCtGuard.applyExpectCtGuard(headers), details.url, true);
+      const publicKeyPinsResult = noteGuardResult('public-key-pins:', publicKeyPinsGuard.applyPublicKeyPinsGuard(headers), details.url, true);
+      const originTrialResult = noteGuardResult('origin-trial:', originTrialGuard.applyOriginTrialGuard(headers, details.url), details.url, true);
+      const coepGuardResult = noteGuardResult('coep:', coepGuard.applyCoepGuard(headers), details.url, true);
+      const cspReportOnlyGuardResult = noteGuardResult('csp-report-only:', cspReportOnlyGuard.applyCspReportOnlyGuard(headers), details.url, true);
+      const xpcdpGuardResult = noteGuardResult('x-permitted-cross-domain-policies:', xpcdpGuard.applyXpcdpGuard(headers), details.url, true);
+      const acacGuardResult = noteGuardResult('cors-credentials:', acacGuard.applyAcacGuard(headers), details.url, true);
+      const secGpcGuardResult = noteGuardResult('sec-gpc:', secGpcGuard.applySecGpcGuard(headers), details.url, true);
+      const dntGuardResult = noteGuardResult('dnt:', dntGuard.applyDntGuard(headers), details.url, true);
+      const acceptLanguageGuardResult = noteGuardResult('accept-language:', acceptLanguageGuard.applyAcceptLanguageGuard(headers), details.url, true);
+      const ifNoneMatchGuardResult = noteGuardResult('if-none-match:', ifNoneMatchGuard.applyIfNoneMatchGuard(headers), details.url, true);
+      const rangeGuardResult = noteGuardResult('range:', rangeGuard.applyRangeGuard(headers), details.url, true);
+      const connectionGuardResult = noteGuardResult('connection:', connectionGuard.applyConnectionGuard(headers), details.url, true);
+      const teGuardResult = noteGuardResult('te:', teGuard.applyTeGuard(headers), details.url, true);
+      const viaGuardResult = noteGuardResult('via:', viaGuard.applyViaGuard(headers), details.url, true);
+      const forwardedGuardResult = noteGuardResult('forwarded:', forwardedGuard.applyForwardedGuard(headers), details.url, true);
+      const secFetchSiteGuardResult = noteGuardResult('sec-fetch-site:', secFetchSiteGuard.applySecFetchSiteGuard(headers), details.url, true);
+      const sourceMapGuardResult = noteGuardResult('sourcemap:', sourceMapGuard.applySourceMapGuard(headers), details.url, true);
+      const attributionGuardResult = noteGuardResult('attribution-reporting:', attributionGuard.applyAttributionGuard(headers), details.url, true);
+      const reportingEndpointsGuardResult = noteGuardResult('reporting-endpoints:', reportingEndpointsGuard.applyReportingEndpointsGuard(headers), details.url, true);
+      const noSniffGuardResult = noteGuardResult('nosniff:', noSniffGuard.applyNoSniffGuard(headers), details.url, true);
+      const xRequestIdGuardResult = noteGuardResult('x-request-id:', xRequestIdGuard.applyXRequestIdGuard(headers), details.url, true);
+      const traceparentGuardResult = noteGuardResult('traceparent:', traceparentGuard.applyTraceparentGuard(headers), details.url, true);
+      const saveDataGuardResult = noteGuardResult('save-data:', saveDataGuard.applySaveDataGuard(headers), details.url, true);
+      const trueClientIpGuardResult = noteGuardResult('true-client-ip:', trueClientIpGuard.applyTrueClientIpGuard(headers), details.url, true);
+      const xRealIpGuardResult = noteGuardResult('x-real-ip:', xRealIpGuard.applyXRealIpGuard(headers), details.url, true);
+      const acceptEncodingGuardResult = noteGuardResult('accept-encoding:', acceptEncodingGuard.applyAcceptEncodingGuard(headers), details.url, true);
+      const exposeHeadersGuardResult = noteGuardResult('exposeheaders:', exposeHeadersGuard.applyExposeHeadersGuard(headers), details.url, true);
+      const maxAgeGuardResult = noteGuardResult('maxage:', maxAgeGuard.applyMaxAgeGuard(headers), details.url, true);
+      const allowMethodsGuardResult = noteGuardResult('allowmethods:', allowMethodsGuard.applyAllowMethodsGuard(headers), details.url, true);
+      const allowHeadersGuardResult = noteGuardResult('allowheaders:', allowHeadersGuard.applyAllowHeadersGuard(headers), details.url, true);
+      const coopGuardResult = noteGuardResult('coop:', coopGuard.applyCoopGuard(headers), details.url, true);
+      const secFetchModeGuardResult = noteGuardResult('secfetchmode:', secFetchModeGuard.applySecFetchModeGuard(headers), details.url, true);
+      const secFetchDestGuardResult = noteGuardResult('secfetchdest:', secFetchDestGuard.applySecFetchDestGuard(headers), details.url, true);
+      const secFetchUserGuardResult = noteGuardResult('secfetchuser:', secFetchUserGuard.applySecFetchUserGuard(headers), details.url, true);
+      const chPlatformGuardResult = noteGuardResult('chplatform:', chPlatformGuard.applyChPlatformGuard(headers), details.url, true);
+      const chMobileGuardResult = noteGuardResult('chmobile:', chMobileGuard.applyChMobileGuard(headers), details.url, true);
+      const ifMatchGuardResult = noteGuardResult('ifmatch:', ifMatchGuard.applyIfMatchGuard(headers), details.url, true);
+      const ifRangeGuardResult = noteGuardResult('ifrange:', ifRangeGuard.applyIfRangeGuard(headers), details.url, true);
+      const ifModifiedSinceGuardResult = noteGuardResult('ifmodifiedsince:', ifModifiedSinceGuard.applyIfModifiedSinceGuard(headers), details.url, true);
+      const ifUnmodifiedSinceGuardResult = noteGuardResult('ifunmodifiedsince:', ifUnmodifiedSinceGuard.applyIfUnmodifiedSinceGuard(headers), details.url, true);
+      const contentTypeGuardResult = noteGuardResult('contenttype:', contentTypeGuard.applyContentTypeGuard(headers), details.url, true);
+      const allowHeaderGuardResult = noteGuardResult('allow:', allowHeaderGuard.applyAllowGuard(headers), details.url, true);
+      const expiresGuardResult = noteGuardResult('expires:', expiresGuard.applyExpiresGuard(headers), details.url, true);
+      const earlyHintGuardResult = noteGuardResult('earlyhint:', earlyHintGuard.applyEarlyHintGuard(headers), details.url, true);
+      const traceStateGuardResult = noteGuardResult('tracestate:', traceStateGuard.applyTraceStateGuard(headers), details.url, true);
+      const baggageGuardResult = noteGuardResult('baggage:', baggageGuard.applyBaggageGuard(headers), details.url, true);
+      const xfwdProtoGuardResult = noteGuardResult('xforwardedproto:', xfwdProtoGuard.applyXForwardedProtoGuard(headers), details.url, true);
+      const xfwdHostGuardResult = noteGuardResult('xforwardedhost:', xfwdHostGuard.applyXForwardedHostGuard(headers), details.url, true);
+      const xfwdForGuardResult = noteGuardResult('xforwardedfor:', xfwdForGuard.applyXForwardedForGuard(headers), details.url, true);
+      const featurePolicyGuardResult = noteGuardResult('featurepolicy:', featurePolicyGuard.applyFeaturePolicyGuard(headers), details.url, true);
+      const criticalChGuardResult = noteGuardResult('criticalch:', criticalChGuard.applyCriticalChGuard(headers), details.url, true);
+      const wantDigestGuardResult = noteGuardResult('wantdigest:', wantDigestGuard.applyWantDigestGuard(headers), details.url, true);
+      const corpGuardResult = noteGuardResult('corp:', corpGuard.applyCorpGuard(headers), details.url, true);
+      const xfwdPortGuardResult = noteGuardResult('xforwardedport:', xfwdPortGuard.applyXForwardedPortGuard(headers), details.url, true);
+      const taoOriginGuardResult = noteGuardResult('timingalloworigin:', taoOriginGuard.applyTimingAllowOriginGuard(headers), details.url, true);
+      const proxyAuthenticateGuardResult = noteGuardResult('proxyauthenticate:', proxyAuthenticateGuard.applyProxyAuthenticateGuard(headers), details.url, true);
+      const xRequestedWithGuardResult = noteGuardResult('xrequestedwith:', xRequestedWithGuard.applyXRequestedWithGuard(headers), details.url, true);
+      const xMethodOverrideGuardResult = noteGuardResult('xhttpmethodoverride:', xMethodOverrideGuard.applyXHttpMethodOverrideGuard(headers), details.url, true);
+      const xOriginalUrlGuardResult = noteGuardResult('xoriginalurl:', xOriginalUrlGuard.applyXOriginalUrlGuard(headers), details.url, true);
+      const responseSurfaceAudit = securityBoundaryHub.inspectResponseHeaders(headers, fpGuard.hostOf(details.url));
+      if (responseSurfaceAudit.changed) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `response-surface:${securityBoundaryHub.describeFindings(responseSurfaceAudit.findings)}`,
+          fpGuard.hostOf(details.url));
+      }
+      const acceptChLifetimeResult = noteGuardResult('accept-ch-lifetime:', acceptChLifetimeGuard.applyAcceptChLifetimeGuard(headers), details.url, true);
+      const securityHeadersAudit = securityHeadersGuard.auditHeaderBatch([{ url: details.url, headers }]);
+      if (securityHeadersAudit.weak > 0) {
+        recordSecurityEvent('mixed-content-blocked', 'warn',
+          `security-headers:${securityHeadersGuard.describeFindings(securityHeadersAudit.findings)}`,
+          fpGuard.hostOf(details.url));
+      }
+      const xuaCompatibleResult = noteGuardResult('x-ua-compatible:', xuaCompatibleGuard.applyXuaCompatibleGuard(headers), details.url, true);
+      const acceptRangesResult = noteGuardResult('accept-ranges:', acceptRangesGuard.applyAcceptRangesGuard(headers), details.url, true);
+      const contentBaseResult = noteGuardResult('content-base:', contentBaseGuard.applyContentBaseGuard(headers), details.url, true);
+      const contentMd5Result = noteGuardResult('content-md5:', contentMd5Guard.applyContentMd5Guard(headers), details.url, true);
+      const pragmaCacheResult = noteGuardResult('pragma:', pragmaCacheGuard.applyPragmaCacheGuard(headers), details.url, true);
+      const xRobotsResult = noteGuardResult('x-robots-tag:', xRobotsGuard.applyXRobotsGuard(headers), details.url, true);
+      const surrogateControlResult = noteGuardResult('surrogate-control:', surrogateControlGuard.applySurrogateControlGuard(headers), details.url, true);
+      const setCookie2Result = noteGuardResult('set-cookie2:', setCookie2Guard.applySetCookie2Guard(headers), details.url, true);
+      const xWebKitCspResult = noteGuardResult('x-webkit-csp:', xWebKitCspGuard.applyXWebKitCspGuard(headers), details.url, true);
+      const authenticationInfoResult = noteGuardResult('authentication-info:', authenticationInfoGuard.applyAuthenticationInfoGuard(headers), details.url, true);
+      const originAgentClusterResult = noteGuardResult('origin-agent-cluster:', originAgentClusterGuard.applyOriginAgentClusterGuard(headers), details.url, true);
+      const ageClockResult = noteGuardResult('age:', ageClockGuard.applyAgeClockGuard(headers), details.url, true);
+      const warningHeaderResult = noteGuardResult('warning:', warningHeaderGuard.applyWarningHeaderGuard(headers), details.url, true);
+      const contentLanguageResult = noteGuardResult('content-language:', contentLanguageGuard.applyContentLanguageGuard(headers), details.url, true);
+      const lastModifiedResult = noteGuardResult('last-modified:', lastModifiedGuard.applyLastModifiedGuard(headers), details.url, true);
+      const dnsPrefetchResult = noteGuardResult('x-dns-prefetch-control:', dnsPrefetchGuard.applyDnsPrefetchGuard(headers), details.url, true);
+      const headerBudgetResult = noteGuardResult('header-budget:', headerBudgetGuard.applyHeaderBudgetGuard(headers), details.url, true);
+      const acceptChResult = noteGuardResult('accept-ch:', acceptChGuard.applyAcceptChGuard(headers), details.url, true);
+      const keepAliveResult = noteGuardResult('keep-alive:', keepAliveGuard.applyKeepAliveGuard(headers), details.url, true);
+      const crossDomainPolicyResult = noteGuardResult('x-permitted-cross-domain-policies:', crossDomainPolicyGuard.applyCrossDomainPolicyGuard(headers), details.url, true);
+      const transferEncodingResult = noteGuardResult('content-transfer-encoding:', transferEncodingGuard.applyTransferEncodingGuard(headers), details.url, true);
+      const hstsResult = noteGuardResult('hsts:', hstsGuard.applyHstsGuard(headers), details.url, true);
+    }
+  } catch {}
+  const setIfMissing = (name, value) => {
+    if (!headers[name] && !headers[name.toLowerCase()]) headers[name] = value;
+  };
+  setIfMissing('X-Content-Type-Options', ['nosniff']);
+  setIfMissing('X-Frame-Options', ['SAMEORIGIN']);
+  setIfMissing('Referrer-Policy', ['strict-origin-when-cross-origin']);
+  // 关闭 FLoC / 广告兴趣组 / Topics / 隐私令牌等追踪特性。
+  // 指令由 permpolicy 内核统一构建（强制关闭项不可被放开，白名单防头注入）；
+  // 站点未自行下发策略时注入默认值，尊重站点对其它能力的显式配置。
+  // 画中画按用户隐私开关显式给出 picture-in-picture 指令（放开 * / 全禁 ()）。
+  setIfMissing('Permissions-Policy', [permPolicy.headerWithPictureInPicture(allowPictureInPicture)]);
+  const isLocal = details.url.startsWith('cosy://') || details.url.startsWith('file://');
+  if (isLocal && !headers['Content-Security-Policy'] && !headers['content-security-policy']) {
+    headers['Content-Security-Policy'] = [LOCAL_UI_CSP];
+  }
+  // 本地页面（cosy:// / file://）加 COOP/COEP/CORP，跨源资源进不来，
+  // 防止恶意网页把我们的设置页 / 下载页 iframe 化后读内容（Spectre 类侧信道）。
+  if (isLocal) {
+    headers['Cross-Origin-Opener-Policy'] = ['same-origin'];
+    headers['Cross-Origin-Embedder-Policy'] = ['require-corp'];
+    headers['Cross-Origin-Resource-Policy'] = ['same-origin'];
+  }
+  // HTTPS 响应默认补 HSTS，让浏览器后续访问自动升级（1 年 + includeSubDomains）。
+  // 已经自带 HSTS 的站点不覆盖。
+  if (details.url.startsWith('https://') &&
+      !headers['Strict-Transport-Security'] && !headers['strict-transport-security']) {
+    headers['Strict-Transport-Security'] = ['max-age=31536000; includeSubDomains'];
+  }
+  // Cookie 加固放在所有响应头处理之后、回写之前：剥离第三方 / 非法前缀 /
+  // http 下 Secure 的 Set-Cookie，并为第一方 Cookie 补 SameSite=Lax。
+  // 仅处理 http(s) 响应，内部 cosy:// 页面不种浏览器 Cookie。
+  if (/^https?:/i.test(details.url)) {
+    applyCookieHardening(headers, details);
+  }
+  return headers;
+}
 
 // applyOutboundHeaderHardening：在任意会话上挂统一的“出向请求头”加固。
 // 无论默认会话还是 fromPartition 的隔离 / 访客会话，都必须：
@@ -1692,7 +2301,43 @@ const { hardenResponseHeaders } = require('./responseharden').create({
 // 历史上隔离会话只补了前两项，漏掉 fpGuard 清洗，导致“本该更隐私的隔离分区”
 // 反而继续外发高熵指纹头。options.recordFp 仅控制是否把命中聚合进指纹台账
 // （分区会话不重复计数），但清洗动作在所有会话上恒为开启。
-
+function applyOutboundHeaderHardening(targetSession, options) {
+  const recordFp = !!(options && options.recordFp);
+  targetSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    const headers = details.requestHeaders || {};
+    headers['DNT'] = '1';
+    headers['Sec-GPC'] = '1';
+    headers['Upgrade-Insecure-Requests'] = '1';
+    // UA 覆盖：非 default 策略时把请求头里的 User-Agent 换成策略取值。
+    // 顶层导航的 UA 由 session.setUserAgent（applyUaPolicyToSession）兜底，
+    // 这里覆盖 fetch/XHR/子资源等所有子请求，统计只计实际改写次数。
+    if (uaPolicyState.mode !== uaPolicyCore.MODES.DEFAULT) {
+      headers['User-Agent'] = resolveEffectiveUa();
+      uaOverrideCount = uaPolicyCore.countUaOverrides(uaOverrideCount);
+      uaLastOverrideAt = Date.now();
+    }
+    try { trimReferrerHeader(details, headers); } catch {}
+    try {
+      const removed = fpGuard.sanitizeOutboundHeaders(details, headers, {
+        reduceClientHints,
+        blockAdSignals,
+        blockHyperlinkPing,
+        stripAcceptCh,
+        webrtcMode,
+      });
+      if (recordFp) {
+        const host = fpGuard.hostOf(details.url);
+        if (host && removed.clientHints.length) {
+          recordFpHit(host, 'client-hints', removed.clientHints);
+        }
+        if (host && removed.adSignals.length) {
+          recordFpHit(host, 'ad-signals', removed.adSignals);
+        }
+      }
+    } catch {}
+    callback({ requestHeaders: headers });
+  });
+}
 
 // applyWebRequestFiltering：在任意会话上挂统一的 onBeforeRequest 过滤。
 // Electron 的 webRequest 处理器按会话注册、不会从 defaultSession 继承，因此
@@ -1702,7 +2347,38 @@ const { hardenResponseHeaders } = require('./responseharden').create({
 // 阻断 / 升级 / 安全审计在所有会话上行为一致。
 // buildRequestPipelineDeps 组装纯决策内核所需的守卫 / 台账 / 横幅能力。
 // 三个开关是可变设置（用户可在设置页切换），用 getter 保证每次判定都读到当前值。
-
+function buildRequestPipelineDeps() {
+  return {
+    flags: {
+      get blockHyperlinkPing() { return blockHyperlinkPing; },
+      get blockLocalNetworkAccess() { return blockLocalNetworkAccess; },
+      get httpsOnlyEnabled() { return httpsOnlyEnabled; },
+    },
+    guards: {
+      isHyperlinkPing: fpGuard.isHyperlinkPing.bind(fpGuard),
+      hostOf: fpGuard.hostOf.bind(fpGuard),
+      isTrackerRequest,
+      evaluatePnaRequest: pnaGuard.evaluatePnaRequest.bind(pnaGuard),
+      evaluateRequestMethod: requestMethodGuard.evaluateRequestMethod.bind(requestMethodGuard),
+      evaluatePluginResource: pluginResourceGuard.evaluatePluginResource.bind(pluginResourceGuard),
+      classifyMixedContent: mixedGuard.classifyMixedContent.bind(mixedGuard),
+      stripTrackingFromUrl,
+      analyzeHostForSpoof,
+      analyzeBrand: brandGuard.analyzeBrand.bind(brandGuard),
+      analyzePhish: phishUrl.analyze.bind(phishUrl),
+      isPrivateNetworkHost,
+      isHttpException: isHttpExceptionHost,
+    },
+    record: {
+      fpHit: recordFpHit,
+      securityEvent: recordSecurityEvent,
+      blockedTracker: recordBlockedTracker,
+      pnaBlock: recordPnaBlock,
+      brandSpoof: recordBrandSpoof,
+    },
+    notify: { sendToRenderer },
+  };
+}
 
 function applyWebRequestFiltering(targetSession, options) {
   // options.logRequests 仅控制是否把请求量计入默认会话的连接统计（分区不重复计数）；
@@ -1712,7 +2388,15 @@ function applyWebRequestFiltering(targetSession, options) {
   requestPipeline.applyPipeline(targetSession.webRequest, buildRequestPipelineDeps(), noteAttempt);
 }
 
-
+function setupSecurityHeaders() {
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    const headers = hardenResponseHeaders(details.responseHeaders, details, { grade: true });
+    callback({ responseHeaders: headers });
+  });
+  // 默认会话聚合指纹命中与请求量统计；三套过滤与隔离会话共用同一内核，避免行为分叉。
+  applyOutboundHeaderHardening(session.defaultSession, { recordFp: true });
+  applyWebRequestFiltering(session.defaultSession, { logRequests: true });
+}
 
 // 注意：'openExternal' 不再自动放行。网页调 window.openExternal / <a href="ms-*:">
 // 之前只要在这个集合里就会被静默拉系统程序，等于把 Follina 那类协议投毒开放给任意站点。
@@ -1725,7 +2409,19 @@ const ALLOWED_PERMISSIONS = new Set([
 
 // confirmAndOpenExternal 统一入口：http(s) 开新标签，外部协议走按站点记忆的确认流。
 // renderer 想让浏览器"点 mailto:" 必须走这个 IPC，不许直接 shell.openExternal。
-
+async function confirmAndOpenExternal(url, origin) {
+  if (!url || typeof url !== 'string') return { ok: false, reason: 'empty url' };
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    if (!isSafeUrl(url)) {
+      recordSecurityEvent('protocol-blocked', 'critical',
+        `外部协议入口拒绝了不安全的 http(s) 地址: ${url}`, origin);
+      return { ok: false, reason: 'unsafe url' };
+    }
+    createNewTab(url);
+    return { ok: true };
+  }
+  return await launchExternalWithPrompt(url, origin || '', false);
+}
 
 // ===== 外部协议唤起防护（protocol-launch guard）=====
 // 背景：Chromium 拉起本机协议处理器（ms-word: / zoommtg: / ms-cmd: 这一族，
@@ -1742,7 +2438,6 @@ const ALLOWED_PERMISSIONS = new Set([
 //     可查看 / 撤销，决定文件原子落盘。
 
 const permissionStore = require('./permissionstore');
-const protocolRate = require('./protocolrate');
 const {
   CONFIRMABLE_EXTERNAL_SCHEMES,
   getRememberedProtocolDecision,
@@ -1755,7 +2450,20 @@ const {
 //   'in-pane'  ：浏览器内正常加载；
 //   'confirm'  ：外部协议但可在确认后交给系统（mailto/tel）；
 //   'block'    ：危险 / 不允许的协议，必须取消。
-
+function classifyFrameNavigation(url, isMainFrame) {
+  const scheme = normalizeExternalScheme(url);
+  if (!scheme) return 'block';
+  if (isMainFrame) {
+    // 主框架允许的窗内协议与 isSafeUrl 保持一致，避免这里放行了别处不认的协议。
+    if (scheme === 'http:' || scheme === 'https:' || scheme === 'file:' || scheme === 'cosy:') {
+      return 'in-pane';
+    }
+  } else if (SUBFRAME_WEB_SCHEMES.has(scheme)) {
+    return 'in-pane';
+  }
+  if (CONFIRMABLE_EXTERNAL_SCHEMES.has(scheme)) return 'confirm';
+  return 'block';
+}
 
 function originOfContents(contents) {
   if (!contents || typeof contents.getURL !== 'function') return '';
@@ -1764,13 +2472,100 @@ function originOfContents(contents) {
 
 // launchExternalWithPrompt 是所有"页面想唤起外部程序"的唯一出口。
 // remembered 决定直接兑现，否则弹原生确认框；remember=true 时按 origin+scheme 记忆。
-const protocolRateLimiter = protocolRate.createLimiter();
-
-
+async function launchExternalWithPrompt(url, origin, remember) {
+  const scheme = normalizeExternalScheme(url);
+  if (!scheme || !CONFIRMABLE_EXTERNAL_SCHEMES.has(scheme)) {
+    recordSecurityEvent('protocol-blocked', 'warn',
+      `尝试打开不可确认的外部协议 ${scheme || '(无效)'}: ${url}`, origin);
+    sendToRenderer('show-toast', `已阻止打开外部协议: ${String(url).slice(0, 60)}`);
+    return { ok: false, reason: 'blocked scheme' };
+  }
+  // 内容消毒：即便协议在白名单内，仍要挡住控制字符 / CRLF 注入 / 畸形 mailto、tel。
+  // 交给系统的必须是 shellguard 放行后的规范化 URL（见 shellguard.js）。
+  const extReview = shellGuard.reviewExternalUrl(url, CONFIRMABLE_EXTERNAL_SCHEMES);
+  if (!extReview.ok) {
+    recordSecurityEvent('protocol-blocked', 'warn',
+      `外部唤起内容消毒未过（${shellGuard.describeReason(extReview.reason)}）: ${scheme}`, origin);
+    sendToRenderer('show-toast', `已阻止不安全的外部链接: ${shellGuard.describeReason(extReview.reason)}`);
+    return { ok: false, reason: extReview.reason };
+  }
+  const extBudget = externalBudget.judge({ url: extReview.url, origin, now: Date.now() });
+  if (!extBudget.allowed) {
+    recordSecurityEvent('protocol-flood', 'warn',
+      `外部唤起被节流（${externalProtocolBudget.describeReason(extBudget.reason)}）: ${scheme}`, origin);
+    sendToRenderer('show-toast', `已阻止外部协议唤起: ${externalProtocolBudget.describeReason(extBudget.reason)}`);
+    return { ok: false, reason: extBudget.reason };
+  }
+  const safeExternalUrl = extReview.url;
+  if (isRememberableOrigin(origin)) {
+    const known = getRememberedProtocolDecision(origin, scheme);
+    if (known === 'deny') {
+      recordSecurityEvent('protocol-denied', 'info',
+        `按记忆决定阻止 ${scheme} 协议唤起`, origin);
+      sendToRenderer('show-toast', `已按记忆阻止 ${scheme} 协议（可在设置中撤销）`);
+      return { ok: false, reason: 'remembered deny' };
+    }
+    if (known === 'allow') {
+      try {
+        await shell.openExternal(safeExternalUrl, { activate: true });
+        return { ok: true, reason: 'remembered allow' };
+      } catch (e) {
+        return { ok: false, reason: String(e && e.message || e) };
+      }
+    }
+  }
+  const siteLabel = isRememberableOrigin(origin) ? origin : '当前页面';
+  // 必须用异步版：showMessageBoxSync 只返回按钮序号，拿不到 checkbox 状态。
+  const choice = await dialog.showMessageBox(mainWindow, {
+    type: 'question',
+    buttons: ['允许打开', '拒绝'],
+    defaultId: 1,
+    cancelId: 1,
+    title: '网站想要打开外部应用',
+    message: `${siteLabel} 想要打开:\n${safeExternalUrl}\n\n是否允许？`,
+    checkboxLabel: '记住对此网站的选择（可在设置中撤销）',
+    checkboxChecked: false
+  });
+  const checked = !!choice.checkboxChecked;
+  const decision = choice.response === 0 ? 'allow' : 'deny';
+  if (remember && checked && isRememberableOrigin(origin)) {
+    rememberProtocolDecision(origin, scheme, decision);
+  }
+  if (decision !== 'allow') {
+    recordSecurityEvent('protocol-denied', 'info', `用户拒绝了 ${scheme} 协议唤起`, origin);
+    return { ok: false, reason: 'user denied' };
+  }
+  try {
+    await shell.openExternal(safeExternalUrl, { activate: true });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: String(e && e.message || e) };
+  }
+}
 
 // handleFrameNavigationAttempt 供 will-navigate / will-frame-navigate /
 // will-redirect 统一调用，返回 true 表示"已经接管，原导航必须 preventDefault"。
-
+function handleFrameNavigationAttempt(contents, url, isMainFrame) {
+  const kind = classifyFrameNavigation(url, isMainFrame);
+  if (kind === 'in-pane') return false;
+  if (kind === 'confirm') {
+    const origin = originOfContents(contents);
+    // 不 await：导航事件里不能挂起异步流程，弹窗结果在另一条路径里处理。
+    launchExternalWithPrompt(url, origin, true);
+    return true;
+  }
+  const scheme = normalizeExternalScheme(url) || '未知协议';
+  recordSecurityEvent('protocol-blocked', isMainFrame ? 'warn' : 'info',
+    `${isMainFrame ? '主框架' : '子框架'}外部协议导航被阻止: ${scheme} ${url}`,
+    originOfContents(contents));
+  // 子框架拦截不弹 toast：恶意页面可以一秒塞几十个 iframe，toast 会变成轰炸。
+  if (isMainFrame) {
+    sendToRenderer('show-toast', `已阻止不安全的外部协议导航: ${scheme}`);
+  } else {
+    console.log(`[protocol-guard] 已阻止子框架外部协议导航: ${scheme}`);
+  }
+  return true;
+}
 
 const securityCenter = require('./securitycenter');
 securityCenter.bindRendererNotifier(sendToRenderer);
@@ -1799,7 +2594,30 @@ const headerGrades = [];
 let headerGradesLoaded = false;
 let headerGradeSaveTimer = null;
 
-
+function loadHeaderGrades() {
+  if (headerGradesLoaded) return;
+  headerGradesLoaded = true;
+  try {
+    const data = ledgerStore.readJSONStore(headerGradeStorePath, {});
+    const entries = Array.isArray(data && data.hosts) ? data.hosts : null;
+    if (!entries) return;
+    for (const h of entries) {
+      if (!h || typeof h !== 'object' || typeof h.host !== 'string' || !h.host) continue;
+      if (typeof h.grade !== 'string' || !/^[A-F]$/.test(h.grade)) continue;
+      headerGrades.push({
+        host: h.host.slice(0, 253),
+        time: Number(h.time) || Date.now(),
+        visits: Math.max(1, Number(h.visits) || 1),
+        grade: h.grade,
+        percent: Math.max(0, Math.min(100, Number(h.percent) || 0)),
+        insecureTransport: !!h.insecureTransport,
+        checks: Array.isArray(h.checks) ? h.checks.slice(0, 16) : [],
+        warnings: Array.isArray(h.warnings) ? h.warnings.slice(0, 16) : [],
+      });
+      if (headerGrades.length >= MAX_HEADER_GRADE_HOSTS) break;
+    }
+  } catch {}
+}
 
 function persistHeaderGrades() {
   if (headerGradeSaveTimer) clearTimeout(headerGradeSaveTimer);
@@ -1811,7 +2629,45 @@ function persistHeaderGrades() {
 }
 
 // recordHeaderGrade 对一次顶层文档响应评级并按 host 聚合。纯计算，不抛错。
-
+function recordHeaderGrade(url, rawHeaders) {
+  if (typeof url !== 'string' || !/^https?:/i.test(url)) return;
+  let result;
+  try {
+    result = headerGrade.gradeSecurityHeaders(url, rawHeaders);
+  } catch {
+    return;
+  }
+  if (!result || !result.host) return;
+  loadHeaderGrades();
+  const now = Date.now();
+  const idx = headerGrades.findIndex(h => h.host === result.host);
+  const record = {
+    host: result.host,
+    time: now,
+    visits: 1,
+    grade: result.grade,
+    percent: result.percent,
+    insecureTransport: !!result.insecureTransport,
+    checks: result.checks.map(c => ({
+      id: String(c.id), name: String(c.name), weight: Number(c.weight) || 0,
+      score: Number(c.score) || 0, status: String(c.status),
+      value: String(c.value || '').slice(0, 300), note: String(c.note || '').slice(0, 300),
+    })),
+    warnings: result.warnings.map(w => String(w).slice(0, 200)).slice(0, 16),
+  };
+  if (idx >= 0) {
+    record.visits = Math.min(Number.MAX_SAFE_INTEGER, (Number(headerGrades[idx].visits) || 1) + 1);
+    headerGrades.splice(idx, 1);
+    headerGrades.push(record);
+  } else {
+    headerGrades.push(record);
+  }
+  if (headerGrades.length > MAX_HEADER_GRADE_HOSTS) {
+    headerGrades.splice(0, headerGrades.length - MAX_HEADER_GRADE_HOSTS);
+  }
+  persistHeaderGrades();
+  sendToRenderer('header-grade-updated', { host: record.host, grade: record.grade, percent: record.percent });
+}
 
 function listHeaderGrades(limit = 200) {
   loadHeaderGrades();
@@ -1872,7 +2728,27 @@ function persistRequestLog() {
 }
 
 // recordRequestAttempt 由 onBeforeRequest 调用；任何异常都不影响浏览。
-
+function recordRequestAttempt(details, blocked) {
+  try {
+    if (!details || typeof details.url !== 'string') return;
+    if (!/^https?:/i.test(details.url)) return;
+    loadRequestLog();
+    requestLog.ingest(requestLogStore, {
+      url: details.url,
+      resourceType: details.resourceType,
+      blocked: !!blocked,
+      navigated: !blocked && details.resourceType === 'mainFrame',
+      time: Date.now(),
+    });
+    persistRequestLog();
+    if (requestLogNotifyTimer) return;
+    requestLogNotifyTimer = setTimeout(() => {
+      requestLogNotifyTimer = null;
+      sendToRenderer('request-log-updated', requestLog.stats(requestLogStore));
+    }, 2000);
+    requestLogNotifyTimer.unref?.();
+  } catch {}
+}
 
 function listRequestLogEntries(limit = 200) {
   loadRequestLog();
@@ -1910,7 +2786,33 @@ let brandSpoofsLoaded = false;
 let brandSpoofSaveTimer = null;
 let brandSpoofNotifyTimer = null;
 
-
+function loadBrandSpoofs() {
+  if (brandSpoofsLoaded) return;
+  brandSpoofsLoaded = true;
+  try {
+    const data = ledgerStore.readJSONStore(brandSpoofStorePath, {});
+    if (data && Array.isArray(data.hosts)) {
+      const now = Date.now();
+      for (const h of data.hosts) {
+        if (!h || typeof h !== 'object') continue;
+        if (typeof h.host !== 'string' || !h.host) continue;
+        if (!BRAND_SPOOF_REASONS.has(h.reason)) continue;
+        brandSpoofs.push({
+          host: String(h.host).slice(0, 253),
+          brand: String(h.brand || '').slice(0, 40),
+          reason: h.reason,
+          hint: String(h.hint || '').slice(0, 120),
+          firstTime: Number(h.firstTime) || now,
+          lastTime: Number(h.lastTime) || now,
+          count: Math.max(1, Number(h.count) || 1),
+        });
+      }
+      if (brandSpoofs.length > MAX_BRAND_SPOOF_HOSTS) {
+        brandSpoofs = brandSpoofs.slice(-MAX_BRAND_SPOOF_HOSTS);
+      }
+    }
+  } catch {}
+}
 
 function persistBrandSpoofs() {
   if (brandSpoofSaveTimer) clearTimeout(brandSpoofSaveTimer);
@@ -1923,7 +2825,47 @@ function persistBrandSpoofs() {
 
 // recordBrandSpoof 由 onBeforeRequest 顶层导航调用；入参来自纯模块，仍重新白名单化，
 // 防止脏数据写盘。任何异常都不影响浏览。
-
+function recordBrandSpoof(hit) {
+  try {
+    if (!hit || typeof hit !== 'object') return;
+    const host = String(hit.hostname || '').toLowerCase().replace(/\.$/, '').slice(0, 253);
+    if (!host || !BRAND_SPOOF_REASONS.has(hit.reason)) return;
+    const now = Date.now();
+    loadBrandSpoofs();
+    const idx = brandSpoofs.findIndex(h => h.host === host);
+    if (idx >= 0) {
+      const rec = brandSpoofs[idx];
+      rec.lastTime = now;
+      rec.count = Math.min(Number.MAX_SAFE_INTEGER, (Number(rec.count) || 1) + 1);
+      // 最近一次的原因/品牌更可信（同一主机可能命中多条规则）。
+      rec.reason = hit.reason;
+      rec.brand = String(hit.brand || rec.brand || '').slice(0, 40);
+      rec.hint = String(hit.hint || rec.hint || '').slice(0, 120);
+      brandSpoofs.splice(idx, 1);
+      brandSpoofs.push(rec);
+    } else {
+      brandSpoofs.push({
+        host,
+        brand: String(hit.brand || '').slice(0, 40),
+        reason: hit.reason,
+        hint: String(hit.hint || '').slice(0, 120),
+        firstTime: now,
+        lastTime: now,
+        count: 1,
+      });
+    }
+    if (brandSpoofs.length > MAX_BRAND_SPOOF_HOSTS) {
+      brandSpoofs.splice(0, brandSpoofs.length - MAX_BRAND_SPOOF_HOSTS);
+    }
+    persistBrandSpoofs();
+    if (brandSpoofNotifyTimer) return;
+    brandSpoofNotifyTimer = setTimeout(() => {
+      brandSpoofNotifyTimer = null;
+      sendToRenderer('brand-spoof-updated', getBrandSpoofStats());
+    }, 2000);
+    brandSpoofNotifyTimer.unref?.();
+  } catch {}
+}
 
 function listBrandSpoofEntries(limit = 200) {
   loadBrandSpoofs();
@@ -1970,28 +2912,113 @@ let certExceptionsLoaded = false;
 let certExceptionSaveTimer = null;
 const certChallenges = new Map(); // nonce -> 拦截上下文
 
+function loadCertExceptions() {
+  if (certExceptionsLoaded) return;
+  certExceptionsLoaded = true;
+  try {
+    const data = ledgerStore.readJSONStore(certExceptionStorePath, {});
+    if (data && Array.isArray(data.exceptions)) {
+      for (const raw of data.exceptions) {
+        const rec = certGuard.sanitizeExceptionRecord(raw);
+        if (rec) certExceptions.push(rec);
+      }
+      if (certExceptions.length > MAX_CERT_EXCEPTIONS) {
+        certExceptions = certExceptions.slice(-MAX_CERT_EXCEPTIONS);
+      }
+    }
+  } catch {}
+}
 
-
-
+function persistCertExceptions() {
+  if (certExceptionSaveTimer) clearTimeout(certExceptionSaveTimer);
+  certExceptionSaveTimer = setTimeout(() => {
+    try {
+      ledgerStore.writeJSONStore(certExceptionStorePath, { version: 1, savedAt: Date.now(), exceptions: certExceptions });
+    } catch {}
+  }, 1000);
+}
 
 // certExceptionAllowed 判断当前失败事件是否命中已批准的“主机+指纹”例外。
+function certExceptionAllowed(url, certificate) {
+  const verdict = certGuard.classifyCertError({ url, certificate });
+  if (!verdict.host || !verdict.cert || !verdict.cert.fingerprint) return false;
+  loadCertExceptions();
+  return certExceptions.some(e => certGuard.exceptionMatches(e, {
+    host: verdict.host,
+    fingerprint: verdict.cert.fingerprint,
+  }));
+}
 
+function addCertException(url, certificate, code) {
+  const entry = certGuard.createException({ host: url, certificate, code });
+  if (!entry) return false;
+  loadCertExceptions();
+  const idx = certExceptions.findIndex(e =>
+    e.host === entry.host && e.fingerprint === entry.fingerprint);
+  if (idx >= 0) {
+    certExceptions.splice(idx, 1);
+  } else if (certExceptions.length >= MAX_CERT_EXCEPTIONS) {
+    certExceptions.shift(); // 台账满了淘汰最旧的一条
+  }
+  certExceptions.push(entry);
+  persistCertExceptions();
+  return true;
+}
 
+function removeCertException(host, fingerprint) {
+  loadCertExceptions();
+  const h = certGuard.normalizeHost(host);
+  const fp = certGuard.normalizeFingerprint(fingerprint);
+  const before = certExceptions.length;
+  certExceptions = certExceptions.filter(e =>
+    !(e.host === h && (!fp || e.fingerprint === fp)));
+  if (certExceptions.length !== before) persistCertExceptions();
+  return true;
+}
 
+function clearCertExceptions() {
+  loadCertExceptions();
+  certExceptions = [];
+  try { fsSync.unlinkSync(certExceptionStorePath); } catch {}
+  persistCertExceptions();
+  return true;
+}
 
+function listCertExceptionEntries(limit = 200) {
+  loadCertExceptions();
+  const n = Math.max(1, Math.min(Number(limit) || 200, MAX_CERT_EXCEPTIONS));
+  return certExceptions.slice(-n).reverse().map(e => ({ ...e }));
+}
 
-
-
-
-
-
-
+function getCertExceptionStats() {
+  loadCertExceptions();
+  const hosts = new Set(certExceptions.map(e => e.host));
+  return { exceptions: certExceptions.length, hosts: hosts.size };
+}
 
 // makeCertChallenge 为一次拦截生成一次性 nonce，供渲染进程“仍要前往”回传。
-
+function makeCertChallenge(verdict, webContentsId) {
+  const nonce = require('crypto').randomBytes(16).toString('hex');
+  certChallenges.set(nonce, {
+    host: verdict.host,
+    code: verdict.code,
+    fingerprint: verdict.cert ? verdict.cert.fingerprint : '',
+    webContentsId,
+    createdAt: Date.now(),
+  });
+  setTimeout(() => certChallenges.delete(nonce), CERT_CHALLENGE_TTL).unref?.();
+  return nonce;
+}
 
 // consumeCertChallenge 取出并销毁一次挑战，返回 null 表示过期/伪造。
-
+function consumeCertChallenge(nonce) {
+  if (typeof nonce !== 'string' || nonce.length !== 32) return null;
+  const c = certChallenges.get(nonce);
+  if (!c) return null;
+  certChallenges.delete(nonce);
+  if (Date.now() - c.createdAt > CERT_CHALLENGE_TTL) return null;
+  return c;
+}
 
 // 证书校验失败：默认阻止。命中已批准例外才放行；否则向主界面推送全屏
 // 拦截页（仅主框架导航）。证书对象在送渲染进程前经 summarizeCertificate
@@ -2095,7 +3122,9 @@ let clientCertSaveTimer = null;
 // 等待渲染层返回；统一放 Map 里，超时或窗口关闭时统一取消，绝不遗留悬挂回调。
 const pendingAuthChallenges = new Map();
 
-
+function netAuthNonce() {
+  return 'na-' + netAuthCrypto.randomBytes(12).toString('hex');
+}
 
 function loadClientCertChoices() {
   if (clientCertStoreLoaded) return;
@@ -2119,7 +3148,9 @@ function persistClientCertChoices() {
 
 // failAuthCallback 在“不弹框 / 超时 / 窗口关闭”等路径上安全地兑现一个空凭据，
 // 让请求以未认证失败，而不是卡住或回退到系统默认行为。
-
+function failAuthCallback(callback) {
+  try { callback(); } catch {}
+}
 
 function rejectAuthChallenge(nonce) {
   const c = pendingAuthChallenges.get(nonce);
@@ -2130,12 +3161,126 @@ function rejectAuthChallenge(nonce) {
   return true;
 }
 
-
+function authEventOrigin(webContents) {
+  if (!webContents || typeof webContents.getURL !== 'function') return '';
+  return urlResolve.safeOrigin(webContents.getURL(), '');
+}
 
 // sanitizeCertPickList 只把证书的非敏感摘要给渲染层，绝不传证书对象本体。
+function sanitizeCertPickList(certificateList) {
+  const out = [];
+  const list = Array.isArray(certificateList) ? certificateList : [];
+  for (let i = 0; i < list.length && i < MAX_CLIENT_CERT_PICK_CHARS; i++) {
+    const s = netAuthGuard.summarizeClientCert(list[i]);
+    out.push({
+      index: i,
+      fingerprint: s.fingerprint,
+      issuer: s.issuer,
+      subject: s.subject,
+      serialNumber: s.serialNumber,
+    });
+  }
+  return out;
+}
 
+function setupNetworkAuth() {
+  loadClientCertChoices();
 
+  // HTTP/代理身份认证。isProxy 时走 407 判定，否则按 401 主/子框架判定。
+  app.on('login', (loginEvent, webContents, request, authInfo, callback) => {
+    loginEvent.preventDefault();
+    const info = authInfo || {};
+    const isProxy = info.isProxy === true;
+    const verdict = isProxy
+      ? netAuthGuard.classifyProxyAuth({ url: request && request.url, authInfo: info })
+      : netAuthGuard.classifyServerAuth({
+          url: request && request.url,
+          // Electron 41 在 response details 里给 resourceType；缺省时按子框架
+          // fail-closed，不允许在无法确认顶层的情况下弹框（可能泄露凭据）。
+          isMainFrame: request && request.resourceType === 'mainFrame',
+          authInfo: info,
+        });
+    authStats.recordEvent({ decision: verdict.decision, reason: verdict.reason, scheme: verdict.scheme });
 
+    if (verdict.decision !== 'prompt') {
+      failAuthCallback(callback);
+      recordSecurityEvent('auth-blocked', 'warn',
+        `${isProxy ? '代理' : '服务器'}认证被拦截：${verdict.reason}（${verdict.scheme || '未知方案'}）`,
+        isProxy ? (verdict.host || 'proxy') : verdict.key);
+      return;
+    }
+
+    const gate = authLimiter.request(verdict.key, Date.now());
+    if (!gate.allow) {
+      authStats.recordRateLimited();
+      failAuthCallback(callback);
+      recordSecurityEvent('auth-rate-limited', 'warn',
+        `认证弹框过频已临时冷却：${verdict.key}（${gate.reason}）`, verdict.key);
+      return;
+    }
+
+    // 有界待处理队列：超过上限直接取消最旧的同类挑战，防止 401 风暴堆积。
+    if (pendingAuthChallenges.size >= netAuthGuard.MAX_PENDING_PROMPTS) {
+      const oldest = pendingAuthChallenges.keys().next().value;
+      rejectAuthChallenge(oldest);
+    }
+
+    const nonce = netAuthNonce();
+    const timer = setTimeout(() => {
+      if (!pendingAuthChallenges.has(nonce)) return;
+      pendingAuthChallenges.delete(nonce);
+      failAuthCallback(callback);
+    }, netAuthGuard.AUTH_PROMPT_TIMEOUT_MS);
+    pendingAuthChallenges.set(nonce, { callback, timer, key: verdict.key, kind: 'login' });
+
+    sendToRenderer('network-auth-required', {
+      nonce,
+      isProxy,
+      host: verdict.host || '',
+      key: verdict.key,
+      scheme: verdict.scheme,
+      schemeLabel: netAuthGuard.describeAuthScheme(verdict.scheme),
+      realm: verdict.realm || '',
+      origin: authEventOrigin(webContents),
+    });
+  });
+
+  // TLS 客户端证书：默认不发送，除非用户为该主机明确记住过一张证书的指纹。
+  session.defaultSession.on('select-client-certificate', (certEvent, webContents, url, certificateList, callback) => {
+    certEvent.preventDefault();
+    const hostname = urlResolve.safeHostname(url);
+    const remembered = hostname ? clientCertStore.get(hostname) : null;
+    const pick = netAuthGuard.chooseClientCertificate({
+      certificateList,
+      rememberedFingerprint: remembered ? remembered.fingerprint : '',
+    });
+    if (pick.index >= 0 && certificateList[pick.index]) {
+      try { callback(certificateList[pick.index]); } catch { try { callback(); } catch {} }
+      return;
+    }
+    authStats.recordCertSuppressed();
+    recordSecurityEvent('client-cert-blocked', 'info',
+      `未自动发送客户端证书：${hostname || '未知主机'}（${pick.reason}）`, url);
+
+    if (pendingAuthChallenges.size >= netAuthGuard.MAX_PENDING_PROMPTS) {
+      try { callback(); } catch {}
+      return;
+    }
+    const nonce = netAuthNonce();
+    const timer = setTimeout(() => {
+      if (!pendingAuthChallenges.has(nonce)) return;
+      pendingAuthChallenges.delete(nonce);
+      try { callback(); } catch {}
+    }, netAuthGuard.AUTH_PROMPT_TIMEOUT_MS);
+    pendingAuthChallenges.set(nonce, { callback, timer, key: url, kind: 'cert', certificateList, hostname });
+    sendToRenderer('client-cert-required', {
+      nonce,
+      host: hostname,
+      origin: authEventOrigin(webContents),
+      certificates: sanitizeCertPickList(certificateList),
+    });
+  });
+}
 
 // 渲染层提交账号口令。只接受主界面，且 nonce 必须仍在待处理表里。
 ipcMain.handle('submit-network-auth', (event, payload = {}) => {
@@ -2305,21 +3450,9 @@ function getClientCertChoiceStats() {
 
 
 const downloadHashes = require('./downloadhashes');
-const securityledger = require('./securityledger');
-const downloadsbridge = require('./downloadsbridge');
-const vaultmain = require('./vaultmain');
-const readerbridge = require('./readerbridge');
-const extensionstoremain = require('./extensionstoremain');
-const externalcall = require('./externalcall');
-const certledger = require('./certledger');
-const tabactions = require('./tabactions');
-const headerpipeline = require('./headerpipeline');
-const searchmain = require('./searchmain');
-const netauthmain = require('./netauthmain');
-const cookieledger = require('./cookieledger');
-const tabgroups = require('./tabgroups');
-const { applyTabGroupArrangement, broadcastTabGroups, clearStoredTabGroups, loadStoredTabGroups, persistTabGroups, saveTabGroupsNow, reorderTabsByGroupPlan, tabGroupError, tabGroupIsPinned, tabGroupOrder, tabKeepsAlive } = tabgroups;
-tabgroups.bindDeps({
+const tabgroupmain = require('./tabgroupmain');
+const { applyTabGroupArrangement, broadcastTabGroups, clearStoredTabGroups, loadStoredTabGroups, persistTabGroups, saveTabGroupsNow, reorderTabsByGroupPlan, tabGroupError, tabGroupIsPinned, tabGroupOrder, tabKeepsAlive } = tabgroupmain;
+tabgroupmain.bindDeps({
   get currentTabIndex() { return currentTabIndex; },
   set currentTabIndex(v) { currentTabIndex = v; },
   get findTabIndexById() { return findTabIndexById; },
@@ -2335,315 +3468,6 @@ tabgroups.bindDeps({
   get tabOrderDiff() { return tabOrderDiff; },
   get tabs() { return tabs; }
 });
-
-const { loadCookieLedger, persistCookieLedger, normalizeCookieDomain, pickCookieFields, removeCookieEntry, cookieOriginSchemes } = cookieledger;
-cookieledger.bindDeps({
-  get cookieLedger() { return cookieLedger; },
-  get cookieLedgerLoaded() { return cookieLedgerLoaded; },
-  set cookieLedgerLoaded(v) { cookieLedgerLoaded = v; },
-  get cookieLedgerSaveTimer() { return cookieLedgerSaveTimer; },
-  set cookieLedgerSaveTimer(v) { cookieLedgerSaveTimer = v; },
-  get cookieLedgerStorePath() { return cookieLedgerStorePath; },
-  get ledgerStore() { return ledgerStore; },
-  get path() { return path; },
-  get session() { return session; }
-,
-  get path() { return path; },
-  get session() { return session; }});
-
-const { setupNetworkAuth } = netauthmain;
-netauthmain.bindDeps({
-  get app() { return app; },
-  get authEventOrigin() { return authEventOrigin; },
-  get authLimiter() { return authLimiter; },
-  get authStats() { return authStats; },
-  get clientCertStore() { return clientCertStore; },
-  get failAuthCallback() { return failAuthCallback; },
-  get loadClientCertChoices() { return loadClientCertChoices; },
-  get netAuthGuard() { return netAuthGuard; },
-  get netAuthNonce() { return netAuthNonce; },
-  get pendingAuthChallenges() { return pendingAuthChallenges; },
-  get recordSecurityEvent() { return recordSecurityEvent; },
-  get rejectAuthChallenge() { return rejectAuthChallenge; },
-  get sanitizeCertPickList() { return sanitizeCertPickList; },
-  get sendToRenderer() { return sendToRenderer; },
-  get session() { return session; },
-  get urlResolve() { return urlResolve; },
-  get webContents() { return webContents; }
-,
-  get netAuthGuard() { return netAuthGuard; },
-  get pendingAuthChallenges() { return pendingAuthChallenges; },
-  get webContents() { return webContents; }});
-
-const { fetchSearchSuggestions, generateUserAgent } = searchmain;
-searchmain.bindDeps({
-  get SUGGEST_MAX_ITEMS() { return SUGGEST_MAX_ITEMS; },
-  get SUGGEST_TIMEOUT_MS() { return SUGGEST_TIMEOUT_MS; },
-  get net() { return net; },
-  get os() { return os; },
-  get searchProvider() { return searchProvider; },
-  get searchProviderId() { return searchProviderId; },
-  get suggestionGuard() { return suggestionGuard; }
-});
-
-const { applyOutboundHeaderHardening, applySecureDns, applyCookieHardening, buildRequestPipelineDeps, setupSecurityHeaders, trimReferrerHeader } = headerpipeline;
-headerpipeline.bindDeps({
-  get analyzeHostForSpoof() { return analyzeHostForSpoof; },
-  get applyWebRequestFiltering() { return applyWebRequestFiltering; },
-  get blockAdSignals() { return blockAdSignals; },
-  get blockHyperlinkPing() { return blockHyperlinkPing; },
-  get blockLocalNetworkAccess() { return blockLocalNetworkAccess; },
-  get blockThirdPartyCookies() { return blockThirdPartyCookies; },
-  get brandGuard() { return brandGuard; },
-  get cookieGuard() { return cookieGuard; },
-  get cookieLedger() { return cookieLedger; },
-  get dohActive() { return dohActive; },
-  set dohActive(v) { dohActive = v; },
-  get dohCustomUrl() { return dohCustomUrl; },
-  get dohGuard() { return dohGuard; },
-  get dohLedger() { return dohLedger; },
-  get dohMode() { return dohMode; },
-  get dohProvider() { return dohProvider; },
-  get fpGuard() { return fpGuard; },
-  get hardenCookies() { return hardenCookies; },
-  get hardenResponseHeaders() { return hardenResponseHeaders; },
-  get httpsOnlyEnabled() { return httpsOnlyEnabled; },
-  get isHttpExceptionHost() { return isHttpExceptionHost; },
-  get isPrivateNetworkHost() { return isPrivateNetworkHost; },
-  get isTrackerRequest() { return isTrackerRequest; },
-  get loadCookieLedger() { return loadCookieLedger; },
-  get loadDohLedger() { return loadDohLedger; },
-  get mixedGuard() { return mixedGuard; },
-  get originOf() { return originOf; },
-  get persistCookieLedger() { return persistCookieLedger; },
-  get persistDohLedger() { return persistDohLedger; },
-  get phishUrl() { return phishUrl; },
-  get pluginResourceGuard() { return pluginResourceGuard; },
-  get pnaGuard() { return pnaGuard; },
-  get recordBlockedTracker() { return recordBlockedTracker; },
-  get recordBrandSpoof() { return recordBrandSpoof; },
-  get recordFpHit() { return recordFpHit; },
-  get recordPnaBlock() { return recordPnaBlock; },
-  get recordSecurityEvent() { return recordSecurityEvent; },
-  get reduceClientHints() { return reduceClientHints; },
-  get requestMethodGuard() { return requestMethodGuard; },
-  get resolveEffectiveUa() { return resolveEffectiveUa; },
-  get sendToRenderer() { return sendToRenderer; },
-  get session() { return session; },
-  get stripAcceptCh() { return stripAcceptCh; },
-  get stripTrackingFromUrl() { return stripTrackingFromUrl; },
-  get uaLastOverrideAt() { return uaLastOverrideAt; },
-  set uaLastOverrideAt(v) { uaLastOverrideAt = v; },
-  get uaOverrideCount() { return uaOverrideCount; },
-  set uaOverrideCount(v) { uaOverrideCount = v; },
-  get uaPolicyCore() { return uaPolicyCore; },
-  get uaPolicyState() { return uaPolicyState; },
-  get webrtcMode() { return webrtcMode; }
-,
-  get analyzeHostForSpoof() { return analyzeHostForSpoof; },
-  get blockAdSignals() { return blockAdSignals; },
-  get blockHyperlinkPing() { return blockHyperlinkPing; },
-  get blockLocalNetworkAccess() { return blockLocalNetworkAccess; },
-  get httpsOnlyEnabled() { return httpsOnlyEnabled; },
-  get isPrivateNetworkHost() { return isPrivateNetworkHost; },
-  get isTrackerRequest() { return isTrackerRequest; },
-  get reduceClientHints() { return reduceClientHints; },
-  get sendToRenderer() { return sendToRenderer; },
-  get stripAcceptCh() { return stripAcceptCh; },
-  get stripTrackingFromUrl() { return stripTrackingFromUrl; },
-  get webrtcMode() { return webrtcMode; }});
-
-const { tabOverviewItem, closeTab, switchToTab, createNewTab, adjustCurrentZoom, updateBrowserViewBounds, clampZoomFactor, applySavedZoom, resetZoom, zoomIn, zoomOut, persistZoomFactors, loadZoomFactors } = tabactions;
-tabactions.bindDeps({
-  get COLLAPSED_TAB_BAR_WIDTH() { return COLLAPSED_TAB_BAR_WIDTH; },
-  get DEFAULT_TAB_BAR_HEIGHT_HORIZONTAL() { return DEFAULT_TAB_BAR_HEIGHT_HORIZONTAL; },
-  get DEFAULT_TAB_BAR_WIDTH_VERTICAL() { return DEFAULT_TAB_BAR_WIDTH_VERTICAL; },
-  get MAX_REMEMBERED_ORIGINS() { return MAX_REMEMBERED_ORIGINS; },
-  get MAX_ZOOM_FACTOR() { return MAX_ZOOM_FACTOR; },
-  get MIN_ZOOM_FACTOR() { return MIN_ZOOM_FACTOR; },
-  get addToRecentlyClosed() { return addToRecentlyClosed; },
-  get applyFind() { return applyFind; },
-  get currentTabIndex() { return currentTabIndex; },
-  set currentTabIndex(v) { currentTabIndex = v; },
-  get findState() { return findState; },
-  get getCurrentTabWebContents() { return getCurrentTabWebContents; },
-  get getDefaultTabUrl() { return getDefaultTabUrl; },
-  get getTabLayout() { return getTabLayout; },
-  get getUrlProtocol() { return getUrlProtocol; },
-  get isSafeUrl() { return isSafeUrl; },
-  get isTabBarCollapsed() { return isTabBarCollapsed; },
-  get ledgerStore() { return ledgerStore; },
-  get loadTabContent() { return loadTabContent; },
-  get mainWindow() { return mainWindow; },
-  get originOfUrl() { return originOfUrl; },
-  get path() { return path; },
-  get persistPins() { return persistPins; },
-  get persistTabGroups() { return persistTabGroups; },
-  get pinModel() { return pinModel; },
-  get popupOpenTimes() { return popupOpenTimes; },
-  get pushNavState() { return pushNavState; },
-  get rebuildCrashedTab() { return rebuildCrashedTab; },
-  get reloadDiscardedTab() { return reloadDiscardedTab; },
-  get sendToRenderer() { return sendToRenderer; },
-  get tabGroupModel() { return tabGroupModel; },
-  get tabs() { return tabs; },
-  get zoomFactorsByOrigin() { return zoomFactorsByOrigin; },
-  get zoomSaveTimer() { return zoomSaveTimer; },
-  set zoomSaveTimer(v) { zoomSaveTimer = v; },
-  get zoomStorePath() { return zoomStorePath; }
-});
-
-const { loadCertExceptions, persistCertExceptions, addCertException, removeCertException, clearCertExceptions, certExceptionAllowed, getCertExceptionStats, listCertExceptionEntries, sanitizeCertPickList, makeCertChallenge, consumeCertChallenge, failAuthCallback, authEventOrigin, netAuthNonce } = certledger;
-certledger.bindDeps({
-  get CERT_CHALLENGE_TTL() { return CERT_CHALLENGE_TTL; },
-  get MAX_CERT_EXCEPTIONS() { return MAX_CERT_EXCEPTIONS; },
-  get MAX_CLIENT_CERT_PICK_CHARS() { return MAX_CLIENT_CERT_PICK_CHARS; },
-  get certChallenges() { return certChallenges; },
-  get certExceptionSaveTimer() { return certExceptionSaveTimer; },
-  set certExceptionSaveTimer(v) { certExceptionSaveTimer = v; },
-  get certExceptionStorePath() { return certExceptionStorePath; },
-  get certExceptions() { return certExceptions; },
-  set certExceptions(v) { certExceptions = v; },
-  get certExceptionsLoaded() { return certExceptionsLoaded; },
-  set certExceptionsLoaded(v) { certExceptionsLoaded = v; },
-  get certGuard() { return certGuard; },
-  get fsSync() { return fsSync; },
-  get ledgerStore() { return ledgerStore; },
-  get netAuthCrypto() { return netAuthCrypto; },
-  get netAuthGuard() { return netAuthGuard; },
-  get urlResolve() { return urlResolve; }
-});
-
-const { launchExternalWithPrompt, classifyFrameNavigation, handleFrameNavigationAttempt, confirmAndOpenExternal } = externalcall;
-externalcall.bindDeps({
-  get CONFIRMABLE_EXTERNAL_SCHEMES() { return CONFIRMABLE_EXTERNAL_SCHEMES; },
-  get createNewTab() { return createNewTab; },
-  get dialog() { return dialog; },
-  get externalBudget() { return externalBudget; },
-  get getRememberedProtocolDecision() { return getRememberedProtocolDecision; },
-  get isRememberableOrigin() { return isRememberableOrigin; },
-  get isSafeUrl() { return isSafeUrl; },
-  get originOfContents() { return originOfContents; },
-  get protocolRate() { return protocolRate; },
-  get protocolRateLimiter() { return protocolRateLimiter; },
-  get recordSecurityEvent() { return recordSecurityEvent; },
-  get rememberProtocolDecision() { return rememberProtocolDecision; },
-  get sendToRenderer() { return sendToRenderer; },
-  get shell() { return shell; },
-  get shellGuard() { return shellGuard; }
-,
-  get mainWindow() { return mainWindow; }});
-
-const { copyExtensionToStorage, validateExtensionFolder } = extensionstoremain;
-extensionstoremain.bindDeps({
-  get extensionStore() { return extensionStore; },
-  get extensionsPath() { return extensionsPath; },
-  get fs() { return fs; },
-  get fsSync() { return fsSync; },
-  get path() { return path; },
-  get recordSecurityEvent() { return recordSecurityEvent; }
-});
-
-const { sanitizeReaderNodes, enterReaderMode, sanitizeReaderArticle, clampReaderInt, openReaderTab } = readerbridge;
-readerbridge.bindDeps({
-  get READER_PAGE_URL() { return READER_PAGE_URL; },
-  get currentTabIndex() { return currentTabIndex; },
-  get readerArticle() { return readerArticle; },
-  set readerArticle(v) { readerArticle = v; },
-  get readerCore() { return readerCore; },
-  get tabs() { return tabs; }
-,
-  get createNewTab() { return createNewTab; },
-  get getUrlProtocol() { return getUrlProtocol; },
-  get switchToTab() { return switchToTab; }});
-
-const { executeCleanPlan, initVaultOnStartup, createNewVault, unlockVault, vaultStatusSnapshot, enumerateSiteStorage } = vaultmain;
-vaultmain.bindDeps({
-  get cleanAuditLog() { return cleanAuditLog; },
-  get cleanerCore() { return cleanerCore; },
-  get crypto() { return crypto; },
-  get fsSync() { return fsSync; },
-  get recordSecurityEvent() { return recordSecurityEvent; },
-  get vaultCore() { return vaultCore; },
-  get vaultHandle() { return vaultHandle; },
-  set vaultHandle(v) { vaultHandle = v; },
-  get vaultKeyPath() { return vaultKeyPath; },
-  get vaultState() { return vaultState; },
-  set vaultState(v) { vaultState = v; },
-  get vaultUsePasswordMode() { return vaultUsePasswordMode; },
-  set vaultUsePasswordMode(v) { vaultUsePasswordMode = v; }
-,
-  get loadVaultStateFromDisk() { return loadVaultStateFromDisk; },
-  get persistCleanAudit() { return persistCleanAudit; },
-  get persistVaultKey() { return persistVaultKey; },
-  get persistVaultState() { return persistVaultState; },
-  get safeStorage() { return safeStorage; },
-  get session() { return session; }});
-
-const { performDownloadOpen, confirmDownloadDecision, getDownloadJournal, loadDownloadRisks, loadDownloads, journalDownloadState, downloadNotifyDeps } = downloadsbridge;
-downloadsbridge.bindDeps({
-  get MAX_DOWNLOAD_RISK_RECORDS() { return MAX_DOWNLOAD_RISK_RECORDS; },
-  get MAX_PERSISTED_DOWNLOADS() { return MAX_PERSISTED_DOWNLOADS; },
-  get dloadGuard() { return dloadGuard; },
-  get dloadOpen() { return dloadOpen; },
-  get downloadJournal() { return downloadJournal; },
-  set downloadJournal(v) { downloadJournal = v; },
-  get downloadJournalModule() { return downloadJournalModule; },
-  get downloadOriginByPath() { return downloadOriginByPath; },
-  get downloadRiskLoaded() { return downloadRiskLoaded; },
-  set downloadRiskLoaded(v) { downloadRiskLoaded = v; },
-  get downloadRiskRecords() { return downloadRiskRecords; },
-  get downloadRiskStorePath() { return downloadRiskStorePath; },
-  get downloadShelf() { return downloadShelf; },
-  get downloads() { return downloads; },
-  get fsSync() { return fsSync; },
-  get ledgerStore() { return ledgerStore; },
-  get path() { return path; },
-  get recordSecurityEvent() { return recordSecurityEvent; },
-  get shellGuard() { return shellGuard; },
-  get urlResolve() { return urlResolve; }
-,
-  get app() { return app; },
-  get dialog() { return dialog; },
-  get downloadJournalFileProbe() { return downloadJournalFileProbe; },
-  get downloadsStorePath() { return downloadsStorePath; },
-  get isInSafeDirs() { return isInSafeDirs; },
-  get sendToRenderer() { return sendToRenderer; },
-  get shell() { return shell; },
-  get mainWindow() { return mainWindow; }});
-
-const { recordBrandSpoof, recordRequestAttempt, recordHeaderGrade, recordFpHit, loadBrandSpoofs, loadHeaderGrades } = securityledger;
-securityledger.bindDeps({
-  get BRAND_SPOOF_REASONS() { return BRAND_SPOOF_REASONS; },
-  get MAX_BRAND_SPOOF_HOSTS() { return MAX_BRAND_SPOOF_HOSTS; },
-  get MAX_HEADER_GRADE_HOSTS() { return MAX_HEADER_GRADE_HOSTS; },
-  get brandSpoofNotifyTimer() { return brandSpoofNotifyTimer; },
-  set brandSpoofNotifyTimer(v) { brandSpoofNotifyTimer = v; },
-  get brandSpoofStorePath() { return brandSpoofStorePath; },
-  get brandSpoofs() { return brandSpoofs; },
-  set brandSpoofs(v) { brandSpoofs = v; },
-  get brandSpoofsLoaded() { return brandSpoofsLoaded; },
-  set brandSpoofsLoaded(v) { brandSpoofsLoaded = v; },
-  get fpLedger() { return fpLedger; },
-  get headerGrade() { return headerGrade; },
-  get headerGradeStorePath() { return headerGradeStorePath; },
-  get headerGrades() { return headerGrades; },
-  get headerGradesLoaded() { return headerGradesLoaded; },
-  set headerGradesLoaded(v) { headerGradesLoaded = v; },
-  get ledgerStore() { return ledgerStore; },
-  get requestLog() { return requestLog; },
-  get requestLogNotifyTimer() { return requestLogNotifyTimer; },
-  set requestLogNotifyTimer(v) { requestLogNotifyTimer = v; },
-  get requestLogStore() { return requestLogStore; }
-,
-  get getBrandSpoofStats() { return getBrandSpoofStats; },
-  get loadFpLedger() { return loadFpLedger; },
-  get loadRequestLog() { return loadRequestLog; },
-  get persistBrandSpoofs() { return persistBrandSpoofs; },
-  get persistFpLedger() { return persistFpLedger; },
-  get persistHeaderGrades() { return persistHeaderGrades; },
-  get persistRequestLog() { return persistRequestLog; },
-  get sendToRenderer() { return sendToRenderer; }});
 
 downloadHashes.bindRendererNotifier(sendToRenderer);
 downloadHashes.bindWindowHost(() => mainWindow);
@@ -2670,37 +3494,1283 @@ const {
   prunePermissionDecisions,
 } = permissionStore;
 
-const { setupPermissionHandlers } = require('./permissionhandlers').create({
-  ALLOWED_PERMISSIONS, clearBrandSpoofs, clearCspReports, clearDownloadRisks, clearHeaderGrades, clearRequestLog,
-  clearSecurityEvents, clipboard, clipboardFrame, clipboardReadOrigin, confirmAndOpenExternal, createDenyLedger,
-  dialog, displayGuard, fullscreenFrame, getBrandSpoofStats, getCspReportStats, getCurrentTabWebContents,
-  getHeaderGradeStats, getRequestLogStats, ipcMain, isMainSender, listBrandSpoofEntries, listCspReports,
-  listDownloadRisks, listHeaderGrades, listRequestLogEntries, listSecurityEvents, notificationFrame, pointerLockFrame,
-  popupOpenerFrame, recordCspViolationFromRenderer, recordSecurityEvent, removeCspReport, sendToRenderer, session,
-  urlClean, urlResolve, webContents,
-  readCurrentTabIndex: () => currentTabIndex, readMainWindow: () => mainWindow, readTabs: () => tabs,
-});
+function setupPermissionHandlers() {
+  // 敏感权限不能再静默放行：旧实现里 media/geolocation/notifications/midi 全部
+  // callback(true)，任意网站都能不经询问打开摄像头、麦克风、定位、通知。
+  // 这些改为向当前标签的渲染层发请求，由页面内询问条决定，默认安全失败。
+  const SENSITIVE_PAGE_PERMISSIONS = new Set([
+    'media', 'geolocation', 'notifications', 'midi', 'midiSysex',
+    // 读剪贴板能拿到密码 / 验证码 / 钱包地址等敏感内容，绝不静默放行，
+    // 必须像摄像头定位那样弹询问条由用户显式授权。
+    'clipboard-read',
+  ]);
+  // requestId -> settle(granted)，只允许决一次，超时 / 页面销毁默认拒绝。
+  const pendingPermissionRequests = new Map();
+  let permissionSeq = 0;
+  const permissionDecisionTimeoutMs = 60000;
+
+  const tabIdForContents = (wc) => {
+    const tab = tabs.find(t => t.view && t.view.webContents === wc);
+    return tab ? tab.id : null;
+  };
+
+  const frameGuardedPermissions = new Set(['pointerLock', 'fullscreen', 'clipboard-sanitized-write', 'pop-up', 'notifications']);
+  const permDenyLedger = createDenyLedger({ windowMs: 60000, maxPerKey: 3, maxKeys: 512 });
+
+  const permissionFrameInput = (wc, details, fallbackOrigin) => {
+    const activeTab = tabs[currentTabIndex];
+    const tab = tabs.find(t => t.view && t.view.webContents === wc);
+    const requested = (details && details.requestingUrl) || fallbackOrigin || wc.getURL();
+    return {
+      requestUrl: requested,
+      topUrl: wc.getURL(),
+      isMainFrame: !(details && details.isMainFrame === false),
+      tabActive: !tab || !activeTab ? true : tab.id === activeTab.id,
+      windowFocused: mainWindow && typeof mainWindow.isFocused === 'function' ? mainWindow.isFocused() : true,
+    };
+  };
+
+  const evaluatePermissionFrame = (wc, permission, details, fallbackOrigin) => {
+    const input = permissionFrameInput(wc, details, fallbackOrigin);
+    if (permission === 'pointerLock') return pointerLockFrame.evaluatePointerLockFrame(input);
+    if (permission === 'fullscreen') return fullscreenFrame.evaluateFullscreenFrame(input);
+    if (permission === 'pop-up') return popupOpenerFrame.evaluatePopupFrame(input);
+    if (permission === 'notifications') return notificationFrame.evaluateNotificationFrame(input);
+    return clipboardFrame.evaluateClipboardFrame(input);
+  };
+
+  const notePermissionDeny = (origin, permission, detail) => {
+    const entry = permDenyLedger.record({ origin, permission });
+    if (entry.log) {
+      recordSecurityEvent('permission-blocked', 'warn', detail, origin);
+    }
+    return entry;
+  };
+
+  const enforceFrameGuard = (wc, permission, details, fallbackOrigin) => {
+    if (!frameGuardedPermissions.has(permission)) return true;
+    if (!wc || (typeof wc.isDestroyed === 'function' && wc.isDestroyed())) return true;
+    const origin = urlResolve.safeOrigin(wc.getURL());
+    const decision = evaluatePermissionFrame(wc, permission, details, fallbackOrigin);
+    if (decision.action === 'deny') {
+      notePermissionDeny(origin, permission, decision.detail);
+      return false;
+    }
+    if (decision.action === 'warn') {
+      recordSecurityEvent('permission-frame', 'info', decision.detail, origin);
+    }
+    return true;
+  };
+
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    // openExternal 不再静默放行：弹一次原生确认。这里拿不到具体 URL，
+    // 真正带 URL 的外部协议请求走 confirmAndOpenExternal IPC。
+    if (permission === 'openExternal') {
+      const choice = dialog.showMessageBoxSync(mainWindow, {
+        type: 'question',
+        buttons: ['允许', '拒绝'],
+        defaultId: 1,
+        cancelId: 1,
+        title: '网站请求打开外部程序',
+        message: '当前网站请求调用系统外部应用，是否允许？'
+      });
+      callback(choice === 0);
+      return;
+    }
+
+    if (!enforceFrameGuard(webContents, permission, details)) {
+      callback(false);
+      return;
+    }
+
+    if (permission === 'clipboard-read') {
+      const clipOrigin = urlResolve.safeOrigin(webContents.getURL());
+      const clipVerdict = clipboardReadOrigin.decideClipboardRead({
+        permission,
+        pageUrl: webContents.getURL(),
+        requestOrigin: details && details.requestingUrl,
+        isTopFrame: !(details && details.isMainFrame === false),
+        tabActive: getCurrentTabWebContents() === webContents
+      });
+      if (!clipVerdict.allow) {
+        recordSecurityEvent('clipboard-read-blocked', 'warn',
+          `剪贴板读取被拒（${clipboardReadOrigin.describeReason(clipVerdict.reason)}）: ${clipVerdict.detail}`, clipOrigin);
+        callback(false);
+        return;
+      }
+    }
+
+    if (SENSITIVE_PAGE_PERMISSIONS.has(permission)) {
+      const origin = urlResolve.safeOrigin(webContents.getURL());
+
+      // 用户对该站点记忆过"始终允许/拒绝"：直接兑现决定，不再弹询问条。
+      const remembered = getRememberedPermission(origin, permission);
+      if (remembered === 'allow' || remembered === 'deny') {
+        callback(remembered === 'allow');
+        return;
+      }
+
+      const requestId = String(++permissionSeq);
+      let settled = false;
+      let timer = null;
+      const cleanup = () => {
+        if (timer) clearTimeout(timer);
+        webContents.removeListener('destroyed', onDestroyed);
+        pendingPermissionRequests.delete(requestId);
+      };
+      const finish = (granted) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        try { callback(!!granted); } catch {}
+      };
+      const onDestroyed = () => finish(false);
+      webContents.once('destroyed', onDestroyed);
+      timer = setTimeout(() => finish(false), permissionDecisionTimeoutMs);
+      pendingPermissionRequests.set(requestId, { finish, origin, permission });
+
+      sendToRenderer('permission-request', {
+        requestId,
+        tabId: tabIdForContents(webContents),
+        permission,
+        origin,
+        mediaTypes: Array.isArray(details && details.mediaTypes) ? details.mediaTypes.slice(0, 4) : [],
+      });
+      return;
+    }
+
+    // 其余非敏感、通常由用户手势触发的权限（fullscreen / pointerLock / clipboard 等）维持白名单。
+    // 不在白名单内的权限（hid / serial / bluetooth / window-management /
+    // idle-detection / usb 等设备或指纹类权限）默认拒绝并留痕。以前这里直接
+    // 用 Set.has 兜底，虽然结果也是 false，但被拦的请求完全没有记录，用户无从
+    // 知道某个网站在尝试枚举蓝牙 / HID 设备。
+    const allowed = ALLOWED_PERMISSIONS.has(permission);
+    if (!allowed) {
+      const origin = urlResolve.safeOrigin(webContents.getURL());
+      recordSecurityEvent('permission-blocked', 'warn',
+        `网站请求了未授权的浏览器权限: ${permission}`, origin);
+    }
+    callback(allowed);
+  });
+  session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
+    if (permission === 'openExternal') return false;
+    if (!enforceFrameGuard(webContents, permission, details, requestingOrigin)) return false;
+    if (permission === 'clipboard-read') {
+      const checkVerdict = clipboardReadOrigin.decideClipboardRead({
+        permission,
+        pageUrl: webContents && typeof webContents.getURL === 'function' ? webContents.getURL() : '',
+        requestOrigin: requestingOrigin,
+        isTopFrame: !(details && details.isMainFrame === false),
+        tabActive: getCurrentTabWebContents() === webContents
+      });
+      if (!checkVerdict.allow) {
+        const checkOrigin = urlResolve.safeOrigin(webContents.getURL());
+        recordSecurityEvent('clipboard-read-blocked', 'warn',
+          `剪贴板读取检查被拒（${clipboardReadOrigin.describeReason(checkVerdict.reason)}）: ${checkVerdict.detail}`, checkOrigin);
+      }
+      return checkVerdict.allow;
+    }
+    // 敏感权限：记忆为"允许"才承认；记忆为"拒绝"或未记忆一律返回 false，
+    // 让站点真正调用时走 request handler（弹询问条或直接兑现拒绝）。
+    if (SENSITIVE_PAGE_PERMISSIONS.has(permission)) {
+      const origin = urlResolve.safeOrigin(webContents.getURL());
+      return getRememberedPermission(origin, permission) === 'allow';
+    }
+    return ALLOWED_PERMISSIONS.has(permission);
+  });
+
+  // setPermissionRequestHandler 不覆盖 navigator.hid / serial / usb /
+  // bluetooth 的"设备选择授权"——那是另一条独立回调。不设置时各版本
+  // Electron 的默认行为不一致（部分版本直接放行设备选择弹窗），这里显式
+  // 一律拒绝：浏览器场景下网页没有正当理由直连本机 HID / 串口 / USB 设备。
+  if (typeof session.defaultSession.setDevicePermissionHandler === 'function') {
+    session.defaultSession.setDevicePermissionHandler((details) => {
+      const origin = urlResolve.safeOrigin(details && details.origin ? details.origin : '');
+      const mediaType = (details && (details.deviceType || details.device && details.device.deviceClass)) || 'unknown-device';
+      recordSecurityEvent('device-permission-blocked', 'warn',
+        `网站尝试获取本机设备（${mediaType} / ${details && details.permissionType ? details.permissionType : '未知'}）`,
+        origin);
+      return false;
+    });
+  }
+
+  // 屏幕共享（getDisplayMedia）走独立回调，setPermissionRequestHandler 不覆盖它。
+  // 不设置时嵌入式视图在各 Electron 版本行为不一致，存在静默录屏风险；这里显式
+  // 一律拒绝（即便内部 cosy: 页面也不放行），并按画面/仅音频/畸形分类留痕。
+  if (displayGuard.isDisplayMediaHandlerAvailable(session.defaultSession)) {
+    session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+      const decision = displayGuard.decideDisplayMedia(request);
+      const mediaText = decision.mediaTypes.join(',') || 'unknown';
+      recordSecurityEvent('display-capture-blocked', 'warn',
+        `网站请求屏幕共享已拒绝（${decision.reason}；${mediaText}）`, decision.origin);
+      // callback 必须回一个 video：undefined 才表示拒绝；不回会导致 Promise 悬挂。
+      try { callback({ video: undefined, audio: undefined }); } catch {}
+    });
+  }
+
+  // 渲染层询问条回传决策；找不到对应请求时忽略。
+  // payload.remember=true 表示用户勾了"始终…"，按 origin+permission 持久化。
+  ipcMain.handle('permission-response', (event, payload = {}) => {
+    if (!isMainSender(event)) return { success: false };
+    const { requestId, granted, remember } = payload || {};
+    const entry = pendingPermissionRequests.get(String(requestId));
+    if (!entry || typeof entry.finish !== 'function') return { success: false, reason: 'unknown request' };
+    if (remember) rememberPermission(entry.origin, entry.permission, granted ? 'allow' : 'deny');
+    entry.finish(!!granted);
+    return { success: true, remembered: !!remember };
+  });
+
+  // ===== 站点权限管理页（cosy://permissions）专用 IPC，全部仅主框架可调 =====
+  ipcMain.handle('list-permission-decisions', (event) => {
+    if (!isMainSender(event)) return [];
+    return listPermissionDecisions();
+  });
+  ipcMain.handle('reset-permission-decision', (event, payload = {}) => {
+    if (!isMainSender(event)) return { success: false };
+    const origin = String(payload.origin || '');
+    const permission = String(payload.permission || '');
+    if (!isRememberableOrigin(origin) || !REMEMBERED_PAGE_PERMISSIONS.has(permission)) {
+      return { success: false, reason: 'invalid target' };
+    }
+    return { success: forgetPermission(origin, permission) };
+  });
+  ipcMain.handle('clear-permission-decisions', (event, payload = {}) => {
+    if (!isMainSender(event)) return { success: false };
+    const origin = String(payload.origin || '');
+    if (!isRememberableOrigin(origin)) return { success: false, reason: 'invalid origin' };
+    return { success: true, removed: clearPermissionDecisionsForOrigin(origin) };
+  });
+  ipcMain.handle('audit-permission-decisions', (event) => {
+    if (!isMainSender(event)) return { total: 0 };
+    return auditPermissionDecisions();
+  });
+  ipcMain.handle('prune-permission-decisions', (event) => {
+    if (!isMainSender(event)) return { success: false };
+    return prunePermissionDecisions();
+  });
+
+  // ===== 安全事件中心（cosy://security）只读 / 清空 IPC，仅主框架可调 =====
+  ipcMain.handle('list-security-events', (event, payload = {}) => {
+    if (!isMainSender(event)) return [];
+    return listSecurityEvents(String(payload.type || ''), Number(payload.limit) || 200);
+  });
+  ipcMain.handle('clear-security-events', (event) => {
+    if (!isMainSender(event)) return { success: false };
+    return { success: true, cleared: clearSecurityEvents() };
+  });
+
+  // ===== CSP 违规上报（renderer send）/ 面板读取清空（invoke），仅内部帧 =====
+  // 上报用 send 而不是 invoke：违规是"通知"语义，页面不该等待也不该拿到
+  // 是否被记录的回执之外的信息；这里也不回包，避免成为时序探测面。
+  ipcMain.on('report-csp-violation', (event, payload) => {
+    recordCspViolationFromRenderer(event.senderFrame, payload);
+  });
+  ipcMain.handle('list-csp-reports', (event, payload = {}) => {
+    if (!isMainSender(event)) return [];
+    return listCspReports(Number(payload.limit) || 200);
+  });
+  ipcMain.handle('clear-csp-reports', (event) => {
+    if (!isMainSender(event)) return { success: false };
+    return { success: true, cleared: clearCspReports() };
+  });
+  ipcMain.handle('remove-csp-report', (event, payload = {}) => {
+    if (!isMainSender(event)) return { success: false };
+    return { success: true, removed: removeCspReport(payload && payload.id) };
+  });
+  ipcMain.handle('get-csp-report-stats', (event) => {
+    if (!isMainSender(event)) return { groups: 0, totalHits: 0 };
+    return getCspReportStats();
+  });
+  ipcMain.handle('list-header-grades', (event, payload = {}) => {
+    if (!isMainSender(event)) return [];
+    return listHeaderGrades(Number(payload.limit) || 200);
+  });
+  ipcMain.handle('clear-header-grades', (event) => {
+    if (!isMainSender(event)) return { success: false };
+    return { success: true, cleared: clearHeaderGrades() };
+  });
+  ipcMain.handle('get-header-grade-stats', (event) => {
+    if (!isMainSender(event)) return { hosts: 0, byGrade: {}, insecureHosts: 0 };
+    return getHeaderGradeStats();
+  });
+
+  // ===== 后台跨主机连接台账（cosy://security）IPC，仅主框架可调 =====
+  ipcMain.handle('list-request-log', (event, payload = {}) => {
+    if (!isMainSender(event)) return [];
+    return listRequestLogEntries(Number(payload.limit) || 200);
+  });
+  ipcMain.handle('clear-request-log', (event) => {
+    if (!isMainSender(event)) return { success: false };
+    return { success: true, cleared: clearRequestLog() };
+  });
+  ipcMain.handle('get-request-log-stats', (event) => {
+    if (!isMainSender(event)) {
+      return { hosts: 0, requests: 0, blocked: 0, backgroundHosts: 0, insecureHosts: 0 };
+    }
+    return getRequestLogStats();
+  });
+
+  // ===== 品牌仿冒 / 拼写劫持命中台账（cosy://security）IPC，仅主框架可调 =====
+  ipcMain.handle('list-brand-spoofs', (event, payload = {}) => {
+    if (!isMainSender(event)) return [];
+    return listBrandSpoofEntries(Number(payload.limit) || 200);
+  });
+  ipcMain.handle('clear-brand-spoofs', (event) => {
+    if (!isMainSender(event)) return { success: false };
+    return { success: true, cleared: clearBrandSpoofs() };
+  });
+  ipcMain.handle('get-brand-spoof-stats', (event) => {
+    if (!isMainSender(event)) {
+      return { hosts: 0, byReason: {}, distinctBrands: 0 };
+    }
+    return getBrandSpoofStats();
+  });
+
+  // ===== 下载完整性校验（cosy://hashes）IPC，仅主框架可调 =====
+  ipcMain.handle('list-download-hashes', (event, payload = {}) => {
+    if (!isMainSender(event)) return [];
+    return listDownloadHashes(Number(payload.limit) || 200);
+  });
+  ipcMain.handle('verify-download-hash', (event, payload = {}) => {
+    if (!isMainSender(event)) return { ok: false, reason: 'denied' };
+    return verifyDownloadHashById(payload.id, payload.expected);
+  });
+  ipcMain.handle('remove-download-hash', (event, payload = {}) => {
+    if (!isMainSender(event)) return { success: false };
+    return { success: true, removed: removeDownloadHashRecord(payload.id) };
+  });
+  ipcMain.handle('clear-download-hashes', (event) => {
+    if (!isMainSender(event)) return { success: false };
+    return { success: true, cleared: clearDownloadHashes() };
+  });
+  ipcMain.handle('hash-local-file', (event) => {
+    if (!isMainSender(event)) return { ok: false, reason: 'denied' };
+    return hashLocalFileViaDialog();
+  });
+
+  // ===== 下载风险台账（cosy://security）IPC，仅主框架可调 =====
+  ipcMain.handle('list-download-risks', (event, payload = {}) => {
+    if (!isMainSender(event)) return [];
+    return listDownloadRisks(Number(payload.limit) || 200);
+  });
+  ipcMain.handle('clear-download-risks', (event) => {
+    if (!isMainSender(event)) return { success: false };
+    return { success: true, cleared: clearDownloadRisks() };
+  });
+
+  // ===== 链接净化（去追踪参数 / 解跳转包装），仅主框架可调 =====
+  // 纯字符串处理，不触网；供安全中心的“净化复制链接”工具调用。
+  ipcMain.handle('clean-share-url', (event, payload = {}) => {
+    if (!isMainSender(event)) return { ok: false, reason: 'denied' };
+    if (typeof payload.url !== 'string' || payload.url.length > 4096) {
+      return { ok: false, reason: 'invalid-url' };
+    }
+    const res = urlClean.cleanShareTarget(payload.url);
+    return {
+      ok: true,
+      url: res.url,
+      changed: !!res.changed,
+      unwrapped: !!res.unwrapped,
+      removedKeys: Array.isArray(res.removedKeys) ? res.removedKeys.slice(0, 50) : [],
+    };
+  });
+}
 
 // setupGlobalWebContentsHooks 给所有 webContents 兜底：
 // - 任何没被我们显式设置过 windowOpenHandler 的 webContents（扩展后台页、插件 popup、
 //   未来新增的窗口等）默认 deny 弹窗，只放行我们白名单里的协议；
 // - 拦 will-navigate，不允许跳到 javascript:/data:/vbscript: 这些危险 scheme；
 // - beforeunload 弹确认，避免用户关标签时把没保存的表单/SQL 编辑器内容直接丢了。
-const { setupGlobalWebContentsHooks } = require('./webcontentshooks').create({
-  BrowserWindow, RAW_IPC_SEND_ALLOWED, RAW_IPC_SYNC_ALLOWED, WebContentsView, app, captureGuard,
-  captureStates, childWindowGuard, childWindowStates, consoleGuard, consoleStates, crashGuard,
-  crashReloadCounts, crashStates, createNewTab, cursorGuard, cursorStates, devicerGuard,
-  devtoolsGuard, devtoolsSwitchGuard, devtoolsSwitchStates, dialog, dialogGuard, dialogStates,
-  displayGuard, entryGuard, entryStates, frameGuard, frameStates, fullscreenGuard,
-  getContentsState, getCurrentTabWebContents, goneGuard, handleFrameNavigationAttempt, hoverGuard, hoverStates,
-  inpageGuard, inpageStates, ipcChannelGuard, ipcChannelStates, isSafeUrl, isolatedChildContents,
-  launchExternalWithPrompt, mediaGuard, mediaStates, navGuard, originOfContents, popupGuard,
-  preloadGuard, printGuard, recordSecurityEvent, redirectChainStates, redirectGuard, remoteGuard,
-  remoteStates, revokeGuard, revokeStates, schemeOrigin, securityBoundaryHub, sendToRenderer,
-  session, storageAccessGuard, storageAccessStates, themeGuard, themeStates, titleStates,
-  unloadGuard, unloadStates, webContents, webviewHarden, zoomGuard,
-  readCrashRecoveryEnabled: () => crashRecoveryEnabled, readMainWindow: () => mainWindow, readTabs: () => tabs,
-});
+function setupGlobalWebContentsHooks() {
+  // GPU 进程崩溃时通知界面（Electron 14+ 的统一子进程事件）。GPU 进程通常会自动重启，
+  // 这里只提示一次，避免用户面对“画面突然空白却不知道发生了什么”。
+  app.on('child-process-gone', (_gpuEvent, details) => {
+    if (details && details.type === 'GPU') {
+      sendToRenderer('gpu-process-gone', { reason: details.reason || 'unknown' });
+    }
+  });
+
+  // handleUnsafeNavigation 对主框架导航做 IDN 同形异义字 / 降级检查。
+  // 返回 true 表示已拦截（调用方需 preventDefault）。block 直接挡；warn 弹原生
+  // 确认，用户放弃则同样挡掉。内部页（cosy://）不参与判定。
+  function handleUnsafeNavigation(targetContents, navUrl) {
+    try {
+      if (typeof navUrl !== 'string' || !navUrl) return false;
+      if (navUrl.startsWith('cosy://') || navUrl.startsWith('about:')) return false;
+      let currentUrl = '';
+      try { currentUrl = targetContents.getURL(); } catch { currentUrl = ''; }
+      const decision = navGuard.decideNavigation({ currentUrl, targetUrl: navUrl });
+      if (decision.action === navGuard.RISK_OK) return false;
+
+      const reasonText = [].concat(decision.reasons.host || [], decision.reasons.nav || []).join('; ');
+      if (decision.action === navGuard.RISK_BLOCK) {
+        recordSecurityEvent('nav-blocked', 'warn',
+          `已阻止可疑导航: ${navUrl} (${reasonText})`, originOfContents(targetContents));
+        sendToRenderer('show-toast', '已阻止一次可疑导航（仿冒域名或安全降级）');
+        return true;
+      }
+
+      // warn：让用户在原生对话框里明确选择。
+        const choice = dialog.showMessageBoxSync(mainWindow, {
+          type: 'warning',
+          buttons: ['返回安全页面', '仍然继续'],
+          defaultId: 0,
+          cancelId: 0,
+          title: '安全提示：可疑的网站地址',
+          message: '这个网址可能是仿冒网站或存在安全降级，是否仍要访问？',
+          detail: [
+            `地址：${navUrl}`,
+            `原因：${reasonText || '可疑域名特征'}`,
+            '',
+            '该地址可能使用了与正规网站极其相似的字符，或正从不安全的明文连接加载。',
+            '继续访问可能导致账号、密码等信息泄露。',
+          ].join('\n'),
+          noLink: true,
+        });
+        recordSecurityEvent('nav-warn', 'info',
+          `可疑导航提示 ${choice === 1 ? '用户继续' : '用户返回'}: ${navUrl} (${reasonText})`,
+          originOfContents(targetContents));
+        return choice !== 1;
+    } catch (guardErr) {
+      // 守卫自身异常绝不能阻断正常浏览：失败放行并留痕。
+      recordSecurityEvent('nav-guard-error', 'info',
+        `导航守卫异常放行: ${String(guardErr && guardErr.message || guardErr)}`, '');
+      return false;
+    }
+  }
+
+  app.on('web-contents-created', (_event, contents) => {
+    // 主窗口 UI 自己管 navigation，跳过；只给页面 tab 兜底
+    if (contents === mainWindow?.webContents) return;
+
+    // 每个页面 contents 独立维护一条服务端重定向链状态（降级/环路/钓鱼判定）。
+    const redirectState = redirectGuard.createRedirectState(Date.now());
+    contents.on('destroyed', () => {
+      redirectChainStates.delete(contents.id);
+      dialogStates.delete(contents.id);
+      unloadStates.delete(contents.id);
+      titleStates.delete(contents.id);
+      inpageStates.delete(contents.id);
+      consoleStates.delete(contents.id);
+      hoverStates.delete(contents.id);
+      themeStates.delete(contents.id);
+      mediaStates.delete(contents.id);
+      crashStates.delete(contents.id);
+      cursorStates.delete(contents.id);
+      entryStates.delete(contents.id);
+      childWindowStates.delete(contents.id);
+      frameStates.delete(contents.id);
+      captureStates.delete(contents.id);
+      devtoolsSwitchStates.delete(contents.id);
+      remoteStates.delete(contents.id);
+      ipcChannelStates.delete(contents.id);
+      revokeStates.delete(contents.id);
+      storageAccessStates.delete(contents.id);
+    });
+    redirectChainStates.set(contents.id, redirectState);
+    // 顶层真正落地导航后，重定向链归零，开始统计下一条链。
+    contents.on('did-navigate', () => {
+      redirectGuard.resetState(redirectState, Date.now());
+      // 进入新的顶层文档：强留页配额与同文档导航洪泛计数都按页面生命周期重置。
+      unloadGuard.resetForNavigation(unloadStates.get(contents.id));
+      inpageGuard.resetForNavigation(inpageStates.get(contents.id));
+      // r32：各事件通道的洪泛/冷却配额随主导航重置（插件崩溃计数同样随文档生命周期清空）。
+      consoleGuard.resetForNavigation(consoleStates.get(contents.id));
+      hoverGuard.resetForNavigation(hoverStates.get(contents.id));
+      themeGuard.resetForNavigation(themeStates.get(contents.id));
+      mediaGuard.resetForNavigation(mediaStates.get(contents.id));
+      crashGuard.resetForNavigation(crashStates.get(contents.id));
+      cursorGuard.resetForNavigation(cursorStates.get(contents.id));
+      entryGuard.resetForNavigation(entryStates.get(contents.id));
+      // r33：换文档后子窗口 / iframe / 捕获 / DevTools 开关配额随生命周期重置。
+      childWindowGuard.resetForNavigation(childWindowStates.get(contents.id));
+      frameGuard.resetForNavigation(frameStates.get(contents.id), Date.now());
+      captureGuard.resetForNavigation(captureStates.get(contents.id), Date.now());
+      devtoolsSwitchGuard.resetForNavigation(devtoolsSwitchStates.get(contents.id), Date.now());
+      remoteGuard.resetForNavigation(remoteStates.get(contents.id));
+      ipcChannelGuard.resetForNavigation(ipcChannelStates.get(contents.id));
+      // r34：换顶层文档后，设备撤销去重与跨框架存储访问分桶按新源重新计，避免把
+      // 上一个文档的跨源桶/撤销冷却带到新页面。删除后下次事件经 getContentsState 重建。
+      revokeStates.delete(contents.id);
+      storageAccessStates.delete(contents.id);
+    });
+
+    // handleRedirect 在 navguard 的来源矩阵之前先做“重定向专项”判定，返回 true
+    // 表示已拦截（调用方应 preventDefault）。
+    const handleRedirect = (fromUrl, toUrl) => {
+      let currentUrl = fromUrl || '';
+      if (!currentUrl) {
+        try { currentUrl = contents.getURL(); } catch {}
+      }
+      const verdict = redirectGuard.decideRedirect(
+        redirectState, { fromUrl: currentUrl, toUrl }, Date.now());
+      if (verdict.action === redirectGuard.REDIRECT_BLOCK) {
+        recordSecurityEvent('redirect-blocked', 'warn',
+          `危险重定向已拦截（${verdict.reasons.map(redirectGuard.describeReason).join('；')}）: ${toUrl}`,
+          originOfContents(contents));
+        return true;
+      }
+      return false;
+    };
+
+    contents.setWindowOpenHandler(({ url }) => {
+      // 兜底窗口：外部协议走确认流，不允许直接 openExternal。
+      const extScheme = normalizeExternalScheme(url);
+      if (CONFIRMABLE_EXTERNAL_SCHEMES.has(extScheme)) {
+        launchExternalWithPrompt(url, originOfContents(contents), true);
+        return { action: 'deny' };
+      }
+      // 兜底窗口同样禁止 javascript:/data:/file: 等危险协议弹窗。
+      const fallbackPopup = popupGuard.decidePopup({
+        currentUrl: (() => { try { return contents.getURL(); } catch { return ''; } })(),
+        targetUrl: url,
+      });
+      if (fallbackPopup.action === 'block') {
+        recordSecurityEvent('popup-blocked', 'warn', `拦截危险协议弹窗: ${url}`, originOfContents(contents));
+        return { action: 'deny' };
+      }
+      if (!isSafeUrl(url)) return { action: 'deny' };
+      // 从 tab 里点 _blank 的，统一丢回我们的 createNewTab
+      setImmediate(() => createNewTab(url));
+      return { action: 'deny' };
+    });
+
+    // navigator.bluetooth.requestDevice 的设备选择事件。无人监听时部分平台会
+    // 自动选中枚举到的第一个蓝牙设备继续配对，等于把本机蓝牙设备暴露给网页；
+    // 这里显式 callback('') 取消选择并留痕。
+    contents.on('select-bluetooth-device', (btEvent, btDevices, btCallback) => {
+      try { btEvent.preventDefault(); } catch {}
+      const verdict = displayGuard.decideBluetoothSelection({
+        url: (() => { try { return contents.getURL(); } catch { return ''; } })(),
+        devices: btDevices,
+      });
+      recordSecurityEvent('bluetooth-blocked', 'warn',
+        `网站请求蓝牙设备已取消（枚举 ${verdict.deviceCount} 台）`, verdict.origin);
+      try { btCallback(''); } catch {}
+    });
+
+    // 串口 / HID / USB 的“设备选择”回调与蓝牙同理：不监听时部分平台会自动选中枚举到
+    // 的第一个设备。网页没有理由独占本机串口/HID/USB（U 盾、键盘、烧录器等），统一
+    // 显式取消选择（callback('')），绝不依赖默认行为。
+    const contentsOriginUrl = () => {
+      try { return contents.getURL(); } catch { return ''; }
+    };
+    contents.on('select-serial-port', (seEvent, portList, _seWc, seCallback) => {
+      try { seEvent.preventDefault(); } catch {}
+      const v = devicerGuard.decideDeviceChooser({
+        kind: devicerGuard.KIND_SERIAL, originUrl: contentsOriginUrl(), portList,
+      });
+      recordSecurityEvent('serial-blocked', 'warn',
+        `网站请求${devicerGuard.describeKind(v.kind)}设备已取消（枚举 ${v.deviceCount} 台）`, v.origin);
+      try { seCallback(''); } catch {}
+    });
+    contents.on('select-hid-device', (hidEvent, hidDetails, hidCallback) => {
+      try { hidEvent.preventDefault(); } catch {}
+      const v = devicerGuard.decideDeviceChooser({
+        kind: devicerGuard.KIND_HID, originUrl: contentsOriginUrl(), details: hidDetails,
+      });
+      recordSecurityEvent('hid-blocked', 'warn',
+        `网站请求${devicerGuard.describeKind(v.kind)}设备已取消（枚举 ${v.deviceCount} 台）`, v.origin);
+      try { hidCallback(''); } catch {}
+    });
+    contents.on('select-usb-device', (usbEvent, usbDetails, usbCallback) => {
+      try { usbEvent.preventDefault(); } catch {}
+      const v = devicerGuard.decideDeviceChooser({
+        kind: devicerGuard.KIND_USB, originUrl: contentsOriginUrl(), details: usbDetails,
+      });
+      recordSecurityEvent('usb-blocked', 'warn',
+        `网站请求${devicerGuard.describeKind(v.kind)}设备已取消（枚举 ${v.deviceCount} 台）`, v.origin);
+      try { usbCallback(''); } catch {}
+    });
+
+    // 本浏览器用 WebContentsView 承载页面，从不使用 <webview> 标签。
+    // 若有页面尝试 attach webview，一律阻止：webview 默认能携带自己的
+    // webPreferences（nodeIntegration/disablewebsecurity），是常见提权通道。
+    contents.on('will-attach-webview', (attachEvent, webPreferences, params) => {      // 完整的 webview 挂载审计：src 仅允许远程 http(s)，guest 自带 preload /
+      // Node 集成 / 关闭安全开关 / 挂载主会话分区等一律收口（见 webviewharden.js）。
+      const verdict = webviewHarden.review(webPreferences, params);
+      if (verdict.reasons.length) {
+        recordSecurityEvent('webview-blocked', verdict.blocked ? 'warn' : 'info',
+          `webview 挂载审计: ${verdict.reasons.map(webviewHarden.describeReason).join('；')}`,
+          originOfContents(contents));
+      }
+      if (verdict.blocked) {
+        attachEvent.preventDefault();
+        return;
+      }
+      // src 合法时也用安全基线整体覆盖 guest 配置，杜绝任何残留提权项。
+      for (const key of Object.keys(webPreferences)) delete webPreferences[key];
+      Object.assign(webPreferences, verdict.prefs);
+    });
+
+    // 主框架导航：http(s)/file/cosy 放行，mailto/tel 走按站点记忆的确认弹窗，
+    // 其它外部协议（ms-*:/smb:/vbscript: 等）直接阻止。
+    contents.on('will-navigate', (navEvent, url) => {
+      // 来源矩阵：远程网页 / data / blob 等不可信上下文不得把顶层框架顶到
+      // file:// 本地资源或 cosy: 特权内部页（地址栏 loadURL 不触发本事件，
+      // 故浏览器自身打开本地文件不受影响）。
+      let navInitiator = '';
+      try { navInitiator = contents.getURL(); } catch {}
+      try {
+        const boundary = schemeOrigin.evaluate(url, navInitiator);
+        if (boundary.action === 'block') {
+          recordSecurityEvent('origin-boundary-blocked', 'warn',
+            `${schemeOrigin.describeBlock(boundary.reason)}: ${String(url).slice(0, 200)}`,
+            navInitiator);
+          sendToRenderer('show-toast', '已阻止网页导航到本地文件或浏览器内部页面');
+          navEvent.preventDefault();
+          return;
+        }
+      } catch { /* 判定异常不干预，交后续链路 */ }
+      // 导航安全：IDN 同形异义字钓鱼 / 混合脚本域名直接拦；整词同形 / Punycode
+      // 与 HTTPS→HTTP 同站降级弹原生确认；跨主机 http 降级直接拦。
+      if (handleUnsafeNavigation(contents, url)) {
+        navEvent.preventDefault();
+        return;
+      }
+      if (handleFrameNavigationAttempt(contents, url, true)) {
+        navEvent.preventDefault();
+      }
+    });
+
+    // 子框架导航：这是历史代码漏掉的面——iframe src="ms-word:.." 或子框架 302
+    // 到外部协议同样能唤起本机程序。子框架只允许纯 Web 协议，其余一律取消。
+    contents.on('will-frame-navigate', (frameEvent, url, isMainFrame) => {
+      // 主框架导航已由上面的 will-navigate 统一处理（它还要更新地址栏 / 历史），
+      // 这里只接管子框架，否则一次导航会弹两次确认框。
+      if (isMainFrame) return;
+      if (handleFrameNavigationAttempt(contents, url, false)) {
+        frameEvent.preventDefault();
+      }
+    });
+
+    // 页内查找结果转发：findInPage 只会作用于活动标签，所以这里也只把
+    // 当前活动 webContents 的匹配结果送回主界面，更新“第 x / y 个匹配”。
+    // 非活动标签的结果直接忽略，避免后台标签覆盖计数。
+    contents.on('found-in-page', (_findEvent, result) => {
+      if (contents !== getCurrentTabWebContents()) return;
+      sendToRenderer('found-in-page-result', {
+        activeMatchOrdinal: result.activeMatchOrdinal || 0,
+        matches: result.matches || 0,
+      });
+    });
+
+    // 服务端 302 也可能把框架重定向到外部协议（下载站常见手法）。
+    // will-redirect 覆盖主框架；will-frame-redirect 覆盖子框架（旧 Electron
+    // 没有该事件时监听器静默不生效，主框架面仍被兜住）。
+    // 先走重定向专项守卫（降级/环路/钓鱼/危险 scheme），再走 navguard 来源矩阵。
+    contents.on('will-redirect', (redirectEvent, url, isRedirect) => {
+      if (handleRedirect('', url)) {
+        redirectEvent.preventDefault();
+        return;
+      }
+      if (handleFrameNavigationAttempt(contents, url, true)) {
+        redirectEvent.preventDefault();
+      }
+    });
+
+    contents.on('will-frame-redirect', (redirectEvent, url, isMainFrame) => {
+      if (isMainFrame) return;
+      if (handleRedirect('', url)) {
+        redirectEvent.preventDefault();
+        return;
+      }
+      if (handleFrameNavigationAttempt(contents, url, false)) {
+        redirectEvent.preventDefault();
+      }
+    });
+
+    // ===== 渲染进程崩溃 / 卡死恢复 =====
+    // 现代浏览器在某个标签的渲染进程崩溃后会给横幅而不是整窗静默死掉。
+    // 崩溃 / OOM 自动重载“一次”（第二次不再自动，避免崩溃循环把 CPU 打满），
+    // 被系统杀死(killed)不自动重载；无响应时给横幅让用户选“等待 / 强制刷新”。
+    contents.on('render-process-gone', (_goneEvent, details) => {
+      const tab = tabs.find(t => t.view && t.view.webContents === contents);
+      let goneUrl = tab?.url || '';
+      if (!goneUrl) {
+        try { goneUrl = contents.getURL(); } catch {}
+      }
+      // 用 goneguard 做窗口内有界定速 + 冷却 + 熔断，并禁止自动重载 data:/blob:
+      // 等瞬时上下文（见 goneguard.js），替代旧的“只重载一次”裸计数。
+      const now = Date.now();
+      let goneState = crashReloadCounts.get(contents.id);
+      if (!goneState) {
+        goneState = goneGuard.createState(now);
+        crashReloadCounts.set(contents.id, goneState);
+      }
+      const decision = goneGuard.decideReload(goneState, goneUrl, now);
+      const recoverable = details.reason === 'crashed' || details.reason === 'oom';
+      const payload = {
+        tabId: contents.id,
+        reason: details.reason || 'unknown',
+        exitCode: typeof details.exitCode === 'number' ? details.exitCode : null,
+        url: goneUrl,
+        title: tab?.title || '',
+        autoReloaded: false,
+        recovery: decision.reason,
+      };
+      if (crashRecoveryEnabled && recoverable && decision.action === 'reload' &&
+          !contents.isDestroyed()) {
+        payload.autoReloaded = true;
+        setTimeout(() => {
+          if (!contents.isDestroyed()) contents.reload();
+        }, 400);
+      } else if (decision.action === 'error-page') {
+        // 熔断 / 限频 / 不可重载上下文：留痕，界面据此显示手动恢复横幅。
+        recordSecurityEvent('renderer-gone', 'info',
+          `${goneGuard.describeReason(decision.reason)}（${details.reason || 'unknown'}）`,
+          goneUrl);
+      }
+      sendToRenderer('renderer-gone', payload);
+    });
+
+    // 页面恢复正常后，把该标签的崩溃处置状态清零，给下次真正的崩溃留出恢复额度。
+    contents.on('did-finish-load', () => crashReloadCounts.delete(contents.id));
+
+    contents.on('unresponsive', () => {
+      // 无响应事件在卡死期间会连续触发，用 goneguard 冷却去抖，避免横幅轰炸。
+      const now = Date.now();
+      let goneState = crashReloadCounts.get(contents.id);
+      if (!goneState) {
+        goneState = goneGuard.createState(now);
+        crashReloadCounts.set(contents.id, goneState);
+      }
+      const verdict = goneGuard.decideUnresponsive(goneState, now);
+      if (verdict.notify) {
+        sendToRenderer('renderer-unresponsive', { tabId: contents.id });
+      }
+    });
+    contents.on('responsive', () => {
+      sendToRenderer('renderer-responsive', { tabId: contents.id });
+    });
+
+    // JS 模态框（alert/confirm/prompt）轰炸收口：滑动窗口配额 + 同文案去抖 + 冷却。
+    // beforeunload 类型不在这里处理，交给下方 will-prevent-unload 的 unloadguard。
+    contents.on('dialog', (event, type, url, text) => {
+      if (dialogGuard.isBeforeUnload(type)) return;
+      const st = getContentsState(dialogStates, contents.id, dialogGuard.createDialogState);
+      const v = dialogGuard.decideDialog(
+        st,
+        { type, message: text, originUrl: url || originOfContents(contents) },
+        Date.now()
+      );
+      if (v.decision === dialogGuard.DIALOG_SUPPRESS) {
+        event.preventDefault();
+        const severity = v.reason === dialogGuard.SUPPRESS_DUPLICATE ? 'info' : 'warn';
+        recordSecurityEvent('dialog-blocked', severity,
+          dialogGuard.describeDialogReason(v.reason), v.origin || originOfContents(contents));
+      }
+    });
+
+    // 页面调 window.close() 之前触发的 beforeunload。unloadguard 给真实“未保存修改”
+    // 保留每页面几次确认额度；恶意页反复强留则越限后直接放行关闭/导航（不再弹模态）。
+    contents.on('will-prevent-unload', (event) => {
+      const st = getContentsState(unloadStates, contents.id, unloadGuard.createUnloadState);
+      const v = unloadGuard.decideUnload(st, Date.now());
+      if (v.decision === unloadGuard.UNLOAD_LEAVE) {
+        // 不调用 preventDefault：尊重用户的关闭/导航意图，页面照常卸载。
+        recordSecurityEvent('unload-bypass', 'warn',
+          unloadGuard.describeUnloadReason(v.reason), originOfContents(contents));
+        return;
+      }
+      event.preventDefault();
+      const choice = dialog.showMessageBoxSync(mainWindow, {
+        type: 'question',
+        buttons: ['离开此页', '留在此页'],
+        defaultId: 1,
+        cancelId: 1,
+        title: '确认离开',
+        message: '您有尚未保存的更改。确定要离开此页面吗？'
+      });
+      if (choice === 0) {
+        contents.destroy();
+      }
+    });
+
+    // ===== 全屏 / 键盘锁 / 打印 / 缩放 / DevTools 链接收口（每 contents 独立状态）=====
+    const fsState = fullscreenGuard.createFullscreenState(Date.now());
+    const printState = printGuard.createPrintState(Date.now());
+    const zoomState = zoomGuard.createZoomState(Date.now());
+    const preloadErrState = preloadGuard.createPreloadErrorState(Date.now());
+    let zoomFlushTimer = null;
+
+    const currentContentsUrl = () => {
+      try { return contents.getURL(); } catch { return ''; }
+    };
+    const broadcastZoomLevel = (level) => {
+      try {
+        sendToRenderer('zoom-level-changed', {
+          percent: zoomGuard.zoomLevelToPercent(level),
+          factor: Math.pow(1.2, level),
+        });
+      } catch {}
+    };
+
+    contents.on('enter-html-full-screen', () => {
+      const r = fullscreenGuard.noteEnter(fsState, Date.now(), currentContentsUrl());
+      if (r.abusive) {
+        recordSecurityEvent('fullscreen-abuse', 'warn',
+          fullscreenGuard.describeAbuse(fullscreenGuard.ABUSE_FLICKER), originOfContents(contents));
+      }
+    });
+    contents.on('leave-html-full-screen', () => {
+      const r = fullscreenGuard.noteLeave(fsState, Date.now());
+      if (r.abusive) {
+        recordSecurityEvent('fullscreen-abuse', 'warn',
+          fullscreenGuard.describeAbuse(fullscreenGuard.ABUSE_FLICKER), originOfContents(contents));
+      }
+    });
+
+    // 键盘锁只在该内容确处全屏时放行；窗口态请求（Esc/快捷键劫持起手式）一律阻止。
+    contents.on('keyboard-lock', (event) => {
+      const v = fullscreenGuard.decideKeyboardLock(
+        fsState, { originUrl: currentContentsUrl() }, Date.now());
+      if (v.decision === fullscreenGuard.KEYBOARD_DENY) {
+        event.preventDefault();
+        recordSecurityEvent('keyboard-lock-blocked', 'warn',
+          fullscreenGuard.describeKeyboardReason(v.reason), v.origin || originOfContents(contents));
+      }
+    });
+
+    // window.print() 打印轰炸：滑动窗口配额 + 冷却，越限抑制内置打印流程。
+    contents.on('print', (event) => {
+      const v = printGuard.decidePrint(printState, { originUrl: currentContentsUrl() }, Date.now());
+      if (v.decision === printGuard.PRINT_SUPPRESS) {
+        event.preventDefault();
+        recordSecurityEvent('print-blocked', 'warn',
+          printGuard.describePrintReason(v.reason), v.origin || originOfContents(contents));
+      }
+    });
+
+    // ctrl+滚轮缩放：量化/钳制级别，合并滚轮抖动的 IPC 广播，洪泛时暂停并留痕，
+    // 平息后用一个 trailing 定时器补发最终级别（OSD 百分比不丢）。
+    contents.on('zoom-changed', () => {
+      let level = 0;
+      try { level = contents.getZoomLevel(); } catch { level = 0; }
+      const v = zoomGuard.applyZoomChange(zoomState, { level }, Date.now());
+      if (v.flooded) {
+        recordSecurityEvent('zoom-flood', 'info',
+          zoomGuard.describeHoldReason(zoomGuard.HOLD_FLOODED), originOfContents(contents));
+      }
+      if (v.action === zoomGuard.ACTION_BROADCAST) {
+        broadcastZoomLevel(v.level);
+        return;
+      }
+      if (zoomFlushTimer) return;
+      zoomFlushTimer = setTimeout(() => {
+        zoomFlushTimer = null;
+        const f = zoomGuard.flushPendingZoom(zoomState, Date.now());
+        if (f.action === zoomGuard.ACTION_BROADCAST) broadcastZoomLevel(f.level);
+      }, zoomGuard.ZOOM_BROADCAST_MIN_INTERVAL_MS + 5);
+    });
+
+    // DevTools 内点击链接：http/https/cosy 一律转应用内新标签页（绝不走系统外壳），
+    // file/data/javascript 及任意外部应用协议直接拦截。
+    contents.on('devtools-open-url', (event, url) => {
+      const v = devtoolsGuard.decideDevToolsUrl(url);
+      event.preventDefault();
+      if (v.action === devtoolsGuard.ACTION_OPEN_TAB) {
+        createNewTab(v.url);
+      } else {
+        recordSecurityEvent('devtools-url-blocked', 'warn',
+          devtoolsGuard.describeDevToolsReason(v.reason), originOfContents(contents));
+      }
+    });
+
+    contents.on('destroyed', () => {
+      if (zoomFlushTimer) {
+        clearTimeout(zoomFlushTimer);
+        zoomFlushTimer = null;
+      }
+    });
+
+    // preload 承载 IPC 白名单与 contextBridge 安全桥：加载/运行期抛错意味着安全包装
+    // 可能残缺，必须按严重度留痕，并对同指纹/同标签页错误去重限流，防止错误循环刷爆日志。
+    contents.on('preload-error', (event, preloadPath, error) => {
+      const v = preloadGuard.decidePreloadError(
+        preloadErrState,
+        { preloadPath: String(preloadPath || ''), error, originUrl: currentContentsUrl() },
+        Date.now());
+      if (v.decision === preloadGuard.DECISION_REPORT) {
+        recordSecurityEvent('preload-error', v.severity,
+          preloadGuard.describePreloadError(v), v.origin || originOfContents(contents));
+      }
+    });
+
+    // ===== r32：控制台 / 悬停状态栏 / 主题色 / 媒体 / 插件崩溃 / 光标 / 历史条目收口 =====
+    // 说明：这些通道此前完全没有接线，页面可借其注入脏文本或打爆事件流。下列内核均为
+    // per-contents 纯函数裁决；为避免“限流处理器自己刷爆安全日志”，只在“洪泛阈值首次
+    // 越线”或“崩溃需要提示”这两个有界时刻 recordSecurityEvent，冷却期内的重复丢弃不记。
+
+    // console-message：净化换行/ANSI/零宽与超长行，突发/长窗口越限后冷却丢弃。
+    contents.on('console-message', (event, level, message, line, sourceId) => {
+      const st = getContentsState(consoleStates, contents.id, consoleGuard.createConsoleState);
+      const v = consoleGuard.decideConsole(
+        st, { level, message, line, sourceId }, Date.now());
+      if (v.action === consoleGuard.CONSOLE_DROP && v.reason === consoleGuard.CS_FLOOD) {
+        recordSecurityEvent('console-flood', 'info',
+          consoleGuard.describeConsoleReason(v.reason), originOfContents(contents));
+      }
+    });
+
+    // update-target-url：悬停链接状态栏预告。只在裁决 show 时把净化后的 URL 推给渲染层
+    // 显示；洪泛首次越线时清空状态栏（不残留伪造地址）并留痕，冷却期重复丢弃不再记。
+    contents.on('update-target-url', (event, url) => {
+      const st = getContentsState(hoverStates, contents.id, hoverGuard.createHoverState);
+      const v = hoverGuard.decideHoverUrl(st, url, Date.now());
+      if (v.action === hoverGuard.HOVER_SHOW) {
+        try { sendToRenderer('target-url-changed', { url: v.url }); } catch {}
+      } else if (v.action === hoverGuard.HOVER_DROP && v.reason === hoverGuard.DROP_FLOOD) {
+        try { sendToRenderer('target-url-changed', { url: '' }); } catch {}
+        recordSecurityEvent('hover-flood', 'warn',
+          hoverGuard.describeHoverReason(v.reason), originOfContents(contents));
+      }
+    });
+
+    // did-change-theme-color：只接受白名单颜色，高频闪烁（伪装浏览器顶栏）越限后锁定。
+    contents.on('did-change-theme-color', (event, color) => {
+      const st = getContentsState(themeStates, contents.id, themeGuard.createThemeState);
+      const v = themeGuard.decideThemeColor(st, color, Date.now());
+      if (v.action === themeGuard.THEME_DROP && v.reason === themeGuard.DROP_FLOOD) {
+        recordSecurityEvent('theme-abuse', 'warn',
+          themeGuard.describeThemeReason(v.reason), originOfContents(contents));
+      }
+    });
+
+    // media-started-playing / media-paused：自动播放风暴/媒体键抖动收敛，维护真实播放态。
+    contents.on('media-started-playing', () => {
+      const st = getContentsState(mediaStates, contents.id, mediaGuard.createMediaState);
+      const v = mediaGuard.decideMediaEvent(st, mediaGuard.MEDIA_STARTED, Date.now());
+      if (v.action === mediaGuard.MEDIA_DROP && v.reason === mediaGuard.DROP_FLOOD) {
+        recordSecurityEvent('media-flood', 'warn',
+          mediaGuard.describeMediaReason(v.reason), originOfContents(contents));
+      }
+    });
+    contents.on('media-paused', () => {
+      const st = getContentsState(mediaStates, contents.id, mediaGuard.createMediaState);
+      const v = mediaGuard.decideMediaEvent(st, mediaGuard.MEDIA_PAUSED, Date.now());
+      if (v.action === mediaGuard.MEDIA_DROP && v.reason === mediaGuard.DROP_FLOOD) {
+        recordSecurityEvent('media-flood', 'warn',
+          mediaGuard.describeMediaReason(v.reason), originOfContents(contents));
+      }
+    });
+
+    // plugin-crashed：净化插件名/版本（防日志注入），同一插件 30s 内的崩溃循环折叠为
+    // 一次提示，折叠达上限强制汇总，计数天然有界，不会逐次弹窗/逐行刷日志。
+    contents.on('plugin-crashed', (event, name, version) => {
+      const st = getContentsState(crashStates, contents.id, crashGuard.createCrashState);
+      const v = crashGuard.decidePluginCrash(st, name, version, Date.now());
+      if (v.action === crashGuard.CRASH_NOTIFY) {
+        const extra = v.suppressedSinceLastNotify > 0
+          ? `（已折叠此前 ${v.suppressedSinceLastNotify} 次重复崩溃）`
+          : '';
+        recordSecurityEvent('plugin-crash', 'warn',
+          `插件 ${v.name} ${v.version} 崩溃${extra}`, originOfContents(contents));
+      }
+    });
+
+    // cursor-changed：类型白名单 + 自定义光标位图边长/字节/缩放校验 + 抖动洪泛冷却；
+    // 任何非法/越限都回落 default 光标，避免超大位图 IPC 与高频切换 DoS。
+    contents.on('cursor-changed', (event, type, image, scale) => {
+      const st = getContentsState(cursorStates, contents.id, cursorGuard.createCursorState);
+      let imageInfo = null;
+      if (type === 'custom' && image && typeof image.getSize === 'function') {
+        try {
+          const size = image.getSize();
+          let bytes = 0;
+          try { const bmp = image.getBitmap(); bytes = Buffer.isBuffer(bmp) ? bmp.length : 0; } catch {}
+          imageInfo = { width: size && size.width, height: size && size.height, bytes };
+        } catch {
+          imageInfo = null;
+        }
+      }
+      const v = cursorGuard.decideCursorChange(st, type, imageInfo, scale, Date.now());
+      // 非法类型/位图/缩放或抖动越限统一回落 default：Electron 不暴露逐事件设置光标的
+      // 稳定 API，这里通过有界裁决丢弃异常事件流，仅在首次越线时留痕，避免处理器自身刷日志。
+      if (v.action === cursorGuard.CURSOR_DROP && v.reason === cursorGuard.DROP_FLOOD) {
+        recordSecurityEvent('cursor-abuse', 'warn',
+          cursorGuard.describeCursorReason(v.reason), originOfContents(contents));
+      }
+    });
+
+    // navigation-entry-committed：地址栏据此显示最终 URL，先净化脏文本，再对历史条目
+    // 提交频率（pushState 历史劫持/洪泛）做滑动窗口裁决，越限冷却并冻结地址栏刷新。
+    contents.on('navigation-entry-committed', (event, url) => {
+      const st = getContentsState(entryStates, contents.id, entryGuard.createEntryState);
+      const v = entryGuard.decideNavigationEntry(st, url, Date.now());
+      if (v.action === entryGuard.ENTRY_DROP && v.reason === entryGuard.DROP_FLOOD) {
+        recordSecurityEvent('entry-flood', 'warn',
+          entryGuard.describeEntryReason(v.reason), originOfContents(contents));
+      }
+    });
+
+    // r33：意外原生子窗口收口。setWindowOpenHandler 恒 deny 后仍可能有少数路径真正
+    // new 出原生 BrowserWindow；这里核对其 webPreferences 基线与首屏地址，提权 / 危险
+    // 协议 / 开窗洪泛直接销毁，幸存的 http(s) 子窗标记为隔离并留痕。
+    contents.on('did-create-window', (childWindow, details) => {
+      try {
+        const openerSt = getContentsState(
+          childWindowStates, contents.id, childWindowGuard.createChildWindowState);
+        let childContents = null;
+        try {
+          childContents = childWindow && childWindow.webContents ? childWindow.webContents : null;
+        } catch {}
+        let prefs = null;
+        try {
+          if (childContents && typeof childContents.getLastWebPreferences === 'function') {
+            prefs = childContents.getLastWebPreferences();
+          }
+        } catch {}
+        let childUrl = '';
+        try {
+          childUrl = (childContents && childContents.getURL()) || (details && details.url) || '';
+        } catch {}
+        const verdict = childWindowGuard.evaluateChildWindow(
+          { url: childUrl, prefs, openerPresent: true }, openerSt, Date.now());
+        if (verdict.action === childWindowGuard.CHILD_CLOSE) {
+          recordSecurityEvent('child-window-blocked', 'warn',
+            `意外子窗口已销毁（${verdict.reasons.join('；')}）: ${String(childUrl).slice(0, 200)}`,
+            originOfContents(contents));
+          try { childWindow.destroy(); } catch {}
+          return;
+        }
+        if (verdict.action === childWindowGuard.CHILD_ISOLATE) {
+          if (childContents) isolatedChildContents.add(childContents);
+          recordSecurityEvent('child-window-blocked', 'info',
+            `意外子窗口按隔离基线保留（${verdict.reasons.join('；')}）`,
+            verdict.origin || originOfContents(contents));
+        }
+      } catch (err) {
+        recordSecurityEvent('child-window-blocked', 'info',
+          `子窗口守卫异常: ${String((err && err.message) || err)}`, originOfContents(contents));
+      }
+    });
+
+    // r33：frame-created 观测每个框架创建。该事件无法阻止框架落地，这里负责把危险
+    // 协议子框架 / 畸形 URL / iframe 爆炸统一留痕，真正的危险导航仍由 will-frame-navigate
+    // 与 CSP 兜底；洪泛折叠为单条 info，避免刷爆审计。
+    contents.on('frame-created', (event, frame) => {
+      try {
+        const st = getContentsState(frameStates, contents.id, frameGuard.createFrameState);
+        const v = frameGuard.evaluateFrame(frame, st, Date.now());
+        if (v.action === frameGuard.FRAME_DROP && v.reasons.length > 0) {
+          const sev = v.reasons.includes('frame-flood') ? 'info' : 'warn';
+          const tail = frame && frame.url ? ': ' + String(frame.url).slice(0, 200) : '';
+          recordSecurityEvent('frame-blocked', sev,
+            `子框架事件异常（${v.reasons.join('；')}）${tail}`,
+            v.origin || originOfContents(contents));
+        }
+      } catch (err) {
+        recordSecurityEvent('frame-blocked', 'info',
+          `框架守卫异常: ${String((err && err.message) || err)}`, originOfContents(contents));
+      }
+    });
+
+    // r33：screen-capture-changed 让“某个标签真的进入屏幕/窗口捕获态”可见：任何进入
+    // 捕获（start / 未停先换句柄）都亮留痕，畸形 / 高频切换事件被折叠，避免网页静默录屏。
+    contents.on('screen-capture-changed', (event, id, captureInfo) => {
+      try {
+        const st = getContentsState(captureStates, contents.id, captureGuard.createCaptureState);
+        const v = captureGuard.evaluateCaptureChange(st, id, captureInfo, Date.now());
+        if (v.action === captureGuard.CAPTURE_SIGNAL) {
+          if (v.phase === 'started' || v.phase === 'replaced') {
+            const audio = v.hasAudio ? '含音频' : '无音频';
+            recordSecurityEvent('screen-capture-active', 'warn',
+              v.phase === 'replaced'
+                ? `屏幕捕获句柄被替换（${audio}），该标签可能持续被录制`
+                : `标签进入屏幕/窗口捕获态（${audio}），请注意录屏提示`,
+              originOfContents(contents));
+          }
+        } else if (v.action === captureGuard.CAPTURE_DROP) {
+          recordSecurityEvent('screen-capture-active', 'info',
+            `屏幕捕获状态事件异常已忽略（${v.reasons.join('；')}）`, originOfContents(contents));
+        }
+      } catch (err) {
+        recordSecurityEvent('screen-capture-active', 'info',
+          `捕获状态守卫异常: ${String((err && err.message) || err)}`, originOfContents(contents));
+      }
+    });
+
+    // r33：devtools-opened/closed 收口调试通道本身。隔离子窗口按基线不该有 DevTools，
+    // 一旦被打开立即关闭并告警；普通标签打开 DevTools 只留痕（不阻断开发者），高频
+    // 开关（自动化 / 环境探测）折叠冷却。
+    contents.on('devtools-opened', () => {
+      try {
+        const st = getContentsState(
+          devtoolsSwitchStates, contents.id, devtoolsSwitchGuard.createDevtoolsState);
+        const isIso = isolatedChildContents.has(contents);
+        const v = devtoolsSwitchGuard.evaluateDevtoolsToggle(
+          st, 'opened', { isIsolatedChild: isIso }, Date.now());
+        if (v.action === devtoolsSwitchGuard.DEVTOOLS_CLOSE) {
+          recordSecurityEvent('devtools-switch', 'warn',
+            '按基线不应具备 DevTools 的隔离窗口被打开开发者工具，已立即关闭',
+            originOfContents(contents));
+          try { contents.closeDevTools(); } catch {}
+        } else if (v.action === devtoolsSwitchGuard.DEVTOOLS_AUDIT) {
+          recordSecurityEvent('devtools-switch', 'info',
+            '该标签打开了开发者工具：请勿在控制台粘贴来源不明的代码',
+            originOfContents(contents));
+        }
+      } catch (err) {
+        recordSecurityEvent('devtools-switch', 'info',
+          `DevTools 开关守卫异常: ${String((err && err.message) || err)}`, originOfContents(contents));
+      }
+    });
+    contents.on('devtools-closed', () => {
+      const st = devtoolsSwitchStates.get(contents.id);
+      if (st) devtoolsSwitchGuard.evaluateDevtoolsToggle(st, 'closed', {}, Date.now());
+    });
+
+    // r33：@electron/remote 反向桥与 desktopCapturer 枚举深度防御。浏览器场景不启用
+    // remote，任何一个这些事件触发都意味着提权面被打开——统一 preventDefault 拒绝，
+    // 并把目标模块/全局名净化后按高危留痕；高频尝试折叠冷却。
+    const installRemoteBlocker = (channel, isNamed) => {
+      contents.on(channel, (event, target) => {
+        try {
+          const st = getContentsState(remoteStates, contents.id, remoteGuard.createRemoteState);
+          const v = remoteGuard.evaluateRemoteBridge(
+            { channel, target: isNamed ? target : undefined }, st, Date.now());
+          event.preventDefault();
+          const sev = v.reasons.includes('remote-bridge-flood') ? 'info' : 'warn';
+          const tail = isNamed && v.target ? `（目标: ${v.target}）` : '';
+          recordSecurityEvent('remote-bridge-blocked', sev,
+            `远程桥通道 ${v.channel} 已被浏览器策略阻止${tail}`, originOfContents(contents));
+        } catch (err) {
+          try { event.preventDefault(); } catch {}
+          recordSecurityEvent('remote-bridge-blocked', 'warn',
+            `远程桥守卫异常: ${String((err && err.message) || err)}`, originOfContents(contents));
+        }
+      });
+    };
+    installRemoteBlocker(remoteGuard.REMOTE_CHANNELS.REQUIRE, true);
+    installRemoteBlocker(remoteGuard.REMOTE_CHANNELS.GET_BUILTIN, true);
+    installRemoteBlocker(remoteGuard.REMOTE_CHANNELS.GET_GLOBAL, true);
+    installRemoteBlocker(remoteGuard.REMOTE_CHANNELS.GET_CURRENT_WINDOW, false);
+    installRemoteBlocker(remoteGuard.REMOTE_CHANNELS.GET_CURRENT_WEB_CONTENTS, false);
+    installRemoteBlocker(remoteGuard.REMOTE_CHANNELS.DESKTOP_CAPTURER, false);
+
+    // r33：渲染层“直发原始 IPC”收口。正常业务只走 contextBridge 白名单 API；若网页在
+    // contextIsolation 被绕过 / preload 残缺时直接 ipcRenderer.send 未授权通道，这里拦截。
+    // invoke 走内部通道不触发本事件，故白名单只列 send 通道。
+    contents.on('ipc-message', (event, channel, ...args) => {
+      try {
+        const st = getContentsState(
+          ipcChannelStates, contents.id, ipcChannelGuard.createIpcChannelState);
+        const v = ipcChannelGuard.evaluateIpcChannel(
+          { channel, kind: ipcChannelGuard.IPC_ASYNC, argsLength: args.length },
+          RAW_IPC_SEND_ALLOWED, st, Date.now());
+        if (v.action === ipcChannelGuard.IPC_BLOCK) {
+          event.preventDefault();
+          recordSecurityEvent('raw-ipc-blocked', 'warn',
+            `渲染层直发未授权/异常原始 IPC 通道 ${v.channel}（${v.reasons.join('；')}）`,
+            originOfContents(contents));
+        }
+        const ipcPayloadAudit = securityBoundaryHub.inspectIpcRequest(args);
+        if (ipcPayloadAudit.changed) {
+          event.preventDefault();
+          recordSecurityEvent('raw-ipc-blocked', 'warn',
+            `IPC 负载结构未通过安全检查: ${securityBoundaryHub.describeFindings(ipcPayloadAudit.findings)}`,
+            originOfContents(contents));
+        }
+      } catch (err) {
+        recordSecurityEvent('raw-ipc-blocked', 'info',
+          `原始 IPC 守卫异常: ${String((err && err.message) || err)}`, originOfContents(contents));
+      }
+    });
+    // sendSync 白名单为空，任何同步直发都阻止，并回一个安全值，避免网页拿到 undefined
+    // 后逻辑异常，同时杜绝同步消息阻塞主进程的拒绝服务。
+    contents.on('ipc-message-sync', (event, channel, ...args) => {
+      try {
+        const st = getContentsState(
+          ipcChannelStates, contents.id, ipcChannelGuard.createIpcChannelState);
+        const v = ipcChannelGuard.evaluateIpcChannel(
+          { channel, kind: ipcChannelGuard.IPC_SYNC, argsLength: args.length },
+          RAW_IPC_SYNC_ALLOWED, st, Date.now());
+        if (v.action === ipcChannelGuard.IPC_BLOCK) {
+          event.preventDefault();
+          try { event.returnValue = null; } catch {}
+          recordSecurityEvent('raw-ipc-blocked', 'warn',
+            `渲染层同步 IPC（sendSync）被禁止 ${v.channel}（${v.reasons.join('；')}）`,
+            originOfContents(contents));
+        }
+      } catch (err) {
+        try { event.preventDefault(); event.returnValue = null; } catch {}
+        recordSecurityEvent('raw-ipc-blocked', 'warn',
+          `同步 IPC 守卫异常: ${String((err && err.message) || err)}`, originOfContents(contents));
+      }
+    });
+
+    // ===== r34：设备授权撤销 + 跨框架存储/缓存访问收口 =====
+    // hid/serial/bluetooth 的 *-revoked 事件此前 0 监听：授权被用户收回 / 设备掉线
+    // 完全无留痕，且可被“申请—掉线—再申请”抖动刷成事件洪泛。统一走 revokeGuard
+    // 按 源+类别+设备 时间窗去重，仅在窗口外落一条审计。
+    const handleDeviceRevoked = (kind, device) => {
+      try {
+        const st = getContentsState(revokeStates, contents.id, revokeGuard.createRevokeState);
+        const v = revokeGuard.decideRevocation(
+          st, { kind, originUrl: currentContentsUrl(), device }, Date.now());
+        if (v.action === revokeGuard.ACTION_RECORD) {
+          recordSecurityEvent('device-authorization-revoked', 'info',
+            v.detail, v.origin || originOfContents(contents));
+        }
+      } catch (err) {
+        recordSecurityEvent('device-authorization-revoked', 'info',
+          `设备撤销守卫异常: ${String((err && err.message) || err)}`, originOfContents(contents));
+      }
+    };
+    contents.on('hid-device-revoked', (_e, device) => {
+      handleDeviceRevoked(revokeGuard.KIND_HID, device);
+    });
+    contents.on('serial-port-revoked', (_e, port) => {
+      // serial 撤销回调给的是端口对象，可能带 portName / usbVendorId / usbProductId。
+      handleDeviceRevoked(revokeGuard.KIND_SERIAL, port);
+    });
+    contents.on('bluetooth-device-revoked', (_e, deviceId) => {
+      // 蓝牙撤销给的是 deviceId 字符串，包一层成内核期望的 device 形状。
+      handleDeviceRevoked(revokeGuard.KIND_BLUETOOTH,
+        typeof deviceId === 'string' ? { deviceId } : {});
+    });
+
+    // seen-session-storage-data-access / seen-cache-storage-data-access 是观测型事件
+    // （不可 preventDefault）。价值在于发现“跨站子框架读写顶层存储”与高频存储事件洪泛。
+    // 只在“跨源桶首次”与“窗内越限”两个有界时刻留痕，避免观测处理器自己刷爆日志。
+    const handleStorageDataAccess = (kind, details) => {
+      try {
+        const st = getContentsState(
+          storageAccessStates, contents.id, storageAccessGuard.createStorageAccessState);
+        let frameUrl = '';
+        try { frameUrl = details && details.frame && details.frame.url ? details.frame.url : ''; } catch {}
+        const topUrl = currentContentsUrl();
+        const storageType = kind === storageAccessGuard.KIND_CACHE
+          ? (details && details.cacheType) : (details && details.storageType);
+        const v = storageAccessGuard.decideStorageAccess(
+          st,
+          { kind, frameUrl, topUrl, key: details && details.key, storageType },
+          Date.now());
+        if (v.action !== storageAccessGuard.ACTION_REPORT) return;
+        if (v.reason === 'cross-origin-storage-access') {
+          const label = kind === storageAccessGuard.KIND_CACHE ? '缓存分区' : '会话存储';
+          recordSecurityEvent('storage-cross-access', 'info',
+            `跨站子框架访问顶层${label}：${v.frameOrigin || '未知源'} -> ${v.topOrigin || '未知源'}`,
+            v.topOrigin || originOfContents(contents));
+        } else if (v.reason === 'storage-access-flood') {
+          recordSecurityEvent('storage-access-flood', 'warn',
+            `存储访问事件高频洪泛（${kind}，窗口内 ${v.windowHits} 次）`,
+            v.topOrigin || originOfContents(contents));
+        }
+      } catch (err) {
+        recordSecurityEvent('storage-access-flood', 'info',
+          `存储访问守卫异常: ${String((err && err.message) || err)}`, originOfContents(contents));
+      }
+    };
+    contents.on('seen-session-storage-data-access', (event, details) => {
+      handleStorageDataAccess(storageAccessGuard.KIND_SESSION, details);
+    });
+    contents.on('seen-cache-storage-data-access', (event, details) => {
+      handleStorageDataAccess(storageAccessGuard.KIND_CACHE, details);
+    });
+  });
+}
 
 // setupNetworkStatus 监听 Chromium 的 online/offline 事件，把状态推给 renderer，
 // 地址栏/错误页可以据此显示"已断开连接"横幅。
@@ -2773,21 +4843,107 @@ function setupSystemEventGuards() {
 // setupSecurityHeaders 中单独加固，这里靠 sessionGuard 去重跳过）。任何非默认会话都
 // 套用最保守基线：权限 / 设备选择一律拒绝（访客 / 隔离会话不弹主标签询问条），并挂
 // 出向隐私头（DNT / GPC / Upgrade-Insecure / Referrer 收敛）。
-const setupExtraSessionHardeningCtx = {
-  get app() { return app; },
-  get applyOutboundHeaderHardening() { return applyOutboundHeaderHardening; },
-  get applyWebRequestFiltering() { return applyWebRequestFiltering; },
-  get attachDownloadManager() { return attachDownloadManager; },
-  get downloads() { return downloads; },
-  get recordSecurityEvent() { return recordSecurityEvent; },
-  get session() { return session; },
-  get sessionGuardState() { return sessionGuardState; },
-  get setupSecurityHeaders() { return setupSecurityHeaders; },
-  get urlResolve() { return urlResolve; },
-  get webContents() { return webContents; },
-};
 function setupExtraSessionHardening() {
-  return require('./sessionhardening').setupExtraSessionHardening(setupExtraSessionHardeningCtx, );
+  const originOfPermissionRequest = (webContents) => {
+    if (!webContents || typeof webContents.getURL !== 'function') return '';
+    return urlResolve.safeOrigin(webContents.getURL(), '');
+  };
+
+  // 出向请求头与 onBeforeRequest 过滤统一复用模块级共享内核
+  // applyOutboundHeaderHardening / applyWebRequestFiltering，确保隔离 / 访客 /
+  // 非法分区会话与默认会话行为一致（tracker、ping、PNA、混合内容、HTTPS-only、
+  // 追踪参数剥离、Client Hints / 广告头清洗全部生效），仅关闭默认会话的聚合计数。
+
+  // applyIncomingResponseHardening：让隔离 / 访客会话与 defaultSession 走同一套
+  // 入向响应头加固（nosniff / XFO / Referrer-Policy / Permissions-Policy 画中画 /
+  // HSTS / 本地页 CSP + COOP/COEP/CORP / Cookie 收口），补齐此前只挂出向头的纵深缺口。
+  // 非默认会话不重复记安全头评级（评级只在主会话聚合，避免分区会话重复计数）。
+  const applyIncomingResponseHardening = (ses) => {
+    try {
+      ses.webRequest.onHeadersReceived((details, callback) => {
+        const headers = hardenResponseHeaders(details.responseHeaders, details, { grade: false });
+        callback({ responseHeaders: headers });
+      });
+    } catch {}
+  };
+
+  app.on('session-created', (ses) => {
+    let partition = '';
+    try { partition = typeof ses.getStoragePath === 'function' ? '' : (ses.partition || ''); } catch {}
+    // session 对象未必直接暴露 partition；sessionGuard 只需要分区串。取不到时按空串，
+    // 但 defaultSession 已被单独加固并占位，真正落到这里的空串会话仍按最保守基线处理。
+    let decision;
+    try {
+      decision = sessionGuard.decideSessionHarden(sessionGuardState, { partition });
+    } catch {
+      decision = null;
+    }
+
+    // defaultSession 已加固，去重命中后不重复注册。
+    if (decision && decision.alreadyHardened) return;
+
+    if (decision && !decision.shouldHarden) {
+      // 分区串非法：不留裸奔会话，仍强制默认拒绝，并留一条独立事件提示分区异常。
+      try {
+        ses.setPermissionRequestHandler((wc, _permission, cb) => {
+          try { cb(false); } catch {}
+        });
+        if (typeof ses.setPermissionCheckHandler === 'function') {
+          ses.setPermissionCheckHandler(() => false);
+        }
+        if (typeof ses.setDevicePermissionHandler === 'function') {
+          ses.setDevicePermissionHandler(() => false);
+        }
+      } catch {}
+      applyOutboundHeaderHardening(ses, { recordFp: false });
+      applyWebRequestFiltering(ses, { logRequests: false });
+      applyIncomingResponseHardening(ses);
+      // 即便分区串非法，其下载仍会在该 session 上触发，同样挂下载保护，杜绝借
+      // 异常分区绕过文件名净化 / 危险类型确认 / MOTW。
+      try { attachDownloadManager(ses); } catch {}
+      recordSecurityEvent('session-partition-rejected', 'warn',
+        `检测到非法会话分区（${decision.reason}），已对该会话强制默认拒绝`, '');
+      return;
+    }
+
+    // 合法的非默认会话：全套默认拒绝基线 + 出向隐私头。
+    try {
+      ses.setPermissionRequestHandler((webContents, permission, callback) => {
+        const origin = originOfPermissionRequest(webContents);
+        recordSecurityEvent('permission-blocked', 'info',
+          `隔离/访客会话中的权限请求已默认拒绝: ${permission}`, origin);
+        try { callback(false); } catch {}
+      });
+      if (typeof ses.setPermissionCheckHandler === 'function') {
+        ses.setPermissionCheckHandler(() => false);
+      }
+      if (typeof ses.setDevicePermissionHandler === 'function') {
+        ses.setDevicePermissionHandler((details) => {
+          const origin = urlResolve.safeOrigin((details && details.origin) || '');
+          recordSecurityEvent('device-permission-blocked', 'info',
+            `隔离/访客会话中的设备选择已默认拒绝（${details && details.permissionType ? details.permissionType : '未知'}）`,
+            origin);
+          return false;
+        });
+      }
+    } catch {}
+    applyOutboundHeaderHardening(ses, { recordFp: false });
+    applyWebRequestFiltering(ses, { logRequests: false });
+    applyIncomingResponseHardening(ses);
+    // 隔离 / 访客会话的下载挂同一套保护：文件名穿越净化、可执行 / 伪装确认、
+    // 唯一保存路径与 MOTW 全部生效，台账仍聚合到模块级 downloads[]。
+    try { attachDownloadManager(ses); } catch {}
+
+    const persist = decision && decision.classification && decision.classification.persist;
+    recordSecurityEvent('session-hardened', 'info',
+      `新建${persist ? '持久' : '临时'}会话已套用默认拒绝权限/设备策略、出向隐私头与入向响应头加固`, '');
+  });
+
+  // 先把 defaultSession 标记为“已加固”，真正的处理器由 setupPermissionHandlers /
+  // setupSecurityHeaders 注册；这样 session-created 即便为默认会话触发也会被去重跳过。
+  try {
+    sessionGuard.decideSessionHarden(sessionGuardState, { partition: '' });
+  } catch {}
 }
 
 function getTabLayout() {
@@ -2804,68 +4960,371 @@ function getDefaultTabUrl() {
   return 'cosy://newtab';
 }
 
-const createWindowCtx = {
-  get DEFAULT_WINDOW_HEIGHT() { return DEFAULT_WINDOW_HEIGHT; },
-  get DEFAULT_WINDOW_WIDTH() { return DEFAULT_WINDOW_WIDTH; },
-  get MIN_WINDOW_HEIGHT() { return MIN_WINDOW_HEIGHT; },
-  get MIN_WINDOW_WIDTH() { return MIN_WINDOW_WIDTH; },
-  get clearOnExit() { return clearOnExit; },
-  get clearSession() { return clearSession; },
-  get clearStoredPins() { return clearStoredPins; },
-  get clearStoredTabGroups() { return clearStoredTabGroups; },
-  get confirmCloseMultiple() { return confirmCloseMultiple; },
-  get createNewTab() { return createNewTab; },
-  get downloads() { return downloads; },
-  get ensurePinnedTabsOpened() { return ensurePinnedTabsOpened; },
-  setFileToOpen: (v) => { fileToOpen = v; },
-  get fileToOpen() { return fileToOpen; },
-  get getDefaultTabUrl() { return getDefaultTabUrl; },
-  get getTabLayout() { return getTabLayout; },
-  get isSafeUrl() { return isSafeUrl; },
-  get loadSession() { return loadSession; },
-  get purgeBrowsingDataOnExit() { return purgeBrowsingDataOnExit; },
-  get recordSecurityEvent() { return recordSecurityEvent; },
-  get registerShortcuts() { return registerShortcuts; },
-  get rehydrateTabGroups() { return rehydrateTabGroups; },
-  get savePinsNow() { return savePinsNow; },
-  get saveSession() { return saveSession; },
-  get saveTabGroupsNow() { return saveTabGroupsNow; },
-  get tabs() { return tabs; },
-  get updateBrowserViewBounds() { return updateBrowserViewBounds; },
-};
 function createWindow() {
-  return require('./windowfactory').createWindow(createWindowCtx, );
+  if (mainWindow && !mainWindow.isDestroyed()) return;
+
+  // 主窗口 webPreferences 走统一安全基线（winpolicy）：强制关闭 Node 集成 /
+  // 开启上下文隔离与沙箱 / 开启同源策略，并校验 preload 必须在应用目录内。
+  const mainWinReview = winPolicy.harden({
+    preload: path.join(__dirname, 'preload.js'),
+    spellcheck: true,
+  }, { preloadRoots: __dirname, requirePreload: true });
+  if (winPolicy.hasCritical(mainWinReview.findings)) {
+    for (const f of mainWinReview.findings.filter(x => x.severity === 'critical')) {
+      try { recordSecurityEvent('window-policy', 'critical', `主窗口配置被拒绝: ${f.key}`, ''); } catch {}
+    }
+  }
+  mainWindow = new BrowserWindow({
+    width: DEFAULT_WINDOW_WIDTH, height: DEFAULT_WINDOW_HEIGHT,
+    minWidth: MIN_WINDOW_WIDTH, minHeight: MIN_WINDOW_HEIGHT,
+    webPreferences: mainWinReview.prefs,
+    titleBarStyle: 'hidden', frame: false, show: false,
+    icon: path.join(__dirname, 'ico.png')
+  });
+
+  const tabLayout = getTabLayout();
+  const htmlFile = tabLayout === 'vertical' ? 'src/index_vertical.html' : 'src/index.html';
+  mainWindow.loadFile(htmlFile);
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+    if (fileToOpen) {
+      createNewTab(fileToOpen);
+      fileToOpen = null;
+    } else {
+      const savedSession = loadSession();
+      if (savedSession && savedSession.length > 0) {
+        savedSession.forEach((tab) => createNewTab(tab.url));
+        clearSession();
+      } else {
+        createNewTab(getDefaultTabUrl());
+      }
+      // 固定标签独立持久化：会话恢复后补开缺失的固定页并重水合固定态。
+      ensurePinnedTabsOpened();
+      // 标签分组独立持久化：会话恢复后按本次打开的标签重水合分组并重排标签栏。
+      rehydrateTabGroups();
+    }
+  });
+
+  mainWindow.on('resize', updateBrowserViewBounds);
+  mainWindow.on('move', updateBrowserViewBounds);
+  mainWindow.once('closed', () => {
+    // 开启了“退出时清除浏览数据”就不要把本次标签会话落盘，避免下次又恢复出来。
+    if (!clearOnExit) {
+      saveSession();
+      // 同步写一次固定标签，防抖定时器在退出时可能来不及触发。
+      savePinsNow();
+      // 同步写一次标签分组，防抖定时器在退出时可能来不及触发。
+      saveTabGroupsNow();
+    } else {
+      clearStoredPins();
+      clearStoredTabGroups();
+    }
+    mainWindow = null;
+  });
+
+  // 会话原先只在正常退出时落盘，一旦进程崩溃 / 被任务管理器结束，下次启动就
+  // 无法恢复标签。这里周期性自动保存一次，崩溃最多丢失这 15 秒内新开/关闭的标签。
+  const SESSION_AUTOSAVE_MS = 15000;
+  const sessionAutosaveTimer = setInterval(() => {
+    try { if (!clearOnExit) saveSession(); } catch {}
+  }, SESSION_AUTOSAVE_MS);
+  if (typeof sessionAutosaveTimer.unref === 'function') sessionAutosaveTimer.unref();
+
+  // 关闭窗口时按顺序做两道确认，再按设置执行隐私清理：
+  // 1) 开了“多标签退出确认”且仍有多个标签 → 二次确认；
+  // 2) 有关键下载进行中 → 放弃下载确认；
+  // 3) 开了“退出时清除浏览数据”→ 清理完成后才真正退出。
+  let allowQuitWithDownloads = false;
+  let multiTabConfirmed = false;
+  let exitPurged = false;
+  mainWindow.on('close', async (e) => {
+    if (!mainWindow) return;
+
+    if (!multiTabConfirmed && confirmCloseMultiple && tabs.length > 1) {
+      e.preventDefault();
+      const choice = dialog.showMessageBoxSync(mainWindow, {
+        type: 'question',
+        buttons: ['取消', '全部关闭'],
+        defaultId: 0,
+        cancelId: 0,
+        title: '关闭所有标签页？',
+        message: `当前还有 ${tabs.length} 个标签页打开，确定要退出 OpenCosy 吗？`,
+        detail: '退出将结束本次浏览会话。',
+      });
+      if (choice !== 1) return;
+      multiTabConfirmed = true;
+      mainWindow.close();
+      return;
+    }
+
+    if (!allowQuitWithDownloads) {
+      const active = downloads.some(d => d && (d.status === 'downloading' || d.status === 'pending' || d.status === 'paused'));
+      if (active) {
+        e.preventDefault();
+        const choice = dialog.showMessageBoxSync(mainWindow, {
+          type: 'warning',
+          buttons: ['继续下载，留在窗口', '放弃下载并退出'],
+          defaultId: 0,
+          cancelId: 0,
+          title: '仍有下载进行中',
+          message: '当前还有未完成的下载，确定要退出吗？',
+          detail: '退出后正在进行的下载会被中断，已完成的文件不受影响。',
+        });
+        if (choice === 1) {
+          allowQuitWithDownloads = true;
+          mainWindow.close();
+        }
+        return;
+      }
+    }
+
+    if (clearOnExit && !exitPurged) {
+      e.preventDefault();
+      exitPurged = true;
+      try {
+        await purgeBrowsingDataOnExit();
+      } catch (err) {
+        console.error('退出时清除浏览数据失败:', err);
+      }
+      mainWindow.close();
+    }
+  });
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (isSafeUrl(url)) createNewTab(url);
+    return { action: 'deny' };
+  });
+
+  registerShortcuts();
 }
 
-const registerShortcutsCtx = {
-  get applyFind() { return applyFind; },
-  get bookmarks() { return bookmarks; },
-  get closeTab() { return closeTab; },
-  get createNewTab() { return createNewTab; },
-  get createWindow() { return createWindow; },
-  get currentTabIndex() { return currentTabIndex; },
-  get discardAllBackgroundTabs() { return discardAllBackgroundTabs; },
-  get enterReaderMode() { return enterReaderMode; },
-  get getCurrentTabWebContents() { return getCurrentTabWebContents; },
-  get getLastClosedTab() { return getLastClosedTab; },
-  get goHome() { return goHome; },
-  get history() { return history; },
-  get isSafeUrl() { return isSafeUrl; },
-  get openTabOverviewTab() { return openTabOverviewTab; },
-  get openTaskManagerTab() { return openTaskManagerTab; },
-  get resetZoom() { return resetZoom; },
-  get saveBookmarks() { return saveBookmarks; },
-  get sendToRenderer() { return sendToRenderer; },
-  get showOpenFileDialog() { return showOpenFileDialog; },
-  get switchToTab() { return switchToTab; },
-  get tabs() { return tabs; },
-  get toggleDevTools() { return toggleDevTools; },
-  get toggleTabPinned() { return toggleTabPinned; },
-  get zoomIn() { return zoomIn; },
-  get zoomOut() { return zoomOut; },
-};
 function registerShortcuts() {
-  return require('./shortcutrouter').registerShortcuts(registerShortcutsCtx, );
+  if (!mainWindow) return;
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    // 键位匹配（修饰键归一化、ctrl/meta 等价、优先级）全部收口到 shortcutkeys.js，
+    // 这里只负责把动作 id 派发到对应处理函数，并与旧实现逐字等价地阻止默认行为。
+    const action = shortcutKeys.matchShortcut(input);
+    if (!action) return;
+    switch (action) {
+      case shortcutKeys.ACTION.NEW_TAB:
+        createNewTab();
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.REOPEN_CLOSED_TAB: {
+        const lastClosedTab = getLastClosedTab();
+        if (lastClosedTab) createNewTab(lastClosedTab.url);
+        event.preventDefault();
+        break;
+      }
+      case shortcutKeys.ACTION.CLOSE_TAB:
+      case shortcutKeys.ACTION.CLOSE_TAB_F4:
+        // Ctrl+W 与 Ctrl+F4 都是关闭当前标签页（多标签窗口惯例）
+        closeTab(currentTabIndex);
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.NEW_WINDOW:
+        createWindow();
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.DUPLICATE_TAB: {
+        const tab = tabs[currentTabIndex];
+        if (tab && isSafeUrl(tab.url)) createNewTab(tab.url);
+        event.preventDefault();
+        break;
+      }
+      case shortcutKeys.ACTION.TOGGLE_BOOKMARKS_BAR:
+        // Ctrl+Shift+B：切换书签栏（Chrome/Edge 惯例）
+        sendToRenderer('toggle-bookmarks-bar');
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.BOOKMARK_ALL_TABS: {
+        // Ctrl+Shift+D：把所有打开的标签一键加为书签
+        const newBookmarks = tabs
+          .filter(t => isSafeUrl(t.url) && !t.url.startsWith('cosy://'))
+          .map(t => ({ url: t.url, title: t.title, addedDate: new Date().toISOString() }))
+          .filter(b => !bookmarks.find(x => x.url === b.url));
+        if (newBookmarks.length > 0) {
+          bookmarks.push(...newBookmarks);
+          saveBookmarks();
+          sendToRenderer('bookmarks-updated', bookmarks);
+          sendToRenderer('show-toast', `已收藏 ${newBookmarks.length} 个标签页`);
+        } else {
+          sendToRenderer('show-toast', '没有可收藏的标签页');
+        }
+        event.preventDefault();
+        break;
+      }
+      case shortcutKeys.ACTION.DISCARD_BACKGROUND_TABS: {
+        // Ctrl+Shift+S：立即释放所有后台标签内存（Memory Saver 手动触发）
+        const n = discardAllBackgroundTabs();
+        sendToRenderer('show-toast', n > 0 ? `已休眠 ${n} 个后台标签页` : '没有需要休眠的后台标签页');
+        event.preventDefault();
+        break;
+      }
+      case shortcutKeys.ACTION.NEXT_TAB:
+        switchToTab((currentTabIndex + 1) % tabs.length);
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.PREV_TAB:
+        switchToTab((currentTabIndex - 1 + tabs.length) % tabs.length);
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.TOGGLE_PINNED_TAB: {
+        // Alt+Shift+P：固定 / 取消固定当前标签。
+        const cur = tabs[currentTabIndex];
+        if (cur) {
+          const r = toggleTabPinned(cur.id);
+          if (r && r.success) {
+            sendToRenderer('show-toast', r.pinned ? '已固定标签页' : '已取消固定标签页');
+          }
+        }
+        event.preventDefault();
+        break;
+      }
+      case shortcutKeys.ACTION.FOCUS_ADDRESS_BAR:
+        // Ctrl+L / F6：聚焦地址栏（Chrome/Edge 惯例）
+        mainWindow.webContents.send('focus-address-bar');
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.FIND:
+        mainWindow.webContents.send('show-find-bar');
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.FIND_NEXT:
+      case shortcutKeys.ACTION.FIND_PREV:
+        // F3 / Ctrl+G：继续查找（Shift 反向），动作 id 已编码方向
+        applyFind(action === shortcutKeys.ACTION.FIND_NEXT);
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.OPEN_DOWNLOADS:
+        createNewTab('cosy://downloadlist');
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.PRINT: {
+        const wc = getCurrentTabWebContents();
+        if (wc) wc.print({ silent: false, printBackground: true });
+        event.preventDefault();
+        break;
+      }
+      case shortcutKeys.ACTION.VIEW_SOURCE: {
+        const tab = tabs[currentTabIndex];
+        if (tab && tab.view?.webContents && isSafeUrl(tab.url)) {
+          tab.view.webContents.viewSource();
+        }
+        event.preventDefault();
+        break;
+      }
+      case shortcutKeys.ACTION.OPEN_FILE:
+        showOpenFileDialog();
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.GO_HOME:
+        goHome();
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.RELOAD: {
+        const wc = getCurrentTabWebContents();
+        if (wc) wc.reload();
+        event.preventDefault();
+        break;
+      }
+      case shortcutKeys.ACTION.RELOAD_BYPASSING_CACHE: {
+        const wc = getCurrentTabWebContents();
+        if (wc) wc.reloadIgnoringCache();
+        event.preventDefault();
+        break;
+      }
+      case shortcutKeys.ACTION.TOGGLE_DEVTOOLS:
+        toggleDevTools();
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.OPEN_TASK_MANAGER:
+        openTaskManagerTab();
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.OPEN_TAB_OVERVIEW:
+        openTabOverviewTab();
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.ENTER_READER:
+        enterReaderMode();
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.EXIT_FULLSCREEN: {
+        // 现代浏览器惯例：Esc 退出 HTML 全屏（仅在全屏时才拦截）
+        const wc = getCurrentTabWebContents();
+        if (wc && wc.isFullScreen()) {
+          wc.exitFullScreen();
+          event.preventDefault();
+        }
+        break;
+      }
+      case shortcutKeys.ACTION.ZOOM_IN:
+        zoomIn();
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.ZOOM_OUT:
+        zoomOut();
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.ZOOM_RESET:
+        resetZoom();
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.BACK: {
+        const wc = getCurrentTabWebContents();
+        if (wc?.canGoBack()) wc.goBack();
+        event.preventDefault();
+        break;
+      }
+      case shortcutKeys.ACTION.FORWARD: {
+        const wc = getCurrentTabWebContents();
+        if (wc?.canGoForward()) wc.goForward();
+        event.preventDefault();
+        break;
+      }
+      case shortcutKeys.ACTION.TOGGLE_BOOKMARK: {
+        const tab = tabs[currentTabIndex];
+        if (tab && isSafeUrl(tab.url) && !tab.url.startsWith('cosy://')) {
+          const existing = bookmarks.findIndex(b => b.url === tab.url);
+          if (existing === -1) {
+            bookmarks.push({ url: tab.url, title: tab.title, addedDate: new Date().toISOString() });
+            saveBookmarks();
+            tab.bookmarked = true;
+            sendToRenderer('bookmarks-updated', bookmarks);
+            sendToRenderer('show-toast', '已添加书签');
+          } else {
+            bookmarks.splice(existing, 1);
+            saveBookmarks();
+            tab.bookmarked = false;
+            sendToRenderer('bookmarks-updated', bookmarks);
+            sendToRenderer('show-toast', '已移除书签');
+          }
+        }
+        event.preventDefault();
+        break;
+      }
+      case shortcutKeys.ACTION.OPEN_HISTORY:
+        mainWindow.webContents.send('show-history');
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.OPEN_HISTORY_PAGE:
+        createNewTab('cosy://history');
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.OPEN_READING_LIST:
+        createNewTab('cosy://readinglist');
+        event.preventDefault();
+        break;
+      case shortcutKeys.ACTION.CLEAR_BROWSING_DATA:
+        sendToRenderer('show-clear-data-dialog');
+        event.preventDefault();
+        break;
+      default:
+        break;
+    }
+  });
 }
 
 function getUrlProtocol(url) {
@@ -2873,7 +5332,25 @@ function getUrlProtocol(url) {
   return urlResolve.safeProtocol(url);
 }
 
+function createNewTab(url = 'cosy://newtab') {
+  if (!isSafeUrl(url)) url = 'cosy://newtab';
+  const tabId = Date.now().toString() + Math.random().toString(36).slice(2, 6);
+  const tab = new Tab(tabId, url);
 
+  if (getUrlProtocol(url) === 'cosy:') {
+    tab.favicon = 'file://' + path.join(__dirname, 'ico.png');
+  } else {
+    tab.favicon = 'file://' + path.join(__dirname, 'src', 'loading.gif');
+  }
+
+  tabs.push(tab);
+  currentTabIndex = tabs.length - 1;
+  sendToRenderer('tab-created', { id: tab.id, url: tab.url, title: tab.title, favicon: tab.favicon, pinned: !!tab.pinned });
+  loadTabContent(tab);
+  sendToRenderer('tab-switched', { id: tab.id, index: currentTabIndex });
+  setTimeout(updateBrowserViewBounds, 0);
+  return tab;
+}
 
 const TASK_MANAGER_URL = 'cosy://taskmanager';
 
@@ -2908,18 +5385,84 @@ const READER_PAGE_URL = 'cosy://reader';
 // （executeJavaScript 的返回值来自页面环境），落进主进程前再做一次形状与长度收口。
 let readerArticle = null;
 
+function clampReaderInt(value, max) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(Math.floor(n), max);
+}
 
+function sanitizeReaderNodes(nodes, depth, budget) {
+  const out = [];
+  if (!Array.isArray(nodes) || depth > readerCore.READER_MAX_DEPTH) return out;
+  for (const node of nodes) {
+    if (budget.left <= 0) break;
+    if (!node || typeof node !== 'object') continue;
+    const tag = String(node.tag || '');
+    if (!readerCore.OUTPUT_BLOCK_TAGS.has(tag) && !readerCore.OUTPUT_INLINE_TAGS.has(tag)) continue;
+    const text = typeof node.text === 'string'
+      ? node.text.slice(0, readerCore.READER_MAX_TEXT_CHARS) : '';
+    const clean = { tag, text };
+    if (typeof node.href === 'string' && node.href) clean.href = node.href.slice(0, readerCore.READER_MAX_LINK_CHARS);
+    if (typeof node.src === 'string' && node.src) clean.src = node.src.slice(0, readerCore.READER_MAX_LINK_CHARS);
+    if (typeof node.alt === 'string' && node.alt) clean.alt = node.alt.slice(0, 200);
+    const kids = sanitizeReaderNodes(node.children, depth + 1, budget);
+    if (kids.length) clean.children = kids;
+    if (text || kids.length || clean.href || clean.src) {
+      out.push(clean);
+      budget.left -= 1;
+    }
+  }
+  return out;
+}
 
+function sanitizeReaderArticle(raw, sourceUrl, sourceTitle) {
+  const budget = { left: readerCore.READER_MAX_NODES };
+  const contentNodes = sanitizeReaderNodes(raw && raw.contentNodes, 0, budget);
+  return {
+    ok: !!(raw && raw.ok && contentNodes.length),
+    title: String((raw && raw.title) || sourceTitle || '阅读模式').slice(0, 300),
+    sourceUrl: String(sourceUrl || '').slice(0, readerCore.READER_MAX_LINK_CHARS),
+    wordCount: clampReaderInt(raw && raw.wordCount, 10000000),
+    minutes: clampReaderInt(raw && raw.minutes, 1000),
+    contentNodes,
+  };
+}
 
-
-
-
-
+function openReaderTab() {
+  const existing = tabs.findIndex(t => t && t.url === READER_PAGE_URL);
+  if (existing >= 0) {
+    if (existing !== currentTabIndex) switchToTab(existing);
+    return tabs[existing];
+  }
+  return createNewTab(READER_PAGE_URL);
+}
 
 // enterReaderMode 在“当前活动的 http(s) 标签”真实 DOM 内只读抽取正文，再带着
 // 净化后的数据打开阅读页。抽取脚本运行在页面主世界但只调用只读 DOM API；返回值
 // 经主进程二次形状校验。cosy:/file: 等内置页不支持阅读模式。
-
+async function enterReaderMode() {
+  const tab = tabs[currentTabIndex];
+  const wc = tab && tab.view && !tab.view.webContents.isDestroyed() ? tab.view.webContents : null;
+  if (!wc) return { ok: false, error: '当前标签不可用' };
+  if (getUrlProtocol(tab.url) !== 'https:' && getUrlProtocol(tab.url) !== 'http:') {
+    return { ok: false, error: '阅读模式仅支持 http(s) 网页' };
+  }
+  let raw = null;
+  try {
+    const script = readerCore.buildReaderExtractScript();
+    raw = await Promise.race([
+      wc.executeJavaScript(script, true),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('reader-timeout')), 4000)),
+    ]);
+  } catch {
+    return { ok: false, error: '无法抽取当前页面' };
+  }
+  const article = sanitizeReaderArticle(raw, tab.url, tab.title);
+  if (!article.ok || !article.contentNodes.length) return { ok: false, error: '未在该页找到可阅读的正文' };
+  readerArticle = article;
+  openReaderTab();
+  return { ok: true };
+}
 
 function showErrorPage(tab, errorCode, errorDescription, validatedURL) {
   const errorParams = new URLSearchParams({
@@ -3185,7 +5728,35 @@ const INTERNAL_PAGES = {
 
 // tabOverviewItem 输出单标签的概览数据。字段做类型收口，避免脏标题 / 长 URL
 // 破坏网格布局；分组信息从 tabGroupModel 实时取，标签被改组后概览自动跟随。
-
+function tabOverviewItem(tab, index) {
+  const groupId = tabGroupModel.groupOf(tab.id);
+  let groupName = '';
+  let groupColor = '';
+  if (groupId) {
+    const g = tabGroupModel.getGroup(groupId);
+    if (g) {
+      groupName = String(g.title || '');
+      groupColor = String(g.color || '');
+    }
+  }
+  const wc = tab && tab.view && tab.view.webContents;
+  return {
+    id: String(tab.id),
+    index,
+    title: String(tab.title || tab.url || '未命名标签页').slice(0, 300),
+    url: String(tab.url || '').slice(0, 1000),
+    favicon: typeof tab.favicon === 'string' ? tab.favicon.slice(0, 1000) : '',
+    active: index === currentTabIndex,
+    pinned: !!tab.pinned,
+    muted: !!tab.muted,
+    crashed: !!tab.crashed,
+    discarded: !!tab.discarded,
+    groupId: groupId || '',
+    groupName: groupName.slice(0, 60),
+    groupColor: groupColor.slice(0, 40),
+    alive: !!(wc && !wc.isDestroyed()),
+  };
+}
 
 ipcMain.handle('tab-overview-snapshot', (event) => {
   if (!isTabOverviewFrameSender(event)) return { ok: false, error: 'denied' };
@@ -3259,40 +5830,295 @@ ipcMain.handle('tab-overview-capture', async (event, payload = {}) => {
   }
 });
 
-const loadTabContentCtx = {
-  get addToHistory() { return addToHistory; },
-  get addToReadingList() { return addToReadingList; },
-  get allowPopupForTab() { return allowPopupForTab; },
-  get applySavedZoom() { return applySavedZoom; },
-  get bookmarks() { return bookmarks; },
-  get classifyFrameNavigation() { return classifyFrameNavigation; },
-  get createNewTab() { return createNewTab; },
-  get getContentsState() { return getContentsState; },
-  get getHttpStatusCode() { return getHttpStatusCode; },
-  get getUrlProtocol() { return getUrlProtocol; },
-  get handleRenderProcessGone() { return handleRenderProcessGone; },
-  get history() { return history; },
-  get inpageStates() { return inpageStates; },
-  get isDev() { return isDev; },
-  get isSafeUrl() { return isSafeUrl; },
-  get launchExternalWithPrompt() { return launchExternalWithPrompt; },
-  get maybeFallbackAfterUpgradeFailure() { return maybeFallbackAfterUpgradeFailure; },
-  get originOfContents() { return originOfContents; },
-  get pushNavState() { return pushNavState; },
-  get recordSecurityEvent() { return recordSecurityEvent; },
-  get searchProviderId() { return searchProviderId; },
-  get sendToRenderer() { return sendToRenderer; },
-  get showCosyError() { return showCosyError; },
-  get showErrorPage() { return showErrorPage; },
-  get spellcheckEnabled() { return spellcheckEnabled; },
-  get switchToTab() { return switchToTab; },
-  get tabs() { return tabs; },
-  get titleStates() { return titleStates; },
-  get toggleDevTools() { return toggleDevTools; },
-  get updateBrowserViewBounds() { return updateBrowserViewBounds; },
-};
 function loadTabContent(tab) {
-  return require('./tabcontent').loadTabContent(loadTabContentCtx, tab);
+  if (!tab.view) {
+    // 标签视图与主窗口共用同一份 webPreferences 安全基线，杜绝两处配置漂移。
+    const tabWinReview = winPolicy.harden({
+      preload: path.join(__dirname, 'preload.js'),
+      spellcheck: true,
+    }, { preloadRoots: __dirname, requirePreload: true });
+    if (winPolicy.hasCritical(tabWinReview.findings)) {
+      for (const f of tabWinReview.findings.filter(x => x.severity === 'critical')) {
+        try { recordSecurityEvent('window-policy', 'critical', `标签视图配置被拒绝: ${f.key}`, ''); } catch {}
+      }
+    }
+    tab.view = new WebContentsView({
+      webPreferences: tabWinReview.prefs
+    });
+
+    mainWindow.contentView.addChildView(tab.view);
+    updateBrowserViewBounds();
+
+    tab.view.webContents.setWindowOpenHandler(({ url, disposition }) => {
+      // 页面用 window.open 唤起 mailto/tel 时不弹窗（没有新窗口的位置），
+      // 直接走外部协议确认流；其它非 Web 协议照旧拒绝。
+      const extScheme = normalizeExternalScheme(url);
+      if (CONFIRMABLE_EXTERNAL_SCHEMES.has(extScheme)) {
+        launchExternalWithPrompt(url, originOfContents(tab.view.webContents), true);
+        return { action: 'deny' };
+      }
+      // 弹窗上下文额外拦截 javascript:/data:/vbscript:/file: 目标——这些协议在
+      // 顶层地址栏另有处理，但绝不应在新浏览上下文里渲染/执行。
+      const popupDecision = popupGuard.decidePopup({
+        currentUrl: tab.url || '', targetUrl: url, disposition,
+      });
+      if (popupDecision.action === 'block') {
+        recordSecurityEvent('popup-blocked', 'warn',
+          `拦截危险协议弹窗: ${url}`, originOfContents(tab.view.webContents));
+        sendToRenderer('popup-blocked', { url });
+        return { action: 'deny' };
+      }
+      if (!isSafeUrl(url)) return { action: 'deny' };
+      if (disposition === 'new-window' || disposition === 'foreground-tab') {
+        // 弹窗轰炸限流：短时间内同一标签狂开窗口时拦截，只放行正常节奏的新窗口。
+        if (!allowPopupForTab(tab.id)) {
+          sendToRenderer('popup-blocked', { url });
+          return { action: 'deny' };
+        }
+        const newTab = createNewTab(url);
+        switchToTab(tabs.indexOf(newTab));
+      } else {
+        tab.url = url;
+        tab.view.webContents.loadURL(url);
+      }
+      return { action: 'deny' };
+    });
+
+    tab.view.webContents.on('will-navigate', (event, navigationUrl) => {
+      // 外部协议 / 危险协议的拦截与确认由全局 web-contents 钩子统一处理
+      // （否则这里和全局各弹一次确认框）；这里只负责窗内导航的状态同步。
+      if (classifyFrameNavigation(navigationUrl, true) !== 'in-pane') {
+        event.preventDefault();
+        return;
+      }
+      tab.url = navigationUrl;
+      addToHistory(navigationUrl, tab.title);
+      sendToRenderer('tab-updated', { id: tab.id, url: navigationUrl });
+    });
+
+    tab.view.webContents.on('did-navigate', () => { pushNavState(tab); applySavedZoom(tab); });
+    tab.view.webContents.on('did-navigate-in-page', (inEvent, inPageUrl) => {
+      // pushState/replaceState 洪泛与畸形 URL 收口：拒绝 / 冷却 / 重复地址时不压历史、
+      // 不更新地址栏，避免历史劫持与广播风暴；主导航 did-navigate 会清零配额。
+      const st = getContentsState(inpageStates, tab.view.webContents.id, inpageGuard.createInPageState);
+      const v = inpageGuard.decideInPageNav(st, inPageUrl || tab.url, Date.now());
+      if (v.decision === inpageGuard.INPAGE_REJECT) {
+        recordSecurityEvent('inpage-flood', 'warn',
+          inpageGuard.describeInPageReason(v.reason), tab.url);
+        return;
+      }
+      if (v.decision === inpageGuard.INPAGE_HOLD && v.reason === inpageGuard.HOLD_BURST) {
+        recordSecurityEvent('inpage-flood', 'warn',
+          inpageGuard.describeInPageReason(v.reason), tab.url);
+        return;
+      }
+      if (v.decision === inpageGuard.INPAGE_HOLD) return; // 重复地址/冷却：静默合并
+      pushNavState(tab);
+      applySavedZoom(tab);
+    });
+    tab.view.webContents.on('dom-ready', () => applySavedZoom(tab));
+
+    tab.view.webContents.on('did-redirect-navigation', (event, url) => {
+      if (!isSafeUrl(url)) return;
+      tab.url = url;
+      sendToRenderer('tab-updated', { id: tab.id, url });
+    });
+
+    tab.view.webContents.on('page-title-updated', (event, rawTitle) => {
+      // 标题由页面完全控制：净化控制字符 / 折叠空白 / 代码点安全截断，并对高频翻转与
+      // 极短重复上报做收敛，防止伪加载闪烁、标题注入以及 addToHistory+IPC 广播风暴。
+      const tst = getContentsState(titleStates, tab.view.webContents.id, titleGuard.createTitleState);
+      const tv = titleGuard.decideTitleUpdate(tst, rawTitle, Date.now());
+      if (tv.decision === titleGuard.TITLE_HOLD) return;
+      const title = tv.title;
+      tab.title = title;
+      addToHistory(tab.url, title);
+      sendToRenderer('tab-updated', { id: tab.id, title });
+      if (tv.sanitized) {
+        recordSecurityEvent('title-abuse', 'info',
+          titleGuard.describeTitleReason(titleGuard.TITLE_SANITIZED), tab.url);
+      }
+    });
+
+    tab.view.webContents.on('did-start-loading', () => {
+      tab.isLoading = true;
+      sendToRenderer('tab-loading', { id: tab.id, loading: true });
+    });
+
+    tab.view.webContents.on('did-stop-loading', () => {
+      tab.isLoading = false;
+      sendToRenderer('tab-loading', { id: tab.id, loading: false });
+    });
+
+    // 音频播放状态变化：Electron 此事件不带状态参数，需主动查询
+    // isCurrentlyAudible / isAudioMuted，再广播给渲染进程显示喇叭图标。
+    tab.view.webContents.on('audio-state-changed', () => {
+      try {
+        tab.audible = !!tab.view.webContents.isCurrentlyAudible();
+        tab.muted = !!tab.view.webContents.isAudioMuted();
+      } catch {
+        return;
+      }
+      sendToRenderer('tab-audio-changed', { id: tab.id, audible: tab.audible, muted: tab.muted });
+    });
+
+    tab.view.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      if (!isMainFrame) return;
+      // ERR_ABORTED(-3) 不是真失败：下载触发的导航、用户手动取消、被 window.open
+      // 拦截或重定向链中止都会带这个码，此时弹错误页只会把正常页面盖掉。
+      if (errorCode === -3) return;
+      const httpStatus = getHttpStatusCode(errorCode);
+      if (httpStatus === '403' && !tab.retry403) {
+        tab.retry403 = true;
+        tab.view.webContents.loadURL(validatedURL).catch(() => {
+          showErrorPage(tab, errorCode, errorDescription, validatedURL);
+        });
+        return;
+      }
+      // HTTPS-Only 升级后对端没有可用 TLS：先给用户知情回退（确认后按站点记住
+      // HTTP 例外）。用户选择留在错误页、或不属于可回退错误码时，才显示通用错误页。
+      if (maybeFallbackAfterUpgradeFailure(tab, errorCode, validatedURL)) return;
+      showErrorPage(tab, errorCode, errorDescription, validatedURL);
+    });
+
+    tab.view.webContents.on('render-process-gone', (event, details) => {
+      handleRenderProcessGone(tab, details);
+    });
+
+    tab.view.webContents.on('page-favicon-updated', (event, favicons) => {
+      // 图标数组同样来自页面：限制数量与单个长度、只放行 http(s)/data，防止喂入超大
+      // data: URL 或 file:/blob:/javascript: 来源；取净化后的第一个作为标签图标。
+      const { favicons: safe, dropped } = titleGuard.sanitizeFavicons(favicons);
+      if (dropped > 0) {
+        recordSecurityEvent('title-abuse', 'info',
+          `网站图标包含 ${dropped} 个非法或超长条目，已过滤`, tab.url);
+      }
+      if (safe.length === 0) return;
+      const faviconUrl = titleGuard.resolveFaviconHref(safe[0], tab.url);
+      if (faviconUrl && titleGuard.isAllowedFaviconScheme(faviconUrl)) {
+        tab.favicon = faviconUrl;
+        sendToRenderer('tab-updated', { id: tab.id, favicon: tab.favicon });
+      }
+    });
+
+    tab.view.webContents.on('context-menu', (event, params) => {
+      // r33：菜单入参完全来自网页，先经 menuguard 统一净化（危险链接协议、超长 /
+      // 含 CR/LF 的选中文本、非法错词与超长建议），后续一律只用净化后的值建菜单，
+      // 杜绝畸形 label 折行伪造条目与持久拼写词典投毒。
+      const mp = menuGuard.evaluateContextMenu(params);
+      if (mp.reasons.length > 0) {
+        recordSecurityEvent('context-menu-sanitized', 'info',
+          `右键菜单参数已净化（${mp.reasons.join('；')}）`, originOfContents(tab.view.webContents));
+      }
+      const menu = new Menu();
+      // 拼写建议放在菜单最顶部，与 Chromium 浏览器一致。
+      // misspelledWord / suggestions 已逐条校验，建议不离开本机。
+      if (spellcheckEnabled && mp.isEditable && mp.misspelledWord) {
+        if (mp.suggestions.length) {
+          for (const word of mp.suggestions) {
+            menu.append(new MenuItem({
+              label: word,
+              click: () => tab.view.webContents.replaceMisspelling(word)
+            }));
+          }
+        } else {
+          menu.append(new MenuItem({ label: '（无拼写建议）', enabled: false }));
+        }
+        menu.append(new MenuItem({
+          label: '添加到词典',
+          click: () => {
+            try {
+              // mp.misspelledWord 已确认是合法单词（无空白 / 控制字符 / 标记符）。
+              tab.view.webContents.session.addWordToSpellCheckerDictionary(mp.misspelledWord);
+            } catch (e) {
+              console.error('添加自定义词典失败:', e);
+            }
+          }
+        }));
+        menu.append(new MenuItem({ type: 'separator' }));
+      }
+      if (mp.canUseLink && mp.linkUrl) {
+        menu.append(new MenuItem({ label: '在新标签页中打开', click: () => createNewTab(mp.linkUrl) }));
+        menu.append(new MenuItem({
+          label: '加入稍后读',
+          click: () => addToReadingList(mp.linkUrl, mp.selectionText || '')
+        }));
+        menu.append(new MenuItem({ label: '复制链接地址', click: () => clipboard.writeText(mp.linkUrl) }));
+        menu.append(new MenuItem({ type: 'separator' }));
+      }
+      if (mp.hasSelection) {
+        menu.append(new MenuItem({ label: '复制', role: 'copy' }));
+        menu.append(new MenuItem({
+          label: '搜索所选内容',
+          click: () => {
+            // r56：搜索动作跟随用户选择的默认搜索引擎（内核级模板白名单校验），
+            // 不再写死 Bing，也不接受 renderer 传入的模板。
+            const url = searchProvider.buildSearchUrl(searchProviderId, mp.selectionText);
+            createNewTab(url || ('https://www.bing.com/search?q=' + encodeURIComponent(mp.selectionText)));
+          }
+        }));
+      }
+      if (mp.hasSelection && mp.isEditable) menu.append(new MenuItem({ label: '剪切', role: 'cut' }));
+      if (mp.isEditable) menu.append(new MenuItem({ label: '粘贴', role: 'paste' }));
+      if (mp.isEditable) menu.append(new MenuItem({ label: '全选', role: 'selectAll' }));
+      if (menu.items.length > 0) menu.append(new MenuItem({ type: 'separator' }));
+      if (isDev) menu.append(new MenuItem({ label: '开发者工具', click: toggleDevTools }));
+      menu.popup({ window: mainWindow });
+    });
+
+    tab.view.webContents.on('enter-html-full-screen', () => {
+      tab.originalBounds = tab.view.bounds;
+      const [width, height] = mainWindow.getSize();
+      tab.view.setBounds({ x: 0, y: 0, width, height });
+      sendToRenderer('html-fullscreen-changed', { isFullscreen: true });
+    });
+
+    tab.view.webContents.on('leave-html-full-screen', () => {
+      if (tab.originalBounds) {
+        tab.view.setBounds(tab.originalBounds);
+        tab.originalBounds = null;
+      }
+      sendToRenderer('html-fullscreen-changed', { isFullscreen: false });
+    });
+  }
+
+  const protocol = getUrlProtocol(tab.url);
+  if (protocol === 'cosy:') {
+    try {
+      const urlObj = new URL(tab.url);
+      const hostname = urlObj.hostname;
+      const pageMap = {
+        'setting': 'src/settings.html', 'newtab': 'src/newtab.html',
+        'extensions': 'src/extensions.html', 'version': 'src/version.html',
+        'sitedata': 'src/sitedata.html',
+        'permissions': 'src/permissions.html',
+        'security': 'src/security.html',
+        'hashes': 'src/hashes.html',
+        'download': 'src/download', 'downloadlist': 'src/downloadlist.html',
+        'taskmanager': 'src/taskmanager.html',
+        'taboverview': 'src/taboverview.html',
+        'history': 'src/history.html',
+        'bookmarks': 'src/bookmarks.html',
+        'readinglist': 'src/readinglist.html',
+        'about': 'src/about.html',
+        'shortcuts': 'src/shortcuts.html',
+        'pages': 'src/pages.html',
+        'reader': 'src/reader.html',
+        'httpsonly': 'src/httpsonly.html',
+        'blockrules': 'src/blockrules.html'
+      };
+      const filePath = pageMap[hostname];
+      if (filePath) tab.view.webContents.loadFile(filePath);
+      else showCosyError(tab, '404', '页面未找到', '未注册的cosy协议地址');
+    } catch (e) {
+      console.error('解析cosy协议URL失败:', e);
+      showCosyError(tab, '400', '无效的URL', '无法解析cosy协议地址');
+    }
+  } else if (isSafeUrl(tab.url)) {
+    tab.view.webContents.loadURL(tab.url);
+  } else {
+    showCosyError(tab, '400', '无效的URL', '不支持的协议');
+  }
 }
 
 function showCosyError(tab, code, message, reason) {
@@ -3304,11 +6130,81 @@ function showCosyError(tab, code, message, reason) {
   sendToRenderer('tab-updated', { id: tab.id, url: tab.url, title: tab.title });
 }
 
+function updateBrowserViewBounds() {
+  if (tabs.length > 0 && currentTabIndex >= 0) {
+    const tab = tabs[currentTabIndex];
+    if (tab && tab.view) {
+      const [width, height] = mainWindow.getSize();
+      const tabLayout = getTabLayout();
 
+      let x, y, w, h;
+      if (tabLayout === 'vertical') {
+        const tabBarWidth = isTabBarCollapsed ? COLLAPSED_TAB_BAR_WIDTH : DEFAULT_TAB_BAR_WIDTH_VERTICAL;
+        x = tabBarWidth; y = 75; w = width - tabBarWidth; h = height - 75;
+      } else {
+        x = 0; y = DEFAULT_TAB_BAR_HEIGHT_HORIZONTAL; w = width; h = height - DEFAULT_TAB_BAR_HEIGHT_HORIZONTAL;
+      }
+      tab.view.setBounds({ x, y, width: w, height: h });
+    }
+  }
+}
 
+function switchToTab(tabIndex) {
+  if (tabIndex >= 0 && tabIndex < tabs.length) {
+    const prevContents = getCurrentTabWebContents();
+    currentTabIndex = tabIndex;
+    const tab = tabs[tabIndex];
+    tab.lastActiveAt = Date.now();
+    // 后台崩溃的标签在此刻才重建视图，避免坏页面在后台空转。
+    if (tab.crashed) rebuildCrashedTab(tab);
+    // 被内存节省休眠的标签切回时按原 URL 唤醒重载。
+    if (tab.discarded) reloadDiscardedTab(tab);
+    if (tab.view) {
+      mainWindow.contentView.addChildView(tab.view);
+      updateBrowserViewBounds();
+    }
+    sendToRenderer('tab-switched', { id: tab.id, index: tabIndex });
+    pushNavState(tab);
 
+    // 换标签时清掉旧标签上残留的查找高亮；若查找栏仍开着且有内容，
+    // 在新标签上从头自动重查，保持“查找跟随当前标签”的浏览器惯例。
+    const nextContents = getCurrentTabWebContents();
+    if (prevContents && prevContents !== nextContents) {
+      try { prevContents.stopFindInPage('clearSelection'); } catch (_) { /* 视图已销毁 */ }
+    }
+    if (findState.text && nextContents) applyFind(true);
+  }
+}
 
-
+function closeTab(tabIndex) {
+  if (tabIndex >= 0 && tabIndex < tabs.length) {
+    const tab = tabs[tabIndex];
+    // 单独关闭一个固定标签视为用户明确要去掉它：同步移出固定集合并落盘，
+    // 否则下次启动会被固定清单按 URL 重新拉回。批量关闭从不包含固定标签，
+    // 因此固定的长期页不会被“关闭其他/左侧/右侧”顺手清掉。
+    if (tab.pinned) {
+      pinModel.unpin(tab.id);
+      tab.pinned = false;
+      persistPins();
+    }
+    addToRecentlyClosed(tab);
+    popupOpenTimes.delete(tab.id);
+    // 标签分组同步：关闭的标签若在组内，移出成员；组因此变空则自动解散
+    // （与 Chrome 一致：最后一个标签关闭后组消失）。
+    tabGroupModel.onTabClosed(tab.id, true);
+    if (tab.view) tab.view.webContents.destroy();
+    tabs.splice(tabIndex, 1);
+    if (tabs.length === 0) {
+      createNewTab(getDefaultTabUrl());
+      currentTabIndex = 0;
+    } else if (currentTabIndex >= tabs.length) {
+      currentTabIndex = tabs.length - 1;
+    }
+    if (tabs.length > 0) switchToTab(currentTabIndex);
+    persistTabGroups();
+    sendToRenderer('tab-closed', tabIndex);
+  }
+}
 
 // ===== 固定标签页（Pinned Tabs）=====
 // 权威固定集合由 pintabs 纯内核维护；这里负责把固定状态落到 Tab 对象、把固定
@@ -3670,7 +6566,7 @@ function resolveUniqueDownloadPath(dir, filename) {
   } catch (scanError) {
     existingNames = [];
   }
-  const allocation = downloadPathCollision.claimUniquePath({ dir, filename, taken: existingNames });
+  const allocation = downloadPathCollision.planUniquePath({ dir, filename, taken: existingNames });
   if (!allocation.ok) {
     recordSecurityEvent('download-savepath', 'critical',
       `无法分配唯一下载文件名: ${downloadPathCollision.describeAllocation(allocation)}`, 'download-manager');
@@ -3705,7 +6601,33 @@ const downloadRiskRecords = [];
 let downloadRiskLoaded = false;
 let downloadRiskSaveTimer = null;
 
-
+function loadDownloadRisks() {
+  if (downloadRiskLoaded) return;
+  downloadRiskLoaded = true;
+  try {
+    const data = ledgerStore.readJSONStore(downloadRiskStorePath, {});
+    const entries = Array.isArray(data && data.records) ? data.records : null;
+    if (!entries) return;
+    for (const r of entries) {
+      if (!r || typeof r !== 'object') continue;
+      if (typeof r.filename !== 'string' || !r.filename) continue;
+      downloadRiskRecords.push({
+        time: Number(r.time) || Date.now(),
+        filename: String(r.filename).slice(0, 255),
+        host: typeof r.host === 'string' ? String(r.host).slice(0, 255) : '',
+        decision: ['allow', 'warn', 'confirm', 'reject'].includes(r.decision) ? r.decision : 'warn',
+        action: ['saved', 'confirmed', 'cancelled', 'rejected'].includes(r.action) ? r.action : 'saved',
+        ext: typeof r.ext === 'string' ? String(r.ext).slice(0, 32) : '',
+        risks: Array.isArray(r.risks) ? r.risks.slice(0, 20).map(x => ({
+          id: typeof x.id === 'string' ? x.id : 'unknown',
+          severity: ['allow', 'warn', 'confirm', 'reject'].includes(x.severity) ? x.severity : 'warn',
+          message: typeof x.message === 'string' ? x.message.slice(0, 300) : '',
+        })) : [],
+      });
+      if (downloadRiskRecords.length >= MAX_DOWNLOAD_RISK_RECORDS) break;
+    }
+  } catch {}
+}
 
 function persistDownloadRisks() {
   if (downloadRiskSaveTimer) clearTimeout(downloadRiskSaveTimer);
@@ -3755,64 +6677,580 @@ function analyzeDownloadSafety(filename, mime) {
 }
 
 // confirmDownloadDecision 针对需要确认的下载弹出原生对话框，列出具体命中原因。
-
+function confirmDownloadDecision(analysis, originUrl) {
+  const host = urlResolve.safeHost(originUrl, originUrl || '未知来源');
+  const lines = analysis.risks
+    .filter(r => r.severity === dloadGuard.DECISION.CONFIRM)
+    .map(r => `• ${r.message}`)
+    .slice(0, 6);
+  const detail = [
+    `文件：${analysis.displayName}`,
+    `来源：${host}`,
+    '',
+    ...lines,
+    '',
+    '此文件可能会运行程序、更改系统设置，或经过伪装诱导打开。请仅在确认来源可信时保存。',
+  ].join('\n');
+  const choice = dialog.showMessageBoxSync(mainWindow, {
+    type: 'warning',
+    buttons: ['取消下载', '仍然保存'],
+    defaultId: 0,
+    cancelId: 0,
+    title: '安全提示：存在风险的下载',
+    message: '该下载可能会损害您的计算机或经过类型伪装，是否仍要保存？',
+    detail,
+    noLink: true,
+  });
+  return choice === 1;
+}
 
 
 // handleDownloadEvent 是所有 session 共用的 will-download 处理器。历史上它只挂在
 // defaultSession 上，而隔离 / 访客分区（fromPartition）的下载只在各自 session 上触发，
 // 于是分区下载绕过了文件名净化、危险类型确认、保存路径策略与 MOTW。准入判定抽到
 // downloadadmission 纯内核后，这里只负责执行决策（取消 / 弹窗 / 台账 / 落盘）。
-const handleDownloadEventCtx = {
-  get analyzeDownloadSafety() { return analyzeDownloadSafety; },
-  get applyRateLimitToItem() { return applyRateLimitToItem; },
-  get confirmDownloadDecision() { return confirmDownloadDecision; },
-  setCurrentDownloadInfo: (v) => { currentDownloadInfo = v; },
-  get currentDownloadInfo() { return currentDownloadInfo; },
-  get downloadByteQuota() { return downloadByteQuota; },
-  get downloadDiskMonitor() { return downloadDiskMonitor; },
-  get downloadFreqLimiter() { return downloadFreqLimiter; },
-  get downloadMaxBytes() { return downloadMaxBytes; },
-  get downloadSlotGuard() { return downloadSlotGuard; },
-  get downloads() { return downloads; },
-  get formatSpeed() { return formatSpeed; },
-  get getDownloadJournal() { return getDownloadJournal; },
-  get isSafeUrl() { return isSafeUrl; },
-  get journalDownloadState() { return journalDownloadState; },
-  get notifyDownloadResult() { return notifyDownloadResult; },
-  get originOfContents() { return originOfContents; },
-  get recordDownloadRisk() { return recordDownloadRisk; },
-  get recordSecurityEvent() { return recordSecurityEvent; },
-  get rememberDownloadOrigin() { return rememberDownloadOrigin; },
-  get resolveUniqueDownloadPath() { return resolveUniqueDownloadPath; },
-  get sanitizeDownloadFilename() { return sanitizeDownloadFilename; },
-  get sendShelf() { return sendShelf; },
-  get sendToRenderer() { return sendToRenderer; },
-};
 function handleDownloadEvent(event, item, webContents) {
-  return require('./downloadsevents').handleDownloadEvent(handleDownloadEventCtx, event, item, webContents);
+    const url = item.getURL();
+    let mimeType = '';
+    try { mimeType = typeof item.getMimeType === 'function' ? item.getMimeType() : ''; } catch { mimeType = ''; }
+
+    const urlDecision = downloadHostGuard.evaluateDownloadUrl(url);
+    const sourceTrust = downloadSourceTrustGuard.applyDownloadSourceTrustGuard({ url });
+    if (!sourceTrust.allowed) {
+      recordSecurityEvent('download-url', 'warn',
+        `下载来源可信度: ${downloadSourceTrustGuard.describeFindings([{ reason: sourceTrust.reason }])}`,
+        originOfContents(webContents));
+    }
+    const timeoutPlan = navigationTimeoutGuard.applyNavigationTimeoutGuard({ timeout: 30000, retries: 0 });
+    if (urlDecision.action === downloadHostGuard.ACTION.BLOCK) {
+      try { item.cancel(); } catch {}
+      recordSecurityEvent('download-url', 'critical',
+        `下载地址被拒绝: ${downloadHostGuard.describeDownloadUrl(urlDecision)}`,
+        originOfContents(webContents));
+      sendToRenderer('show-toast', `下载地址不安全，已取消：${downloadHostGuard.describeDownloadUrl(urlDecision)}`);
+      return;
+    }
+    if (urlDecision.action === downloadHostGuard.ACTION.WARN) {
+      recordSecurityEvent('download-url', 'warn',
+        downloadHostGuard.describeDownloadUrl(urlDecision), originOfContents(webContents));
+    }
+
+    // 纯内核一次给出：URL 是否放行、净化后的文件名、危险类型档位与风险原因链。
+    let rawFilename = item.getFilename();
+    try {
+      if (typeof item.getContentDisposition === 'function') {
+        const cd = downloadName.parseContentDisposition(item.getContentDisposition());
+        if (cd.filename) rawFilename = cd.filename;
+      }
+    } catch { rawFilename = item.getFilename(); }
+    const admission = downloadAdmission.planDownloadAdmission(
+      {
+        isSafeUrl,
+        sanitizeFilename: sanitizeDownloadFilename,
+        analyzeName: analyzeDownloadSafety,
+        DECISION: dloadGuard.DECISION,
+      },
+      { url, rawFilename, mimeType },
+    );
+    const riskAnalysis = admission.analysis || { decision: '', finalExt: '', risks: [] };
+    const finalFilename = admission.finalFilename || 'download';
+    const dlHost = admission.host;
+    const chainCheck = downloadChain.analyzeDownloadChain(
+      typeof item.getURLChain === 'function' ? item.getURLChain() : null,
+    );
+    if (chainCheck.verdict === downloadChain.VERDICT.BLOCK) {
+      try { item.cancel(); } catch {}
+      recordSecurityEvent('download-blocked', 'critical',
+        `拒绝重定向链不安全的下载: ${downloadChain.describeDownloadChain(chainCheck)} -> ${url}`,
+        originOfContents(webContents));
+      recordDownloadRisk({
+        filename: item.getFilename() || '(bad-chain)', host: chainCheck.finalHost || '',
+        decision: 'reject', action: 'rejected', ext: '',
+        risks: [chainCheck.reason],
+      });
+      sendToRenderer('show-toast', `已取消存在风险的重定向下载：${downloadChain.describeDownloadChain(chainCheck)}`);
+      return;
+    }
+    const rateCheck = downloadFreqLimiter.record(chainCheck.finalHost || dlHost || '');
+    if (!rateCheck.ok) {
+      try { item.cancel(); } catch {}
+      recordSecurityEvent('download-rate-limited', 'warn',
+        `下载频率超限，已取消: ${downloadRateGuard.describeDownloadRateLimit(rateCheck)} -> ${url}`,
+        originOfContents(webContents));
+      recordDownloadRisk({
+        filename: item.getFilename() || '(rate-limited)', host: rateCheck.host || '',
+        decision: 'reject', action: 'rejected', ext: '',
+        risks: [rateCheck.reason],
+      });
+      sendToRenderer('show-toast', `下载过于频繁，已取消：${downloadRateGuard.describeDownloadRateLimit(rateCheck)}`);
+      return;
+    }
+
+    // block-unsafe-url：不安全协议/地址（file:/javascript:/data: 等）直接取消整次下载。
+    if (admission.action === downloadAdmission.ACTION_BLOCK_UNSAFE) {
+      recordSecurityEvent('download-blocked', 'critical',
+        `阻止了来自不安全协议/地址的下载: ${url}`, originOfContents(webContents));
+      // 与 reject 分支保持一致：危险协议下载拦截也要进 download-risk 台账，
+      // 否则 cosy://security 安全中心只能看到危险文件名、看不到危险协议来源。
+      recordDownloadRisk({
+        filename: item.getFilename() || '(unsafe-url)', host: dlHost,
+        decision: 'reject', action: 'rejected',
+        ext: riskAnalysis.finalExt || '', risks: riskAnalysis.risks || [],
+      });
+      event.preventDefault();
+      return;
+    }
+
+    // reject：文件名无法净化成合法名字，直接取消。
+    if (admission.action === downloadAdmission.ACTION_REJECT) {
+      try { item.cancel(); } catch {}
+      recordSecurityEvent('download-blocked', 'critical',
+        `拒绝保存文件名非法的下载: ${item.getFilename()}`, originOfContents(webContents));
+      recordDownloadRisk({
+        filename: item.getFilename(), host: dlHost, decision: 'reject', action: 'rejected',
+        ext: riskAnalysis.finalExt, risks: riskAnalysis.risks,
+      });
+      sendToRenderer('show-toast', '下载文件名非法，已取消');
+      return;
+    }
+
+    // confirm：可执行 / 伪装 / MIME 不符必须用户显式确认，阻断静默 drive-by 下载。
+    if (admission.action === downloadAdmission.ACTION_CONFIRM) {
+      const allow = confirmDownloadDecision(riskAnalysis, url);
+      if (!allow) {
+        try { item.cancel(); } catch {}
+        recordSecurityEvent('download-rejected', 'warn',
+          `用户取消了存在风险的下载: ${finalFilename}`, originOfContents(webContents));
+        recordDownloadRisk({
+          filename: finalFilename, host: dlHost, decision: 'confirm', action: 'cancelled',
+          ext: riskAnalysis.finalExt, risks: riskAnalysis.risks,
+        });
+        sendToRenderer('show-toast', `已取消存在风险的下载：${finalFilename}`);
+        return;
+      }
+      recordSecurityEvent('download-confirmed', 'info',
+        `用户确认保存存在风险的下载: ${finalFilename}`, originOfContents(webContents));
+    }
+
+    // warn：容器（内部文件不继承 MOTW）/ 本地 HTML 等，保存并轻提示。
+    // 走到这里 action 必为 WARN（CONFIRM 已在上方独立分支处理），台账动作即 saved。
+    if (admission.action === downloadAdmission.ACTION_WARN) {
+      recordDownloadRisk({
+        filename: finalFilename, host: dlHost, decision: 'warn', action: 'saved',
+        ext: riskAnalysis.finalExt, risks: riskAnalysis.risks,
+      });
+    }
+
+    const totalBytes = item.getTotalBytes();
+    let downloadInfo = downloads.find(d => d.url === url && d.item === null && d.isItemValid === false);
+    if (downloadInfo) {
+      downloadInfo.item = item;
+      downloadInfo.filename = finalFilename;
+      downloadInfo.totalBytes = totalBytes;
+      downloadInfo.isItemValid = true;
+      downloadInfo.status = 'downloading';
+    } else {
+      // 全新下载：不再 preventDefault + 新开下载页等用户确认，
+      // 直接按现代浏览器行为自动保存到下载目录，由底部 shelf 展示进度。
+      downloadInfo = {
+        id: Date.now().toString(), url, filename: finalFilename, totalBytes,
+        receivedBytes: 0, progress: 0, speed: '0 B/s', status: 'downloading',
+        startTime: Date.now(), savePath: null, item,
+        lastUpdate: Date.now(), lastReceivedBytes: 0, isItemValid: true,
+        expectedHash: null
+      };
+      downloads.push(downloadInfo);
+    }
+    currentDownloadInfo = downloadInfo;
+    const downloadRoot = app.getPath('downloads');
+    let diskFreeBytes = null;
+    try {
+      const diskStat = fsSync.statfsSync(downloadRoot);
+      diskFreeBytes = Number(diskStat.bavail) * Number(diskStat.bsize);
+    } catch (diskProbeError) {
+      diskFreeBytes = null;
+    }
+    let existingDownloadBytes = 0;
+    if (downloadInfo.savePath) {
+      try {
+        existingDownloadBytes = Number(fsSync.statSync(downloadInfo.savePath).size) || 0;
+      } catch (existingProbeError) {
+        existingDownloadBytes = 0;
+      }
+    }
+    downloadInfo.diskFreeBytes = diskFreeBytes;
+    const diskDecision = diskFreeBytes === null
+      ? {
+        action: downloadDiskSpace.ACTION.WARN, reason: downloadDiskSpace.REASON.UNKNOWN_SIZE,
+        freeBytes: null, requiredFreeBytes: 0, shortfallBytes: 0,
+      }
+      : downloadDiskSpace.evaluateSpace({ freeBytes: diskFreeBytes, totalBytes, existingBytes: existingDownloadBytes });
+    if (diskDecision.action === downloadDiskSpace.ACTION.BLOCK) {
+      try { item.cancel(); } catch {}
+      downloadInfo.status = 'error';
+      recordSecurityEvent('download-blocked', 'critical',
+        `磁盘空间不足，拒绝下载: ${downloadDiskSpace.describeDecision(diskDecision)}`,
+        originOfContents(webContents));
+      sendToRenderer('show-toast', `空间不足，已取消下载：${downloadDiskSpace.describeDecision(diskDecision)}`);
+      sendShelf();
+      return;
+    }
+    if (diskDecision.action === downloadDiskSpace.ACTION.WARN) {
+      recordSecurityEvent('download-disk', 'warn',
+        downloadDiskSpace.describeDecision(diskDecision), originOfContents(webContents));
+    }
+    if (downloadInfo.savePath) {
+      const reusedCheck = downloadSaveTarget.auditSaveTargetReal(
+        downloadRoot, downloadInfo.savePath, path.basename(downloadInfo.savePath),
+      );
+      if (!reusedCheck.ok) {
+        downloadInfo.savePath = null;
+        recordSecurityEvent('download-savepath', 'warn',
+          `复用下载槽位的保存路径未通过校验: ${downloadSaveTarget.describeSaveTargetReject(reusedCheck.reason)}`,
+          originOfContents(webContents));
+      }
+    }
+    const reserveSlotFor = (candidatePath, attempt) => {
+      let target = candidatePath;
+      if (attempt > 0) {
+        const parsed = path.parse(candidatePath);
+        target = path.join(parsed.dir, `${parsed.name} (${attempt})${parsed.ext}`);
+      }
+      const reservation = downloadSlotGuard.reserve({ id: downloadInfo.id, path: target });
+      return reservation.ok ? target : '';
+    };
+    if (downloadInfo.savePath) {
+      if (reserveSlotFor(downloadInfo.savePath, 0)) {
+        item.setSavePath(downloadInfo.savePath);
+      } else {
+        recordSecurityEvent('download-savepath', 'warn',
+          `复用下载槽位的目标已被其他下载占用，重新分配文件名: ${path.basename(downloadInfo.savePath)}`,
+          originOfContents(webContents));
+        downloadInfo.savePath = null;
+      }
+    }
+    if (downloadInfo.savePath) {
+      item.setSavePath(downloadInfo.savePath);
+    } else {
+      let reservedTarget = '';
+      for (let attempt = 0; attempt < 4 && !reservedTarget; attempt += 1) {
+        const candidate = resolveUniqueDownloadPath(downloadRoot, finalFilename);
+        const saveCheck = downloadSaveTarget.auditSaveTargetReal(downloadRoot, candidate, path.basename(candidate));
+        if (!saveCheck.ok) {
+          try { item.cancel(); } catch {}
+          recordSecurityEvent('download-blocked', 'critical',
+            `拒绝保存到非法路径的下载: ${downloadSaveTarget.describeSaveTargetReject(saveCheck.reason)}`,
+            originOfContents(webContents));
+          recordDownloadRisk({
+            filename: finalFilename, host: dlHost, decision: 'reject', action: 'rejected',
+            ext: riskAnalysis.finalExt, risks: riskAnalysis.risks,
+          });
+          sendToRenderer('show-toast', `下载保存路径非法，已取消：${downloadSaveTarget.describeSaveTargetReject(saveCheck.reason)}`);
+          return;
+        }
+        reservedTarget = reserveSlotFor(saveCheck.path, attempt);
+      }
+      if (!reservedTarget) {
+        try { item.cancel(); } catch {}
+        recordSecurityEvent('download-blocked', 'critical',
+          '下载保存槽位持续冲突，无法分配唯一文件名', originOfContents(webContents));
+        sendToRenderer('show-toast', '同名文件正在下载，已取消本次下载');
+        return;
+      }
+      item.setSavePath(reservedTarget);
+      downloadInfo.savePath = reservedTarget;
+    }
+    const journalStart = journalDownloadState(downloadInfo, downloadJournalModule.STATE.STARTED);
+    if (journalStart) {
+      const journalResult = getDownloadJournal().record(journalStart);
+      if (!journalResult.ok) {
+        recordSecurityEvent('download-journal', 'warn',
+          `下载台账写入被拒绝: ${downloadJournalModule.describeJournalReject(journalResult.reason)}`,
+          originOfContents(webContents));
+      }
+    }
+    downloadInfo.quotaHost = chainCheck.finalHost || dlHost || 'unknown-host';
+    downloadInfo.quotaReserved = 0;
+    const quotaCheck = downloadByteQuota.reserve(downloadInfo.quotaHost, totalBytes);
+    if (!quotaCheck.ok) {
+      try { item.cancel(); } catch {}
+      recordSecurityEvent('download-quota', 'warn',
+        `下载字节配额拒绝: ${downloadQuotaCore.describeQuotaReject(quotaCheck.reason, downloadInfo.quotaHost)}`,
+        originOfContents(webContents));
+      recordDownloadRisk({
+        filename: finalFilename, host: downloadInfo.quotaHost, decision: 'reject', action: 'rejected',
+        ext: riskAnalysis.finalExt, risks: riskAnalysis.risks,
+      });
+      sendToRenderer('show-toast', `下载超出字节配额，已取消：${downloadQuotaCore.describeQuotaReject(quotaCheck.reason, downloadInfo.quotaHost)}`);
+      return;
+    }
+    downloadInfo.quotaHost = quotaCheck.host;
+    downloadInfo.quotaReserved = quotaCheck.reservedBytes;
+    applyRateLimitToItem(item);
+    sendShelf();
+    sendToRenderer('download-status-changed', { id: downloadInfo.id, status: 'downloading' });
+    item.on('updated', (event, state) => {
+      if (state === 'progressing') {
+        const liveCheck = downloadChainLive.auditLiveChain(
+          typeof item.getURLChain === 'function' ? item.getURLChain() : null,
+        );
+        if (liveCheck.verdict === downloadChainLive.VERDICT.ABORT) {
+          try { item.cancel(); } catch {}
+          downloadInfo.status = 'error';
+          recordSecurityEvent('download-blocked', 'critical',
+            `下载过程中重定向链失效: ${downloadChainLive.describeLiveChain(liveCheck)}`,
+            originOfContents(webContents));
+          sendToRenderer('show-toast', `已取消重定向链失效的下载：${downloadChainLive.describeLiveChain(liveCheck)}`);
+          sendShelf();
+          return;
+        }
+        const receivedBytes = item.getReceivedBytes();
+        const totalBytes = item.getTotalBytes();
+        let liveFreeBytes = downloadInfo.diskFreeBytes;
+        try {
+          const liveStat = fsSync.statfsSync(downloadRoot);
+          liveFreeBytes = Number(liveStat.bavail) * Number(liveStat.bsize);
+        } catch (liveProbeError) {
+          liveFreeBytes = downloadInfo.diskFreeBytes;
+        }
+        const diskEvent = downloadDiskMonitor.sample({
+          id: downloadInfo.id, freeBytes: liveFreeBytes, totalBytes, receivedBytes,
+        });
+        if (diskEvent.action === downloadDiskMonitor.ACTION.PAUSE) {
+          try { item.pause(); } catch {}
+          downloadInfo.status = 'paused';
+          recordSecurityEvent('download-paused', 'warn',
+            `磁盘剩余空间不足，下载暂停: ${downloadDiskSpace.describeDecision(diskEvent.decision)}`,
+            originOfContents(webContents));
+          if (downloadDiskMonitor.shouldNotify(downloadInfo.id)) {
+            downloadDiskMonitor.markNotified(downloadInfo.id);
+            sendToRenderer('show-toast', `磁盘空间不足，下载已暂停：${downloadInfo.filename}`);
+          }
+          sendShelf();
+          return;
+        }
+        if (diskEvent.action === downloadDiskMonitor.ACTION.RESUME) {
+          try { item.resume(); } catch {}
+          downloadInfo.status = 'downloading';
+          recordSecurityEvent('download-resumed', 'info',
+            '磁盘空间恢复，下载继续', originOfContents(webContents));
+          sendToRenderer('show-toast', `磁盘空间恢复，继续下载：${downloadInfo.filename}`);
+        }
+        const progress = totalBytes > 0 ? ((receivedBytes / totalBytes) * 100).toFixed(2) : 0;
+        const now = Date.now();
+        const timeDiff = (now - downloadInfo.lastUpdate) / 1000;
+        if (timeDiff > 0) {
+          const bytesDiff = receivedBytes - downloadInfo.lastReceivedBytes;
+          downloadInfo.speed = formatSpeed(bytesDiff / timeDiff);
+        }
+        downloadInfo.receivedBytes = receivedBytes;
+        downloadInfo.progress = progress;
+        downloadInfo.lastUpdate = now;
+        downloadInfo.lastReceivedBytes = receivedBytes;
+        downloadInfo.status = 'downloading';
+        sendToRenderer('download-progress', { id: downloadInfo.id, receivedBytes, totalBytes, progress, speed: downloadInfo.speed });
+        sendShelf();
+      }
+    });
+    item.on('done', (event, state) => {
+      downloadInfo.isItemValid = false;
+      downloadDiskMonitor.release(downloadInfo.id);
+      downloadSlotGuard.release(downloadInfo.id);
+      if (state === 'completed') {
+        downloadByteQuota.settle(
+          downloadInfo.quotaHost || '',
+          downloadInfo.quotaReserved || 0,
+          Math.max(downloadInfo.quotaReserved || 0, downloadInfo.receivedBytes || 0),
+        );
+      } else {
+        downloadByteQuota.release(downloadInfo.quotaHost || '', downloadInfo.quotaReserved || 0);
+      }
+      if (state === 'completed') {
+        downloadInfo.savePath = item.getSavePath();
+        let finishStat = null;
+        try { finishStat = fsSync.lstatSync(downloadInfo.savePath); } catch { finishStat = null; }
+        if (finishStat) {
+          const finishAudit = downloadFinishGuard.auditDownloadResult({
+            rootDir: downloadRoot,
+            savePath: downloadInfo.savePath,
+            expectedBytes: downloadInfo.totalBytes,
+            actualBytes: finishStat.size,
+            isSymlink: finishStat.isSymbolicLink(),
+            isRegular: finishStat.isFile(),
+          });
+          if (finishAudit.action === downloadFinishGuard.ACTION.BLOCK) {
+            downloadInfo.status = 'error';
+            recordSecurityEvent('download-finish', 'critical',
+              `下载落盘校验失败: ${downloadFinishGuard.describeDownloadAudit(finishAudit)}`,
+              originOfContents(webContents));
+            sendToRenderer('download-error', {
+              id: downloadInfo.id,
+              filename: downloadInfo.filename || finalFilename,
+              errorMessage: '下载文件未通过落盘校验，已标记为失败',
+            });
+            sendShelf();
+            return;
+          }
+          if (finishAudit.action === downloadFinishGuard.ACTION.WARN) {
+            recordSecurityEvent('download-finish', 'warn',
+              downloadFinishGuard.describeDownloadAudit(finishAudit), originOfContents(webContents));
+          }
+          const magicProbe = downloadContentMagic.readMagic(downloadInfo.savePath);
+          if (magicProbe.ok) {
+            const contentAudit = downloadContentMagic.auditDownloadedContent({
+              name: path.basename(downloadInfo.savePath),
+              mime: mimeType,
+              magic: magicProbe.magic,
+            });
+            if (contentAudit.action === downloadContentMagic.ACTION.BLOCK) {
+              downloadInfo.status = 'error';
+              recordSecurityEvent('download-content', 'critical',
+                `下载内容伪装检测命中: ${downloadContentMagic.describeContentAudit(contentAudit)}`,
+                originOfContents(webContents));
+              sendToRenderer('download-error', {
+                id: downloadInfo.id,
+                filename: downloadInfo.filename || finalFilename,
+                errorMessage: '下载内容与扩展名不符，已标记为可疑',
+              });
+              sendShelf();
+              return;
+            }
+            if (contentAudit.action === downloadContentMagic.ACTION.WARN) {
+              recordSecurityEvent('download-content', 'warn',
+                downloadContentMagic.describeContentAudit(contentAudit), originOfContents(webContents));
+            }
+          }
+        }
+        downloadInfo.status = 'complete';
+        sendToRenderer('download-complete', { id: downloadInfo.id, savePath: downloadInfo.savePath });
+        // 系统通知：完成（静音、低打扰；点击打开文件）。在 MOTW 补写之前弹，
+        // 用户看到通知时文件已落盘且来源登记已完成。
+        notifyDownloadResult('complete', {
+          filename: downloadInfo.filename || finalFilename,
+          sizeBytes: downloadInfo.totalBytes,
+          url: downloadInfo.url || url,
+          savePath: downloadInfo.savePath,
+        });
+        // 登记来源，供“打开文件”时判断互联网可执行文件是否需要二次确认。
+        const completedUrl = downloadInfo.url || url;
+        rememberDownloadOrigin(downloadInfo.savePath, completedUrl);
+        // 下载完成后排进串行摘要队列，异步算 SHA-256 并登记到 cosy://hashes；
+        // 用净化后的文件名与来源 URL，不落完整本地路径。
+        queueDownloadHashing({
+          id: downloadInfo.id,
+          savePath: downloadInfo.savePath,
+          url: completedUrl,
+          filename: downloadInfo.filename || finalFilename,
+        });
+        // 显式补写 Windows Mark-of-the-Web（Zone.Identifier ADS）。Chromium
+        // 自定义落盘/跨盘移动/从压缩包解出都可能丢失 MOTW；best-effort，失败
+        // （非 NTFS/权限）只审计，不影响已完成的下载。
+        try {
+          const motw = quarantine.applyMarkOfTheWeb(
+            { platform: process.platform, appendFileSync: fsSync.appendFileSync },
+            downloadInfo.savePath,
+            { hostUrl: completedUrl, lastWriteTime: new Date().toISOString() }
+          );
+          if (motw.wrote === false && motw.reason !== 'not-internet' &&
+              motw.reason !== 'unsupported-platform') {
+            recordSecurityEvent('download-motw', 'info',
+              `MOTW 标记未写入 (${motw.reason}): ${downloadInfo.filename || ''}`,
+              originOfContents(webContents));
+          }
+        } catch (motwErr) {
+          recordSecurityEvent('download-motw', 'info',
+            `MOTW 标记异常: ${String(motwErr && motwErr.message || motwErr)}`,
+            originOfContents(webContents));
+        }
+      } else {
+        downloadInfo.status = 'error';
+        const failureReason = state === 'interrupted' ? '下载被中断' : '下载未能完成';
+        sendToRenderer('download-error', {
+          id: downloadInfo.id,
+          filename: downloadInfo.filename || finalFilename,
+          errorMessage: failureReason,
+        });
+        // 系统通知：失败（非静音，高打扰；点击只聚焦窗口，不自动重试）。
+        notifyDownloadResult('error', {
+          filename: downloadInfo.filename || finalFilename,
+          errorMessage: failureReason,
+        });
+      }
+      const journalDone = journalDownloadState(downloadInfo);
+      if (journalDone) {
+        const journalResult = getDownloadJournal().update(downloadInfo.id, {
+          state: journalDone.state,
+          receivedBytes: journalDone.receivedBytes,
+          savePath: journalDone.savePath,
+          partPath: journalDone.partPath,
+        });
+        if (!journalResult.ok) {
+          recordSecurityEvent('download-journal', 'warn',
+            `下载台账收尾写入被拒绝: ${downloadJournalModule.describeJournalReject(journalResult.reason)}`,
+            originOfContents(webContents));
+        }
+      }
+      sendShelf();
+    });
 }
 
 // managedDownloadSessions 记录已挂过下载保护的 session。will-download 若对同一
 // session 注册两次，一次下载会触发两轮回调：弹两次确认框、写两条台账、落盘后补两次
 // MOTW。defaultSession 走 setupDownloadManager、分区走 session-created，理论上互斥，
 // 但仍用 WeakSet 做幂等兜底（session 回收后条目自动消失，不泄漏）。
-function downloadJournalFileProbe() {
-  return {
+function getDownloadJournal() {
+  if (downloadJournal) return downloadJournal;
+  const downloadsRoot = app.getPath('downloads');
+  downloadJournal = downloadJournalModule.createDownloadJournal({
+    filePath: path.join(app.getPath('userData'), 'download-journal.json'),
+    rootDir: downloadsRoot,
+  });
+  const loaded = downloadJournal.load();
+  if (loaded.rejected.length > 0) {
+    recordSecurityEvent('download-journal', 'warn',
+      `下载台账载入时丢弃 ${loaded.rejected.length} 条非法记录`, 'download-journal');
+  }
+  const reconciled = downloadJournal.reconcile({
     exists: (target) => {
-      try { return fsSync.lstatSync(target).isFile(); } catch { return false; }
+      try { return fsSync.statSync(target).isFile(); } catch { return false; }
     },
     sizeOf: (target) => {
       try {
-        const stat = fsSync.lstatSync(target);
+        const stat = fsSync.statSync(target);
         return stat.isFile() ? stat.size : null;
       } catch { return null; }
     },
-  };
+  });
+  if (!reconciled.ok) {
+    recordSecurityEvent('download-journal', 'warn',
+      `下载台账落盘文件核对结果未能保存: ${downloadJournalModule.describeJournalReject(reconciled.reason)}`,
+      'download-journal');
+  } else if (reconciled.changes.length > 0) {
+    recordSecurityEvent('download-journal', 'info',
+      `下载台账文件核对: ${downloadReconcileModule.summarizeReconcile(reconciled.summary)}`,
+      'download-journal');
+  }
+  return downloadJournal;
 }
 
-
-
-
+function journalDownloadState(downloadInfo, fallbackState) {
+  if (!downloadInfo || !downloadInfo.id) return null;
+  const state = downloadInfo.status === 'complete' ? downloadJournalModule.STATE.COMPLETE
+    : downloadInfo.status === 'error' ? downloadJournalModule.STATE.ERROR
+    : fallbackState || downloadJournalModule.STATE.DOWNLOADING;
+  return {
+    id: downloadInfo.id,
+    url: downloadInfo.url || '',
+    filename: downloadInfo.filename || '',
+    host: downloadInfo.quotaHost || '',
+    savePath: downloadInfo.savePath || '',
+    partPath: downloadInfo.status === 'error' && downloadInfo.savePath ? `${downloadInfo.savePath}.crdownload` : '',
+    totalBytes: Number.isFinite(downloadInfo.totalBytes) ? downloadInfo.totalBytes : 0,
+    receivedBytes: Number.isFinite(downloadInfo.receivedBytes) ? downloadInfo.receivedBytes : 0,
+    state,
+    startedAt: downloadInfo.startTime || Date.now(),
+  };
+}
 
 const managedDownloadSessions = new WeakSet();
 
@@ -3838,7 +7276,35 @@ function formatSpeed(bytesPerSecond) {
   return speed.toFixed(2) + ' ' + units[unitIndex];
 }
 
-
+function generateUserAgent() {
+  const platform = os.platform();
+  const arch = os.arch();
+  const release = os.release();
+  const chromeVersion = process.versions.chrome;
+  let osInfo;
+  switch (platform) {
+    case 'win32':
+      if (release.startsWith('10.')) osInfo = 'Windows NT 10.0';
+      else if (release.startsWith('6.3')) osInfo = 'Windows NT 6.3';
+      else if (release.startsWith('6.2')) osInfo = 'Windows NT 6.2';
+      else if (release.startsWith('6.1')) osInfo = 'Windows NT 6.1';
+      else if (release.startsWith('6.0')) osInfo = 'Windows NT 6.0';
+      else osInfo = 'Windows NT 10.0';
+      osInfo += arch === 'x64' ? '; Win64; x64' : '; WOW64';
+      break;
+    case 'darwin':
+      const macVersion = release.split('.').slice(0, 2).join('.');
+      osInfo = `Macintosh; Intel Mac OS X ${macVersion.replace('.', '_')}`;
+      break;
+    case 'linux':
+      if (arch === 'x64') osInfo = 'X11; Linux x86_64';
+      else if (arch === 'arm64') osInfo = 'X11; Linux aarch64';
+      else osInfo = 'X11; Linux i686';
+      break;
+    default: osInfo = 'X11; Unknown';
+  }
+  return `Mozilla/5.0 (${osInfo}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} OpenCosyBrowser/1.0.0`;
+}
 
 // reviewToOpenUrl 把 deeplinkguard 的放行结论转成可打开 URL；本地文件需存在。
 function reviewToOpenUrl(review) {
@@ -3978,7 +7444,6 @@ app.whenReady().then(async () => {
   const persisted = readPersistedSettings();
   spellcheckEnabled = persisted.spellcheckEnabled !== false;
   spellcheckLanguages = sanitizeSpellcheckLanguages(persisted.spellcheckLanguages);
-  downloadMaxBytes = downloadSizeGuard.normalizeLimit(persisted.downloadMaxBytes);
   applySpellcheckSettings();
   searchProviderId = searchProvider.sanitizeProviderChoice(persisted.searchEngine);
   loadUaPolicyStateFromDisk();
@@ -4188,7 +7653,10 @@ const MAX_REMEMBERED_ORIGINS = 500;
 const zoomStorePath = path.join(app.getPath('userData'), 'zoom-store.json');
 let zoomSaveTimer = null;
 
-
+function clampZoomFactor(f) {
+  if (!Number.isFinite(f)) return 1;
+  return Math.min(MAX_ZOOM_FACTOR, Math.max(MIN_ZOOM_FACTOR, f));
+}
 
 function originOfUrl(u) {
   return urlResolve.safeOrigin(u, '');
@@ -4196,17 +7664,70 @@ function originOfUrl(u) {
 
 // loadZoomFactors 启动时从 userData 读取按站点记忆的缩放（对齐 Chrome 跨重启保留缩放）。
 // 文件损坏 / 被外部塞非法内容时静默丢弃，绝不因此影响浏览器启动。
-
+function loadZoomFactors() {
+  try {
+    // 有界读：缺失 / 损坏 / 被撑大的 zoom 台账回落 null，直接 return，不影响启动。
+    const data = ledgerStore.readJSONStore(zoomStorePath, null);
+    if (!data || typeof data !== 'object' || !data.origins || typeof data.origins !== 'object') return;
+    for (const [origin, factor] of Object.entries(data.origins)) {
+      if (typeof origin !== 'string' || !/^https?:|^cosy:/.test(origin)) continue;
+      if (typeof factor !== 'number' || !Number.isFinite(factor)) continue;
+      zoomFactorsByOrigin.set(origin, clampZoomFactor(factor));
+      if (zoomFactorsByOrigin.size >= MAX_REMEMBERED_ORIGINS) break;
+    }
+  } catch {}
+}
 
 // persistZoomFactors 防抖落盘，避免连续放大缩小频繁写文件。
+function persistZoomFactors() {
+  if (zoomSaveTimer) clearTimeout(zoomSaveTimer);
+  zoomSaveTimer = setTimeout(() => {
+    try {
+      const origins = {};
+      for (const [origin, factor] of zoomFactorsByOrigin) origins[origin] = factor;
+      ledgerStore.writeJSONStore(zoomStorePath, { version: 1, origins });
+    } catch {}
+  }, 400);
+}
 
-
-
+function applySavedZoom(tab) {
+  if (!tab || !tab.view || !tab.view.webContents) return;
+  const origin = originOfUrl(tab.url);
+  if (origin && zoomFactorsByOrigin.has(origin)) {
+    tab.view.webContents.setZoomFactor(zoomFactorsByOrigin.get(origin));
+  }
+}
 
 // adjustCurrentZoom 是菜单快捷键与 IPC 共用的唯一缩放入口：
 // 统一用 setZoomFactor（不要混用 setZoomLevel，二者写同一底层值会互相覆盖），
 // 计算结果按 origin 记忆、导航恢复、并持久化到磁盘。
+function adjustCurrentZoom({ delta, factor: explicit } = {}) {
+  const tab = tabs[currentTabIndex];
+  if (!tab || !tab.view || !tab.view.webContents) return null;
+  const wc = tab.view.webContents;
+  const origin = originOfUrl(tab.url);
+  let factor = 1;
+  try { factor = wc.getZoomFactor(); } catch { factor = (origin && zoomFactorsByOrigin.get(origin)) || 1; }
+  if (!Number.isFinite(factor) || factor <= 0) factor = 1;
 
+  if (typeof explicit === 'number' && Number.isFinite(explicit)) {
+    factor = explicit;
+  } else if (delta === 'in') {
+    factor *= 1.1;
+  } else if (delta === 'out') {
+    factor /= 1.1;
+  }
+  factor = clampZoomFactor(Math.round(factor * 1000) / 1000);
+  wc.setZoomFactor(factor);
+  if (origin) {
+    zoomFactorsByOrigin.set(origin, factor);
+    persistZoomFactors();
+  }
+  const percent = Math.round(factor * 100);
+  // 通知渲染层显示缩放百分比浮层（对齐 Chrome 放大/缩小时的 OSD）。
+  sendToRenderer('zoom-level-changed', { percent, factor });
+  return { factor, percent };
+}
 
 ipcMain.handle('set-tab-muted', (event, payload = {}) => {
   if (!isMainSender(event)) return { success: false };
@@ -4420,7 +7941,70 @@ ipcMain.on('remove-download', (event, id) => {
 // performDownloadOpen 是“打开已下载文件”的唯一执行出口：下载列表 IPC 与系统
 // 通知点击都走这里。判定交给 dloadopen 内核（文件名伪装、来源、容器类型），
 // UI（确认框）与系统调用留在这里，避免通知点击绕过来源确认与路径消毒。
-
+function performDownloadOpen(resolved, opts) {
+  const options = opts || {};
+  if (!isInSafeDirs(resolved) || !fsSync.existsSync(resolved)) {
+    return { ok: false, action: 'missing' };
+  }
+  const originUrl = downloadOriginByPath.has(resolved)
+    ? downloadOriginByPath.get(resolved)
+    : null;
+  const baseName = path.basename(resolved);
+  const target = dloadOpen.decideOpenTarget({ filePath: resolved, filename: baseName, hostUrl: originUrl });
+  if (target.action === dloadOpen.ACTION.BLOCK) {
+    recordSecurityEvent('download-open-blocked', 'warn',
+      `打开下载项被文件名判定拦截: ${baseName}`, '');
+    sendToRenderer('show-toast', '已阻止打开：文件名不安全');
+    return { ok: false, action: 'block', reason: target.reason };
+  }
+  // 交给系统打开前再走一次路径消毒（控制字符 / UNC / 穿越）。可执行文件是否
+  // 允许运行已由上面的来源确认决定，这里只挡畸形与越界路径。
+  const launchReview = shellGuard.reviewLocalLaunchPath(resolved, true);
+  if (!launchReview.ok) {
+    recordSecurityEvent('download-blocked', 'warn',
+      `打开本地文件被路径消毒拦截（${shellGuard.describeReason(launchReview.reason)}）`, '');
+    sendToRenderer('show-toast', '已阻止打开：文件路径不安全');
+    return { ok: false, action: 'block', reason: launchReview.reason };
+  }
+  // 本地网页 / 磁盘镜像这类“打开即获得本地来源或直接挂载”的类型只定位，
+  // 用户需要时自己在浏览器 / 资源管理器里显式打开。
+  if (target.action === dloadOpen.ACTION.REVEAL) {
+    recordSecurityEvent('download-open-blocked', 'info',
+      `下载项仅定位不执行: ${baseName}`, '');
+    shell.showItemInFolder(resolved);
+    return { ok: true, action: 'reveal' };
+  }
+  if (target.action === dloadOpen.ACTION.CONFIRM) {
+    const host = originUrl ? urlResolve.safeHost(originUrl, originUrl) : '未知来源';
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isMinimized()) mainWindow.restore();
+    const advice = (target.reasons && target.reasons.length)
+      ? target.reasons.join('\n')
+      : '该文件是可执行程序或脚本，来自互联网（或来源不明），可能会危害您的计算机或更改系统设置。';
+    const choice = dialog.showMessageBoxSync(mainWindow, {
+      type: 'warning',
+      buttons: ['取消', '仍然运行'],
+      defaultId: 0,
+      cancelId: 0,
+      title: '安全提示：运行来自互联网的程序',
+      message: `确定要打开 "${baseName}" 吗？`,
+      detail: [
+        `来源：${host}`,
+        '',
+        advice,
+        '',
+        '请仅在确认其来源可信时运行。',
+      ].join('\n').replace(/\n{3,}/g, '\n\n'),
+      noLink: true,
+    });
+    if (choice !== 1) {
+      recordSecurityEvent('download-open-blocked', 'info',
+        `用户取消运行来自互联网的文件: ${baseName}`, host);
+      return { ok: false, action: 'cancel' };
+    }
+  }
+  shell.openPath(resolved);
+  return { ok: true, action: 'open' };
+}
 
 ipcMain.on('open-file', (event, filePath) => {
   if (!isMainSender(event)) return;
@@ -4652,7 +8236,34 @@ async function saveExtensionsConfig(config) {
   } catch (e) { console.error('保存插件配置失败:', e); return false; }
 }
 
-
+async function validateExtensionFolder(folderPath) {
+  try {
+    const manifestPath = path.join(folderPath, 'manifest.json');
+    if (!fsSync.existsSync(manifestPath)) return { valid: false, error: '文件夹中未找到manifest.json文件' };
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+    if (!manifest.name) return { valid: false, error: 'manifest.json中缺少name字段' };
+    if (!manifest.version) return { valid: false, error: 'manifest.json中缺少version字段' };
+    if (!manifest.manifest_version) return { valid: false, error: 'manifest_version字段缺失' };
+    if (manifest.permissions && Array.isArray(manifest.permissions)) {
+      const dangerousPermissions = ['<all_urls>', 'tabs', 'history', 'bookmarks', 'cookies', 'webRequest', 'webRequestBlocking', 'proxy', 'management', 'debugger', 'nativeMessaging'];
+      if (manifest.permissions.some(p => dangerousPermissions.includes(p))) {
+        const requested = manifest.permissions
+          .filter(p => dangerousPermissions.includes(p))
+          .slice(0, 8).join(', ');
+        recordSecurityEvent('extension-blocked', 'critical',
+          `扩展 ${manifest.name || '(未命名)'} 请求危险权限被拒绝: ${requested}`,
+          `extension:${manifestPath || ''}`);
+        return { valid: false, error: '插件请求了危险权限，已被拒绝加载' };
+      }
+    }
+    return { valid: true, manifest };
+  } catch (e) {
+    recordSecurityEvent('extension-blocked', 'warn',
+      `扩展 manifest.json 读取或解析失败: ${e && e.message ? e.message : e}`,
+      `extension:${folderPath || ''}`);
+    return { valid: false, error: '读取manifest.json失败: ' + e.message };
+  }
+}
 
 // 条目名安全判定统一走 extensionstore 内核（含穿越、ADS 冒号、控制字符、超长名）。
 const isSafeEntryName = extensionStore.isSafeEntryName;
@@ -4665,7 +8276,60 @@ const isSafeEntryName = extensionStore.isSafeEntryName;
 //  2. 每个目标路径用 resolveWithinRoot 收口，防止条目名或目录深度拼接触底扩展根。
 //  3. 复制受深度 / 条目数 / 总字节预算约束，防止恶意目录耗尽磁盘。
 // 返回 { ok:true } 或 { ok:false, reason }，越界预算类问题整单中止（不装半截扩展）。
+async function copyExtensionToStorage(sourcePath, extensionId) {
+  const targetRoot = extensionStore.resolveExtensionDir(extensionsPath, extensionId);
+  if (!targetRoot) return { ok: false, reason: 'invalid-extension-id' };
+  const budget = extensionStore.createCopyBudget();
 
+  async function walk(srcDir, depth, relSegments) {
+    const files = await fs.readdir(srcDir);
+    for (const file of files) {
+      const srcFile = path.join(srcDir, file);
+      let stat;
+      try {
+        stat = await fs.lstat(srcFile);
+      } catch {
+        return { ok: false, reason: 'stat-failed' };
+      }
+      const verdict = extensionStore.classifyCopyEntry({
+        name: file,
+        symlink: stat.isSymbolicLink(),
+        directory: stat.isDirectory(),
+        size: stat.size,
+      }, depth, budget);
+
+      if (verdict.action === extensionStore.COPY_SKIP) continue;
+      if (verdict.action === extensionStore.COPY_REJECT) {
+        return { ok: false, reason: verdict.reason };
+      }
+      const destFile = extensionStore.resolveWithinRoot.apply(
+        null, [targetRoot].concat(relSegments, [file]));
+      if (!destFile) return { ok: false, reason: 'target-outside-root' };
+
+      if (verdict.action === extensionStore.COPY_ACCEPT_DIR) {
+        await fs.mkdir(destFile, { recursive: true });
+        const sub = await walk(srcFile, depth + 1, relSegments.concat([file]));
+        if (!sub.ok) return sub;
+      } else {
+        await fs.copyFile(srcFile, destFile);
+      }
+    }
+    return { ok: true };
+  }
+
+  try {
+    await fs.mkdir(targetRoot, { recursive: true });
+    const result = await walk(sourcePath, 1, []);
+    if (!result.ok) {
+      await fs.rm(targetRoot, { recursive: true, force: true }).catch(() => {});
+    }
+    return result;
+  } catch (e) {
+    console.error('复制插件失败:', e);
+    await fs.rm(targetRoot, { recursive: true, force: true }).catch(() => {});
+    return { ok: false, reason: 'copy-exception' };
+  }
+}
 
 async function loadEnabledExtensions() {
   try {
@@ -4893,7 +8557,6 @@ const ALLOWED_SETTING_KEYS = {
   reduceClientHints: v => typeof v === 'boolean',
   blockAdSignals: v => typeof v === 'boolean',
   blockHyperlinkPing: v => typeof v === 'boolean',
-  downloadMaxBytes: v => Number.isFinite(v) && v >= 0,
   stripAcceptCh: v => typeof v === 'boolean',
   allowPictureInPicture: v => typeof v === 'boolean',
   webrtcMode: v => typeof v === 'string' &&
@@ -4983,7 +8646,6 @@ ipcMain.on('save-settings', (event, settings) => {
     if ('confirmCloseMultiple' in clean) confirmCloseMultiple = !!clean.confirmCloseMultiple;
     if ('spellcheckEnabled' in clean) spellcheckEnabled = !!clean.spellcheckEnabled;
     if ('spellcheckLanguages' in clean) spellcheckLanguages = sanitizeSpellcheckLanguages(clean.spellcheckLanguages);
-    if ('downloadMaxBytes' in clean) downloadMaxBytes = downloadSizeGuard.normalizeLimit(clean.downloadMaxBytes);
     applySpellcheckSettings();
     event.reply('settings-saved', { success: true });
   } catch (e) {
@@ -5652,9 +9314,6 @@ ipcMain.handle('vault-rekey', (event, payload = {}) => {
     kdf = vaultCore.KDF_PBKDF2;
     vaultUsePasswordMode = true;
   } else {
-    if (!safeStorage.isEncryptionAvailable()) {
-      return { success: false, reason: 'password-required' };
-    }
     key = crypto.randomBytes(32);
     kdf = vaultCore.KDF_HKDF;
     vaultUsePasswordMode = false;
@@ -5662,8 +9321,8 @@ ipcMain.handle('vault-rekey', (event, payload = {}) => {
   const rr = vaultHandle.rekey(key, { kdf });
   if (!rr.ok) return { success: false, reason: rr.reason };
   persistVaultState();
-  const keyPersisted = vaultUsePasswordMode ? true : persistVaultKey(key);
-  return { success: true, keyPersisted, ...rr, ...vaultStatusSnapshot() };
+  if (!vaultUsePasswordMode) persistVaultKey(key);
+  return { success: true, ...rr, ...vaultStatusSnapshot() };
 });
 
 // vault-export-backup：返回密文 JSON 文本（不含密钥/明文），供用户自行保存。
@@ -5861,24 +9520,6 @@ ipcMain.handle('set-download-rate-limit', (event, payload = {}) => {
   return { success: true, bytesPerSecond: downloadRateLimit };
 });
 
-ipcMain.handle('get-download-max-bytes', (event) => {
-  if (!isMainSender(event)) return { success: false };
-  return { success: true, bytes: downloadMaxBytes };
-});
-
-ipcMain.handle('set-download-max-bytes', (event, payload = {}) => {
-  if (!isMainSender(event)) return { success: false };
-  const raw = Number(payload && payload.bytes);
-  if (!Number.isFinite(raw) || raw < 0) return { success: false, reason: 'invalid-limit' };
-  downloadMaxBytes = downloadSizeGuard.normalizeLimit(raw);
-  try {
-    const settingsPath = path.join(app.getPath('userData'), 'cosySettings.json');
-    const cur = ledgerStore.readJSONStore(settingsPath, {});
-    ledgerStore.writeJSONStore(settingsPath, sanitizeSettings(Object.assign({}, cur, { downloadMaxBytes })), { pretty: true });
-  } catch (e) { console.error('保存下载体积上限失败:', e); }
-  return { success: true, bytes: downloadMaxBytes };
-});
-
 ipcMain.handle('get-download-journal', (event, payload = {}) => {
   const requested = Number.isInteger(payload.limit) && payload.limit > 0 ? payload.limit : 50;
   const limit = Math.min(requested, downloadJournalModule.DEFAULT_MAX_ENTRIES);
@@ -5902,7 +9543,17 @@ ipcMain.handle('get-download-journal', (event, payload = {}) => {
 
 ipcMain.handle('reconcile-download-journal', (event) => {
   if (!isMainSender(event)) return { success: false };
-  const result = getDownloadJournal().reconcile(downloadJournalFileProbe());
+  const result = getDownloadJournal().reconcile({
+    exists: (target) => {
+      try { return fsSync.statSync(target).isFile(); } catch { return false; }
+    },
+    sizeOf: (target) => {
+      try {
+        const stat = fsSync.statSync(target);
+        return stat.isFile() ? stat.size : null;
+      } catch { return null; }
+    },
+  });
   return {
     success: result.ok,
     summary: result.summary,
@@ -6010,13 +9661,45 @@ const SITE_DATA_MAX_ROWS = 500;
 const SITE_DATA_MAX_NAMES = 10;
 const SITE_DATA_SEARCH_MAX = 200;
 
+function normalizeCookieDomain(domain) {
+  if (typeof domain !== 'string' || !domain) return '';
+  return domain.startsWith('.') ? domain.slice(1) : domain;
+}
 
+function cookieOriginSchemes(cookie) {
+  // secure cookie 只能在 https 下删除；非 secure 的在两种 scheme 都试一次。
+  return cookie.secure ? ['https'] : ['https', 'http'];
+}
 
+async function removeCookieEntry(cookie) {
+  const host = normalizeCookieDomain(cookie.domain);
+  const urlPath = cookie.path && cookie.path.startsWith('/') ? cookie.path : '/';
+  let lastError = null;
+  for (const scheme of cookieOriginSchemes(cookie)) {
+    try {
+      await session.defaultSession.cookies.remove(`${scheme}://${host}${urlPath}`, cookie.name);
+      return;
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  throw lastError || new Error('删除 Cookie 失败');
+}
 
-
-
-
-
+function pickCookieFields(c) {
+  return {
+    name: c.name,
+    value: c.value,
+    domain: c.domain,
+    path: c.path,
+    secure: !!c.secure,
+    httpOnly: !!c.httpOnly,
+    session: !!c.session,
+    hostOnly: !!c.hostOnly,
+    sameSite: c.sameSite || 'unspecified',
+    expirationDate: typeof c.expirationDate === 'number' ? c.expirationDate : null,
+  };
+}
 
 // 汇总每个域名下的 Cookie 数量与名称样本，供管理页列表使用。
 ipcMain.handle('list-site-data', async (event, payload = {}) => {
@@ -6156,7 +9839,68 @@ const SUGGEST_TIMEOUT_MS = 2500;
 // 一律回落内核默认（bing）。
 let searchProviderId = searchProvider.DEFAULT_PROVIDER_ID;
 
+function fetchSearchSuggestions(query) {
+  return new Promise((resolve) => {
+    // 模板经内核校验；buildSuggestUrl 返回 null（provider 无建议接口 / 校验失败）
+    // 时静默回落空列表，绝不拼接裸 query 构造 URL。
+    const url = searchProvider.buildSuggestUrl(searchProviderId, query);
+    if (!url) return resolve([]);
+    let settled = false;
+    let request;
+    try {
+      request = net.request({ url, redirect: 'error' });
+    } catch {
+      return resolve([]);
+    }
+    const finish = (list) => {
+      if (!settled) { settled = true; resolve(list); }
+    };
+    const timer = setTimeout(() => {
+      try { request.abort(); } catch {}
+      finish([]);
+    }, SUGGEST_TIMEOUT_MS);
 
+    const chunks = [];
+    // 流式字节预算：建议接口是极小 JSON，收到超过上限立即 destroy，不再拼接后续
+    // 数据块，避免被异常 / 被劫持接口用超大 body 打爆主进程内存。
+    const budget = suggestionGuard.createByteBudget(suggestionGuard.SUGGEST_DEFAULT_MAX_BYTES);
+    let oversized = false;
+    request.on('response', (response) => {
+      const ct = (response.headers['content-type'] || []).join('').toLowerCase();
+      // osjson 正常返回 json；跟随到别的类型直接丢弃。
+      if (response.statusCode !== 200 || !ct.includes('json')) {
+        clearTimeout(timer);
+        try { response.destroy(); } catch {}
+        return finish([]);
+      }
+      response.on('data', (c) => {
+        if (oversized) return;
+        if (!budget.accept(c)) {
+          oversized = true;
+          try { response.destroy(); } catch {}
+          finish([]);
+          return;
+        }
+        chunks.push(c);
+      });
+      response.on('end', () => {
+        clearTimeout(timer);
+        if (oversized) return;
+        // 结构固化、逐条消毒 / 去重 / 限量统一走 suggestionguard 内核，
+        // 不再在 IPC 里手写 JSON.parse + 字符串判断。
+        const parsed = suggestionGuard.parseOpenSearchSuggestions(Buffer.concat(chunks), {
+          maxBytes: suggestionGuard.SUGGEST_DEFAULT_MAX_BYTES,
+          maxItems: SUGGEST_MAX_ITEMS,
+          itemMaxChars: 100,
+        });
+        finish(parsed.ok ? parsed.suggestions : []);
+      });
+      response.on('error', () => { clearTimeout(timer); finish([]); });
+    });
+    request.on('error', () => { clearTimeout(timer); finish([]); });
+    try { request.end(); } catch { clearTimeout(timer); finish([]); }
+  });
+}
 
 ipcMain.handle('get-search-suggestions', async (event, payload = {}) => {
   if (!isMainSender(event)) return { success: false, suggestions: [] };
