@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -71,26 +72,16 @@ function inspectPriority(value) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK:
-      return 'priority 合规';
-    case REASON.MISSING:
-      return '响应未声明 priority 请求优先级';
-    case REASON.MALFORMED:
-      return 'priority 取值非法';
-    case REASON.OVERLONG:
-      return 'priority 超长';
-    case REASON.UNKNOWN_KEY:
-      return 'priority 含未知键，已剔除';
-    case REASON.BAD_URGENCY:
-      return 'priority 紧急度超出 0..7';
-    case REASON.BAD_INCREMENTAL:
-      return 'priority 增量标记取值非法';
-    case REASON.DUPLICATE_KEY:
-      return 'priority 重复键已去重';
-    default:
-      return 'priority 未识别状态';
-  }
+  return describeReasonFrom({
+    [REASON.OK]: 'priority 合规',
+    [REASON.MISSING]: '响应未声明 priority 请求优先级',
+    [REASON.MALFORMED]: 'priority 取值非法',
+    [REASON.OVERLONG]: 'priority 超长',
+    [REASON.UNKNOWN_KEY]: 'priority 含未知键，已剔除',
+    [REASON.BAD_URGENCY]: 'priority 紧急度超出 0..7',
+    [REASON.BAD_INCREMENTAL]: 'priority 增量标记取值非法',
+    [REASON.DUPLICATE_KEY]: 'priority 重复键已去重',
+  }, reason, 'priority 未识别状态');
 }
 
 function applyPriorityGuard(headers) {
