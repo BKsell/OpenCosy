@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { headerKey, headerText } = require('./headerutil');
 
@@ -93,18 +94,12 @@ function applyAuthCacheGuard(headers) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.AUTH_CACHEABLE:
-      return '携带凭据的响应缺少 private/no-store';
-    case REASON.SHARED_CACHE:
-      return '携带凭据的响应允许共享缓存';
-    case REASON.MALFORMED:
-      return 'Cache-Control 取值非法或超长';
-    case REASON.MISSING:
-      return '携带 Set-Cookie 的响应完全没有缓存指令';
-    default:
-      return '缓存策略安全';
-  }
+  return describeReasonFrom({
+    [REASON.AUTH_CACHEABLE]: '携带凭据的响应缺少 private/no-store',
+    [REASON.SHARED_CACHE]: '携带凭据的响应允许共享缓存',
+    [REASON.MALFORMED]: 'Cache-Control 取值非法或超长',
+    [REASON.MISSING]: '携带 Set-Cookie 的响应完全没有缓存指令',
+  }, reason, '缓存策略安全');
 }
 
 module.exports = {
