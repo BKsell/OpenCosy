@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { hasControlCharsV2, listValues } = require('./modutil');
 const hasControlChars = hasControlCharsV2;
@@ -37,24 +38,15 @@ function inspectDownloadOptions(rawValues) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK:
-      return 'x-download-options 合规';
-    case REASON.MISSING:
-      return '响应未声明 x-download-options';
-    case REASON.MALFORMED:
-      return 'x-download-options 取值为空';
-    case REASON.OVERLONG:
-      return 'x-download-options 超长';
-    case REASON.UNKNOWN_VALUE:
-      return 'x-download-options 非 noopen，已剥除';
-    case REASON.MULTIPLE_VALUES:
-      return 'x-download-options 多值冲突，已剥除';
-    case REASON.UNSAFE_CHARS:
-      return 'x-download-options 含控制字符，已剥除';
-    default:
-      return 'x-download-options 未识别状态';
-  }
+  return describeReasonFrom({
+    [REASON.OK]: 'x-download-options 合规',
+    [REASON.MISSING]: '响应未声明 x-download-options',
+    [REASON.MALFORMED]: 'x-download-options 取值为空',
+    [REASON.OVERLONG]: 'x-download-options 超长',
+    [REASON.UNKNOWN_VALUE]: 'x-download-options 非 noopen，已剥除',
+    [REASON.MULTIPLE_VALUES]: 'x-download-options 多值冲突，已剥除',
+    [REASON.UNSAFE_CHARS]: 'x-download-options 含控制字符，已剥除',
+  }, reason, 'x-download-options 未识别状态');
 }
 
 function applyXDownloadOptionsGuard(headers) {
