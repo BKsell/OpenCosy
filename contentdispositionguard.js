@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { headerKey } = require('./headerutil');
 
@@ -160,20 +161,13 @@ function applyContentDispositionGuard(headers) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.INLINE_RISKY:
-      return '危险类型被标记为内联展示，会在本站渲染';
-    case REASON.BAD_FILENAME:
-      return '下载文件名含路径分隔符或非法字节';
-    case REASON.MALFORMED:
-      return 'Content-Disposition 语法非法';
-    case REASON.TOO_LONG:
-      return 'Content-Disposition 取值超长';
-    case REASON.MISSING:
-      return '响应未声明内容处置方式';
-    default:
-      return '内容处置方式安全';
-  }
+  return describeReasonFrom({
+    [REASON.INLINE_RISKY]: '危险类型被标记为内联展示，会在本站渲染',
+    [REASON.BAD_FILENAME]: '下载文件名含路径分隔符或非法字节',
+    [REASON.MALFORMED]: 'Content-Disposition 语法非法',
+    [REASON.TOO_LONG]: 'Content-Disposition 取值超长',
+    [REASON.MISSING]: '响应未声明内容处置方式',
+  }, reason, '内容处置方式安全');
 }
 
 module.exports = {
