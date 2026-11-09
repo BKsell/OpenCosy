@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { lowerKeys } = require('./headerutil');
 
@@ -133,20 +134,13 @@ function applyAltSvcGuard(headers, details) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.CROSS_ORIGIN:
-      return 'Alt-Svc 指向了跨源主机';
-    case REASON.CLEAR_DIRECTIVE:
-      return 'Alt-Svc 下发 clear 指令';
-    case REASON.MALFORMED:
-      return 'Alt-Svc 结构非法';
-    case REASON.TOO_MANY:
-      return 'Alt-Svc 条目过多';
-    case REASON.BAD_PORT:
-      return 'Alt-Svc 端口非法';
-    default:
-      return 'Alt-Svc 通过校验';
-  }
+  return describeReasonFrom({
+    [REASON.CROSS_ORIGIN]: 'Alt-Svc 指向了跨源主机',
+    [REASON.CLEAR_DIRECTIVE]: 'Alt-Svc 下发 clear 指令',
+    [REASON.MALFORMED]: 'Alt-Svc 结构非法',
+    [REASON.TOO_MANY]: 'Alt-Svc 条目过多',
+    [REASON.BAD_PORT]: 'Alt-Svc 端口非法',
+  }, reason, 'Alt-Svc 通过校验');
 }
 
 module.exports = {
