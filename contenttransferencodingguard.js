@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { countValues, firstValue, headerKey } = require('./headerutil');
 
@@ -49,20 +50,13 @@ function applyTransferEncodingGuard(headers) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.MALFORMED:
-      return 'Content-Transfer-Encoding 取值非法，已剥除';
-    case REASON.OVERLONG:
-      return 'Content-Transfer-Encoding 字段超长，已剥除';
-    case REASON.LEGACY:
-      return 'HTTP 响应使用 MIME 传统编码，已剥除';
-    case REASON.MULTI_VALUE:
-      return 'Content-Transfer-Encoding 多头下发，已剥除';
-    case REASON.MISSING:
-      return '响应未声明 Content-Transfer-Encoding';
-    default:
-      return 'Content-Transfer-Encoding 为直通编码';
-  }
+  return describeReasonFrom({
+    [REASON.MALFORMED]: 'Content-Transfer-Encoding 取值非法，已剥除',
+    [REASON.OVERLONG]: 'Content-Transfer-Encoding 字段超长，已剥除',
+    [REASON.LEGACY]: 'HTTP 响应使用 MIME 传统编码，已剥除',
+    [REASON.MULTI_VALUE]: 'Content-Transfer-Encoding 多头下发，已剥除',
+    [REASON.MISSING]: '响应未声明 Content-Transfer-Encoding',
+  }, reason, 'Content-Transfer-Encoding 为直通编码');
 }
 
 module.exports = {
