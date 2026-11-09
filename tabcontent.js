@@ -11,6 +11,7 @@ const winPolicy = require('./winpolicy');
 
 function loadTabContent(ctx, tab) {
   const {
+    CONFIRMABLE_EXTERNAL_SCHEMES,
     addToHistory,
     addToReadingList,
     allowPopupForTab,
