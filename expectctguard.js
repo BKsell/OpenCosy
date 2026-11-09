@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -64,24 +65,15 @@ function inspectExpectCt(value) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK:
-      return 'expect-ct 取值合规但该响应头已废弃';
-    case REASON.MISSING:
-      return '响应未声明 expect-ct';
-    case REASON.MALFORMED:
-      return 'expect-ct 指令非法';
-    case REASON.OVERLONG:
-      return 'expect-ct 超长';
-    case REASON.DEPRECATED:
-      return 'expect-ct 已废弃，整头剥除';
-    case REASON.REPORT_URI_LEAK:
-      return 'expect-ct 携带 report-uri 上报地址，已剥除';
-    case REASON.UNSAFE_MAX_AGE:
-      return 'expect-ct 缓存时长超出上限，已剥除';
-    default:
-      return 'expect-ct 未识别状态';
-  }
+  return describeReasonFrom({
+    [REASON.OK]: 'expect-ct 取值合规但该响应头已废弃',
+    [REASON.MISSING]: '响应未声明 expect-ct',
+    [REASON.MALFORMED]: 'expect-ct 指令非法',
+    [REASON.OVERLONG]: 'expect-ct 超长',
+    [REASON.DEPRECATED]: 'expect-ct 已废弃，整头剥除',
+    [REASON.REPORT_URI_LEAK]: 'expect-ct 携带 report-uri 上报地址，已剥除',
+    [REASON.UNSAFE_MAX_AGE]: 'expect-ct 缓存时长超出上限，已剥除',
+  }, reason, 'expect-ct 未识别状态');
 }
 
 function applyExpectCtGuard(headers) {
