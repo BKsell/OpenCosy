@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -70,26 +71,16 @@ function applyImportPayloadGuard(text) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.INVALID_INPUT:
-      return '导入内容不是文本';
-    case REASON.TOO_LARGE:
-      return '导入文件超过体积上限';
-    case REASON.PARSE_ERROR:
-      return '导入文件不是合法 JSON';
-    case REASON.TOO_DEEP:
-      return '导入 JSON 嵌套层级过深';
-    case REASON.TOO_MANY_ENTRIES:
-      return '导入 JSON 节点数量过多';
-    case REASON.TOO_LONG_STRING:
-      return '导入 JSON 字符串超长';
-    case REASON.FORBIDDEN_KEY:
-      return '导入 JSON 包含原型污染键名';
-    case REASON.NOT_FINITE:
-      return '导入 JSON 包含非有限数值';
-    default:
-      return '导入 JSON 结构合法';
-  }
+  return describeReasonFrom({
+    [REASON.INVALID_INPUT]: '导入内容不是文本',
+    [REASON.TOO_LARGE]: '导入文件超过体积上限',
+    [REASON.PARSE_ERROR]: '导入文件不是合法 JSON',
+    [REASON.TOO_DEEP]: '导入 JSON 嵌套层级过深',
+    [REASON.TOO_MANY_ENTRIES]: '导入 JSON 节点数量过多',
+    [REASON.TOO_LONG_STRING]: '导入 JSON 字符串超长',
+    [REASON.FORBIDDEN_KEY]: '导入 JSON 包含原型污染键名',
+    [REASON.NOT_FINITE]: '导入 JSON 包含非有限数值',
+  }, reason, '导入 JSON 结构合法');
 }
 
 module.exports = {
