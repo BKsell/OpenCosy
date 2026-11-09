@@ -2146,113 +2146,28 @@ let certExceptionsLoaded = false;
 let certExceptionSaveTimer = null;
 const certChallenges = new Map(); // nonce -> 拦截上下文
 
-function loadCertExceptions() {
-  if (certExceptionsLoaded) return;
-  certExceptionsLoaded = true;
-  try {
-    const data = ledgerStore.readJSONStore(certExceptionStorePath, {});
-    if (data && Array.isArray(data.exceptions)) {
-      for (const raw of data.exceptions) {
-        const rec = certGuard.sanitizeExceptionRecord(raw);
-        if (rec) certExceptions.push(rec);
-      }
-      if (certExceptions.length > MAX_CERT_EXCEPTIONS) {
-        certExceptions = certExceptions.slice(-MAX_CERT_EXCEPTIONS);
-      }
-    }
-  } catch {}
-}
 
-function persistCertExceptions() {
-  if (certExceptionSaveTimer) clearTimeout(certExceptionSaveTimer);
-  certExceptionSaveTimer = setTimeout(() => {
-    try {
-      ledgerStore.writeJSONStore(certExceptionStorePath, { version: 1, savedAt: Date.now(), exceptions: certExceptions });
-    } catch {}
-  }, 1000);
-}
+
+
 
 // certExceptionAllowed 判断当前失败事件是否命中已批准的“主机+指纹”例外。
-function certExceptionAllowed(url, certificate) {
-  const verdict = certGuard.classifyCertError({ url, certificate });
-  if (!verdict.host || !verdict.cert || !verdict.cert.fingerprint) return false;
-  loadCertExceptions();
-  return certExceptions.some(e => certGuard.exceptionMatches(e, {
-    host: verdict.host,
-    fingerprint: verdict.cert.fingerprint,
-  }));
-}
 
-function addCertException(url, certificate, code) {
-  const entry = certGuard.createException({ host: url, certificate, code });
-  if (!entry) return false;
-  loadCertExceptions();
-  const idx = certExceptions.findIndex(e =>
-    e.host === entry.host && e.fingerprint === entry.fingerprint);
-  if (idx >= 0) {
-    certExceptions.splice(idx, 1);
-  } else if (certExceptions.length >= MAX_CERT_EXCEPTIONS) {
-    certExceptions.shift(); // 台账满了淘汰最旧的一条
-  }
-  certExceptions.push(entry);
-  persistCertExceptions();
-  return true;
-}
 
-function removeCertException(host, fingerprint) {
-  loadCertExceptions();
-  const h = certGuard.normalizeHost(host);
-  const fp = certGuard.normalizeFingerprint(fingerprint);
-  const before = certExceptions.length;
-  certExceptions = certExceptions.filter(e =>
-    !(e.host === h && (!fp || e.fingerprint === fp)));
-  if (certExceptions.length !== before) persistCertExceptions();
-  return true;
-}
 
-function clearCertExceptions() {
-  loadCertExceptions();
-  certExceptions = [];
-  try { fsSync.unlinkSync(certExceptionStorePath); } catch {}
-  persistCertExceptions();
-  return true;
-}
 
-function listCertExceptionEntries(limit = 200) {
-  loadCertExceptions();
-  const n = Math.max(1, Math.min(Number(limit) || 200, MAX_CERT_EXCEPTIONS));
-  return certExceptions.slice(-n).reverse().map(e => ({ ...e }));
-}
 
-function getCertExceptionStats() {
-  loadCertExceptions();
-  const hosts = new Set(certExceptions.map(e => e.host));
-  return { exceptions: certExceptions.length, hosts: hosts.size };
-}
+
+
+
+
+
+
 
 // makeCertChallenge 为一次拦截生成一次性 nonce，供渲染进程“仍要前往”回传。
-function makeCertChallenge(verdict, webContentsId) {
-  const nonce = require('crypto').randomBytes(16).toString('hex');
-  certChallenges.set(nonce, {
-    host: verdict.host,
-    code: verdict.code,
-    fingerprint: verdict.cert ? verdict.cert.fingerprint : '',
-    webContentsId,
-    createdAt: Date.now(),
-  });
-  setTimeout(() => certChallenges.delete(nonce), CERT_CHALLENGE_TTL).unref?.();
-  return nonce;
-}
+
 
 // consumeCertChallenge 取出并销毁一次挑战，返回 null 表示过期/伪造。
-function consumeCertChallenge(nonce) {
-  if (typeof nonce !== 'string' || nonce.length !== 32) return null;
-  const c = certChallenges.get(nonce);
-  if (!c) return null;
-  certChallenges.delete(nonce);
-  if (Date.now() - c.createdAt > CERT_CHALLENGE_TTL) return null;
-  return c;
-}
+
 
 // 证书校验失败：默认阻止。命中已批准例外才放行；否则向主界面推送全屏
 // 拦截页（仅主框架导航）。证书对象在送渲染进程前经 summarizeCertificate
@@ -2356,9 +2271,7 @@ let clientCertSaveTimer = null;
 // 等待渲染层返回；统一放 Map 里，超时或窗口关闭时统一取消，绝不遗留悬挂回调。
 const pendingAuthChallenges = new Map();
 
-function netAuthNonce() {
-  return 'na-' + netAuthCrypto.randomBytes(12).toString('hex');
-}
+
 
 function loadClientCertChoices() {
   if (clientCertStoreLoaded) return;
@@ -2382,9 +2295,7 @@ function persistClientCertChoices() {
 
 // failAuthCallback 在“不弹框 / 超时 / 窗口关闭”等路径上安全地兑现一个空凭据，
 // 让请求以未认证失败，而不是卡住或回退到系统默认行为。
-function failAuthCallback(callback) {
-  try { callback(); } catch {}
-}
+
 
 function rejectAuthChallenge(nonce) {
   const c = pendingAuthChallenges.get(nonce);
@@ -2395,27 +2306,10 @@ function rejectAuthChallenge(nonce) {
   return true;
 }
 
-function authEventOrigin(webContents) {
-  if (!webContents || typeof webContents.getURL !== 'function') return '';
-  return urlResolve.safeOrigin(webContents.getURL(), '');
-}
+
 
 // sanitizeCertPickList 只把证书的非敏感摘要给渲染层，绝不传证书对象本体。
-function sanitizeCertPickList(certificateList) {
-  const out = [];
-  const list = Array.isArray(certificateList) ? certificateList : [];
-  for (let i = 0; i < list.length && i < MAX_CLIENT_CERT_PICK_CHARS; i++) {
-    const s = netAuthGuard.summarizeClientCert(list[i]);
-    out.push({
-      index: i,
-      fingerprint: s.fingerprint,
-      issuer: s.issuer,
-      subject: s.subject,
-      serialNumber: s.serialNumber,
-    });
-  }
-  return out;
-}
+
 
 function setupNetworkAuth() {
   loadClientCertChoices();
@@ -2690,6 +2584,28 @@ const vaultmain = require('./vaultmain');
 const readerbridge = require('./readerbridge');
 const extensionstoremain = require('./extensionstoremain');
 const externalcall = require('./externalcall');
+const certledger = require('./certledger');
+const { loadCertExceptions, persistCertExceptions, addCertException, removeCertException, clearCertExceptions, certExceptionAllowed, getCertExceptionStats, listCertExceptionEntries, sanitizeCertPickList, makeCertChallenge, consumeCertChallenge, failAuthCallback, authEventOrigin, netAuthNonce } = certledger;
+certledger.bindDeps({
+  get CERT_CHALLENGE_TTL() { return CERT_CHALLENGE_TTL; },
+  get MAX_CERT_EXCEPTIONS() { return MAX_CERT_EXCEPTIONS; },
+  get MAX_CLIENT_CERT_PICK_CHARS() { return MAX_CLIENT_CERT_PICK_CHARS; },
+  get certChallenges() { return certChallenges; },
+  get certExceptionSaveTimer() { return certExceptionSaveTimer; },
+  set certExceptionSaveTimer(v) { certExceptionSaveTimer = v; },
+  get certExceptionStorePath() { return certExceptionStorePath; },
+  get certExceptions() { return certExceptions; },
+  set certExceptions(v) { certExceptions = v; },
+  get certExceptionsLoaded() { return certExceptionsLoaded; },
+  set certExceptionsLoaded(v) { certExceptionsLoaded = v; },
+  get certGuard() { return certGuard; },
+  get fsSync() { return fsSync; },
+  get ledgerStore() { return ledgerStore; },
+  get netAuthCrypto() { return netAuthCrypto; },
+  get netAuthGuard() { return netAuthGuard; },
+  get urlResolve() { return urlResolve; }
+});
+
 const { launchExternalWithPrompt, classifyFrameNavigation, handleFrameNavigationAttempt, confirmAndOpenExternal } = externalcall;
 externalcall.bindDeps({
   get CONFIRMABLE_EXTERNAL_SCHEMES() { return CONFIRMABLE_EXTERNAL_SCHEMES; },
