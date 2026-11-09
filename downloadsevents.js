@@ -23,6 +23,7 @@ const quarantine = require('./quarantine');
 
 function handleDownloadEvent(ctx, event, item, webContents) {
   const {
+    queueDownloadHashing,
     analyzeDownloadSafety,
     applyRateLimitToItem,
     confirmDownloadDecision,
