@@ -16,19 +16,9 @@ const cookieGuard = require('./cookieguard');
 const pnaGuard = require('./pna');
 const fpGuard = require('./fpguard');
 
-function noteGuardResult(label, result, url, shouldLog) {
-  if (result.changed && shouldLog) {
-    recordSecurityEvent('mixed-content-blocked', 'warn', `${label}:${result.reason}`, fpGuard.hostOf(url));
-  }
-  return result;
-}
+function noteGuardResult(...a) { return cosyguardmainMod.noteGuardResult(...a); }
 
-function noteGuardDenied(label, result, url, shouldLog) {
-  if (!result.allowed && shouldLog) {
-    recordSecurityEvent('mixed-content-blocked', 'warn', `${label}:${result.reason}`, fpGuard.hostOf(url));
-  }
-  return result;
-}
+function noteGuardDenied(...a) { return cosyguardmainMod.noteGuardDenied(...a); }
 
 const corsGuard = require('./corsmisconfigguard');
 const authChallengeGuard = require('./httpauthchallengeguard');
@@ -351,17 +341,7 @@ const POPUP_WINDOW_MAX = 3;
 const POPUP_WINDOW_MS = 5000;
 const popupOpenTimes = new Map();
 
-function allowPopupForTab(tabId) {
-  const now = Date.now();
-  const times = (popupOpenTimes.get(tabId) || []).filter(t => now - t < POPUP_WINDOW_MS);
-  if (times.length >= POPUP_WINDOW_MAX) {
-    popupOpenTimes.set(tabId, times);
-    return false;
-  }
-  times.push(now);
-  popupOpenTimes.set(tabId, times);
-  return true;
-}
+function allowPopupForTab(...a) { return cosyguardmainMod.allowPopupForTab(...a); }
 
 // httpsOnlyEnabled 是运行时开关，默认 true；用户可以在设置里关掉。
 // onBeforeRequest 据此决定是否把 http:// 升级成 https://。
@@ -461,14 +441,7 @@ const RAW_IPC_SEND_ALLOWED = new Set([
 const RAW_IPC_SYNC_ALLOWED = new Set();
 
 // getContentsState 读取按需创建的 per-contents 小状态；destroyed 时统一清理。
-function getContentsState(map, id, create) {
-  let st = map.get(id);
-  if (!st) {
-    st = create(Date.now());
-    map.set(id, st);
-  }
-  return st;
-}
+function getContentsState(...a) { return cosyguardmainMod.getContentsState(...a); }
 // 本次会话累计拦截数与按域名计数，渲染层用来显示“已拦截 N 个追踪器”。
 let blockedTrackerCount = 0;
 const blockedTrackerByHost = new Map();
@@ -559,66 +532,24 @@ let compiledCustomRules = blockRules.compileRules(customRules);
 let customRulesLoaded = false;
 let customRulesFile = '';
 
-function reloadCustomRules() {
-  compiledCustomRules = blockRules.compileRules(customRules);
-}
+function reloadCustomRules(...a) { return cosyguardmainMod.reloadCustomRules(...a); }
 
-function loadCustomRulesFromDisk(filePath) {
-  customRulesFile = filePath;
-  if (!customRulesLoaded) {
-    const loaded = blockRules.loadRules(filePath);
-    customRules.host = loaded.host;
-    customRules.glob = loaded.glob;
-    customRules.path = loaded.path;
-    customRulesLoaded = true;
-    reloadCustomRules();
-  }
-}
+function loadCustomRulesFromDisk(...a) { return cosyguardmainMod.loadCustomRulesFromDisk(...a); }
 
-function persistCustomRules() {
-  if (!customRulesFile) return { ok: false, reason: 'no-file' };
-  const r = blockRules.saveRules(customRulesFile, customRules);
-  reloadCustomRules();
-  return r;
-}
+function persistCustomRules(...a) { return cosyguardmainMod.persistCustomRules(...a); }
 
 // hostMatchesTracker 判断主机是否为已知追踪域（精确或其子域）。
 // 归一化（小写/去尾点）与精确-子域边界判断统一由 hostmatch 内核负责，
 // 避免与 Cookie 归属、私网判定各写一套口径。
-function hostMatchesTracker(hostname) {
-  return hostMatch.hostMatchesList(hostname, TRACKER_HOSTS);
-}
+function hostMatchesTracker(...a) { return cosyguardmainMod.hostMatchesTracker(...a); }
 
 // isTrackerRequest 只拦子资源，顶层框架 / iframe 框架文档一律放行，避免误伤导航。
 // 自定义规则优先（decideBlocked 先查 host/glob/path），内置列表兜底。
-function isTrackerRequest(details) {
-  if (!blockTrackers) return false;
-  const rt = details.resourceType;
-  if (rt === 'mainFrame' || rt === 'subFrame') return false;
-  let host = '';
-  try { host = new URL(details.url).hostname; } catch { return false; }
-  const decision = blockRules.decideBlocked(details.url, compiledCustomRules, TRACKER_HOSTS);
-  if (decision) return true;
-  return hostMatchesTracker(host);
-}
+function isTrackerRequest(...a) { return cosyguardmainMod.isTrackerRequest(...a); }
 
-function recordBlockedTracker(url) {
-  blockedTrackerCount += 1;
-  const host = urlResolve.safeHostname(url, '(unknown)');
-  blockedTrackerByHost.set(host, (blockedTrackerByHost.get(host) || 0) + 1);
-  sendToRenderer('trackers-blocked', {
-    count: blockedTrackerCount,
-    host,
-    top: topBlockedHosts(),
-  });
-}
+function recordBlockedTracker(...a) { return cosyguardmainMod.recordBlockedTracker(...a); }
 
-function topBlockedHosts() {
-  return [...blockedTrackerByHost.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 8)
-    .map(([host, n]) => ({ host, n }));
-}
+function topBlockedHosts(...a) { return cosyguardmainMod.topBlockedHosts(...a); }
 
 // ===== 导航 URL 追踪参数剥离（privacy hygiene）=====
 // stripTrackingParams：地址栏直接打开 / 跳转的顶层页面，去掉 utm_*、fbclid、gclid 等
@@ -637,33 +568,10 @@ const TRACKING_QUERY_KEYS = new Set([
 // 按前缀匹配的追踪参数名（小写），覆盖 utm_source / utm_medium / utm_campaign 等整族。
 const TRACKING_QUERY_PREFIXES = ['utm_', 'pk_', 'piwik_', 'matomo_', 'ga_', 'oasid_'];
 
-function isTrackingQueryKey(rawKey) {
-  const key = String(rawKey || '').toLowerCase();
-  if (!key) return false;
-  if (TRACKING_QUERY_KEYS.has(key)) return true;
-  return TRACKING_QUERY_PREFIXES.some(p => key.startsWith(p));
-}
+function isTrackingQueryKey(...a) { return cosyguardmainMod.isTrackingQueryKey(...a); }
 
 // 返回剥离追踪参数后的 URL；没有可删参数时返回 null（调用方据此避免无谓重定向）。
-function stripTrackingFromUrl(rawUrl) {
-  if (!stripTrackingParams) return null;
-  if (!(rawUrl.startsWith('http://') || rawUrl.startsWith('https://'))) return null;
-  let u;
-  try { u = new URL(rawUrl); } catch { return null; }
-  if (!u.search) return null;
-  const params = u.searchParams;
-  let removed = false;
-  // 先收集再删，避免边遍历边改。
-  const keys = [];
-  for (const key of params.keys()) keys.push(key);
-  for (const key of keys) {
-    if (isTrackingQueryKey(key)) { params.delete(key); removed = true; }
-  }
-  if (!removed) return null;
-  const query = u.searchParams.toString();
-  const rebuilt = u.origin + u.pathname + (query ? '?' + query : '') + u.hash;
-  return rebuilt === rawUrl ? null : rebuilt;
-}
+function stripTrackingFromUrl(...a) { return cosyguardmainMod.stripTrackingFromUrl(...a); }
 
 // ===== 同形异义（homograph / IDN）反钓鱼提示 =====
 // 只“提示”不拦截：对包含非 ASCII（含西里尔/希腊等与拉丁形近的字符）或易混拉丁字符、
@@ -675,41 +583,9 @@ const SKEW_LATIN_HOSTS = new Set([
 ]);
 
 // 主机里只要出现这些码位就视为“可能在冒充拉丁字母”。
-function hostnameHasSuspiciousChars(hostname) {
-  // 非 ASCII：IDN（punycode 解码后的 unicode 主机），本身不是错，但组合常见品牌词要提醒。
-  // eslint-disable-next-line no-control-regex
-  if (/[^\x00-\x7F]/.test(hostname)) return 'nonascii';
-  // 纯拉丁里的易混对：数字/特殊形替字母（如 0 替 o、1 替 l、rn 替 m 由调用方另判）。
-  if (/\d/.test(hostname)) {
-    const label = hostname.split('.')[0].toLowerCase();
-    if (SKEW_LATIN_HOSTS.has(label.replace(/[0-9]/g, ''))) return 'digit-lookalike';
-  }
-  return null;
-}
+function hostnameHasSuspiciousChars(...a) { return cosyguardmainMod.hostnameHasSuspiciousChars(...a); }
 
-function analyzeHostForSpoof(hostname) {
-  if (!hostname) return null;
-  const h = hostname.toLowerCase().replace(/\.$/, '');
-  const labels = h.split('.');
-  const registrable = labels.length >= 2 ? labels[labels.length - 2] : labels[0];
-  // 含非 ASCII，且品牌主体与已知拉丁品牌高度重合（去掉非拉丁后等于某品牌）→ 高危提示。
-  // eslint-disable-next-line no-control-regex
-  if (/[^\x00-\x7F]/.test(registrable)) {
-    const asciiOnly = registrable.replace(/[^\x21-\x7e]/g, '');
-    // 混合脚本：同一主体里既有拉丁又有非拉丁，是 homograph 攻击最典型特征。
-    // eslint-disable-next-line no-control-regex
-    const hasLatin = /[a-z]/.test(registrable);
-    const hasNonLatin = /[^\x00-\x7fa-z0-9.-]/.test(registrable);
-    if (hasLatin && hasNonLatin) {
-      return { reason: 'mixed-script', hostname: h, hint: asciiOnly };
-    }
-  }
-  const suspicious = hostnameHasSuspiciousChars(h);
-  if (suspicious === 'digit-lookalike') {
-    return { reason: 'digit-lookalike', hostname: h, hint: registrable };
-  }
-  return null;
-}
+function analyzeHostForSpoof(...a) { return cosyguardmainMod.analyzeHostForSpoof(...a); }
 
 // ===== Referrer 收敛（默认 strict-origin-when-cross-origin 语义）=====
 // 网页自己的 <meta name=referrer> / 页面策略由 Chromium 处理；这里兜底修正 Electron
@@ -718,12 +594,7 @@ function analyzeHostForSpoof(hostname) {
 //   - 同源：保留完整 Referer；
 //   - 跨源且安全等级不降低：收敛为源（origin/）；
 //   - https → http 降级：直接去除 Referer。
-function originOf(u) {
-  // Referer 收敛需要用 null 表达"无法解析/无同源源"，保持原语义。
-  return urlResolve.safeOrigin(u, null);
-}
-
-
+function originOf(...a) { return cosyguardmainMod.originOf(...a); }
 
 // clearOnExit：退出时自动清空缓存 / Cookie / 站点存储 / 历史 / 下载记录（隐私模式）。
 // confirmCloseMultiple：仍有多个标签页时点 × 先二次确认，防止误关整窗。
@@ -754,73 +625,24 @@ let spellcheckLanguages = DEFAULT_SPELLCHECK_LANGUAGES.slice();
 
 // sanitizeSpellcheckLanguages 归一化语言数组：去重、限数量、白名单校验。
 // 空数组 / 非数组一律回退默认，保证拼写检查不会因为设置文件损坏而彻底失效。
-function sanitizeSpellcheckLanguages(raw) {
-  if (!Array.isArray(raw)) return DEFAULT_SPELLCHECK_LANGUAGES.slice();
-  const out = [];
-  for (const lang of raw) {
-    if (typeof lang !== 'string' || !ALLOWED_SPELLCHECK_LANGUAGES.includes(lang)) continue;
-    if (!out.includes(lang)) out.push(lang);
-    if (out.length >= MAX_SPELLCHECK_LANGUAGES) break;
-  }
-  return out.length ? out : DEFAULT_SPELLCHECK_LANGUAGES.slice();
-}
+function sanitizeSpellcheckLanguages(...a) { return cosysettingsmainMod.sanitizeSpellcheckLanguages(...a); }
 
 // applySpellcheckSettings 把当前拼写检查开关 / 语言应用到默认会话。
 // 每次保存设置都会重新调用；语言列表只保留当前平台真正可用的词典。
-function applySpellcheckSettings() {
-  try {
-    const ses = session.defaultSession;
-    ses.setSpellCheckerEnabled(spellcheckEnabled);
-    if (!spellcheckEnabled) return;
-    const available = new Set(ses.availableSpellCheckerLanguages || []);
-    let langs = spellcheckLanguages.filter(l => available.has(l));
-    if (!langs.length) {
-      langs = DEFAULT_SPELLCHECK_LANGUAGES.filter(l => available.has(l));
-    }
-    if (langs.length) ses.setSpellCheckerLanguages(langs);
-  } catch (e) {
-    console.error('应用拼写检查设置失败:', e);
-  }
-}
+function applySpellcheckSettings(...a) { return cosysettingsmainMod.applySpellcheckSettings(...a); }
 
 // readPersistedSettings 在 app 启动早期同步读取已保存的设置，
 // 让拼写检查这类需要在第一个页面加载前生效的偏好不必等渲染层来取。
-function readPersistedSettings() {
-  try {
-    const p = path.join(app.getPath('userData'), 'cosySettings.json');
-    return ledgerStore.readJSONStore(p, {});
-  } catch (e) {
-    console.error('启动时读取设置失败:', e);
-  }
-  return {};
-}
+function readPersistedSettings(...a) { return cosysettingsmainMod.readPersistedSettings(...a); }
 
 const isDev = !app.isPackaged;
 
-function isMainSender(event) {
-  if (!mainWindow || !event || event.sender !== mainWindow.webContents) return false;
-  const frame = event.senderFrame;
-  if (!frame) return false;
-  try {
-    return frame.parent === null && frame.top === frame;
-  } catch {
-    return false;
-  }
-}
+function isMainSender(...a) { return cosysettingsmainMod.isMainSender(...a); }
 
 // 判断一个 file: 帧是否为“应用自带的内置静态页”（如 tab 视图加载的 src/error.html、
 // src/download/index.html）。这些页物理上位于安装目录 __dirname 内；用户在标签里
 // 打开的任意本地 html（D:\xxx.html）在目录外，必须按不可信帧处理。
-function isInternalFileFrame(frameUrl) {
-  if (typeof frameUrl !== 'string' || !frameUrl.startsWith('file:')) return false;
-  let filePath;
-  try {
-    filePath = require('url').fileURLToPath(frameUrl);
-  } catch {
-    return false;
-  }
-  return winPolicy.isInsideRoot(filePath, __dirname);
-}
+function isInternalFileFrame(...a) { return cosysettingsmainMod.isInternalFileFrame(...a); }
 
 // 入站 IPC 统一来源守卫：默认只放行主窗口外壳（file: 的 index.html）与 cosy: 内置
 // 帧；远程网页、data/blob/about、以及用户在标签里打开的本地 html（local-file）一律
@@ -845,11 +667,7 @@ ipcGuard.installIpcGuard(ipcMain, {
   },
 });
 
-function sendToRenderer(channel, ...args) {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send(channel, ...args);
-  }
-}
+function sendToRenderer(...a) { return cosysettingsmainMod.sendToRenderer(...a); }
 
 // ===== 底部下载栏（download shelf）=====
 // 现代浏览器在窗口底部用一条 shelf 展示下载进度，不必每次下载都新开标签页打断浏览。
@@ -858,14 +676,9 @@ function sendToRenderer(channel, ...args) {
 // 状态白名单、进度 clamp、savePath 只留存在性标记、附带整张台账的统计角标。
 const MAX_SHELF_ITEMS = 3;
 
-function shelfSnapshot() {
-  return downloadShelf.buildShelfSnapshot(downloads, downloadShelf.ShelfLimits).items;
-}
+function shelfSnapshot(...a) { return cosysettingsmainMod.shelfSnapshot(...a); }
 
-function sendShelf() {
-  persistDownloads();
-  sendToRenderer('download-shelf', downloadShelf.buildShelfSnapshot(downloads, downloadShelf.ShelfLimits));
-}
+function sendShelf(...a) { return cosysettingsmainMod.sendShelf(...a); }
 
 // ===== 下载记录持久化（downloads.json）=====
 // 下载台账此前只活在内存里，重启即丢。这里落盘到 userData/downloads.json：
@@ -875,22 +688,9 @@ function sendShelf() {
 // 不阻断下载流程。
 const MAX_PERSISTED_DOWNLOADS = 500;
 
-function downloadsStorePath() {
-  return path.join(app.getPath('userData'), 'downloads.json');
-}
+function downloadsStorePath(...a) { return cosysettingsmainMod.downloadsStorePath(...a); }
 
-function persistDownloads() {
-  try {
-    const items = (downloads || []).slice(0, MAX_PERSISTED_DOWNLOADS)
-      .map(d => downloadShelf.sanitizeDownloadRecord(d, downloadShelf.ShelfLimits));
-    ledgerStore.writeJSONStore(downloadsStorePath(), items, { pretty: true });
-  } catch (e) {
-    recordSecurityEvent('downloads-persist', 'error',
-      '下载台账落盘失败: ' + String((e && e.message) || e).slice(0, 160), '');
-  }
-}
-
-
+function persistDownloads(...a) { return cosysettingsmainMod.persistDownloads(...a); }
 
 // ===== 下载系统通知（downloadnotify 内核的 Electron 接线）=====
 // 窗口最小化 / 失焦时用户看不到底部下载栏，完成与失败都要弹系统通知（Chrome、
@@ -898,29 +698,12 @@ function persistDownloads() {
 // 按字节截断、不落完整本地路径、失败不给原始异常，这里只把内核产出接到 Electron
 // Notification 与点击动作上（完成点开文件，失败只聚焦窗口并留给用户显式重试）。
 
-
 // notifyDownloadResult 把一次下载结果接成系统通知；通知失败只审计，不打断下载流程。
-function notifyDownloadResult(kind, info) {
-  try {
-    downloadNotify.notifyDownload(kind, downloadNotifyDeps(), info);
-  } catch (notifyErr) {
-    recordSecurityEvent('download-notify', 'info',
-      `系统通知失败: ${String(notifyErr && notifyErr.message || notifyErr)}`,
-      originOfContents(webContents));
-  }
-}
+function notifyDownloadResult(...a) { return cosysettingsmainMod.notifyDownloadResult(...a); }
 
-function getSafeDirs() {
-  return [
-    app.getPath('downloads'), app.getPath('documents'),
-    app.getPath('desktop'), app.getPath('pictures'),
-    app.getPath('videos'), app.getPath('music'), __dirname,
-  ];
-}
+function getSafeDirs(...a) { return cosysettingsmainMod.getSafeDirs(...a); }
 
-function isInSafeDirs(filePath) {
-  return getSafeDirs().some(dir => isPathInDir(filePath, dir));
-}
+function isInSafeDirs(...a) { return cosysettingsmainMod.isInSafeDirs(...a); }
 
 class Tab {
   constructor(id, url = 'cosy://newtab') {
@@ -947,89 +730,27 @@ class Tab {
   }
 }
 
-function getHttpStatusCode(errorCode) {
-  const errorMap = {
-    '-105': '404', '-106': '400', '-102': '404', '-109': '404',
-    '-118': '404', '-324': '500', '-501': '501', '-6': '404', '-3': '403'
-  };
-  return errorMap[errorCode.toString()] || '500';
-}
+function getHttpStatusCode(...a) { return cosysettingsmainMod.getHttpStatusCode(...a); }
 
-function getErrorMessage(errorCode) {
-  const messageMap = {
-    '-105': '无法找到服务器', '-106': '网络连接已断开', '-102': '连接被拒绝',
-    '-109': '地址无法访问', '-118': '连接超时', '-324': '服务器返回空响应',
-    '-501': '不安全的响应', '-6': '文件未找到', '-3': '访问被拒绝'
-  };
-  return messageMap[errorCode.toString()] || '发生未知错误';
-}
+function getErrorMessage(...a) { return cosysettingsmainMod.getErrorMessage(...a); }
 
-function getBrowserErrorText(errorCode) {
-  const errorTextMap = {
-    '-105': 'ERR_NAME_NOT_RESOLVED', '-106': 'ERR_INTERNET_DISCONNECTED',
-    '-102': 'ERR_CONNECTION_REFUSED', '-109': 'ERR_ADDRESS_UNREACHABLE',
-    '-118': 'ERR_CONNECTION_TIMED_OUT', '-324': 'ERR_EMPTY_RESPONSE',
-    '-501': 'ERR_INSECURE_RESPONSE', '-6': 'ERR_FILE_NOT_FOUND', '-3': 'ERR_ACCESS_DENIED'
-  };
-  return errorTextMap[errorCode.toString()] || 'UNKNOWN_ERROR';
-}
+function getBrowserErrorText(...a) { return cosysettingsmainMod.getBrowserErrorText(...a); }
 
-function isSafeUrl(url) {
-  try {
-    const parsed = new URL(url);
-    return ALLOWED_PROTOCOLS.has(parsed.protocol);
-  } catch {
-    return false;
-  }
-}
+function isSafeUrl(...a) { return cosysettingsmainMod.isSafeUrl(...a); }
 
-function sanitizePath(inputPath, baseDir) {
-  const resolved = path.resolve(baseDir, inputPath);
-  const normalized = path.normalize(resolved);
-  if (!isPathInDir(normalized, baseDir)) return null;
-  return normalized;
-}
+function sanitizePath(...a) { return cosysettingsmainMod.sanitizePath(...a); }
 
-function isPathInDir(filePath, dir) {
-  return pathContain.isContained(dir, filePath, { realpath: realpathForContainment }).ok;
-}
+function isPathInDir(...a) { return cosysettingsmainMod.isPathInDir(...a); }
 
-function realpathForContainment(p) {
-  try {
-    return fsSync.realpathSync.native(p);
-  } catch {
-    return null;
-  }
-}
+function realpathForContainment(...a) { return cosysettingsmainMod.realpathForContainment(...a); }
 
-function isValidColor(str) {
-  return typeof str === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(str);
-}
+function isValidColor(...a) { return cosysettingsmainMod.isValidColor(...a); }
 
-function getCurrentTabWebContents() {
-  const tab = tabs[currentTabIndex];
-  return tab?.view?.webContents || null;
-}
+function getCurrentTabWebContents(...a) { return cosysettingsmainMod.getCurrentTabWebContents(...a); }
 
+function toggleDevTools(...a) { return cosysettingsmainMod.toggleDevTools(...a); }
 
-
-
-
-
-
-function toggleDevTools() {
-  const wc = getCurrentTabWebContents();
-  if (wc) wc.toggleDevTools();
-}
-
-function goHome() {
-  const tab = tabs[currentTabIndex];
-  if (tab) {
-    tab.url = 'cosy://newtab';
-    loadTabContent(tab);
-    sendToRenderer('tab-updated', { id: tab.id, url: tab.url, title: '新标签页' });
-  }
-}
+function goHome(...a) { return cosysettingsmainMod.goHome(...a); }
 
 async function showOpenFileDialog() {
   const result = await dialog.showOpenDialog(mainWindow, {
@@ -1045,187 +766,37 @@ async function showOpenFileDialog() {
   }
 }
 
-function addToHistory(url, title) {
-  // r34：历史写入统一走 historyguard 内核——只记录 http/https 导航，title 去控制
-  // 字符 / 压空白 / 截断上界，URL 长度有界，同 URL 合并窗内只刷新时间戳（抑制刷新
-  // 抖动与写放大）。内核用传入的 {items: history} 直接在历史数组上原地改写。
-  const verdict = historyGuard.decideHistoryWrite(
-    { items: history }, { url, title }, Date.now());
-  if (verdict.decision === historyGuard.DECISION_SKIP) return;
-  // 应用侧维持比内核安全上限（5000）更紧的展示上界 1000，超出淘汰最旧。
-  if (history.length > MAX_HISTORY_ENTRIES) history = history.slice(0, MAX_HISTORY_ENTRIES);
-  saveHistory();
-}
+function addToHistory(...a) { return cosysettingsmainMod.addToHistory(...a); }
 
-function saveHistory() {
-  const historyPath = path.join(app.getPath('userData'), 'history.json');
-  try {
-    ledgerStore.writeJSONStore(historyPath, history, { pretty: true });
-  } catch (e) {
-    console.error('保存历史记录失败:', e);
-  }
-}
+function saveHistory(...a) { return cosysettingsmainMod.saveHistory(...a); }
 
-function loadHistory() {
-  const historyPath = path.join(app.getPath('userData'), 'history.json');
-  try {
-    if (!fsSync.existsSync(historyPath)) return;
-    // history.json 是本地文件、也可能被外部程序 / 旧版本写坏：解析结果必须是数组，
-    // 且每条都重新过内核净化（非 http/https、无法解析、标题含控制字符的一律丢弃 /
-    // 清洗），时间戳必须为有限非负数，否则该条丢弃。绝不信任磁盘上的结构。
-    // 有界读取：损坏 / 被撑大的文件回落为 null，下面按“非数组”清空，绝不整读撑爆主进程。
-    const parsed = ledgerStore.readJSONStore(historyPath, null);
-    if (!Array.isArray(parsed)) {
-      history = [];
-      return;
-    }
-    const clean = [];
-    for (const item of parsed) {
-      if (!item || typeof item !== 'object') continue;
-      const su = historyGuard.sanitizeHistoryUrl(item.url);
-      if (!su.ok) continue;
-      if (typeof item.timestamp !== 'number' || !Number.isFinite(item.timestamp)
-          || item.timestamp < 0) continue;
-      clean.push({
-        url: su.url,
-        title: historyGuard.sanitizeHistoryTitle(item.title),
-        timestamp: item.timestamp,
-      });
-      if (clean.length >= MAX_HISTORY_ENTRIES) break;
-    }
-    history = clean;
-  } catch (e) {
-    console.error('读取历史记录失败:', e);
-  }
-}
+function loadHistory(...a) { return cosysettingsmainMod.loadHistory(...a); }
 
-function saveBookmarks() {
-  const bookmarksPath = path.join(app.getPath('userData'), 'bookmarks.json');
-  try {
-    // r35：写盘前统一过 bookmarkguard——只落 http/https、title 去控制字符并限长、
-    // 按 url 去重并收敛到硬上界。无论书签来自批量收藏 / 单条新增 / 导入，都在此收口，
-    // 避免不可信标题或海量条目污染 bookmarks.json。
-    const cleaned = bookmarkGuard.sanitizeBookmarkList(bookmarks, Date.now());
-    bookmarks = cleaned.items;
-    ledgerStore.writeJSONStore(bookmarksPath, bookmarks, { pretty: true });
-  } catch (e) {
-    console.error('保存书签失败:', e);
-  }
-}
+function saveBookmarks(...a) { return cosysettingsmainMod.saveBookmarks(...a); }
 
-function loadBookmarks() {
-  const bookmarksPath = path.join(app.getPath('userData'), 'bookmarks.json');
-  try {
-    if (fsSync.existsSync(bookmarksPath)) {
-      // bookmarks.json 不是信任边界（可被手改 / 同步盘 / 恶意进程替换 / 崩溃截断）：
-      // 非数组视为空，逐条做对象 / 字段 / scheme 校验，脏项丢弃，绝不把脏结构送进 UI。
-      const parsed = ledgerStore.readJSONStore(bookmarksPath, null);
-      if (parsed !== null) bookmarks = bookmarkGuard.sanitizeBookmarkList(parsed, Date.now()).items;
-    }
-  } catch (e) {
-    console.error('读取书签失败:', e);
-  }
-}
+function loadBookmarks(...a) { return cosysettingsmainMod.loadBookmarks(...a); }
 
 // saveReadingList 写稍后读列表：复用 bookmarkGuard 的净化口径（仅 http/https、
 // title 去控制字符并限长、按 url 去重），与书签同款有界落盘。
-function saveReadingList() {
-  const rlPath = path.join(app.getPath('userData'), 'readinglist.json');
-  try {
-    const cleaned = bookmarkGuard.sanitizeBookmarkList(readingList, Date.now());
-    readingList = cleaned.items;
-    ledgerStore.writeJSONStore(rlPath, readingList, { pretty: true });
-  } catch (e) {
-    console.error('保存稍后读失败:', e);
-  }
-}
+function saveReadingList(...a) { return cosysettingsmainMod.saveReadingList(...a); }
 
-function loadReadingList() {
-  const rlPath = path.join(app.getPath('userData'), 'readinglist.json');
-  try {
-    if (fsSync.existsSync(rlPath)) {
-      const parsed = ledgerStore.readJSONStore(rlPath, null);
-      if (parsed !== null) readingList = bookmarkGuard.sanitizeBookmarkList(parsed, Date.now()).items;
-    }
-  } catch (e) {
-    console.error('读取稍后读失败:', e);
-  }
-}
+function loadReadingList(...a) { return cosysettingsmainMod.loadReadingList(...a); }
 
-function saveSession() {
-  try {
-    const sessionPath = path.join(app.getPath('userData'), 'session.json');
-    // r35：会话条目先映射成 {url,title}，再交给 restoreguard 统一净化（仅 http/https、
-    // title 去控制字符并限长）并截断到恢复上界，替代旧实现“只过滤 url、title 原样写”。
-    const raw = tabs
-      .filter(tab => !String(tab.url || '').startsWith('cosy://'))
-      .map(tab => ({ url: tab.url, title: tab.title }));
-    const sessionTabs = restoreGuard.sanitizeSessionList(raw).tabs;
-    ledgerStore.writeJSONStore(sessionPath, sessionTabs, { pretty: true });
-  } catch (e) {
-    console.error('保存会话失败:', e);
-  }
-}
+function saveSession(...a) { return cosysettingsmainMod.saveSession(...a); }
 
-function loadSession() {
-  try {
-    const sessionPath = path.join(app.getPath('userData'), 'session.json');
-    if (fsSync.existsSync(sessionPath)) {
-      const parsed = ledgerStore.readJSONStore(sessionPath, null);
-      if (parsed === null) return null;
-      // 逐条做对象 / url / title 校验：旧实现只判 Array.isArray 就 filter(isSafeUrl)，
-      // null / 数字 / 嵌套数组会让恢复时访问 tab.title 抛异常并阻断全部标签恢复。
-      const { tabs: restored } = restoreGuard.sanitizeSessionList(parsed);
-      if (restored.length > 0) return restored;
-    }
-  } catch (e) {
-    console.error('读取会话失败:', e);
-  }
-  return null;
-}
+function loadSession(...a) { return cosysettingsmainMod.loadSession(...a); }
 
-function clearSession() {
-  try {
-    const sessionPath = path.join(app.getPath('userData'), 'session.json');
-    if (fsSync.existsSync(sessionPath)) fsSync.unlinkSync(sessionPath);
-  } catch (e) {
-    console.error('清除会话失败:', e);
-  }
-}
+function clearSession(...a) { return cosysettingsmainMod.clearSession(...a); }
 
-function addToRecentlyClosed(tab) {
-  if (!tab || !tab.url || String(tab.url).startsWith('cosy://')) return;
-  // r35：入栈条目走 restoreguard——仅 http/https、title 去控制字符、closedAt 必须
-  // 是有限毫秒时间戳，超深由内核淘汰最旧，替代旧实现对远端 title 的裸 push。
-  const state = restoreGuard.createRecentlyClosedState(recentlyClosedTabs);
-  const r = restoreGuard.pushRecentlyClosed(state, {
-    url: tab.url, title: tab.title, closedAt: Date.now(),
-  }, Date.now());
-  if (r.status === 'pushed') recentlyClosedTabs = state.items;
-}
+function addToRecentlyClosed(...a) { return cosysettingsmainMod.addToRecentlyClosed(...a); }
 
-function getLastClosedTab() {
-  // 条目在 addToRecentlyClosed 入栈时已逐条净化，这里维持原“弹出栈顶”语义。
-  if (recentlyClosedTabs.length === 0) return null;
-  return recentlyClosedTabs.pop();
-}
+function getLastClosedTab(...a) { return cosysettingsmainMod.getLastClosedTab(...a); }
 
-function isPrivateNetworkHost(url) {
-  try {
-    // 主机名归一、IPv4 分段与私网段判断统一走 hostmatch 内核（无正则）。
-    return hostMatch.isPrivateHostname(new URL(url).hostname);
-  } catch { return false; }
-}
+function isPrivateNetworkHost(...a) { return cosysettingsmainMod.isPrivateNetworkHost(...a); }
 
 // readStoredSettings 只读不校验，启动时用来还原 darkMode / httpsOnly 等运行时状态。
 // 校验交给 save-settings 里的 sanitizeSettings。
-function readStoredSettings() {
-  try {
-    const p = path.join(app.getPath('userData'), 'cosySettings.json');
-    return ledgerStore.readJSONStore(p, {});
-  } catch (e) { console.error('读取设置失败:', e); }
-  return {};
-}
+function readStoredSettings(...a) { return cosysettingsmainMod.readStoredSettings(...a); }
 
 // ===== HTTPS-Only 站点例外（https-exceptions.json / cosy://httpsonly 面板）=====
 // HTTPS-Only 默认把公网 http 主动升级到 https；但确实存在只有明文 HTTP 的老站点 /
@@ -1238,32 +809,12 @@ const httpsExceptions = new httpsOnlyCore.HttpExceptionStore(500);
 let httpsExceptionsLoaded = false;
 let httpsExceptionSaveTimer = null;
 
-function loadHttpsExceptions() {
-  if (httpsExceptionsLoaded) return;
-  httpsExceptionsLoaded = true;
-  try {
-    httpsExceptions.load(ledgerStore.readJSONStore(httpsExceptionStorePath, {}));
-  } catch (e) { console.error('读取 HTTPS 例外失败:', e); }
-}
+function loadHttpsExceptions(...a) { return cosyledgerchainmainMod.loadHttpsExceptions(...a); }
 
-function persistHttpsExceptions() {
-  if (httpsExceptionSaveTimer) clearTimeout(httpsExceptionSaveTimer);
-  httpsExceptionSaveTimer = setTimeout(() => {
-    try {
-      ledgerStore.writeJSONStore(httpsExceptionStorePath, httpsExceptions.toJSON());
-    } catch (e) { console.error('写入 HTTPS 例外失败:', e); }
-  }, 300);
-}
+function persistHttpsExceptions(...a) { return cosyledgerchainmainMod.persistHttpsExceptions(...a); }
 
 // isHttpExceptionHost 供请求管道与回退逻辑共用，输入可以是 URL 或主机名。
-function isHttpExceptionHost(urlOrHost) {
-  try {
-    const host = String(urlOrHost || '').indexOf('://') >= 0
-      ? new URL(urlOrHost).hostname
-      : httpsOnlyCore.normalizeExceptionHost(urlOrHost);
-    return !!host && httpsExceptions.has(host);
-  } catch { return false; }
-}
+function isHttpExceptionHost(...a) { return cosyledgerchainmainMod.isHttpExceptionHost(...a); }
 
 // ===== 加密保险库（vault）与站点数据清理（cleaner）=====
 // 保险库：主密钥由 safeStorage（OS 级加密）保护后落盘 vault-key.bin；vault.json
@@ -1293,197 +844,61 @@ let downloadMaxBytes = downloadSizeGuard.DEFAULT_LIMIT_BYTES; // 单次下载体
 const downloadDiskMonitor = downloadDiskMonitorModule.createDiskMonitor({ minFreeBytes: downloadDiskSpace.MIN_FREE_BYTES });
 const downloadSlotGuard = downloadSlotReservation.createSlotReservation();
 
-function loadUaPolicyStateFromDisk() {
-  try {
-    if (fsSync.existsSync(uaPolicyPath)) {
-      const raw = JSON.parse(fsSync.readFileSync(uaPolicyPath, 'utf8'));
-      uaPolicyState = uaPolicyCore.sanitizePolicy(raw);
-    }
-  } catch (e) { console.error('读取 UA 策略失败:', e); }
-  try {
-    if (fsSync.existsSync(rateLimitPath)) {
-      const raw = JSON.parse(fsSync.readFileSync(rateLimitPath, 'utf8'));
-      if (raw && Number.isFinite(raw.bytesPerSecond) && raw.bytesPerSecond >= 0) {
-        downloadRateLimit = Math.floor(raw.bytesPerSecond);
-      }
-    }
-  } catch (e) { console.error('读取下载限速失败:', e); }
-}
+function loadUaPolicyStateFromDisk(...a) { return cosyledgerchainmainMod.loadUaPolicyStateFromDisk(...a); }
 
-function persistUaPolicyState() {
-  try { atomicWriteJSON(uaPolicyPath, uaPolicyState); } catch (e) { console.error('写入 UA 策略失败:', e); }
-}
+function persistUaPolicyState(...a) { return cosyledgerchainmainMod.persistUaPolicyState(...a); }
 
-function persistRateLimitState() {
-  try { atomicWriteJSON(rateLimitPath, { bytesPerSecond: downloadRateLimit }); } catch (e) { console.error('写入下载限速失败:', e); }
-}
+function persistRateLimitState(...a) { return cosyledgerchainmainMod.persistRateLimitState(...a); }
 
 // applyUaPolicyToSession：把当前策略应用到目标 session（导航级 UA）。
 // webRequest 层的按请求改写由 applyOutboundHeaderHardening 负责；这里只在
 // 启动与策略变更时调用，让导航请求也吃到最新 UA。
-function applyUaPolicyToSession(targetSession) {
-  try {
-    const effective = uaPolicyCore.resolveUa(uaPolicyState, generateUserAgent());
-    targetSession.setUserAgent(effective);
-  } catch (e) { console.error('应用 UA 策略失败:', e); }
-}
+function applyUaPolicyToSession(...a) { return cosyledgerchainmainMod.applyUaPolicyToSession(...a); }
 
 // resolveEffectiveUa 是 webRequest 层每次请求都读取的 UA 取值器。
-function resolveEffectiveUa() {
-  return uaPolicyCore.resolveUa(uaPolicyState, generateUserAgent());
-}
+function resolveEffectiveUa(...a) { return cosyledgerchainmainMod.resolveEffectiveUa(...a); }
 
 // applyRateLimitToItem：对新下载项套限速（0 表示不限，setRate 无效时不抛）。
-function applyRateLimitToItem(item) {
-  if (!item || !downloadRateLimit) return;
-  try { item.setRate(downloadRateLimit); } catch {}
-}
+function applyRateLimitToItem(...a) { return cosyledgerchainmainMod.applyRateLimitToItem(...a); }
 
 let atomicWriteSeq = 0;
 
-function atomicWriteJSON(filePath, obj) {
-  const dir = path.dirname(filePath);
-  const tmp = path.join(dir, '.' + path.basename(filePath) + '.tmp-' + process.pid + '-'
-    + (atomicWriteSeq += 1) + '-' + Date.now().toString(36));
-  let fd = null;
-  try {
-    fd = fsSync.openSync(tmp, 'wx', 0o600);
-    fsSync.writeFileSync(fd, JSON.stringify(obj), 'utf8');
-    fsSync.fsyncSync(fd);
-    fsSync.closeSync(fd);
-    fd = null;
-    fsSync.renameSync(tmp, filePath);
-  } catch (e) {
-    if (fd !== null) { try { fsSync.closeSync(fd); } catch {} }
-    try { fsSync.unlinkSync(tmp); } catch {}
-    throw e;
-  }
-}
+function atomicWriteJSON(...a) { return cosyledgerchainmainMod.atomicWriteJSON(...a); }
 
-function loadVaultStateFromDisk() {
-  try {
-    if (fsSync.existsSync(vaultStorePath)) {
-      vaultState = JSON.parse(fsSync.readFileSync(vaultStorePath, 'utf8'));
-    }
-  } catch (e) { console.error('读取保险库失败:', e); }
-  try {
-    if (fsSync.existsSync(cleanAuditPath)) {
-      cleanAuditLog = JSON.parse(fsSync.readFileSync(cleanAuditPath, 'utf8'));
-      if (!Array.isArray(cleanAuditLog)) cleanAuditLog = [];
-    }
-  } catch (e) { console.error('读取清理审计失败:', e); }
-}
+function loadVaultStateFromDisk(...a) { return cosyledgerchainmainMod.loadVaultStateFromDisk(...a); }
 
-function persistVaultState() {
-  if (!vaultState) return;
-  try { atomicWriteJSON(vaultStorePath, vaultState); } catch (e) { console.error('写入保险库失败:', e); }
-}
+function persistVaultState(...a) { return cosyledgerchainmainMod.persistVaultState(...a); }
 
-function persistCleanAudit() {
-  try { atomicWriteJSON(cleanAuditPath, cleanAuditLog); } catch (e) { console.error('写入清理审计失败:', e); }
-}
+function persistCleanAudit(...a) { return cosyledgerchainmainMod.persistCleanAudit(...a); }
 
-function persistVaultKey(keyBuf) {
-  if (!safeStorage.isEncryptionAvailable()) {
-    recordSecurityEvent('vault-key', 'critical',
-      '系统加密不可用，拒绝以明文形式落盘保险库主密钥', 'vault');
-    return false;
-  }
-  try {
-    const wrapped = safeStorage.encryptString(keyBuf.toString('hex'));
-    atomicWriteJSON(vaultKeyPath, { v: 1, s: 'safe', wrapped: wrapped.toString('base64') });
-    return true;
-  } catch (e) { console.error('写入保险库密钥失败:', e); return false; }
-}
+function persistVaultKey(...a) { return cosyledgerchainmainMod.persistVaultKey(...a); }
 
 // initVaultOnStartup：启动时尝试用 safeStorage 包层自动解锁；无 keychain 时
 // 保留锁定态（vault:status 会报告 locked，由 UI 引导用户输主密码）。
 
-
 // vaultStatusSnapshot 给 UI 的只读快照；绝不外泄条目密文 / 主密钥。
-
 
 // createNewVault(masterPassword)：全新创建（或强制重建）。主密钥优先用
 // safeStorage 随机密钥；自设密码模式用 PBKDF2 慢化。返回结果不包含密钥。
 
-
 // unlockVault(masterPassword)：用自设主密码解锁（safeStorage 模式由启动自动解锁）。
-
 
 // executeCleanPlan：按已确认的计划执行清理。返回摘要；失败项记入审计。
 // 安全设计：不信任渲染进程传来的 targets 白名单（防 UI 被篡改后越权清理），
 // 而是按计划条件（mode/host/since/storageTypes）在 main 侧重新枚举 + 纯内核
 // 过滤生成权威目标集，再与计划摘要（sites/targetCount）核对一致才执行。
 
-
 // enumerateSiteStorage：枚举默认会话全部 origin 的存储占用（粗略字节）。
 // cookies 无 API 可枚举 origin 级，用 session.cookies 逐个列举（受限）。
-
 
 // maybeFallbackAfterUpgradeFailure 在“HTTPS-Only 升级后加载失败”时，判断并执行
 // 一次性的、用户知情的 http 回退。返回 true 表示已接手（弹过框 / 已回退），调用方
 // 不再显示通用错误页；false 表示不属于可回退场景，交给正常错误页。
-function maybeFallbackAfterUpgradeFailure(tab, errorCode, validatedURL) {
-  if (!httpsOnlyEnabled) return false;
-  if (!httpsOnlyCore.isFallbackableUpgradeError(errorCode)) return false;
-  if (typeof validatedURL !== 'string' || !validatedURL.startsWith('https://')) return false;
-  const httpUrl = httpsOnlyCore.downgradeHttpsUrlForFallback(validatedURL);
-  if (!httpUrl) return false;
-  let host = '';
-  try {
-    host = new URL(validatedURL).hostname.toLowerCase();
-  } catch { return false; }
-  if (!host || httpsExceptions.has(host)) return false;
-  // 只有“该 http 地址确实会被我们升级成当前这个 https 地址”才允许回退，避免把
-  // 用户手动输入 / 书签里的 https 地址错误地降级到明文。
-  let repro;
-  try {
-    repro = httpsOnlyCore.upgradeHttpUrl(httpUrl);
-  } catch { repro = null; }
-  if (!repro || !repro.ok || repro.url !== validatedURL) return false;
-  // 私网 / 回环本来就不会被升级，理论上进不来；再守一道。
-  if (isPrivateNetworkHost(httpUrl)) return false;
-  if (tab.httpsFallbackPrompting) return true; // 已有一个确认框在等，不叠加。
-  tab.httpsFallbackPrompting = true;
-  let choice = 0;
-  try {
-    const res = dialog.showMessageBoxSync(mainWindow, {
-      type: 'warning',
-      buttons: ['返回安全页面', '继续使用 HTTP（本次并记住该站点）'],
-      defaultId: 0,
-      cancelId: 0,
-      title: '该站点不支持 HTTPS',
-      message: `无法通过加密连接访问 ${host}`,
-      detail: '服务器在 443 端口没有提供可用的 TLS（连接被拒绝 / 协议不匹配）。\n\n'
-        + '如果继续，将以明文 HTTP 访问该站点，同网段中的其他人可能看到或篡改你与该站点之间传输的内容。\n'
-        + '仅在你确认这是可信站点、且它确实只提供 HTTP 时才继续。',
-      noLink: true,
-    });
-    choice = Number(res) || 0;
-  } finally {
-    tab.httpsFallbackPrompting = false;
-  }
-  if (choice !== 1) return true; // 用户选择留在错误页，已接手不再叠加通用错误页。
-  httpsExceptions.add(host);
-  persistHttpsExceptions();
-  recordSecurityEvent('https-only', 'warn',
-    `用户确认在不支持 HTTPS 的站点回退到明文 HTTP：${host}`, host);
-  try {
-    tab.view.webContents.loadURL(httpUrl);
-  } catch (e) {
-    console.error('HTTPS 回退加载失败:', e);
-    return false;
-  }
-  return true;
-}
-
+function maybeFallbackAfterUpgradeFailure(...a) { return cosyledgerchainmainMod.maybeFallbackAfterUpgradeFailure(...a); }
 
 // applyDarkMode 切 Chromium 原生暗色主题，影响滚动条、文件对话框、DevTools 外壳。
 // renderer 的 CSS 暗色由 settings-loaded 自己管，这里只管原生 UI。
-function applyDarkMode(dark) {
-  nativeTheme.themeSource = dark ? 'dark' : 'light';
-  sendToRenderer('native-theme-changed', { dark: !!dark });
-}
+function applyDarkMode(...a) { return cosyledgerchainmainMod.applyDarkMode(...a); }
 
 // ===== Set-Cookie 加固台账（cookie-hardening.json / cosy://security 面板）=====
 // 纯判定在 cookieguard.js；这里负责在 onHeadersReceived 里应用改写、聚合落盘，
@@ -1495,10 +910,6 @@ const cookieLedger = cookieGuard.createCookieLedger(MAX_COOKIE_LEDGER);
 let cookieLedgerLoaded = false;
 let cookieLedgerSaveTimer = null;
 
-
-
-
-
 // ===== PNA 私有网络访问拦截台账（pna-access.json / cosy://security 面板）=====
 const pnaLedgerStorePath = path.join(app.getPath('userData'), 'pna-access.json');
 const MAX_PNA_LEDGER = 300;
@@ -1506,57 +917,13 @@ const pnaLedger = new Map(); // host -> { host, space, hits, lastTime, types:Set
 let pnaLedgerLoaded = false;
 let pnaLedgerSaveTimer = null;
 
-function loadPnaLedger() {
-  if (pnaLedgerLoaded) return;
-  pnaLedgerLoaded = true;
-  try {
-    const data = ledgerStore.readJSONStore(pnaLedgerStorePath, {});
-    const rows = Array.isArray(data && data.rows) ? data.rows : [];
-    for (const r of rows) {
-      if (!r || typeof r.host !== 'string') continue;
-      pnaLedger.set(r.host, {
-        host: String(r.host).slice(0, 255),
-        space: String(r.space || 'private').slice(0, 32),
-        hits: Number(r.hits) || 1,
-        lastTime: Number(r.lastTime) || Date.now(),
-      });
-    }
-  } catch {}
-}
+function loadPnaLedger(...a) { return cosyledgerchainmainMod.loadPnaLedger(...a); }
 
-function persistPnaLedger() {
-  if (pnaLedgerSaveTimer) clearTimeout(pnaLedgerSaveTimer);
-  pnaLedgerSaveTimer = setTimeout(() => {
-    try {
-      const rows = [...pnaLedger.values()];
-      ledgerStore.writeJSONStore(pnaLedgerStorePath, { version: 1, rows });
-    } catch {}
-  }, 400);
-}
+function persistPnaLedger(...a) { return cosyledgerchainmainMod.persistPnaLedger(...a); }
 
-function pnaLedgerStats() {
-  let blocked = 0;
-  for (const v of pnaLedger.values()) blocked += v.hits;
-  return { hosts: pnaLedger.size, blocked };
-}
+function pnaLedgerStats(...a) { return cosyledgerchainmainMod.pnaLedgerStats(...a); }
 
-function recordPnaBlock(details, verdict) {
-  loadPnaLedger();
-  const host = String(verdict.targetHost || '').slice(0, 255);
-  if (!host) return;
-  const cur = pnaLedger.get(host) || { host, space: verdict.targetSpace || 'private', hits: 0, lastTime: 0 };
-  cur.hits += 1;
-  cur.lastTime = Date.now();
-  cur.space = verdict.targetSpace || cur.space;
-  pnaLedger.set(host, cur);
-  if (pnaLedger.size > MAX_PNA_LEDGER) {
-    const oldest = [...pnaLedger.entries()]
-      .sort((a, b) => a[1].lastTime - b[1].lastTime)[0][0];
-    pnaLedger.delete(oldest);
-  }
-  persistPnaLedger();
-  sendToRenderer('pna-blocked-updated', pnaLedgerStats());
-}
+function recordPnaBlock(...a) { return cosyledgerchainmainMod.recordPnaBlock(...a); }
 
 // ===== 指纹 / 跨站追踪收敛台账（fp-leaks.json / cosy://security 面板）=====
 const fpLedgerStorePath = path.join(app.getPath('userData'), 'fp-leaks.json');
@@ -1565,37 +932,16 @@ const fpLedger = fpGuard.createFingerprintLedger(MAX_FP_LEDGER);
 let fpLedgerLoaded = false;
 let fpLedgerSaveTimer = null;
 
-function loadFpLedger() {
-  if (fpLedgerLoaded) return;
-  fpLedgerLoaded = true;
-  try {
-    fpLedger.load(ledgerStore.readJSONStore(fpLedgerStorePath, {}));
-  } catch {}
-}
+function loadFpLedger(...a) { return cosyledgerchainmainMod.loadFpLedger(...a); }
 
-function persistFpLedger() {
-  if (fpLedgerSaveTimer) clearTimeout(fpLedgerSaveTimer);
-  fpLedgerSaveTimer = setTimeout(() => {
-    try {
-      ledgerStore.writeJSONStore(fpLedgerStorePath, fpLedger.toJSON());
-    } catch {}
-  }, 400);
-}
+function persistFpLedger(...a) { return cosyledgerchainmainMod.persistFpLedger(...a); }
 
 // recordFpHit 按主机+类别登记一条被收敛的指纹/追踪信号。
-
 
 // applyCookieHardening 就地加固响应头里的 Set-Cookie，返回本次动作列表。
 // 任何异常都不阻断浏览：出错时保留原始响应头。
 
-
-function applyWebRtcPolicy() {
-  // WebRTC ICE 候选默认可能暴露内网/真实公网 IP（可穿透 VPN）。
-  // strict 只用默认公网接口；balanced 允许 mDNS 混淆候选；legacy 不干预。
-  try {
-    session.defaultSession.setWebRTCIPHandlingPolicy(fpGuard.resolveWebRtcPolicy(webrtcMode));
-  } catch {}
-}
+function applyWebRtcPolicy(...a) { return cosyledgerchainmainMod.applyWebRtcPolicy(...a); }
 
 // ===== 安全 DNS（DoH）状态与落盘 =====
 const dohStorePath = path.join(app.getPath('userData'), 'doh-status.json');
@@ -1603,35 +949,14 @@ const dohLedger = dohGuard.createDohLedger(200);
 let dohLedgerLoaded = false;
 let dohSaveTimer = null;
 
-function loadDohLedger() {
-  if (dohLedgerLoaded) return;
-  dohLedgerLoaded = true;
-  try {
-    dohLedger.load(ledgerStore.readJSONStore(dohStorePath, {}));
-  } catch {}
-}
+function loadDohLedger(...a) { return cosyledgerchainmainMod.loadDohLedger(...a); }
 
-function persistDohLedger() {
-  if (dohSaveTimer) clearTimeout(dohSaveTimer);
-  dohSaveTimer = setTimeout(() => {
-    try {
-      ledgerStore.writeJSONStore(dohStorePath, dohLedger.toJSON());
-    } catch {}
-  }, 400);
-}
+function persistDohLedger(...a) { return cosyledgerchainmainMod.persistDohLedger(...a); }
 
-function dohStatus() {
-  return {
-    mode: dohMode,
-    provider: dohProvider,
-    active: dohActive,
-    events: dohLedger.list().slice(0, 50),
-  };
-}
+function dohStatus(...a) { return cosyledgerchainmainMod.dohStatus(...a); }
 
 // applySecureDns 在启动 / 设置变更时把安全 DNS 策略下发给宿主解析器。
 // 老版本 Electron 没有 setHostResolverControls 时静默降级为关闭，不阻断浏览。
-
 
 // LOCAL_UI_CSP：自有 UI（cosy:// / file://）页面统一的严 CSP，defaultSession 与
 // 隔离 / 访客会话共用，避免两套手写策略漂移。
@@ -1693,7 +1018,6 @@ const { hardenResponseHeaders } = require('./responseharden').create({
 // 反而继续外发高熵指纹头。options.recordFp 仅控制是否把命中聚合进指纹台账
 // （分区会话不重复计数），但清洗动作在所有会话上恒为开启。
 
-
 // applyWebRequestFiltering：在任意会话上挂统一的 onBeforeRequest 过滤。
 // Electron 的 webRequest 处理器按会话注册、不会从 defaultSession 继承，因此
 // fromPartition 的隔离 / 访客会话必须各自挂一份，否则 tracker / ping / 私网访问 /
@@ -1703,16 +1027,7 @@ const { hardenResponseHeaders } = require('./responseharden').create({
 // buildRequestPipelineDeps 组装纯决策内核所需的守卫 / 台账 / 横幅能力。
 // 三个开关是可变设置（用户可在设置页切换），用 getter 保证每次判定都读到当前值。
 
-
-function applyWebRequestFiltering(targetSession, options) {
-  // options.logRequests 仅控制是否把请求量计入默认会话的连接统计（分区不重复计数）；
-  // 阻断 / 升级 / 安全审计在所有会话上行为一致。
-  const logRequests = !!(options && options.logRequests);
-  const noteAttempt = logRequests ? recordRequestAttempt : () => {};
-  requestPipeline.applyPipeline(targetSession.webRequest, buildRequestPipelineDeps(), noteAttempt);
-}
-
-
+function applyWebRequestFiltering(...a) { return cosyledgerchainmainMod.applyWebRequestFiltering(...a); }
 
 // 注意：'openExternal' 不再自动放行。网页调 window.openExternal / <a href="ms-*:">
 // 之前只要在这个集合里就会被静默拉系统程序，等于把 Follina 那类协议投毒开放给任意站点。
@@ -1725,7 +1040,6 @@ const ALLOWED_PERMISSIONS = new Set([
 
 // confirmAndOpenExternal 统一入口：http(s) 开新标签，外部协议走按站点记忆的确认流。
 // renderer 想让浏览器"点 mailto:" 必须走这个 IPC，不许直接 shell.openExternal。
-
 
 // ===== 外部协议唤起防护（protocol-launch guard）=====
 // 背景：Chromium 拉起本机协议处理器（ms-word: / zoommtg: / ms-cmd: 这一族，
@@ -1756,21 +1070,14 @@ const {
 //   'confirm'  ：外部协议但可在确认后交给系统（mailto/tel）；
 //   'block'    ：危险 / 不允许的协议，必须取消。
 
-
-function originOfContents(contents) {
-  if (!contents || typeof contents.getURL !== 'function') return '';
-  return urlResolve.safeOrigin(contents.getURL(), '');
-}
+function originOfContents(...a) { return cosyledgerchainmainMod.originOfContents(...a); }
 
 // launchExternalWithPrompt 是所有"页面想唤起外部程序"的唯一出口。
 // remembered 决定直接兑现，否则弹原生确认框；remember=true 时按 origin+scheme 记忆。
 const protocolRateLimiter = protocolRate.createLimiter();
 
-
-
 // handleFrameNavigationAttempt 供 will-navigate / will-frame-navigate /
 // will-redirect 统一调用，返回 true 表示"已经接管，原导航必须 preventDefault"。
-
 
 const securityCenter = require('./securitycenter');
 securityCenter.bindRendererNotifier(sendToRenderer);
@@ -1799,44 +1106,15 @@ const headerGrades = [];
 let headerGradesLoaded = false;
 let headerGradeSaveTimer = null;
 
-
-
-function persistHeaderGrades() {
-  if (headerGradeSaveTimer) clearTimeout(headerGradeSaveTimer);
-  headerGradeSaveTimer = setTimeout(() => {
-    try {
-      ledgerStore.writeJSONStore(headerGradeStorePath, { version: 1, hosts: headerGrades });
-    } catch {}
-  }, 400);
-}
+function persistHeaderGrades(...a) { return cosyledgerchainmainMod.persistHeaderGrades(...a); }
 
 // recordHeaderGrade 对一次顶层文档响应评级并按 host 聚合。纯计算，不抛错。
 
+function listHeaderGrades(...a) { return cosyledgerchainmainMod.listHeaderGrades(...a); }
 
-function listHeaderGrades(limit = 200) {
-  loadHeaderGrades();
-  const n = Math.max(1, Math.min(Number(limit) || 200, MAX_HEADER_GRADE_HOSTS));
-  return headerGrades.slice(-n).reverse().map(h => ({ ...h, checks: h.checks.map(c => ({ ...c })) }));
-}
+function clearHeaderGrades(...a) { return cosyledgerchainmainMod.clearHeaderGrades(...a); }
 
-function clearHeaderGrades() {
-  loadHeaderGrades();
-  headerGrades.length = 0;
-  try { fsSync.unlinkSync(headerGradeStorePath); } catch {}
-  persistHeaderGrades();
-  return true;
-}
-
-function getHeaderGradeStats() {
-  loadHeaderGrades();
-  const byGrade = { A: 0, B: 0, C: 0, D: 0, F: 0 };
-  let insecure = 0;
-  for (const h of headerGrades) {
-    if (byGrade[h.grade] != null) byGrade[h.grade] += 1;
-    if (h.insecureTransport) insecure += 1;
-  }
-  return { hosts: headerGrades.length, byGrade, insecureHosts: insecure };
-}
+function getHeaderGradeStats(...a) { return cosyledgerchainmainMod.getHeaderGradeStats(...a); }
 
 // ===== 后台跨主机连接台账（request-log.json / cosy://security）=====
 // onBeforeRequest 对每条 http(s) 请求只抽取“主机/资源类型/是否被拦/是否顶层
@@ -1850,48 +1128,17 @@ let requestLogLoaded = false;
 let requestLogSaveTimer = null;
 let requestLogNotifyTimer = null;
 
-function loadRequestLog() {
-  if (requestLogLoaded) return;
-  requestLogLoaded = true;
-  try {
-    const data = ledgerStore.readJSONStore(requestLogStorePath, {});
-    if (data && Array.isArray(data.entries)) {
-      requestLogStore = requestLog.hydrate(data.entries, MAX_REQUEST_LOG_HOSTS);
-    }
-  } catch {}
-}
+function loadRequestLog(...a) { return cosyledgerchainmainMod.loadRequestLog(...a); }
 
-function persistRequestLog() {
-  if (requestLogSaveTimer) clearTimeout(requestLogSaveTimer);
-  requestLogSaveTimer = setTimeout(() => {
-    try {
-      const entries = requestLog.toList(requestLogStore);
-      ledgerStore.writeJSONStore(requestLogStorePath, { version: 1, savedAt: Date.now(), entries });
-    } catch {}
-  }, 5000);
-}
+function persistRequestLog(...a) { return cosyledgerchainmainMod.persistRequestLog(...a); }
 
 // recordRequestAttempt 由 onBeforeRequest 调用；任何异常都不影响浏览。
 
+function listRequestLogEntries(...a) { return cosyledgerchainmainMod.listRequestLogEntries(...a); }
 
-function listRequestLogEntries(limit = 200) {
-  loadRequestLog();
-  const n = Math.max(1, Math.min(Number(limit) || 200, MAX_REQUEST_LOG_HOSTS));
-  return requestLog.toList(requestLogStore).slice(0, n);
-}
+function getRequestLogStats(...a) { return cosyledgerchainmainMod.getRequestLogStats(...a); }
 
-function getRequestLogStats() {
-  loadRequestLog();
-  return requestLog.stats(requestLogStore);
-}
-
-function clearRequestLog() {
-  loadRequestLog();
-  requestLog.clear(requestLogStore);
-  try { fsSync.unlinkSync(requestLogStorePath); } catch {}
-  persistRequestLog();
-  return true;
-}
+function clearRequestLog(...a) { return cosyledgerchainmainMod.clearRequestLog(...a); }
 
 // ===== 品牌仿冒 / 拼写劫持命中台账（brand-spoofs.json / cosy://security）=====
 // 顶层导航命中 brandguard 后，把“主机 + 被仿冒品牌 + 命中原因”按主机聚合落盘，
@@ -1910,51 +1157,16 @@ let brandSpoofsLoaded = false;
 let brandSpoofSaveTimer = null;
 let brandSpoofNotifyTimer = null;
 
-
-
-function persistBrandSpoofs() {
-  if (brandSpoofSaveTimer) clearTimeout(brandSpoofSaveTimer);
-  brandSpoofSaveTimer = setTimeout(() => {
-    try {
-      ledgerStore.writeJSONStore(brandSpoofStorePath, { version: 1, savedAt: Date.now(), hosts: brandSpoofs });
-    } catch {}
-  }, 5000);
-}
+function persistBrandSpoofs(...a) { return cosyledgerchainmainMod.persistBrandSpoofs(...a); }
 
 // recordBrandSpoof 由 onBeforeRequest 顶层导航调用；入参来自纯模块，仍重新白名单化，
 // 防止脏数据写盘。任何异常都不影响浏览。
 
+function listBrandSpoofEntries(...a) { return cosyledgerchainmainMod.listBrandSpoofEntries(...a); }
 
-function listBrandSpoofEntries(limit = 200) {
-  loadBrandSpoofs();
-  const n = Math.max(1, Math.min(Number(limit) || 200, MAX_BRAND_SPOOF_HOSTS));
-  return brandSpoofs.slice(-n).reverse().map(h => ({ ...h }));
-}
+function getBrandSpoofStats(...a) { return cosyledgerchainmainMod.getBrandSpoofStats(...a); }
 
-function getBrandSpoofStats() {
-  loadBrandSpoofs();
-  const byReason = {
-    'typo-domain': 0,
-    'brand-in-subdomain': 0,
-    'brand-keyword-impersonation': 0,
-    'url-structural': 0,
-  };
-  const brands = new Set();
-  for (const h of brandSpoofs) {
-    if (byReason[h.reason] === undefined) byReason[h.reason] = 0;
-    byReason[h.reason] += 1;
-    if (h.brand) brands.add(h.brand);
-  }
-  return { hosts: brandSpoofs.length, byReason, distinctBrands: brands.size };
-}
-
-function clearBrandSpoofs() {
-  loadBrandSpoofs();
-  brandSpoofs = [];
-  try { fsSync.unlinkSync(brandSpoofStorePath); } catch {}
-  persistBrandSpoofs();
-  return true;
-}
+function clearBrandSpoofs(...a) { return cosyledgerchainmainMod.clearBrandSpoofs(...a); }
 
 // ===== TLS 证书错误硬拦截 + 主机/指纹绑定例外（cert-exceptions.json）=====
 // Electron 默认在证书校验失败时“放行”，这对浏览器是致命的：中间人代理、
@@ -1970,28 +1182,11 @@ let certExceptionsLoaded = false;
 let certExceptionSaveTimer = null;
 const certChallenges = new Map(); // nonce -> 拦截上下文
 
-
-
-
-
 // certExceptionAllowed 判断当前失败事件是否命中已批准的“主机+指纹”例外。
-
-
-
-
-
-
-
-
-
-
-
 
 // makeCertChallenge 为一次拦截生成一次性 nonce，供渲染进程“仍要前往”回传。
 
-
 // consumeCertChallenge 取出并销毁一次挑战，返回 null 表示过期/伪造。
-
 
 // 证书校验失败：默认阻止。命中已批准例外才放行；否则向主界面推送全屏
 // 拦截页（仅主框架导航）。证书对象在送渲染进程前经 summarizeCertificate
@@ -2095,214 +1290,23 @@ let clientCertSaveTimer = null;
 // 等待渲染层返回；统一放 Map 里，超时或窗口关闭时统一取消，绝不遗留悬挂回调。
 const pendingAuthChallenges = new Map();
 
+function loadClientCertChoices(...a) { return cosyledgerchainmainMod.loadClientCertChoices(...a); }
 
-
-function loadClientCertChoices() {
-  if (clientCertStoreLoaded) return;
-  clientCertStoreLoaded = true;
-  try {
-    // 有界文本读：clientCert 台账缺失时 readBoundedText 返回 {missing}，不解析、不加载；
-    // 被塞成巨值或损坏则交由外层 try/catch / loadJSON 容错，绝不整读撑爆主进程。
-    const picked = ledgerStore.readBoundedText(clientCertStorePath);
-    if (!picked.missing) clientCertStore.loadJSON(picked.text);
-  } catch {}
-}
-
-function persistClientCertChoices() {
-  if (clientCertSaveTimer) clearTimeout(clientCertSaveTimer);
-  clientCertSaveTimer = setTimeout(() => {
-    try {
-      ledgerStore.writeJSONStore(clientCertStorePath, clientCertStore.toJSON());
-    } catch {}
-  }, 300);
-}
+function persistClientCertChoices(...a) { return cosyledgerchainmainMod.persistClientCertChoices(...a); }
 
 // failAuthCallback 在“不弹框 / 超时 / 窗口关闭”等路径上安全地兑现一个空凭据，
 // 让请求以未认证失败，而不是卡住或回退到系统默认行为。
 
-
-function rejectAuthChallenge(nonce) {
-  const c = pendingAuthChallenges.get(nonce);
-  if (!c) return false;
-  clearTimeout(c.timer);
-  pendingAuthChallenges.delete(nonce);
-  failAuthCallback(c.callback);
-  return true;
-}
-
-
+function rejectAuthChallenge(...a) { return cosyledgerchainmainMod.rejectAuthChallenge(...a); }
 
 // sanitizeCertPickList 只把证书的非敏感摘要给渲染层，绝不传证书对象本体。
 
-
-
-
 // 渲染层提交账号口令。只接受主界面，且 nonce 必须仍在待处理表里。
-ipcMain.handle('submit-network-auth', (event, payload = {}) => {
-  if (!isMainSender(event)) return { ok: false, error: 'denied' };
-  const challenge = pendingAuthChallenges.get(payload.nonce);
-  if (!challenge || challenge.kind !== 'login') return { ok: false, error: '挑战已过期或无效' };
-  const clean = netAuthGuard.sanitizeAuthSubmit({ username: payload.username, password: payload.password });
-  if (!clean.ok) return { ok: false, error: '账号或口令不合法' };
-  clearTimeout(challenge.timer);
-  pendingAuthChallenges.delete(payload.nonce);
-  try { challenge.callback(clean.username, clean.password); } catch {}
-  authLimiter.reset(challenge.key);
-  authStats.recordSuccess();
-  return { ok: true };
-});
+const cosyipcregisterMod = require('./cosyipcregister');
+cosyipcregisterMod.bindDeps({ get ALLOWED_SPELLCHECK_LANGUAGES() { return ALLOWED_SPELLCHECK_LANGUAGES; }, set ALLOWED_SPELLCHECK_LANGUAGES(v) { ALLOWED_SPELLCHECK_LANGUAGES = v; }, get INTERNAL_PAGES() { return INTERNAL_PAGES; }, set INTERNAL_PAGES(v) { INTERNAL_PAGES = v; }, get addToReadingList() { return addToReadingList; }, set addToReadingList(v) { addToReadingList = v; }, get allowPictureInPicture() { return allowPictureInPicture; }, set allowPictureInPicture(v) { allowPictureInPicture = v; }, get app() { return app; }, set app(v) { app = v; }, get applyDarkMode() { return applyDarkMode; }, set applyDarkMode(v) { applyDarkMode = v; }, get applyRateLimitToItem() { return applyRateLimitToItem; }, set applyRateLimitToItem(v) { applyRateLimitToItem = v; }, get applySecureDns() { return applySecureDns; }, set applySecureDns(v) { applySecureDns = v; }, get applySpellcheckSettings() { return applySpellcheckSettings; }, set applySpellcheckSettings(v) { applySpellcheckSettings = v; }, get applyUaPolicyToSession() { return applyUaPolicyToSession; }, set applyUaPolicyToSession(v) { applyUaPolicyToSession = v; }, get applyWebRtcPolicy() { return applyWebRtcPolicy; }, set applyWebRtcPolicy(v) { applyWebRtcPolicy = v; }, get authLimiter() { return authLimiter; }, set authLimiter(v) { authLimiter = v; }, get authStats() { return authStats; }, set authStats(v) { authStats = v; }, get blockAdSignals() { return blockAdSignals; }, set blockAdSignals(v) { blockAdSignals = v; }, get blockHyperlinkPing() { return blockHyperlinkPing; }, set blockHyperlinkPing(v) { blockHyperlinkPing = v; }, get blockLocalNetworkAccess() { return blockLocalNetworkAccess; }, set blockLocalNetworkAccess(v) { blockLocalNetworkAccess = v; }, get blockThirdPartyCookies() { return blockThirdPartyCookies; }, set blockThirdPartyCookies(v) { blockThirdPartyCookies = v; }, get blockTrackers() { return blockTrackers; }, set blockTrackers(v) { blockTrackers = v; }, get blockedTrackerByHost() { return blockedTrackerByHost; }, set blockedTrackerByHost(v) { blockedTrackerByHost = v; }, get blockedTrackerCount() { return blockedTrackerCount; }, set blockedTrackerCount(v) { blockedTrackerCount = v; }, get bookmarkBarVisible() { return bookmarkBarVisible; }, set bookmarkBarVisible(v) { bookmarkBarVisible = v; }, get bookmarkIO() { return bookmarkIO; }, set bookmarkIO(v) { bookmarkIO = v; }, get bookmarks() { return bookmarks; }, set bookmarks(v) { bookmarks = v; }, get certExceptions() { return certExceptions; }, set certExceptions(v) { certExceptions = v; }, get cleanAuditLog() { return cleanAuditLog; }, set cleanAuditLog(v) { cleanAuditLog = v; }, get cleanerCore() { return cleanerCore; }, set cleanerCore(v) { cleanerCore = v; }, get clearOnExit() { return clearOnExit; }, set clearOnExit(v) { clearOnExit = v; }, get clientCertStore() { return clientCertStore; }, set clientCertStore(v) { clientCertStore = v; }, get compiledCustomRules() { return compiledCustomRules; }, set compiledCustomRules(v) { compiledCustomRules = v; }, get confirmCloseMultiple() { return confirmCloseMultiple; }, set confirmCloseMultiple(v) { confirmCloseMultiple = v; }, get cookieLedger() { return cookieLedger; }, set cookieLedger(v) { cookieLedger = v; }, get crashRecoveryEnabled() { return crashRecoveryEnabled; }, set crashRecoveryEnabled(v) { crashRecoveryEnabled = v; }, get crashReloadCounts() { return crashReloadCounts; }, set crashReloadCounts(v) { crashReloadCounts = v; }, get createNewTab() { return createNewTab; }, set createNewTab(v) { createNewTab = v; }, get createNewVault() { return createNewVault; }, set createNewVault(v) { createNewVault = v; }, get crypto() { return crypto; }, set crypto(v) { crypto = v; }, get dialog() { return dialog; }, set dialog(v) { dialog = v; }, get dohCustomUrl() { return dohCustomUrl; }, set dohCustomUrl(v) { dohCustomUrl = v; }, get dohGuard() { return dohGuard; }, set dohGuard(v) { dohGuard = v; }, get dohLedger() { return dohLedger; }, set dohLedger(v) { dohLedger = v; }, get dohMode() { return dohMode; }, set dohMode(v) { dohMode = v; }, get dohProvider() { return dohProvider; }, set dohProvider(v) { dohProvider = v; }, get dohStatus() { return dohStatus; }, set dohStatus(v) { dohStatus = v; }, get downloadJournalExport() { return downloadJournalExport; }, set downloadJournalExport(v) { downloadJournalExport = v; }, get downloadJournalFileProbe() { return downloadJournalFileProbe; }, set downloadJournalFileProbe(v) { downloadJournalFileProbe = v; }, get downloadJournalModule() { return downloadJournalModule; }, set downloadJournalModule(v) { downloadJournalModule = v; }, get downloadMaxBytes() { return downloadMaxBytes; }, set downloadMaxBytes(v) { downloadMaxBytes = v; }, get downloadRateLimit() { return downloadRateLimit; }, set downloadRateLimit(v) { downloadRateLimit = v; }, get downloadReconcileModule() { return downloadReconcileModule; }, set downloadReconcileModule(v) { downloadReconcileModule = v; }, get downloadSizeGuard() { return downloadSizeGuard; }, set downloadSizeGuard(v) { downloadSizeGuard = v; }, get downloads() { return downloads; }, set downloads(v) { downloads = v; }, get enumerateSiteStorage() { return enumerateSiteStorage; }, set enumerateSiteStorage(v) { enumerateSiteStorage = v; }, get executeCleanPlan() { return executeCleanPlan; }, set executeCleanPlan(v) { executeCleanPlan = v; }, get fpGuard() { return fpGuard; }, set fpGuard(v) { fpGuard = v; }, get fpLedger() { return fpLedger; }, set fpLedger(v) { fpLedger = v; }, get fsSync() { return fsSync; }, set fsSync(v) { fsSync = v; }, get getClientCertChoiceStats() { return getClientCertChoiceStats; }, set getClientCertChoiceStats(v) { getClientCertChoiceStats = v; }, get getCspReportStats() { return getCspReportStats; }, set getCspReportStats(v) { getCspReportStats = v; }, get getDownloadJournal() { return getDownloadJournal; }, set getDownloadJournal(v) { getDownloadJournal = v; }, get getHeaderGradeStats() { return getHeaderGradeStats; }, set getHeaderGradeStats(v) { getHeaderGradeStats = v; }, get getRequestLogStats() { return getRequestLogStats; }, set getRequestLogStats(v) { getRequestLogStats = v; }, get hardenCookies() { return hardenCookies; }, set hardenCookies(v) { hardenCookies = v; }, get history() { return history; }, set history(v) { history = v; }, get httpsExceptions() { return httpsExceptions; }, set httpsExceptions(v) { httpsExceptions = v; }, get httpsOnlyCore() { return httpsOnlyCore; }, set httpsOnlyCore(v) { httpsOnlyCore = v; }, get httpsOnlyEnabled() { return httpsOnlyEnabled; }, set httpsOnlyEnabled(v) { httpsOnlyEnabled = v; }, get inputGuard() { return inputGuard; }, set inputGuard(v) { inputGuard = v; }, get ipcMain() { return ipcMain; }, set ipcMain(v) { ipcMain = v; }, get isAboutFrameSender() { return isAboutFrameSender; }, set isAboutFrameSender(v) { isAboutFrameSender = v; }, get isMainSender() { return isMainSender; }, set isMainSender(v) { isMainSender = v; }, get isPagesFrameSender() { return isPagesFrameSender; }, set isPagesFrameSender(v) { isPagesFrameSender = v; }, get isReadingListFrameSender() { return isReadingListFrameSender; }, set isReadingListFrameSender(v) { isReadingListFrameSender = v; }, get isSafeUrl() { return isSafeUrl; }, set isSafeUrl(v) { isSafeUrl = v; }, get isShortcutsFrameSender() { return isShortcutsFrameSender; }, set isShortcutsFrameSender(v) { isShortcutsFrameSender = v; }, get isValidColor() { return isValidColor; }, set isValidColor(v) { isValidColor = v; }, get ledgerStore() { return ledgerStore; }, set ledgerStore(v) { ledgerStore = v; }, get listPermissionDecisions() { return listPermissionDecisions; }, set listPermissionDecisions(v) { listPermissionDecisions = v; }, get listSecurityEvents() { return listSecurityEvents; }, set listSecurityEvents(v) { listSecurityEvents = v; }, get loadCertExceptions() { return loadCertExceptions; }, set loadCertExceptions(v) { loadCertExceptions = v; }, get loadClientCertChoices() { return loadClientCertChoices; }, set loadClientCertChoices(v) { loadClientCertChoices = v; }, get loadCookieLedger() { return loadCookieLedger; }, set loadCookieLedger(v) { loadCookieLedger = v; }, get loadDohLedger() { return loadDohLedger; }, set loadDohLedger(v) { loadDohLedger = v; }, get loadFpLedger() { return loadFpLedger; }, set loadFpLedger(v) { loadFpLedger = v; }, get loadPnaLedger() { return loadPnaLedger; }, set loadPnaLedger(v) { loadPnaLedger = v; }, get mainWindow() { return mainWindow; }, set mainWindow(v) { mainWindow = v; }, get memorySaverEnabled() { return memorySaverEnabled; }, set memorySaverEnabled(v) { memorySaverEnabled = v; }, get net() { return net; }, set net(v) { net = v; }, get netAuthGuard() { return netAuthGuard; }, set netAuthGuard(v) { netAuthGuard = v; }, get openUrlFromInternalFrame() { return openUrlFromInternalFrame; }, set openUrlFromInternalFrame(v) { openUrlFromInternalFrame = v; }, get originOfContents() { return originOfContents; }, set originOfContents(v) { originOfContents = v; }, get path() { return path; }, set path(v) { path = v; }, get pendingAuthChallenges() { return pendingAuthChallenges; }, set pendingAuthChallenges(v) { pendingAuthChallenges = v; }, get permPolicy() { return permPolicy; }, set permPolicy(v) { permPolicy = v; }, get permissionGrants() { return permissionGrants; }, set permissionGrants(v) { permissionGrants = v; }, get permissionRiskReport() { return permissionRiskReport; }, set permissionRiskReport(v) { permissionRiskReport = v; }, get persistCleanAudit() { return persistCleanAudit; }, set persistCleanAudit(v) { persistCleanAudit = v; }, get persistClientCertChoices() { return persistClientCertChoices; }, set persistClientCertChoices(v) { persistClientCertChoices = v; }, get persistCookieLedger() { return persistCookieLedger; }, set persistCookieLedger(v) { persistCookieLedger = v; }, get persistDohLedger() { return persistDohLedger; }, set persistDohLedger(v) { persistDohLedger = v; }, get persistFpLedger() { return persistFpLedger; }, set persistFpLedger(v) { persistFpLedger = v; }, get persistHttpsExceptions() { return persistHttpsExceptions; }, set persistHttpsExceptions(v) { persistHttpsExceptions = v; }, get persistPnaLedger() { return persistPnaLedger; }, set persistPnaLedger(v) { persistPnaLedger = v; }, get persistRateLimitState() { return persistRateLimitState; }, set persistRateLimitState(v) { persistRateLimitState = v; }, get persistUaPolicyState() { return persistUaPolicyState; }, set persistUaPolicyState(v) { persistUaPolicyState = v; }, get persistVaultKey() { return persistVaultKey; }, set persistVaultKey(v) { persistVaultKey = v; }, get persistVaultState() { return persistVaultState; }, set persistVaultState(v) { persistVaultState = v; }, get pnaLedger() { return pnaLedger; }, set pnaLedger(v) { pnaLedger = v; }, get pnaLedgerStats() { return pnaLedgerStats; }, set pnaLedgerStats(v) { pnaLedgerStats = v; }, get readStoredSettings() { return readStoredSettings; }, set readStoredSettings(v) { readStoredSettings = v; }, get readerArticle() { return readerArticle; }, set readerArticle(v) { readerArticle = v; }, get readingList() { return readingList; }, set readingList(v) { readingList = v; }, get recordSecurityEvent() { return recordSecurityEvent; }, set recordSecurityEvent(v) { recordSecurityEvent = v; }, get reduceClientHints() { return reduceClientHints; }, set reduceClientHints(v) { reduceClientHints = v; }, get rejectAuthChallenge() { return rejectAuthChallenge; }, set rejectAuthChallenge(v) { rejectAuthChallenge = v; }, get resolveEffectiveUa() { return resolveEffectiveUa; }, set resolveEffectiveUa(v) { resolveEffectiveUa = v; }, get safeStorage() { return safeStorage; }, set safeStorage(v) { safeStorage = v; }, get sanitizeSettings() { return sanitizeSettings; }, set sanitizeSettings(v) { sanitizeSettings = v; }, get sanitizeSpellcheckLanguages() { return sanitizeSpellcheckLanguages; }, set sanitizeSpellcheckLanguages(v) { sanitizeSpellcheckLanguages = v; }, get saveBookmarks() { return saveBookmarks; }, set saveBookmarks(v) { saveBookmarks = v; }, get saveHistory() { return saveHistory; }, set saveHistory(v) { saveHistory = v; }, get saveReadingList() { return saveReadingList; }, set saveReadingList(v) { saveReadingList = v; }, get searchProvider() { return searchProvider; }, set searchProvider(v) { searchProvider = v; }, get searchProviderId() { return searchProviderId; }, set searchProviderId(v) { searchProviderId = v; }, get securityPosture() { return securityPosture; }, set securityPosture(v) { securityPosture = v; }, get sendToRenderer() { return sendToRenderer; }, set sendToRenderer(v) { sendToRenderer = v; }, get session() { return session; }, set session(v) { session = v; }, get shortcutKeys() { return shortcutKeys; }, set shortcutKeys(v) { shortcutKeys = v; }, get spellcheckEnabled() { return spellcheckEnabled; }, set spellcheckEnabled(v) { spellcheckEnabled = v; }, get spellcheckLanguages() { return spellcheckLanguages; }, set spellcheckLanguages(v) { spellcheckLanguages = v; }, get stripAcceptCh() { return stripAcceptCh; }, set stripAcceptCh(v) { stripAcceptCh = v; }, get stripTrackingParams() { return stripTrackingParams; }, set stripTrackingParams(v) { stripTrackingParams = v; }, get tabs() { return tabs; }, set tabs(v) { tabs = v; }, get topBlockedHosts() { return topBlockedHosts; }, set topBlockedHosts(v) { topBlockedHosts = v; }, get uaLastOverrideAt() { return uaLastOverrideAt; }, set uaLastOverrideAt(v) { uaLastOverrideAt = v; }, get uaOverrideCount() { return uaOverrideCount; }, set uaOverrideCount(v) { uaOverrideCount = v; }, get uaPolicyCore() { return uaPolicyCore; }, set uaPolicyCore(v) { uaPolicyCore = v; }, get uaPolicyState() { return uaPolicyState; }, set uaPolicyState(v) { uaPolicyState = v; }, get unlockVault() { return unlockVault; }, set unlockVault(v) { unlockVault = v; }, get vaultCore() { return vaultCore; }, set vaultCore(v) { vaultCore = v; }, get vaultHandle() { return vaultHandle; }, set vaultHandle(v) { vaultHandle = v; }, get vaultPasswordOK() { return vaultPasswordOK; }, set vaultPasswordOK(v) { vaultPasswordOK = v; }, get vaultStatusSnapshot() { return vaultStatusSnapshot; }, set vaultStatusSnapshot(v) { vaultStatusSnapshot = v; }, get vaultUsePasswordMode() { return vaultUsePasswordMode; }, set vaultUsePasswordMode(v) { vaultUsePasswordMode = v; }, get webrtcMode() { return webrtcMode; }, set webrtcMode(v) { webrtcMode = v; } });
+cosyipcregisterMod.registerNetworkGuards();
 
-ipcMain.handle('cancel-network-auth', (event, payload = {}) => {
-  if (!isMainSender(event)) return { ok: false, error: 'denied' };
-  return { ok: rejectAuthChallenge(payload.nonce) };
-});
-
-// 渲染层选择客户端证书；remember=true 时把该主机->指纹记入台账。
-ipcMain.handle('choose-client-cert', (event, payload = {}) => {
-  if (!isMainSender(event)) return { ok: false, error: 'denied' };
-  const challenge = pendingAuthChallenges.get(payload.nonce);
-  if (!challenge || challenge.kind !== 'cert') return { ok: false, error: '挑战已过期或无效' };
-  const idx = Number(payload.index);
-  const list = Array.isArray(challenge.certificateList) ? challenge.certificateList : [];
-  if (!Number.isInteger(idx) || idx < 0 || idx >= list.length) {
-    return { ok: false, error: '证书序号无效' };
-  }
-  clearTimeout(challenge.timer);
-  pendingAuthChallenges.delete(payload.nonce);
-  try { challenge.callback(list[idx]); } catch {}
-  if (payload.remember === true && challenge.hostname) {
-    if (clientCertStore.remember(challenge.hostname, list[idx], Date.now())) persistClientCertChoices();
-  }
-  sendToRenderer('client-cert-choices-updated', getClientCertChoiceStats());
-  return { ok: true };
-});
-
-ipcMain.handle('cancel-client-cert', (event, payload = {}) => {
-  if (!isMainSender(event)) return { ok: false, error: 'denied' };
-  const challenge = pendingAuthChallenges.get(payload.nonce);
-  if (!challenge || challenge.kind !== 'cert') return { ok: false, error: '挑战已过期或无效' };
-  clearTimeout(challenge.timer);
-  pendingAuthChallenges.delete(payload.nonce);
-  try { challenge.callback(); } catch {}
-  return { ok: true };
-});
-
-ipcMain.handle('list-remembered-certs', (event, payload = {}) => {
-  if (!isMainSender(event)) return { ok: false, error: 'denied' };
-  loadClientCertChoices();
-  const limit = Math.min(Number(payload.limit) || netAuthGuard.MAX_REMEMBERED_CERT_HOSTS, netAuthGuard.MAX_REMEMBERED_CERT_HOSTS);
-  return { ok: true, entries: clientCertStore.list().slice(0, limit), stats: getClientCertChoiceStats() };
-});
-
-ipcMain.handle('forget-remembered-cert', (event, payload = {}) => {
-  if (!isMainSender(event)) return { ok: false, error: 'denied' };
-  if (typeof payload.host !== 'string') return { ok: false, error: 'bad-host' };
-  clientCertStore.forget(payload.host);
-  persistClientCertChoices();
-  sendToRenderer('client-cert-choices-updated', getClientCertChoiceStats());
-  return { ok: true };
-});
-
-ipcMain.handle('clear-remembered-certs', (event) => {
-  if (!isMainSender(event)) return { ok: false, error: 'denied' };
-  clientCertStore.clear();
-  persistClientCertChoices();
-  sendToRenderer('client-cert-choices-updated', getClientCertChoiceStats());
-  return { ok: true };
-});
-
-ipcMain.handle('get-auth-stats', (event) => {
-  if (!isMainSender(event)) return { ok: false, error: 'denied' };
-  return { ok: true, stats: authStats.toJSON() };
-});
-
-// ===== Cookie 加固台账（cosy://security 面板）=====
-ipcMain.handle('list-cookie-hardening', (event) => {
-  if (!isMainSender(event)) return { ok: false, error: 'denied', entries: [] };
-  loadCookieLedger();
-  return { ok: true, entries: cookieLedger.list() };
-});
-
-ipcMain.handle('get-cookie-hardening-stats', (event) => {
-  if (!isMainSender(event)) return { ok: false, error: 'denied' };
-  loadCookieLedger();
-  return { ok: true, stats: cookieLedger.stats() };
-});
-
-ipcMain.handle('clear-cookie-hardening', (event) => {
-  if (!isMainSender(event)) return { ok: false, error: 'denied' };
-  cookieLedger.clear();
-  persistCookieLedger();
-  sendToRenderer('cookie-hardening-updated', cookieLedger.stats());
-  return { ok: true, stats: cookieLedger.stats() };
-});
-
-// ===== PNA 私有网络访问台账 =====
-ipcMain.handle('list-pna-blocks', (event) => {
-  if (!isMainSender(event)) return { ok: false, error: 'denied', entries: [] };
-  loadPnaLedger();
-  const entries = [...pnaLedger.values()].sort((a, b) => b.lastTime - a.lastTime);
-  return { ok: true, entries };
-});
-
-ipcMain.handle('get-pna-block-stats', (event) => {
-  if (!isMainSender(event)) return { ok: false, error: 'denied' };
-  loadPnaLedger();
-  return { ok: true, stats: pnaLedgerStats() };
-});
-
-ipcMain.handle('clear-pna-blocks', (event) => {
-  if (!isMainSender(event)) return { ok: false, error: 'denied' };
-  pnaLedger.clear();
-  persistPnaLedger();
-  sendToRenderer('pna-blocked-updated', pnaLedgerStats());
-  return { ok: true, stats: pnaLedgerStats() };
-});
-
-ipcMain.handle('list-fingerprint-entries', (event) => {
-  if (!isMainSender(event)) return { ok: false, error: 'denied', entries: [] };
-  loadFpLedger();
-  return { ok: true, entries: fpLedger.entries() };
-});
-
-ipcMain.handle('get-fingerprint-stats', (event) => {
-  if (!isMainSender(event)) return { ok: false, error: 'denied' };
-  loadFpLedger();
-  return { ok: true, stats: fpLedger.stats() };
-});
-
-ipcMain.handle('clear-fingerprint-entries', (event) => {
-  if (!isMainSender(event)) return { ok: false, error: 'denied' };
-  fpLedger.clear();
-  persistFpLedger();
-  sendToRenderer('fingerprint-blocked-updated', fpLedger.stats());
-  return { ok: true, stats: fpLedger.stats() };
-});
-
-ipcMain.handle('get-doh-status', (event) => {
-  if (!isMainSender(event)) return { ok: false, error: 'denied' };
-  loadDohLedger();
-  return {
-    ok: true,
-    supported: typeof session.defaultSession.setHostResolverControls === 'function',
-    status: dohStatus(),
-    providers: dohGuard.KNOWN_PROVIDERS,
-    forcedFeatures: permPolicy.FORCED_DISABLE,
-  };
-});
-
-ipcMain.handle('clear-doh-events', (event) => {
-  if (!isMainSender(event)) return { ok: false, error: 'denied' };
-  dohLedger.clear();
-  persistDohLedger();
-  return { ok: true };
-});
-
-function getClientCertChoiceStats() {
-  const entries = clientCertStore.list();
-  return { count: entries.length, max: netAuthGuard.MAX_REMEMBERED_CERT_HOSTS };
-}
-
+function getClientCertChoiceStats(...a) { return cosyledgerchainmainMod.getClientCertChoiceStats(...a); }
 
 const downloadHashes = require('./downloadhashes');
 const securityledger = require('./securityledger');
@@ -2656,7 +1660,6 @@ const {
   hashLocalFileViaDialog,
 } = downloadHashes;
 
-
 permissionStore.bindSecurityRecorder(recordSecurityEvent);
 const {
   isRememberableOrigin,
@@ -2704,69 +1707,12 @@ const { setupGlobalWebContentsHooks } = require('./webcontentshooks').create({
 
 // setupNetworkStatus 监听 Chromium 的 online/offline 事件，把状态推给 renderer，
 // 地址栏/错误页可以据此显示"已断开连接"横幅。
-function setupNetworkStatus() {
-  const report = () => {
-    sendToRenderer('network-status-changed', { online: net.isOnline() });
-  };
-  app.on('online', report);
-  app.on('offline', report);
-  // 启动时先报一次当前状态
-  setTimeout(report, 500);
-}
+function setupNetworkStatus(...a) { return cosyledgerchainmainMod.setupNetworkStatus(...a); }
 
 // r34：GPU 进程崩溃 / GPU 信息更新 / 无障碍支持变化是 app 级系统事件，与具体标签弱
 // 关联，用进程级单份状态去重。崩溃风暴折叠为一条审计并提示重载；GPU 重枚举只保留
 // 白名单字段，软件渲染回退时留痕；系统读屏被打开（渲染路径变化）留痕。
-function setupSystemEventGuards() {
-  app.on('gpu-process-crashed', (_event, killed) => {
-    try {
-      const v = gpuAccessGuard.decideGPUCrash(gpuCrashState, { killed: !!killed }, Date.now());
-      if (v.action !== gpuAccessGuard.ACTION_RECORD) return;
-      recordSecurityEvent('gpu-process-crashed', 'warn', v.detail, '');
-      try {
-        sendToRenderer('gpu-process-gone', { reason: v.killed ? 'killed' : 'crashed' });
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          sendToRenderer('show-toast',
-            v.killed ? 'GPU 进程被系统终止，如画面异常请按 Ctrl+R 重载'
-                     : 'GPU 进程崩溃已自动恢复，如画面异常请按 Ctrl+R 重载');
-        }
-      } catch {}
-    } catch (err) {
-      recordSecurityEvent('gpu-process-crashed', 'info',
-        `GPU 崩溃守卫异常: ${String((err && err.message) || err)}`, '');
-    }
-  });
-
-  app.on('gpu-info-update', () => {
-    const now = Date.now();
-    if (gpuInfoLastReport >= 0 && now - gpuInfoLastReport < GPU_INFO_REPORT_COOLDOWN_MS) return;
-    // 用 basic 信息（含 auxAttributes），避免 'complete' 触发可能较慢的完整枚举。
-    Promise.resolve()
-      .then(() => (typeof app.getGPUInfo === 'function' ? app.getGPUInfo('basic') : null))
-      .then((info) => {
-        const clean = gpuAccessGuard.sanitizeGPUInfo(info && info.auxAttributes);
-        if (clean.kept === 0) return;
-        gpuInfoLastReport = Date.now();
-        if (clean.fields.softwareRendering === true) {
-          recordSecurityEvent('gpu-info-update', 'warn',
-            'GPU 被重新枚举且当前回退到软件渲染（硬件加速可能不可用）', '');
-        } else {
-          recordSecurityEvent('gpu-info-update', 'info',
-            'GPU 信息已更新（硬件加速生效）', '');
-        }
-      })
-      .catch(() => {});
-  });
-
-  app.on('accessibility-support-changed', (_event, enabled) => {
-    try {
-      const v = gpuAccessGuard.decideAccessibilityChange(enabled);
-      if (v.shouldRecord) {
-        recordSecurityEvent('accessibility-changed', 'info', v.detail, '');
-      }
-    } catch {}
-  });
-}
+function setupSystemEventGuards(...a) { return cosyledgerchainmainMod.setupSystemEventGuards(...a); }
 
 // r34：补齐“只加固 defaultSession、漏了后续 fromPartition 会话”的纵深防御缺口。
 // app 'session-created' 对每个新会话触发（defaultSession 已在 setupPermissionHandlers /
@@ -2786,23 +1732,11 @@ const setupExtraSessionHardeningCtx = {
   get urlResolve() { return urlResolve; },
   get webContents() { return webContents; },
 };
-function setupExtraSessionHardening() {
-  return require('./sessionhardening').setupExtraSessionHardening(setupExtraSessionHardeningCtx, );
-}
+function setupExtraSessionHardening(...a) { return cosyledgerchainmainMod.setupExtraSessionHardening(...a); }
 
-function getTabLayout() {
-  // 复用统一的有界设置读取（坏 / 超大文件回落 {}），不再各自 existsSync+parse。
-  const settings = readStoredSettings();
-  return settings.tabLayout || 'horizontal';
-}
+function getTabLayout(...a) { return cosywinmainMod.getTabLayout(...a); }
 
-function getDefaultTabUrl() {
-  const settings = readStoredSettings();
-  if (settings.defaultTab === 'bing') return 'https://www.bing.com';
-  if (settings.defaultTab === 'custom' && settings.customUrl && isSafeUrl(settings.customUrl))
-    return settings.customUrl;
-  return 'cosy://newtab';
-}
+function getDefaultTabUrl(...a) { return cosywinmainMod.getDefaultTabUrl(...a); }
 
 const createWindowCtx = {
   get DEFAULT_WINDOW_HEIGHT() { return DEFAULT_WINDOW_HEIGHT; },
@@ -2833,9 +1767,7 @@ const createWindowCtx = {
   get tabs() { return tabs; },
   get updateBrowserViewBounds() { return updateBrowserViewBounds; },
 };
-function createWindow() {
-  return require('./windowfactory').createWindow(createWindowCtx, );
-}
+function createWindow(...a) { return cosywinmainMod.createWindow(...a); }
 
 const registerShortcutsCtx = {
   get applyFind() { return applyFind; },
@@ -2864,42 +1796,21 @@ const registerShortcutsCtx = {
   get zoomIn() { return zoomIn; },
   get zoomOut() { return zoomOut; },
 };
-function registerShortcuts() {
-  return require('./shortcutrouter').registerShortcuts(registerShortcutsCtx, );
-}
+function registerShortcuts(...a) { return cosywinmainMod.registerShortcuts(...a); }
 
-function getUrlProtocol(url) {
-  // safeProtocol 默认解析失败回 null，与历史实现逐字一致。
-  return urlResolve.safeProtocol(url);
-}
-
-
+function getUrlProtocol(...a) { return cosywinmainMod.getUrlProtocol(...a); }
 
 const TASK_MANAGER_URL = 'cosy://taskmanager';
 
 // openTaskManagerTab 打开（或切到已有的）任务管理器内置页。任务管理器是 cosy: 页，
 // 承载在普通标签视图里；已开则复用，避免连按 Shift+Esc 开出一堆相同页。
-function openTaskManagerTab() {
-  const existing = tabs.findIndex(t => t && t.url === TASK_MANAGER_URL);
-  if (existing >= 0) {
-    if (existing !== currentTabIndex) switchToTab(existing);
-    return tabs[existing];
-  }
-  return createNewTab(TASK_MANAGER_URL);
-}
+function openTaskManagerTab(...a) { return cosywinmainMod.openTaskManagerTab(...a); }
 
 const TAB_OVERVIEW_URL = 'cosy://taboverview';
 
 // openTabOverviewTab 打开（或切到已有的）标签页概览网格页。与任务管理器同款
 // 语义：已开则复用，避免 Ctrl+Shift+E 连按开出一堆相同页。
-function openTabOverviewTab() {
-  const existing = tabs.findIndex(t => t && t.url === TAB_OVERVIEW_URL);
-  if (existing >= 0) {
-    if (existing !== currentTabIndex) switchToTab(existing);
-    return tabs[existing];
-  }
-  return createNewTab(TAB_OVERVIEW_URL);
-}
+function openTabOverviewTab(...a) { return cosywinmainMod.openTabOverviewTab(...a); }
 
 const READER_PAGE_URL = 'cosy://reader';
 
@@ -2908,44 +1819,14 @@ const READER_PAGE_URL = 'cosy://reader';
 // （executeJavaScript 的返回值来自页面环境），落进主进程前再做一次形状与长度收口。
 let readerArticle = null;
 
-
-
-
-
-
-
-
-
 // enterReaderMode 在“当前活动的 http(s) 标签”真实 DOM 内只读抽取正文，再带着
 // 净化后的数据打开阅读页。抽取脚本运行在页面主世界但只调用只读 DOM API；返回值
 // 经主进程二次形状校验。cosy:/file: 等内置页不支持阅读模式。
 
-
-function showErrorPage(tab, errorCode, errorDescription, validatedURL) {
-  const errorParams = new URLSearchParams({
-    code: getHttpStatusCode(errorCode),
-    message: getErrorMessage(errorCode),
-    reason: errorDescription,
-    url: validatedURL,
-    browserCode: errorCode,
-    browserMessage: getBrowserErrorText(errorCode)
-  });
-  const errorUrl = `file://${__dirname}/src/error.html?${errorParams.toString()}`;
-  tab.view.webContents.loadURL(errorUrl);
-  tab.url = validatedURL;
-  tab.title = `错误 - ${getHttpStatusCode(errorCode)}`;
-  sendToRenderer('tab-updated', { id: tab.id, url: validatedURL, title: tab.title });
-}
+function showErrorPage(...a) { return cosywinmainMod.showErrorPage(...a); }
 
 // pushNavState 每次导航完成后同步 canGoBack/canGoForward，让 renderer 知道按钮该灰掉还是点亮
-function pushNavState(tab) {
-  if (!tab?.view?.webContents) return;
-  tab.canGoBack = tab.view.webContents.canGoBack();
-  tab.canGoForward = tab.view.webContents.canGoForward();
-  sendToRenderer('tab-history-changed', {
-    id: tab.id, canGoBack: tab.canGoBack, canGoForward: tab.canGoForward
-  });
-}
+function pushNavState(...a) { return cosywinmainMod.pushNavState(...a); }
 
 // ===== 渲染进程崩溃恢复 =====
 // 渲染进程崩溃（OOM、被杀、完整性失败）后 WebContentsView 已不可用，
@@ -2961,49 +1842,17 @@ const CRASH_REASON_TEXT = {
 const MAX_CRASH_AUTO_RECOVER = 3;   // 时间窗内自动恢复次数上限
 const CRASH_WINDOW_MS = 60 * 1000; // 崩溃计数滑动窗口
 
-function recordCrash(tab, details) {
-  const now = Date.now();
-  tab.crashEvents = (tab.crashEvents || []).filter(t => now - t < CRASH_WINDOW_MS);
-  tab.crashEvents.push(now);
-  tab.crashed = true;
-  tab.crashReason = CRASH_REASON_TEXT[details?.reason]
-    || `渲染进程异常退出（${details?.reason || 'unknown'}）`;
-  sendToRenderer('tab-crashed', { id: tab.id, reason: tab.crashReason });
-}
+function recordCrash(...a) { return cosywinmainMod.recordCrash(...a); }
 
-function canAutoRecover(tab) {
-  return (tab.crashEvents || []).length <= MAX_CRASH_AUTO_RECOVER;
-}
+function canAutoRecover(...a) { return cosywinmainMod.canAutoRecover(...a); }
 
 // 销毁已经死亡的视图；webContents 在崩溃后可能已被回收，全部容错。
-function destroyTabView(tab) {
-  if (!tab.view) return;
-  try { mainWindow.contentView.removeChildView(tab.view); } catch {}
-  try { tab.view.webContents.destroy(); } catch {}
-  tab.view = null;
-}
+function destroyTabView(...a) { return cosywinmainMod.destroyTabView(...a); }
 
 // 重建崩溃标签的视图；超过自动恢复上限时改显错误页，不再自动加载原 URL。
-function rebuildCrashedTab(tab) {
-  const reason = tab.crashReason;
-  const overLimit = !canAutoRecover(tab);
-  destroyTabView(tab);
-  tab.crashed = false;
-  tab.crashReason = null;
-  loadTabContent(tab);
-  if (overLimit) {
-    showCosyError(tab, '500', reason || '页面崩溃', '该页面短时间内多次崩溃，已停止自动恢复，请手动刷新');
-  }
-}
+function rebuildCrashedTab(...a) { return cosywinmainMod.rebuildCrashedTab(...a); }
 
-function handleRenderProcessGone(tab, details) {
-  if (!tab) return;
-  recordCrash(tab, details);
-  const idx = tabs.indexOf(tab);
-  // 活动标签立即恢复；后台标签只清理死视图，等切回时再重建。
-  if (idx === currentTabIndex) rebuildCrashedTab(tab);
-  else destroyTabView(tab);
-}
+function handleRenderProcessGone(...a) { return cosywinmainMod.handleRenderProcessGone(...a); }
 
 // ===== 内存节省（Memory Saver）：自动休眠后台标签 =====
 // 对齐 Chrome "Memory Saver"：长时间不看的后台标签，其渲染进程（HTML/JS、
@@ -3017,54 +1866,20 @@ let memorySaverTimer = null;
 
 // tabKeepsAlive 判断标签是否必须常驻、不能被休眠。
 
-
 // discardTab 回收一个后台标签的渲染进程并保留标签壳。
-function discardTab(tab, reason = 'idle') {
-  if (tabKeepsAlive(tab)) return false;
-  destroyTabView(tab);
-  tab.discarded = true;
-  tab.retry403 = false;
-  sendToRenderer('tab-discarded', { id: tab.id, url: tab.url, reason });
-  return true;
-}
+function discardTab(...a) { return cosywinmainMod.discardTab(...a); }
 
 // reloadDiscardedTab 唤醒休眠标签：按记录的 URL 重建视图并重新加载。
-function reloadDiscardedTab(tab) {
-  if (!tab || !tab.discarded) return false;
-  tab.discarded = false;
-  tab.lastActiveAt = Date.now();
-  loadTabContent(tab);
-  sendToRenderer('tab-reloaded', { id: tab.id });
-  setTimeout(updateBrowserViewBounds, 0);
-  return true;
-}
+function reloadDiscardedTab(...a) { return cosywinmainMod.reloadDiscardedTab(...a); }
 
 // sweepDiscardableTabs 把超过空闲阈值且无需常驻的后台标签休眠掉。
-function sweepDiscardableTabs() {
-  if (!memorySaverEnabled) return;
-  const now = Date.now();
-  for (const tab of tabs) {
-    if (tabKeepsAlive(tab)) continue;
-    if (now - (tab.lastActiveAt || 0) >= MEMORY_SAVER_IDLE_MS) discardTab(tab, 'idle');
-  }
-}
+function sweepDiscardableTabs(...a) { return cosywinmainMod.sweepDiscardableTabs(...a); }
 
-function startMemorySaver() {
-  if (memorySaverTimer) return;
-  memorySaverTimer = setInterval(sweepDiscardableTabs, MEMORY_SAVER_SWEEP_MS);
-  if (typeof memorySaverTimer.unref === 'function') memorySaverTimer.unref();
-}
+function startMemorySaver(...a) { return cosywinmainMod.startMemorySaver(...a); }
 
 // discardAllBackgroundTabs 立即休眠除活动标签外所有可休眠的后台标签，
 // 返回成功休眠的数量，供快捷键 / 右键菜单给用户一个明确反馈。
-function discardAllBackgroundTabs() {
-  let n = 0;
-  for (const tab of tabs) {
-    if (tabKeepsAlive(tab)) continue;
-    if (discardTab(tab, 'manual')) n++;
-  }
-  return n;
-}
+function discardAllBackgroundTabs(...a) { return cosywinmainMod.discardAllBackgroundTabs(...a); }
 
 ipcMain.handle('discard-tab', (event, payload = {}) => {
   if (!isMainSender(event)) return { success: false };
@@ -3097,20 +1912,7 @@ const isTaskManagerFrameSender = internalFrame.makeInternalFrameSender({ isMainS
 
 // 汇总各标签渲染进程 OS pid -> {id,title,index}，用于把进程指标关联到具体标签。
 // 视图已销毁 / pid 取不到的标签跳过，不让单个坏标签影响整页指标。
-function buildTabPidMap() {
-  const map = new Map();
-  for (let i = 0; i < tabs.length; i++) {
-    const tab = tabs[i];
-    const wc = tab && tab.view && tab.view.webContents;
-    if (!wc || typeof wc.getOSProcessId !== 'function') continue;
-    let pid;
-    try { pid = wc.getOSProcessId(); } catch { continue; }
-    if (Number.isInteger(pid) && pid > 0 && !map.has(pid)) {
-      map.set(pid, { id: String(tab.id), title: String(tab.title || tab.url || ''), index: i });
-    }
-  }
-  return map;
-}
+function buildTabPidMap(...a) { return cosywinmainMod.buildTabPidMap(...a); }
 
 ipcMain.handle('get-task-manager-processes', (event) => {
   if (!isTaskManagerFrameSender(event)) {
@@ -3185,7 +1987,6 @@ const INTERNAL_PAGES = {
 
 // tabOverviewItem 输出单标签的概览数据。字段做类型收口，避免脏标题 / 长 URL
 // 破坏网格布局；分组信息从 tabGroupModel 实时取，标签被改组后概览自动跟随。
-
 
 ipcMain.handle('tab-overview-snapshot', (event) => {
   if (!isTabOverviewFrameSender(event)) return { ok: false, error: 'denied' };
@@ -3291,24 +2092,9 @@ const loadTabContentCtx = {
   get toggleDevTools() { return toggleDevTools; },
   get updateBrowserViewBounds() { return updateBrowserViewBounds; },
 };
-function loadTabContent(tab) {
-  return require('./tabcontent').loadTabContent(loadTabContentCtx, tab);
-}
+function loadTabContent(...a) { return cosywinmainMod.loadTabContent(...a); }
 
-function showCosyError(tab, code, message, reason) {
-  const errorParams = new URLSearchParams({ code, message, reason, url: tab.url, browserCode: -3, browserMessage: 'ERR_UNKNOWN_COSY_URL' });
-  const errorUrl = `file://${__dirname}/src/error.html?${errorParams.toString()}`;
-  tab.view.webContents.loadURL(errorUrl);
-  tab.title = `错误 - ${code}`;
-  tab.favicon = 'src/error.png';
-  sendToRenderer('tab-updated', { id: tab.id, url: tab.url, title: tab.title });
-}
-
-
-
-
-
-
+function showCosyError(...a) { return cosywinmainMod.showCosyError(...a); }
 
 // ===== 固定标签页（Pinned Tabs）=====
 // 权威固定集合由 pintabs 纯内核维护；这里负责把固定状态落到 Tab 对象、把固定
@@ -3319,167 +2105,49 @@ const pinModel = new pinTabs.PinModel();
 const pinStorePath = path.join(app.getPath('userData'), 'pintabs.json');
 let pinSaveTimer = null;
 
-function savePinsNow() {
-  try {
-    // 跨重启运行时 id 会重新生成，因此按 URL 记录固定标签，重水合时再匹配新 id。
-    const entries = [];
-    for (const id of pinModel.ids()) {
-      const t = tabs.find(tab => tab && tab.id === id);
-      if (t && t.url) entries.push({ id, url: t.url });
-    }
-    ledgerStore.writeJSONStore(pinStorePath, { version: 1, entries });
-  } catch (e) {
-    console.error('保存固定标签失败:', e);
-  }
-}
+function savePinsNow(...a) { return cosytabsmainMod.savePinsNow(...a); }
 
-function persistPins() {
-  if (pinSaveTimer) clearTimeout(pinSaveTimer);
-  pinSaveTimer = setTimeout(savePinsNow, 400);
-}
+function persistPins(...a) { return cosytabsmainMod.persistPins(...a); }
 
-function loadStoredPins() {
-  try {
-    const data = ledgerStore.readJSONStore(pinStorePath, null);
-    if (!data || typeof data !== 'object') return [];
-    return pinTabs.sanitizeStoredPinEntries(data.entries);
-  } catch (e) {
-    console.error('读取固定标签失败:', e);
-    return [];
-  }
-}
+function loadStoredPins(...a) { return cosytabsmainMod.loadStoredPins(...a); }
 
-function clearStoredPins() {
-  try {
-    if (fsSync.existsSync(pinStorePath)) fsSync.unlinkSync(pinStorePath);
-  } catch (e) {
-    console.error('清除固定标签失败:', e);
-  }
-}
+function clearStoredPins(...a) { return cosytabsmainMod.clearStoredPins(...a); }
 
-function findTabIndexById(tabId) {
-  return tabs.findIndex(t => t && String(t.id) === String(tabId));
-}
+function findTabIndexById(...a) { return cosytabsmainMod.findTabIndexById(...a); }
 
 // broadcastPinnedState 把单个标签的固定 / 取消固定结果推给渲染层。
-function broadcastPinnedState(tab) {
-  sendToRenderer('tab-pinned-changed', { id: tab.id, pinned: !!tab.pinned });
-}
+function broadcastPinnedState(...a) { return cosytabsmainMod.broadcastPinnedState(...a); }
 
 // applyPinnedState 设置标签固定态并同步内核；不负责重排，重排统一走
 // movePinnedTabsToFront，便于批量重水合时只重排一次。
-function applyPinnedState(tabId, pinned) {
-  const idx = findTabIndexById(tabId);
-  if (idx < 0) return { success: false };
-  const tab = tabs[idx];
-  const want = !!pinned;
-  if (want) {
-    const r = pinModel.pin(tab.id);
-    if (!r.ok) return { success: false, reason: r.reason };
-  } else {
-    const r = pinModel.unpin(tab.id);
-    if (!r.ok) return { success: false, reason: r.reason };
-  }
-  tab.pinned = want;
-  broadcastPinnedState(tab);
-  return { success: true, pinned: want, changed: true };
-}
+function applyPinnedState(...a) { return cosytabsmainMod.applyPinnedState(...a); }
 
 // movePinnedTabsToFront 依据内核的稳定分区结果，物理重排 tabs 数组（视图对象挂在
 // Tab 上，随元素一起移动，不需要重建），并修正当前标签索引，最后让渲染层同步顺序。
-function movePinnedTabsToFront() {
-  const ordered = pinModel.arrange(tabs.map(t => t.id));
-  if (ordered.length !== tabs.length) return false;
-  const byId = new Map(tabs.map(t => [t.id, t]));
-  const next = ordered.map(id => byId.get(id));
-  const currentTab = tabs[currentTabIndex];
-  for (let i = 0; i < tabs.length; i++) tabs[i] = next[i];
-  if (currentTab) {
-    const ni = tabs.indexOf(currentTab);
-    if (ni >= 0) currentTabIndex = ni;
-  }
-  sendToRenderer('pins-order-changed', { ids: pinModel.ids() });
-  return true;
-}
+function movePinnedTabsToFront(...a) { return cosytabsmainMod.movePinnedTabsToFront(...a); }
 
-function pinTab(tabId) {
-  const r = applyPinnedState(tabId, true);
-  if (!r.success) return r;
-  movePinnedTabsToFront();
-  persistPins();
-  return r;
-}
+function pinTab(...a) { return cosytabsmainMod.pinTab(...a); }
 
-function unpinTab(tabId) {
-  const r = applyPinnedState(tabId, false);
-  if (!r.success) return r;
-  movePinnedTabsToFront();
-  persistPins();
-  return r;
-}
+function unpinTab(...a) { return cosytabsmainMod.unpinTab(...a); }
 
-function toggleTabPinned(tabId) {
-  const idx = findTabIndexById(tabId);
-  if (idx < 0) return { success: false };
-  return tabs[idx].pinned ? unpinTab(tabs[idx].id) : pinTab(tabs[idx].id);
-}
+function toggleTabPinned(...a) { return cosytabsmainMod.toggleTabPinned(...a); }
 
 // rehydratePinnedTabs 在启动恢复出标签后，用磁盘上的固定 URL 清单匹配本次新标签，
 // 一次性恢复固定态并把它们排到最前。匹配不到（对应页本次没恢复）的固定项忽略。
-function rehydratePinnedTabs() {
-  const stored = loadStoredPins();
-  if (!stored.length) return 0;
-  const current = tabs.map(t => ({ id: t.id, url: t.url }));
-  const pinnedIds = pinTabs.rehydratePinsByUrl(stored, current);
-  for (const id of pinnedIds) {
-    const r = applyPinnedState(id, true);
-    if (!r.success) continue;
-  }
-  if (pinModel.count() > 0) movePinnedTabsToFront();
-  return pinModel.count();
-}
+function rehydratePinnedTabs(...a) { return cosytabsmainMod.rehydratePinnedTabs(...a); }
 
 // ensurePinnedTabsOpened 在启动会话恢复之后调用：固定标签独立于 session.json
 // 持久化，即使会话文件被清，也应把固定的 http/https 页补开后再重水合。固定的
 // cosy 内置页不主动补开（避免与默认新标签页重复），只在它本次本就存在时固定。
-function ensurePinnedTabsOpened() {
-  const stored = loadStoredPins();
-  if (!stored.length) return 0;
-  const haveUrls = new Set(tabs.map(t => t.url));
-  for (const rec of stored) {
-    if (haveUrls.has(rec.url)) continue;
-    if (getUrlProtocol(rec.url) === 'cosy:') continue;
-    if (!isSafeUrl(rec.url)) continue;
-    haveUrls.add(rec.url);
-    createNewTab(rec.url);
-  }
-  return rehydratePinnedTabs();
-}
+function ensurePinnedTabsOpened(...a) { return cosytabsmainMod.ensurePinnedTabsOpened(...a); }
 
 // closeTabsByIds 按一组标签 id 批量关闭。为避免 splice 导致的索引漂移，统一从
 // 最大索引向最小索引关闭。返回实际关闭数量。
-function closeTabsByIds(ids) {
-  const indexes = [];
-  for (const id of ids) {
-    const i = findTabIndexById(id);
-    if (i >= 0) indexes.push(i);
-  }
-  indexes.sort((a, b) => b - a);
-  for (const i of indexes) closeTab(i);
-  return indexes.length;
-}
+function closeTabsByIds(...a) { return cosytabsmainMod.closeTabsByIds(...a); }
 
 // planAndCloseTabs 是批量关闭的唯一权威入口：先由 pintabs 内核裁决哪些标签允许
 // 关闭（固定标签在任何模式下都保留），再真正关闭。渲染层不再自己循环关标签。
-function planAndCloseTabs(mode, anchorId) {
-  const plan = pinTabs.planBatchClose(
-    tabs.map(t => ({ id: t.id, pinned: !!t.pinned })),
-    { mode, anchorId }
-  );
-  if (!plan) return { success: false, closed: 0 };
-  const closed = closeTabsByIds(plan.closeIds);
-  return { success: true, closed, kept: plan.keepIds };
-}
+function planAndCloseTabs(...a) { return cosytabsmainMod.planAndCloseTabs(...a); }
 
 // ===== 标签分组（Tab Groups）=====
 // 权威分组集合由 tabgroups 纯内核维护；这里负责把分组状态落到 IPC / 磁盘、按分组
@@ -3494,52 +2162,27 @@ let tabGroupSaveTimer = null;
 // tabGroupIsPinned 判定标签是否固定：固定标签与分组互斥（内核同规则），
 // 固定优先，分组只作用于非固定区。
 
-
-
-
-
-
-
-
-
-
 // tabGroupOrder 依据内核 arrangeTabs 计算“目标标签 id 顺序”：固定区最前、
 // 已分组标签按组聚类、未分组标签保持原相对顺序垫后。渲染层按此顺序渲染。
-
 
 // broadcastTabGroups 把分组快照（分组列表 + 编排后的标签顺序）推给渲染层。
 // 快照只含纯数据，绝不暴露 Tab 对象 / WebContents。
 
-
 // reorderTabsByGroupPlan 依据目标顺序对 tabs 数组做物理重排（Tab 对象挂在
 // Tab.view 上，随元素移动，无需重建视图），并修正当前标签索引。最后让渲染层
 // 按新顺序渲染。返回是否发生了顺序变化。
-
 
 // applyTabGroupArrangement 是“按分组重排标签栏”的唯一权威入口：用内核计算目标
 // 顺序，再用 taborderdiff 求出最小移动指令（只移动需要挪位的标签，已有序的原地
 // 不动），物理重排后广播。任何分组结构变化（建组 / 加标签 / 移出 / 解散 / 组间
 // 移动）都调用它，避免渲染层各自猜测顺序。
 
-
 // rehydrateTabGroups 在启动会话恢复出标签之后调用：读取磁盘分组清单，按“组内
 // 标签 id 与本次打开的非固定标签匹配”重水合模型（不匹配的组内标签剔除，变空的
 // 组丢弃），然后按分组重排一次标签栏。
-function rehydrateTabGroups() {
-  const stored = loadStoredTabGroups();
-  if (!stored.length) return 0;
-  const current = tabs.map(t => ({ id: t.id, pinned: !!t.pinned }));
-  const clean = tabGroups.rehydrateGroupsByTabs(stored, current);
-  tabGroupModel.loadStored(clean);
-  if (tabGroupModel.groupCount() > 0) {
-    applyTabGroupArrangement();
-    broadcastTabGroups();
-  }
-  return tabGroupModel.groupCount();
-}
+function rehydrateTabGroups(...a) { return cosytabsmainMod.rehydrateTabGroups(...a); }
 
 // tabGroupError 把内核拒绝原因转成渲染层可读的 { ok:false, reason }。
-
 
 ipcMain.handle('get-tab-groups', (event) => {
   if (!isMainSender(event)) return { groups: [], order: [] };
@@ -3649,35 +2292,10 @@ ipcMain.handle('dissolve-tab-group', (event, payload) => {
 // 服务端可能在 filename 里塞 "../../evil.exe"、RTL 反转符、结尾点空格或
 // Windows 保留设备名。这里委托 dloadguard.sanitizeName：剥离目录组件与不可见
 // 字符、剥掉结尾点空格、给保留名加前缀，返回可安全落盘的纯文件名。
-function sanitizeDownloadFilename(name) {
-  if (!name || typeof name !== 'string') return 'download';
-  const res = dloadGuard.sanitizeName(name);
-  if (res.rejected || !res.name) return 'download';
-  // 双保险：dloadguard 已剥目录，这里再清一遍 Windows/Unix 保留字符。
-  const final = downloadName.sanitizeDownloadName(res.name, 'download');
-  if (final.changed) {
-    recordSecurityEvent('download-name', 'info',
-      `下载文件名已净化（${final.reasons.join(',')}）`, '');
-  }
-  return final.name || 'download';
-}
+function sanitizeDownloadFilename(...a) { return cosytabsmainMod.sanitizeDownloadFilename(...a); }
 
 // resolveUniqueDownloadPath 如果目标已存在，自动追加 (1)/(2)/... 避免覆盖
-function resolveUniqueDownloadPath(dir, filename) {
-  let existingNames = [];
-  try {
-    existingNames = fsSync.readdirSync(dir);
-  } catch (scanError) {
-    existingNames = [];
-  }
-  const allocation = downloadPathCollision.claimUniquePath({ dir, filename, taken: existingNames });
-  if (!allocation.ok) {
-    recordSecurityEvent('download-savepath', 'critical',
-      `无法分配唯一下载文件名: ${downloadPathCollision.describeAllocation(allocation)}`, 'download-manager');
-    return '';
-  }
-  return allocation.path;
-}
+function resolveUniqueDownloadPath(...a) { return cosytabsmainMod.resolveUniqueDownloadPath(...a); }
 
 // ===== 下载文件名伪装 / 危险类型台账（download-risk.json / cosy://security）=====
 // 旧实现只看 path.extname 的最后一个扩展名，挡不住双扩展伪装（发票.exe.pdf）、
@@ -3692,71 +2310,26 @@ const MAX_DOWNLOAD_RISK_RECORDS = 500;
 // 重启后清空（无来源信息的可执行文件同样会要求确认，宁严勿纵）。有界防膨胀。
 const MAX_DOWNLOAD_ORIGIN_ENTRIES = 1000;
 const downloadOriginByPath = new Map();
-function rememberDownloadOrigin(savePath, originUrl) {
-  if (!savePath || !originUrl) return;
-  if (downloadOriginByPath.size >= MAX_DOWNLOAD_ORIGIN_ENTRIES) {
-    const oldest = downloadOriginByPath.keys().next().value;
-    downloadOriginByPath.delete(oldest);
-  }
-  downloadOriginByPath.set(savePath, originUrl);
-}
+function rememberDownloadOrigin(...a) { return cosytabsmainMod.rememberDownloadOrigin(...a); }
 
 const downloadRiskRecords = [];
 let downloadRiskLoaded = false;
 let downloadRiskSaveTimer = null;
 
+function persistDownloadRisks(...a) { return cosytabsmainMod.persistDownloadRisks(...a); }
 
-
-function persistDownloadRisks() {
-  if (downloadRiskSaveTimer) clearTimeout(downloadRiskSaveTimer);
-  downloadRiskSaveTimer = setTimeout(() => {
-    try {
-      ledgerStore.writeJSONStore(downloadRiskStorePath, { version: 1, records: downloadRiskRecords });
-    } catch {}
-  }, 300);
-}
-
-function recordDownloadRisk(entry) {
-  loadDownloadRisks();
-  downloadRiskRecords.push({
-    time: Date.now(),
-    filename: String(entry.filename || '').slice(0, 255),
-    host: String(entry.host || '').slice(0, 255),
-    decision: entry.decision || 'warn',
-    action: entry.action || 'saved',
-    ext: String(entry.ext || '').slice(0, 32),
-    risks: Array.isArray(entry.risks) ? entry.risks.slice(0, 20) : [],
-  });
-  if (downloadRiskRecords.length > MAX_DOWNLOAD_RISK_RECORDS) {
-    downloadRiskRecords.splice(0, downloadRiskRecords.length - MAX_DOWNLOAD_RISK_RECORDS);
-  }
-  persistDownloadRisks();
-}
+function recordDownloadRisk(...a) { return cosytabsmainMod.recordDownloadRisk(...a); }
 
 // listDownloadRisks 返回最近的风险记录（倒序，新的在前），供安全中心只读展示。
-function listDownloadRisks(limit) {
-  loadDownloadRisks();
-  const max = Math.max(1, Math.min(500, Number(limit) || 200));
-  return downloadRiskRecords.slice(-max).reverse().map(r => ({ ...r, risks: r.risks || [] }));
-}
+function listDownloadRisks(...a) { return cosytabsmainMod.listDownloadRisks(...a); }
 
-function clearDownloadRisks() {
-  loadDownloadRisks();
-  const n = downloadRiskRecords.length;
-  downloadRiskRecords.length = 0;
-  persistDownloadRisks();
-  return n;
-}
+function clearDownloadRisks(...a) { return cosytabsmainMod.clearDownloadRisks(...a); }
 
 // 兼容旧调用名：现在基于 dloadguard 判断“是否需要用户确认/拒绝”。
 // 返回 dloadguard 的完整分析结果（含原因链），供确认对话框展示。
-function analyzeDownloadSafety(filename, mime) {
-  return dloadGuard.analyzeDownloadName(filename, mime);
-}
+function analyzeDownloadSafety(...a) { return cosytabsmainMod.analyzeDownloadSafety(...a); }
 
 // confirmDownloadDecision 针对需要确认的下载弹出原生对话框，列出具体命中原因。
-
-
 
 // handleDownloadEvent 是所有 session 共用的 will-download 处理器。历史上它只挂在
 // defaultSession 上，而隔离 / 访客分区（fromPartition）的下载只在各自 session 上触发，
@@ -3788,85 +2361,33 @@ const handleDownloadEventCtx = {
   get sendShelf() { return sendShelf; },
   get sendToRenderer() { return sendToRenderer; },
 };
-function handleDownloadEvent(event, item, webContents) {
-  return require('./downloadsevents').handleDownloadEvent(handleDownloadEventCtx, event, item, webContents);
-}
+function handleDownloadEvent(...a) { return cosytabsmainMod.handleDownloadEvent(...a); }
 
 // managedDownloadSessions 记录已挂过下载保护的 session。will-download 若对同一
 // session 注册两次，一次下载会触发两轮回调：弹两次确认框、写两条台账、落盘后补两次
 // MOTW。defaultSession 走 setupDownloadManager、分区走 session-created，理论上互斥，
 // 但仍用 WeakSet 做幂等兜底（session 回收后条目自动消失，不泄漏）。
-function downloadJournalFileProbe() {
-  return {
-    exists: (target) => {
-      try { return fsSync.lstatSync(target).isFile(); } catch { return false; }
-    },
-    sizeOf: (target) => {
-      try {
-        const stat = fsSync.lstatSync(target);
-        return stat.isFile() ? stat.size : null;
-      } catch { return null; }
-    },
-  };
-}
-
-
-
-
+function downloadJournalFileProbe(...a) { return cosytabsmainMod.downloadJournalFileProbe(...a); }
 
 const managedDownloadSessions = new WeakSet();
 
 // attachDownloadManager 把同一套下载保护挂到任意 session；defaultSession 与分区会话
 // 都必须经过它，避免隔离 / 访客分区下载绕过文件名净化、危险类型确认与 MOTW。
-function attachDownloadManager(sess) {
-  if (!sess || managedDownloadSessions.has(sess)) return;
-  try {
-    sess.on('will-download', handleDownloadEvent);
-    managedDownloadSessions.add(sess);
-  } catch {}
-}
+function attachDownloadManager(...a) { return cosytabsmainMod.attachDownloadManager(...a); }
 
-function setupDownloadManager() {
-  attachDownloadManager(session.defaultSession);
-}
+function setupDownloadManager(...a) { return cosytabsmainMod.setupDownloadManager(...a); }
 
-function formatSpeed(bytesPerSecond) {
-  const units = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
-  let speed = bytesPerSecond;
-  let unitIndex = 0;
-  while (speed >= 1024 && unitIndex < units.length - 1) { speed /= 1024; unitIndex++; }
-  return speed.toFixed(2) + ' ' + units[unitIndex];
-}
-
-
+function formatSpeed(...a) { return cosytabsmainMod.formatSpeed(...a); }
 
 // reviewToOpenUrl 把 deeplinkguard 的放行结论转成可打开 URL；本地文件需存在。
-function reviewToOpenUrl(review) {
-  if (!review || !review.ok) return null;
-  if (review.kind === 'local-html') {
-    if (!fsSync.existsSync(review.value)) return null;
-    return pathToFileURL(review.value).href;
-  }
-  return review.value; // web / internal 均已是规范化 href
-}
+function reviewToOpenUrl(...a) { return cosytabsmainMod.reviewToOpenUrl(...a); }
 
 // resolveStartupDeepLink 把一条不可信入口参数（argv / open-file / open-url）
 // 经 deeplinkguard 消毒后，统一转成可打开的目标 URL；不合法返回 null 并记审计。
-function resolveStartupDeepLink(rawArg, source) {
-  const review = deeplinkGuard.reviewStartupArg(rawArg);
-  if (!review.ok) {
-    recordSecurityEvent('deeplink-blocked', 'warn',
-      `启动深链被拦截（来源:${source}，${deeplinkGuard.describeReason(review.reason)}）`, '');
-    return null;
-  }
-  return reviewToOpenUrl(review);
-}
+function resolveStartupDeepLink(...a) { return cosytabsmainMod.resolveStartupDeepLink(...a); }
 
 // resolveStartupArgv 从整条命令行里找第一个合法深链（Windows 协议唤起位置不固定）。
-function resolveStartupArgv(argv) {
-  const review = deeplinkGuard.pickDeepLinkFromArgv(argv);
-  return review ? reviewToOpenUrl(review) : null;
-}
+function resolveStartupArgv(...a) { return cosytabsmainMod.resolveStartupArgv(...a); }
 
 const startupTarget = resolveStartupArgv(process.argv);
 if (startupTarget) fileToOpen = startupTarget;
@@ -3883,6 +2404,17 @@ app.on('open-file', (event, filePath) => {
     fileToOpen = fileUrl;
   }
 });
+
+const cosyguardmainMod = require('./cosyguardmain');
+cosyguardmainMod.bindDeps({ get recordSecurityEvent() { return recordSecurityEvent; }, set recordSecurityEvent(v) { recordSecurityEvent = v; }, get fpGuard() { return fpGuard; }, set fpGuard(v) { fpGuard = v; }, get popupOpenTimes() { return popupOpenTimes; }, set popupOpenTimes(v) { popupOpenTimes = v; }, get POPUP_WINDOW_MS() { return POPUP_WINDOW_MS; }, set POPUP_WINDOW_MS(v) { POPUP_WINDOW_MS = v; }, get POPUP_WINDOW_MAX() { return POPUP_WINDOW_MAX; }, set POPUP_WINDOW_MAX(v) { POPUP_WINDOW_MAX = v; }, get compiledCustomRules() { return compiledCustomRules; }, set compiledCustomRules(v) { compiledCustomRules = v; }, get blockRules() { return blockRules; }, set blockRules(v) { blockRules = v; }, get customRules() { return customRules; }, set customRules(v) { customRules = v; }, get customRulesFile() { return customRulesFile; }, set customRulesFile(v) { customRulesFile = v; }, get customRulesLoaded() { return customRulesLoaded; }, set customRulesLoaded(v) { customRulesLoaded = v; }, get hostMatch() { return hostMatch; }, set hostMatch(v) { hostMatch = v; }, get TRACKER_HOSTS() { return TRACKER_HOSTS; }, set TRACKER_HOSTS(v) { TRACKER_HOSTS = v; }, get blockTrackers() { return blockTrackers; }, set blockTrackers(v) { blockTrackers = v; }, get blockedTrackerCount() { return blockedTrackerCount; }, set blockedTrackerCount(v) { blockedTrackerCount = v; }, get urlResolve() { return urlResolve; }, set urlResolve(v) { urlResolve = v; }, get blockedTrackerByHost() { return blockedTrackerByHost; }, set blockedTrackerByHost(v) { blockedTrackerByHost = v; }, get sendToRenderer() { return sendToRenderer; }, set sendToRenderer(v) { sendToRenderer = v; }, get TRACKING_QUERY_KEYS() { return TRACKING_QUERY_KEYS; }, set TRACKING_QUERY_KEYS(v) { TRACKING_QUERY_KEYS = v; }, get TRACKING_QUERY_PREFIXES() { return TRACKING_QUERY_PREFIXES; }, set TRACKING_QUERY_PREFIXES(v) { TRACKING_QUERY_PREFIXES = v; }, get stripTrackingParams() { return stripTrackingParams; }, set stripTrackingParams(v) { stripTrackingParams = v; }, get SKEW_LATIN_HOSTS() { return SKEW_LATIN_HOSTS; }, set SKEW_LATIN_HOSTS(v) { SKEW_LATIN_HOSTS = v; } });
+const cosysettingsmainMod = require('./cosysettingsmain');
+cosysettingsmainMod.bindDeps({ get DEFAULT_SPELLCHECK_LANGUAGES() { return DEFAULT_SPELLCHECK_LANGUAGES; }, set DEFAULT_SPELLCHECK_LANGUAGES(v) { DEFAULT_SPELLCHECK_LANGUAGES = v; }, get ALLOWED_SPELLCHECK_LANGUAGES() { return ALLOWED_SPELLCHECK_LANGUAGES; }, set ALLOWED_SPELLCHECK_LANGUAGES(v) { ALLOWED_SPELLCHECK_LANGUAGES = v; }, get MAX_SPELLCHECK_LANGUAGES() { return MAX_SPELLCHECK_LANGUAGES; }, set MAX_SPELLCHECK_LANGUAGES(v) { MAX_SPELLCHECK_LANGUAGES = v; }, get session() { return session; }, set session(v) { session = v; }, get spellcheckEnabled() { return spellcheckEnabled; }, set spellcheckEnabled(v) { spellcheckEnabled = v; }, get spellcheckLanguages() { return spellcheckLanguages; }, set spellcheckLanguages(v) { spellcheckLanguages = v; }, get path() { return path; }, set path(v) { path = v; }, get app() { return app; }, set app(v) { app = v; }, get ledgerStore() { return ledgerStore; }, set ledgerStore(v) { ledgerStore = v; }, get mainWindow() { return mainWindow; }, set mainWindow(v) { mainWindow = v; }, get winPolicy() { return winPolicy; }, set winPolicy(v) { winPolicy = v; }, get downloadShelf() { return downloadShelf; }, set downloadShelf(v) { downloadShelf = v; }, get downloads() { return downloads; }, set downloads(v) { downloads = v; }, get MAX_PERSISTED_DOWNLOADS() { return MAX_PERSISTED_DOWNLOADS; }, set MAX_PERSISTED_DOWNLOADS(v) { MAX_PERSISTED_DOWNLOADS = v; }, get recordSecurityEvent() { return recordSecurityEvent; }, set recordSecurityEvent(v) { recordSecurityEvent = v; }, get downloadNotify() { return downloadNotify; }, set downloadNotify(v) { downloadNotify = v; }, get downloadNotifyDeps() { return downloadNotifyDeps; }, set downloadNotifyDeps(v) { downloadNotifyDeps = v; }, get originOfContents() { return originOfContents; }, set originOfContents(v) { originOfContents = v; }, get webContents() { return webContents; }, set webContents(v) { webContents = v; }, get ALLOWED_PROTOCOLS() { return ALLOWED_PROTOCOLS; }, set ALLOWED_PROTOCOLS(v) { ALLOWED_PROTOCOLS = v; }, get pathContain() { return pathContain; }, set pathContain(v) { pathContain = v; }, get fsSync() { return fsSync; }, set fsSync(v) { fsSync = v; }, get tabs() { return tabs; }, set tabs(v) { tabs = v; }, get currentTabIndex() { return currentTabIndex; }, set currentTabIndex(v) { currentTabIndex = v; }, get loadTabContent() { return loadTabContent; }, set loadTabContent(v) { loadTabContent = v; }, get historyGuard() { return historyGuard; }, set historyGuard(v) { historyGuard = v; }, get history() { return history; }, set history(v) { history = v; }, get MAX_HISTORY_ENTRIES() { return MAX_HISTORY_ENTRIES; }, set MAX_HISTORY_ENTRIES(v) { MAX_HISTORY_ENTRIES = v; }, get bookmarkGuard() { return bookmarkGuard; }, set bookmarkGuard(v) { bookmarkGuard = v; }, get bookmarks() { return bookmarks; }, set bookmarks(v) { bookmarks = v; }, get readingList() { return readingList; }, set readingList(v) { readingList = v; }, get restoreGuard() { return restoreGuard; }, set restoreGuard(v) { restoreGuard = v; }, get recentlyClosedTabs() { return recentlyClosedTabs; }, set recentlyClosedTabs(v) { recentlyClosedTabs = v; }, get hostMatch() { return hostMatch; }, set hostMatch(v) { hostMatch = v; } });
+const cosyledgerchainmainMod = require('./cosyledgerchainmain');
+cosyledgerchainmainMod.bindDeps({ get httpsExceptionsLoaded() { return httpsExceptionsLoaded; }, set httpsExceptionsLoaded(v) { httpsExceptionsLoaded = v; }, get httpsExceptions() { return httpsExceptions; }, set httpsExceptions(v) { httpsExceptions = v; }, get ledgerStore() { return ledgerStore; }, set ledgerStore(v) { ledgerStore = v; }, get httpsExceptionStorePath() { return httpsExceptionStorePath; }, set httpsExceptionStorePath(v) { httpsExceptionStorePath = v; }, get httpsExceptionSaveTimer() { return httpsExceptionSaveTimer; }, set httpsExceptionSaveTimer(v) { httpsExceptionSaveTimer = v; }, get httpsOnlyCore() { return httpsOnlyCore; }, set httpsOnlyCore(v) { httpsOnlyCore = v; }, get fsSync() { return fsSync; }, set fsSync(v) { fsSync = v; }, get uaPolicyPath() { return uaPolicyPath; }, set uaPolicyPath(v) { uaPolicyPath = v; }, get uaPolicyState() { return uaPolicyState; }, set uaPolicyState(v) { uaPolicyState = v; }, get uaPolicyCore() { return uaPolicyCore; }, set uaPolicyCore(v) { uaPolicyCore = v; }, get rateLimitPath() { return rateLimitPath; }, set rateLimitPath(v) { rateLimitPath = v; }, get downloadRateLimit() { return downloadRateLimit; }, set downloadRateLimit(v) { downloadRateLimit = v; }, get generateUserAgent() { return generateUserAgent; }, set generateUserAgent(v) { generateUserAgent = v; }, get path() { return path; }, set path(v) { path = v; }, get atomicWriteSeq() { return atomicWriteSeq; }, set atomicWriteSeq(v) { atomicWriteSeq = v; }, get vaultStorePath() { return vaultStorePath; }, set vaultStorePath(v) { vaultStorePath = v; }, get vaultState() { return vaultState; }, set vaultState(v) { vaultState = v; }, get cleanAuditPath() { return cleanAuditPath; }, set cleanAuditPath(v) { cleanAuditPath = v; }, get cleanAuditLog() { return cleanAuditLog; }, set cleanAuditLog(v) { cleanAuditLog = v; }, get safeStorage() { return safeStorage; }, set safeStorage(v) { safeStorage = v; }, get recordSecurityEvent() { return recordSecurityEvent; }, set recordSecurityEvent(v) { recordSecurityEvent = v; }, get vaultKeyPath() { return vaultKeyPath; }, set vaultKeyPath(v) { vaultKeyPath = v; }, get httpsOnlyEnabled() { return httpsOnlyEnabled; }, set httpsOnlyEnabled(v) { httpsOnlyEnabled = v; }, get isPrivateNetworkHost() { return isPrivateNetworkHost; }, set isPrivateNetworkHost(v) { isPrivateNetworkHost = v; }, get dialog() { return dialog; }, set dialog(v) { dialog = v; }, get mainWindow() { return mainWindow; }, set mainWindow(v) { mainWindow = v; }, get nativeTheme() { return nativeTheme; }, set nativeTheme(v) { nativeTheme = v; }, get sendToRenderer() { return sendToRenderer; }, set sendToRenderer(v) { sendToRenderer = v; }, get pnaLedgerLoaded() { return pnaLedgerLoaded; }, set pnaLedgerLoaded(v) { pnaLedgerLoaded = v; }, get pnaLedgerStorePath() { return pnaLedgerStorePath; }, set pnaLedgerStorePath(v) { pnaLedgerStorePath = v; }, get pnaLedger() { return pnaLedger; }, set pnaLedger(v) { pnaLedger = v; }, get pnaLedgerSaveTimer() { return pnaLedgerSaveTimer; }, set pnaLedgerSaveTimer(v) { pnaLedgerSaveTimer = v; }, get MAX_PNA_LEDGER() { return MAX_PNA_LEDGER; }, set MAX_PNA_LEDGER(v) { MAX_PNA_LEDGER = v; }, get fpLedgerLoaded() { return fpLedgerLoaded; }, set fpLedgerLoaded(v) { fpLedgerLoaded = v; }, get fpLedger() { return fpLedger; }, set fpLedger(v) { fpLedger = v; }, get fpLedgerStorePath() { return fpLedgerStorePath; }, set fpLedgerStorePath(v) { fpLedgerStorePath = v; }, get fpLedgerSaveTimer() { return fpLedgerSaveTimer; }, set fpLedgerSaveTimer(v) { fpLedgerSaveTimer = v; }, get session() { return session; }, set session(v) { session = v; }, get fpGuard() { return fpGuard; }, set fpGuard(v) { fpGuard = v; }, get webrtcMode() { return webrtcMode; }, set webrtcMode(v) { webrtcMode = v; }, get dohLedgerLoaded() { return dohLedgerLoaded; }, set dohLedgerLoaded(v) { dohLedgerLoaded = v; }, get dohLedger() { return dohLedger; }, set dohLedger(v) { dohLedger = v; }, get dohStorePath() { return dohStorePath; }, set dohStorePath(v) { dohStorePath = v; }, get dohSaveTimer() { return dohSaveTimer; }, set dohSaveTimer(v) { dohSaveTimer = v; }, get dohMode() { return dohMode; }, set dohMode(v) { dohMode = v; }, get dohProvider() { return dohProvider; }, set dohProvider(v) { dohProvider = v; }, get dohActive() { return dohActive; }, set dohActive(v) { dohActive = v; }, get recordRequestAttempt() { return recordRequestAttempt; }, set recordRequestAttempt(v) { recordRequestAttempt = v; }, get requestPipeline() { return requestPipeline; }, set requestPipeline(v) { requestPipeline = v; }, get buildRequestPipelineDeps() { return buildRequestPipelineDeps; }, set buildRequestPipelineDeps(v) { buildRequestPipelineDeps = v; }, get urlResolve() { return urlResolve; }, set urlResolve(v) { urlResolve = v; }, get headerGradeSaveTimer() { return headerGradeSaveTimer; }, set headerGradeSaveTimer(v) { headerGradeSaveTimer = v; }, get headerGradeStorePath() { return headerGradeStorePath; }, set headerGradeStorePath(v) { headerGradeStorePath = v; }, get headerGrades() { return headerGrades; }, set headerGrades(v) { headerGrades = v; }, get loadHeaderGrades() { return loadHeaderGrades; }, set loadHeaderGrades(v) { loadHeaderGrades = v; }, get MAX_HEADER_GRADE_HOSTS() { return MAX_HEADER_GRADE_HOSTS; }, set MAX_HEADER_GRADE_HOSTS(v) { MAX_HEADER_GRADE_HOSTS = v; }, get requestLogLoaded() { return requestLogLoaded; }, set requestLogLoaded(v) { requestLogLoaded = v; }, get requestLogStorePath() { return requestLogStorePath; }, set requestLogStorePath(v) { requestLogStorePath = v; }, get requestLogStore() { return requestLogStore; }, set requestLogStore(v) { requestLogStore = v; }, get requestLog() { return requestLog; }, set requestLog(v) { requestLog = v; }, get MAX_REQUEST_LOG_HOSTS() { return MAX_REQUEST_LOG_HOSTS; }, set MAX_REQUEST_LOG_HOSTS(v) { MAX_REQUEST_LOG_HOSTS = v; }, get requestLogSaveTimer() { return requestLogSaveTimer; }, set requestLogSaveTimer(v) { requestLogSaveTimer = v; }, get brandSpoofSaveTimer() { return brandSpoofSaveTimer; }, set brandSpoofSaveTimer(v) { brandSpoofSaveTimer = v; }, get brandSpoofStorePath() { return brandSpoofStorePath; }, set brandSpoofStorePath(v) { brandSpoofStorePath = v; }, get brandSpoofs() { return brandSpoofs; }, set brandSpoofs(v) { brandSpoofs = v; }, get loadBrandSpoofs() { return loadBrandSpoofs; }, set loadBrandSpoofs(v) { loadBrandSpoofs = v; }, get MAX_BRAND_SPOOF_HOSTS() { return MAX_BRAND_SPOOF_HOSTS; }, set MAX_BRAND_SPOOF_HOSTS(v) { MAX_BRAND_SPOOF_HOSTS = v; }, get clientCertStoreLoaded() { return clientCertStoreLoaded; }, set clientCertStoreLoaded(v) { clientCertStoreLoaded = v; }, get clientCertStorePath() { return clientCertStorePath; }, set clientCertStorePath(v) { clientCertStorePath = v; }, get clientCertStore() { return clientCertStore; }, set clientCertStore(v) { clientCertStore = v; }, get clientCertSaveTimer() { return clientCertSaveTimer; }, set clientCertSaveTimer(v) { clientCertSaveTimer = v; }, get pendingAuthChallenges() { return pendingAuthChallenges; }, set pendingAuthChallenges(v) { pendingAuthChallenges = v; }, get failAuthCallback() { return failAuthCallback; }, set failAuthCallback(v) { failAuthCallback = v; }, get netAuthGuard() { return netAuthGuard; }, set netAuthGuard(v) { netAuthGuard = v; }, get net() { return net; }, set net(v) { net = v; }, get app() { return app; }, set app(v) { app = v; }, get gpuAccessGuard() { return gpuAccessGuard; }, set gpuAccessGuard(v) { gpuAccessGuard = v; }, get gpuCrashState() { return gpuCrashState; }, set gpuCrashState(v) { gpuCrashState = v; }, get gpuInfoLastReport() { return gpuInfoLastReport; }, set gpuInfoLastReport(v) { gpuInfoLastReport = v; }, get GPU_INFO_REPORT_COOLDOWN_MS() { return GPU_INFO_REPORT_COOLDOWN_MS; }, set GPU_INFO_REPORT_COOLDOWN_MS(v) { GPU_INFO_REPORT_COOLDOWN_MS = v; }, get setupExtraSessionHardeningCtx() { return setupExtraSessionHardeningCtx; }, set setupExtraSessionHardeningCtx(v) { setupExtraSessionHardeningCtx = v; } });
+const cosywinmainMod = require('./cosywinmain');
+cosywinmainMod.bindDeps({ get readStoredSettings() { return readStoredSettings; }, set readStoredSettings(v) { readStoredSettings = v; }, get isSafeUrl() { return isSafeUrl; }, set isSafeUrl(v) { isSafeUrl = v; }, get createWindowCtx() { return createWindowCtx; }, set createWindowCtx(v) { createWindowCtx = v; }, get registerShortcutsCtx() { return registerShortcutsCtx; }, set registerShortcutsCtx(v) { registerShortcutsCtx = v; }, get urlResolve() { return urlResolve; }, set urlResolve(v) { urlResolve = v; }, get tabs() { return tabs; }, set tabs(v) { tabs = v; }, get TASK_MANAGER_URL() { return TASK_MANAGER_URL; }, set TASK_MANAGER_URL(v) { TASK_MANAGER_URL = v; }, get currentTabIndex() { return currentTabIndex; }, set currentTabIndex(v) { currentTabIndex = v; }, get switchToTab() { return switchToTab; }, set switchToTab(v) { switchToTab = v; }, get createNewTab() { return createNewTab; }, set createNewTab(v) { createNewTab = v; }, get TAB_OVERVIEW_URL() { return TAB_OVERVIEW_URL; }, set TAB_OVERVIEW_URL(v) { TAB_OVERVIEW_URL = v; }, get getHttpStatusCode() { return getHttpStatusCode; }, set getHttpStatusCode(v) { getHttpStatusCode = v; }, get getErrorMessage() { return getErrorMessage; }, set getErrorMessage(v) { getErrorMessage = v; }, get getBrowserErrorText() { return getBrowserErrorText; }, set getBrowserErrorText(v) { getBrowserErrorText = v; }, get sendToRenderer() { return sendToRenderer; }, set sendToRenderer(v) { sendToRenderer = v; }, get CRASH_WINDOW_MS() { return CRASH_WINDOW_MS; }, set CRASH_WINDOW_MS(v) { CRASH_WINDOW_MS = v; }, get CRASH_REASON_TEXT() { return CRASH_REASON_TEXT; }, set CRASH_REASON_TEXT(v) { CRASH_REASON_TEXT = v; }, get MAX_CRASH_AUTO_RECOVER() { return MAX_CRASH_AUTO_RECOVER; }, set MAX_CRASH_AUTO_RECOVER(v) { MAX_CRASH_AUTO_RECOVER = v; }, get mainWindow() { return mainWindow; }, set mainWindow(v) { mainWindow = v; }, get tabKeepsAlive() { return tabKeepsAlive; }, set tabKeepsAlive(v) { tabKeepsAlive = v; }, get updateBrowserViewBounds() { return updateBrowserViewBounds; }, set updateBrowserViewBounds(v) { updateBrowserViewBounds = v; }, get memorySaverEnabled() { return memorySaverEnabled; }, set memorySaverEnabled(v) { memorySaverEnabled = v; }, get MEMORY_SAVER_IDLE_MS() { return MEMORY_SAVER_IDLE_MS; }, set MEMORY_SAVER_IDLE_MS(v) { MEMORY_SAVER_IDLE_MS = v; }, get memorySaverTimer() { return memorySaverTimer; }, set memorySaverTimer(v) { memorySaverTimer = v; }, get MEMORY_SAVER_SWEEP_MS() { return MEMORY_SAVER_SWEEP_MS; }, set MEMORY_SAVER_SWEEP_MS(v) { MEMORY_SAVER_SWEEP_MS = v; }, get loadTabContentCtx() { return loadTabContentCtx; }, set loadTabContentCtx(v) { loadTabContentCtx = v; } });
+const cosytabsmainMod = require('./cosytabsmain');
+cosytabsmainMod.bindDeps({ get pinModel() { return pinModel; }, set pinModel(v) { pinModel = v; }, get tabs() { return tabs; }, set tabs(v) { tabs = v; }, get ledgerStore() { return ledgerStore; }, set ledgerStore(v) { ledgerStore = v; }, get pinStorePath() { return pinStorePath; }, set pinStorePath(v) { pinStorePath = v; }, get pinSaveTimer() { return pinSaveTimer; }, set pinSaveTimer(v) { pinSaveTimer = v; }, get pinTabs() { return pinTabs; }, set pinTabs(v) { pinTabs = v; }, get fsSync() { return fsSync; }, set fsSync(v) { fsSync = v; }, get sendToRenderer() { return sendToRenderer; }, set sendToRenderer(v) { sendToRenderer = v; }, get currentTabIndex() { return currentTabIndex; }, set currentTabIndex(v) { currentTabIndex = v; }, get getUrlProtocol() { return getUrlProtocol; }, set getUrlProtocol(v) { getUrlProtocol = v; }, get isSafeUrl() { return isSafeUrl; }, set isSafeUrl(v) { isSafeUrl = v; }, get createNewTab() { return createNewTab; }, set createNewTab(v) { createNewTab = v; }, get closeTab() { return closeTab; }, set closeTab(v) { closeTab = v; }, get loadStoredTabGroups() { return loadStoredTabGroups; }, set loadStoredTabGroups(v) { loadStoredTabGroups = v; }, get tabGroups() { return tabGroups; }, set tabGroups(v) { tabGroups = v; }, get tabGroupModel() { return tabGroupModel; }, set tabGroupModel(v) { tabGroupModel = v; }, get applyTabGroupArrangement() { return applyTabGroupArrangement; }, set applyTabGroupArrangement(v) { applyTabGroupArrangement = v; }, get broadcastTabGroups() { return broadcastTabGroups; }, set broadcastTabGroups(v) { broadcastTabGroups = v; }, get dloadGuard() { return dloadGuard; }, set dloadGuard(v) { dloadGuard = v; }, get downloadName() { return downloadName; }, set downloadName(v) { downloadName = v; }, get recordSecurityEvent() { return recordSecurityEvent; }, set recordSecurityEvent(v) { recordSecurityEvent = v; }, get downloadPathCollision() { return downloadPathCollision; }, set downloadPathCollision(v) { downloadPathCollision = v; }, get downloadOriginByPath() { return downloadOriginByPath; }, set downloadOriginByPath(v) { downloadOriginByPath = v; }, get MAX_DOWNLOAD_ORIGIN_ENTRIES() { return MAX_DOWNLOAD_ORIGIN_ENTRIES; }, set MAX_DOWNLOAD_ORIGIN_ENTRIES(v) { MAX_DOWNLOAD_ORIGIN_ENTRIES = v; }, get downloadRiskSaveTimer() { return downloadRiskSaveTimer; }, set downloadRiskSaveTimer(v) { downloadRiskSaveTimer = v; }, get downloadRiskStorePath() { return downloadRiskStorePath; }, set downloadRiskStorePath(v) { downloadRiskStorePath = v; }, get downloadRiskRecords() { return downloadRiskRecords; }, set downloadRiskRecords(v) { downloadRiskRecords = v; }, get loadDownloadRisks() { return loadDownloadRisks; }, set loadDownloadRisks(v) { loadDownloadRisks = v; }, get MAX_DOWNLOAD_RISK_RECORDS() { return MAX_DOWNLOAD_RISK_RECORDS; }, set MAX_DOWNLOAD_RISK_RECORDS(v) { MAX_DOWNLOAD_RISK_RECORDS = v; }, get handleDownloadEventCtx() { return handleDownloadEventCtx; }, set handleDownloadEventCtx(v) { handleDownloadEventCtx = v; }, get webContents() { return webContents; }, set webContents(v) { webContents = v; }, get managedDownloadSessions() { return managedDownloadSessions; }, set managedDownloadSessions(v) { managedDownloadSessions = v; }, get session() { return session; }, set session(v) { session = v; }, get pathToFileURL() { return pathToFileURL; }, set pathToFileURL(v) { pathToFileURL = v; }, get deeplinkGuard() { return deeplinkGuard; }, set deeplinkGuard(v) { deeplinkGuard = v; }, get getCurrentTabWebContents() { return getCurrentTabWebContents; }, set getCurrentTabWebContents(v) { getCurrentTabWebContents = v; }, get findState() { return findState; }, set findState(v) { findState = v; }, get Menu() { return Menu; }, set Menu(v) { Menu = v; }, get MenuItem() { return MenuItem; }, set MenuItem(v) { MenuItem = v; }, get mainWindow() { return mainWindow; }, set mainWindow(v) { mainWindow = v; }, get goHome() { return goHome; }, set goHome(v) { goHome = v; }, get isDev() { return isDev; }, set isDev(v) { isDev = v; }, get toggleDevTools() { return toggleDevTools; }, set toggleDevTools(v) { toggleDevTools = v; }, get ALLOWED_SETTING_KEYS() { return ALLOWED_SETTING_KEYS; }, set ALLOWED_SETTING_KEYS(v) { ALLOWED_SETTING_KEYS = v; }, get readingList() { return readingList; }, set readingList(v) { readingList = v; }, get saveReadingList() { return saveReadingList; }, set saveReadingList(v) { saveReadingList = v; }, get customRules() { return customRules; }, set customRules(v) { customRules = v; }, get blockRules() { return blockRules; }, set blockRules(v) { blockRules = v; }, get urlResolve() { return urlResolve; }, set urlResolve(v) { urlResolve = v; } });
 
 app.whenReady().then(async () => {
   loadHistory();
@@ -4188,25 +2720,16 @@ const MAX_REMEMBERED_ORIGINS = 500;
 const zoomStorePath = path.join(app.getPath('userData'), 'zoom-store.json');
 let zoomSaveTimer = null;
 
-
-
-function originOfUrl(u) {
-  return urlResolve.safeOrigin(u, '');
-}
+function originOfUrl(...a) { return cosytabsmainMod.originOfUrl(...a); }
 
 // loadZoomFactors 启动时从 userData 读取按站点记忆的缩放（对齐 Chrome 跨重启保留缩放）。
 // 文件损坏 / 被外部塞非法内容时静默丢弃，绝不因此影响浏览器启动。
 
-
 // persistZoomFactors 防抖落盘，避免连续放大缩小频繁写文件。
-
-
-
 
 // adjustCurrentZoom 是菜单快捷键与 IPC 共用的唯一缩放入口：
 // 统一用 setZoomFactor（不要混用 setZoomLevel，二者写同一底层值会互相覆盖），
 // 计算结果按 origin 记忆、导航恢复、并持久化到磁盘。
-
 
 ipcMain.handle('set-tab-muted', (event, payload = {}) => {
   if (!isMainSender(event)) return { success: false };
@@ -4421,7 +2944,6 @@ ipcMain.on('remove-download', (event, id) => {
 // 通知点击都走这里。判定交给 dloadopen 内核（文件名伪装、来源、容器类型），
 // UI（确认框）与系统调用留在这里，避免通知点击绕过来源确认与路径消毒。
 
-
 ipcMain.on('open-file', (event, filePath) => {
   if (!isMainSender(event)) return;
   performDownloadOpen(path.resolve(filePath));
@@ -4519,15 +3041,7 @@ let findState = { text: '', matchCase: false, wholeWord: false };
 let findRateState = findGuard.createFindState(Date.now());
 
 // applyFind 在当前活动标签上按 findState 执行一次查找。
-function applyFind(forward = true) {
-  const wc = getCurrentTabWebContents();
-  if (!wc || !findState.text) return;
-  wc.findInPage(findState.text, {
-    forward,
-    matchCase: !!findState.matchCase,
-    wholeWord: !!findState.wholeWord,
-  });
-}
+function applyFind(...a) { return cosytabsmainMod.applyFind(...a); }
 
 ipcMain.on('find-in-page', (event, payload) => {
   if (!isMainSender(event)) return;
@@ -4606,24 +3120,7 @@ ipcMain.on('show-more-options-menu', (event, position) => {
   menu.popup(pos ? { window: mainWindow, x: pos.x, y: pos.y } : { window: mainWindow });
 });
 
-function createContextMenu(menuType, selectedText = '') {
-  const menu = new Menu();
-  if (menuType === 'selection') {
-    if (selectedText) {
-      menu.append(new MenuItem({ label: '复制', click: () => { if (mainWindow?.webContents) mainWindow.webContents.copy(); } }));
-      menu.append(new MenuItem({ type: 'separator' }));
-    }
-    menu.append(new MenuItem({ label: '主页', click: goHome }));
-    menu.append(new MenuItem({ label: '设置', click: () => createNewTab('cosy://setting') }));
-    menu.append(new MenuItem({ type: 'separator' }));
-    if (isDev) menu.append(new MenuItem({ label: '开发者工具', click: toggleDevTools }));
-  } else {
-    if (isDev) menu.append(new MenuItem({ label: '开发者工具', click: toggleDevTools }));
-    menu.append(new MenuItem({ label: '返回主页', click: goHome }));
-    menu.append(new MenuItem({ label: '设置', click: () => createNewTab('cosy://setting') }));
-  }
-  return menu;
-}
+function createContextMenu(...a) { return cosytabsmainMod.createContextMenu(...a); }
 
 const userDataPath = path.join(os.homedir(), 'AppData', 'Roaming', 'OpenCosy', 'browser', 'userdata');
 const extensionsPath = path.join(userDataPath, 'extensions');
@@ -4652,8 +3149,6 @@ async function saveExtensionsConfig(config) {
   } catch (e) { console.error('保存插件配置失败:', e); return false; }
 }
 
-
-
 // 条目名安全判定统一走 extensionstore 内核（含穿越、ADS 冒号、控制字符、超长名）。
 const isSafeEntryName = extensionStore.isSafeEntryName;
 
@@ -4665,7 +3160,6 @@ const isSafeEntryName = extensionStore.isSafeEntryName;
 //  2. 每个目标路径用 resolveWithinRoot 收口，防止条目名或目录深度拼接触底扩展根。
 //  3. 复制受深度 / 条目数 / 总字节预算约束，防止恶意目录耗尽磁盘。
 // 返回 { ok:true } 或 { ok:false, reason }，越界预算类问题整单中止（不装半截扩展）。
-
 
 async function loadEnabledExtensions() {
   try {
@@ -4922,235 +3416,20 @@ const ALLOWED_SETTING_KEYS = {
     && v.every(l => typeof l === 'string' && ALLOWED_SPELLCHECK_LANGUAGES.includes(l)),
 };
 
-function sanitizeSettings(raw) {
-  if (!raw || typeof raw !== 'object') return {};
-  const clean = {};
-  for (const [key, validate] of Object.entries(ALLOWED_SETTING_KEYS)) {
-    if (key in raw && validate(raw[key])) clean[key] = raw[key];
-  }
-  return clean;
-}
+function sanitizeSettings(...a) { return cosytabsmainMod.sanitizeSettings(...a); }
 
-ipcMain.on('save-settings', (event, settings) => {
-  if (!isMainSender(event)) return;
-  // r33：settings 是“整包序列化落盘”通道，先用 inputGuard 做形状与体量裁决：
-  // 非普通对象 / 嵌套过深 / 键数过多 / 体量逼近磁盘上限（16MiB）一律拒绝，防止
-  // 被攻陷渲染层用深层巨型对象打爆内存与 cosySettings.json。
-  const objRes = inputGuard.asPlainObject(settings);
-  if (!objRes.ok) {
-    recordSecurityEvent('ipc-input-rejected', 'warn',
-      'save-settings 收到非普通对象入参，已拒绝', originOfContents(event.sender));
-    event.reply('settings-saved', { success: false, error: 'invalid settings payload' });
-    return;
-  }
-  const measure = inputGuard.measureObject(settings);
-  if (!measure.ok) {
-    recordSecurityEvent('ipc-input-rejected', 'warn',
-      `save-settings 整包体量异常已拒绝（${measure.reason}，keys=${measure.keys}，bytes=${measure.bytes}）`,
-      originOfContents(event.sender));
-    event.reply('settings-saved', { success: false, error: 'settings payload too large' });
-    return;
-  }
-  try {
-    const clean = sanitizeSettings(settings);
-    const settingsPath = path.join(app.getPath('userData'), 'cosySettings.json');
-    // 崩溃安全原子写：避免写一半断电导致设置文件截断、下次启动全部偏好丢失。
-    ledgerStore.writeJSONStore(settingsPath, clean, { pretty: true });
-    // 立即把 darkMode / httpsOnly / memorySaver 应用到运行时
-    applyDarkMode(clean.darkMode);
-    httpsOnlyEnabled = clean.httpsOnly !== false;
-    bookmarkBarVisible = clean.bookmarkBarVisible !== false;
-    blockTrackers = clean.blockTrackers !== false;
-    blockThirdPartyCookies = clean.blockThirdPartyCookies !== false;
-    hardenCookies = clean.hardenCookies !== false;
-    blockLocalNetworkAccess = clean.blockLocalNetworkAccess !== false;
-    reduceClientHints = clean.reduceClientHints !== false;
-    blockAdSignals = clean.blockAdSignals !== false;
-    blockHyperlinkPing = clean.blockHyperlinkPing !== false;
-    stripAcceptCh = clean.stripAcceptCh !== false;
-    if ('allowPictureInPicture' in clean) allowPictureInPicture = !!clean.allowPictureInPicture;
-    if ('searchEngine' in clean) searchProviderId = searchProvider.sanitizeProviderChoice(clean.searchEngine);
-    if ('webrtcMode' in clean) webrtcMode = fpGuard.normalizeWebRtcMode(clean.webrtcMode);
-    applyWebRtcPolicy();
-    if ('dohMode' in clean) dohMode = dohGuard.normalizeMode(clean.dohMode);
-    if ('dohProvider' in clean) dohProvider = clean.dohProvider;
-    if ('dohCustomUrl' in clean) dohCustomUrl = clean.dohCustomUrl;
-    applySecureDns();
-    crashRecoveryEnabled = clean.crashRecovery !== false;
-    stripTrackingParams = clean.stripTrackingParams !== false;
-    if ('memorySaver' in clean) memorySaverEnabled = !!clean.memorySaver;
-    if ('clearOnExit' in clean) clearOnExit = !!clean.clearOnExit;
-    if ('confirmCloseMultiple' in clean) confirmCloseMultiple = !!clean.confirmCloseMultiple;
-    if ('spellcheckEnabled' in clean) spellcheckEnabled = !!clean.spellcheckEnabled;
-    if ('spellcheckLanguages' in clean) spellcheckLanguages = sanitizeSpellcheckLanguages(clean.spellcheckLanguages);
-    if ('downloadMaxBytes' in clean) downloadMaxBytes = downloadSizeGuard.normalizeLimit(clean.downloadMaxBytes);
-    applySpellcheckSettings();
-    event.reply('settings-saved', { success: true });
-  } catch (e) {
-    console.error('保存设置失败:', e);
-    event.reply('settings-saved', { success: false, error: e.message });
-  }
-});
-
-ipcMain.on('update-theme-color', (event, color) => {
-  if (!isMainSender(event)) return;
-  if (!isValidColor(color)) return;
-  sendToRenderer('update-theme-color', color);
-  tabs.forEach(tab => {
-    if (tab.view?.webContents) tab.view.webContents.send('update-theme-color', color);
-  });
-});
-
-ipcMain.on('get-settings', (event) => {
-  if (!isMainSender(event)) return;
-  try {
-    // 复用统一的有界设置读取，坏 / 超大文件回落 {}，不再 existsSync+整读。
-    event.reply('settings-loaded', readStoredSettings());
-  } catch (e) {
-    console.error('读取设置失败:', e);
-    event.reply('settings-loaded', {});
-  }
-});
-
-// get-spellcheck-info 返回拼写检查当前状态与平台实际可用的语言列表，
-// 设置页据此隐藏当前系统没有词典的语言，避免用户勾了一个永远不生效的选项。
-ipcMain.handle('get-spellcheck-info', (event) => {
-  if (!isMainSender(event)) return { success: false };
-  let available = [];
-  try {
-    available = session.defaultSession.availableSpellCheckerLanguages || [];
-  } catch (e) {
-    console.error('读取可用拼写语言失败:', e);
-  }
-  const availableSet = new Set(available);
-  return {
-    success: true,
-    enabled: spellcheckEnabled,
-    languages: spellcheckLanguages,
-    selectable: ALLOWED_SPELLCHECK_LANGUAGES.filter(l => availableSet.has(l))
-  };
-});
-
-ipcMain.on('export-config', async (event, content) => {
-  if (!isMainSender(event)) return;
-  try {
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: '导出配置', defaultPath: 'cosy_config.inf',
-      filters: [{ name: '配置文件', extensions: ['inf'] }, { name: '所有文件', extensions: ['*'] }]
-    });
-    if (!result.canceled && result.filePath) {
-      fsSync.writeFileSync(result.filePath, content, 'utf-8');
-      event.reply('export-config-success', '配置文件导出成功！');
-    } else {
-      event.reply('export-config-canceled', '导出操作已取消');
-    }
-  } catch (e) {
-    console.error('导出配置失败:', e);
-    event.reply('export-config-error', '导出配置失败: ' + e.message);
-  }
-});
-
-ipcMain.handle('get-bookmarks', (event) => {
-  if (!isMainSender(event)) return { success: false, bookmarks: [] };
-  return { success: true, bookmarks };
-});
-
-// 导出书签：format=json 导 OpenCosy 自有 JSON，html 导 Netscape 格式
-// （可直接被 Chrome / Edge / Firefox 导入）。
-ipcMain.handle('export-bookmarks', async (event, format) => {
-  if (!isMainSender(event)) return { success: false, error: '无权操作' };
-  try {
-    const useHTML = format === 'html';
-    const stamp = new Date().toISOString().slice(0, 10);
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: '导出书签',
-      defaultPath: useHTML ? `opencosy-bookmarks-${stamp}.html` : `opencosy-bookmarks-${stamp}.json`,
-      filters: useHTML
-        ? [{ name: 'Netscape 书签 HTML', extensions: ['html'] }, { name: '所有文件', extensions: ['*'] }]
-        : [{ name: 'JSON 书签文件', extensions: ['json'] }, { name: '所有文件', extensions: ['*'] }],
-    });
-    if (result.canceled || !result.filePath) return { success: false, canceled: true };
-    const content = useHTML ? bookmarkIO.buildExportHTML(bookmarks) : bookmarkIO.buildExportJSON(bookmarks);
-    fsSync.writeFileSync(result.filePath, content, 'utf-8');
-    return { success: true, count: bookmarks.length, format: useHTML ? 'html' : 'json' };
-  } catch (e) {
-    console.error('导出书签失败:', e);
-    return { success: false, error: e.message };
-  }
-});
-
-// 导入书签：弹原生选择框，按内容自动识别 JSON / Netscape HTML，
-// 严格校验后合并去重落盘。整个解析发生在主进程，渲染层只拿到统计结果。
-ipcMain.handle('import-bookmarks', async (event) => {
-  if (!isMainSender(event)) return { success: false, error: '无权操作' };
-  try {
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: '导入书签',
-      properties: ['openFile'],
-      filters: [
-        { name: '书签文件', extensions: ['html', 'htm', 'json'] },
-        { name: '所有文件', extensions: ['*'] },
-      ],
-    });
-    if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
-      return { success: false, canceled: true };
-    }
-    const filePath = result.filePaths[0];
-    const stat = fsSync.statSync(filePath);
-    if (stat.size > bookmarkIO.MAX_IMPORT_FILE_BYTES) {
-      return { success: false, error: '书签文件过大（上限 8MiB）' };
-    }
-    const buffer = fsSync.readFileSync(filePath);
-    const { format: detectedFormat, bookmarks: incoming } = bookmarkIO.parseBookmarkFile(buffer);
-    const before = bookmarks.length;
-    const { merged, added } = bookmarkIO.mergeBookmarks(bookmarks, incoming);
-    if (added === 0) {
-      return { success: true, added: 0, total: before, format: detectedFormat, duplicated: incoming.length };
-    }
-    bookmarks = merged;
-    saveBookmarks();
-    sendToRenderer('bookmarks-updated', bookmarks);
-    return { success: true, added, total: bookmarks.length, format: detectedFormat };
-  } catch (e) {
-    console.error('导入书签失败:', e);
-    return { success: false, error: e.message };
-  }
-});
-
-ipcMain.handle('get-history', (event) => {
-  if (!isMainSender(event)) return { success: false, history: [] };
-  return { success: true, history: history.slice(0, 100) };
-});
-
-ipcMain.handle('clear-history', (event) => {
-  if (!isMainSender(event)) return { success: false };
-  history = [];
-  saveHistory();
-  return { success: true };
-});
+cosyipcregisterMod.registerDownloadShelf();
 
 // sanitizeBookmarkLike 把书签 / 稍后读条目收敛成可进内部页 DOM 的标量快照：
 // url、title 限长，addedDate 只接受字符串。两个管理器历史上各自内联了同一段映射，
 // 集中到这里，避免标题长度上限或类型收口在某一处被改漏。
-function sanitizeBookmarkLike(b) {
-  return {
-    url: typeof b.url === 'string' ? b.url.slice(0, 8192) : '',
-    title: typeof b.title === 'string' ? b.title.slice(0, 300) : '',
-    addedDate: typeof b.addedDate === 'string' ? b.addedDate : '',
-  };
-}
+function sanitizeBookmarkLike(...a) { return cosytabsmainMod.sanitizeBookmarkLike(...a); }
 
 // openUrlFromInternalFrame 是历史 / 书签 / 稍后读三个内部页“点击条目新开标签”的
 // 公共内核：frameOk 是该页自己的帧来源判定；URL 必须过 isSafeUrl（http/https），
 // cosy:// 内置页则交由 createNewTab 的 pageMap 白名单兜底，其余协议一律拒绝。
 // 三个 handler 过去逐字复制了同一段校验，集中后任何收紧只需改这一处。
-function openUrlFromInternalFrame(frameOk, url) {
-  if (!frameOk) return { ok: false, error: 'denied' };
-  const isInternal = typeof url === 'string' && url.startsWith('cosy://');
-  if (!isSafeUrl(url) && !isInternal) return { ok: false, error: 'bad-url' };
-  const tab = createNewTab(url);
-  return { ok: true, id: tab.id, index: tabs.length - 1 };
-}
+function openUrlFromInternalFrame(...a) { return cosytabsmainMod.openUrlFromInternalFrame(...a); }
 
 // 历史页快照：全量返回历史数组（上限 1000 条，磁盘加载已按 MAX_HISTORY_ENTRIES
 // 截断）。只放行历史页帧 / 主窗口外壳；返回前对每条做类型收口，绝不让脏标题
@@ -5287,229 +3566,14 @@ ipcMain.handle('readinglist-snapshot', (event) => {
 
 // 稍后读新增（右键菜单“加入稍后读”/页面内部调用）：URL 必须经 isSafeUrl 校验
 // （http/https），标题去控制字符并限长。已存在的同 URL 条目忽略（幂等）。
-function addToReadingList(url, title) {
-  if (!isSafeUrl(url)) return { ok: false, error: 'bad-url' };
-  let t = typeof title === 'string' ? title : '';
-  t = t.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 300).trim();
-  if (readingList.some(b => String(b.url || '') === url)) return { ok: true, added: false };
-  readingList.push({ url, title: t || url, addedDate: new Date().toISOString() });
-  saveReadingList();
-  return { ok: true, added: true };
-}
+function addToReadingList(...a) { return cosytabsmainMod.addToReadingList(...a); }
 
-ipcMain.handle('readinglist-add', (event, payload = {}) => {
-  if (!isReadingListFrameSender(event) && !isMainSender(event)) return { ok: false, error: 'denied' };
-  const url = typeof payload.url === 'string' ? payload.url : '';
-  return addToReadingList(url, payload.title);
-});
-
-// 稍后读打开：经 isSafeUrl 校验（含 cosy:// 内部页），新标签打开。
-ipcMain.handle('readinglist-open-url', (event, url) =>
-  openUrlFromInternalFrame(isReadingListFrameSender(event), url));
-
-// 稍后读删除：按 url 精确匹配，删除后落盘。
-ipcMain.handle('readinglist-remove', (event, payload = {}) => {
-  if (!isReadingListFrameSender(event)) return { ok: false, error: 'denied' };
-  const url = typeof payload.url === 'string' ? payload.url : '';
-  const before = readingList.length;
-  readingList = readingList.filter(b => !(String(b.url || '') === url));
-  if (readingList.length !== before) saveReadingList();
-  return { ok: true, removed: before - readingList.length };
-});
-
-// 稍后读清空：整表清空并落盘。
-ipcMain.handle('readinglist-clear', (event) => {
-  if (!isReadingListFrameSender(event)) return { ok: false, error: 'denied' };
-  const before = readingList.length;
-  readingList = [];
-  if (before > 0) saveReadingList();
-  return { ok: true, removed: before };
-});
-
-// 关于页快照：版本 / 运行时 / 安全开关 / 跨主机连接台账汇总。
-// 只放行 cosy://about 帧与主窗口外壳；不做任何网络请求，纯本地信息。
-ipcMain.handle('about-snapshot', (event) => {
-  if (!isAboutFrameSender(event)) return { ok: false, error: 'denied' };
-  const stats = getRequestLogStats();
-  const secEvents = listSecurityEvents('', 500);
-  const secStats = { total: 0, critical: 0, warn: 0, info: 0, latest: [] };
-  for (const e of secEvents) {
-    secStats.total++;
-    if (e.severity === 'critical') secStats.critical++;
-    else if (e.severity === 'warn') secStats.warn++;
-    else secStats.info++;
-  }
-  secStats.latest = secEvents.slice(0, 5).map(e => ({
-    time: e.time, type: String(e.type || ''), severity: String(e.severity || 'info'),
-    detail: String(e.detail || '').slice(0, 160),
-  }));
-  return {
-    ok: true,
-    info: {
-      appName: 'OpenCosy',
-      appVersion: typeof app.getVersion === 'function' ? app.getVersion() : '',
-      userDataPath: app.getPath('userData'),
-      internalPages: Object.keys(pageMap).length,
-      electronVersion: process.versions.electron || '',
-      chromiumVersion: process.versions.chrome || '',
-      nodeVersion: process.versions.node || '',
-      v8Version: process.versions.v8 || '',
-      platform: process.platform || '',
-      arch: process.arch || '',
-      httpsOnly: httpsOnlyEnabled,
-      httpsOnlyBlockInsecure: !!httpsOnlyEnabled,
-      dnt: true,
-      disableWebRTC: webrtcMode !== 'legacy',
-      webrtcMode,
-      httpsExceptions: typeof httpsExceptions.size === 'function' ? httpsExceptions.size() : 0,
-      tabCount: Array.isArray(tabs) ? tabs.length : 0,
-      bookmarkCount: Array.isArray(bookmarks) ? bookmarks.length : 0,
-      stats: {
-        hosts: Number(stats.hosts) || 0,
-        requests: Number(stats.requests) || 0,
-        blocked: Number(stats.blocked) || 0,
-        backgroundHosts: Number(stats.backgroundHosts) || 0,
-        insecureHosts: Number(stats.insecureHosts) || 0,
-      },
-      security: secStats,
-    },
-  };
-});
-
-// 关于页导出诊断 JSON：渲染层已本地生成纯文本，本端仅收口类型与长度，
-// 弹保存框写盘。仅受信帧可触发。
-ipcMain.handle('about-export-diagnostics', async (event, payload = {}) => {
-  if (!isAboutFrameSender(event)) return { ok: false, error: 'denied' };
-  try {
-    const text = typeof payload.text === 'string' ? payload.text : '';
-    if (text.length > 16 * 1024 * 1024) return { ok: false, error: 'too-large' };
-    const stamp = new Date().toISOString().slice(0, 10);
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: '导出诊断信息',
-      defaultPath: `opencosy-diagnostics-${stamp}.json`,
-      filters: [{ name: 'JSON 文件', extensions: ['json'] }, { name: '所有文件', extensions: ['*'] }],
-    });
-    if (result.canceled || !result.filePath) return { ok: true, canceled: true };
-    fsSync.writeFileSync(result.filePath, text, 'utf-8');
-    return { ok: true, path: result.filePath };
-  } catch (e) {
-    console.error('导出诊断失败:', e);
-    return { ok: false, error: e.message };
-  }
-});
-
-// 快捷键速查页快照：导出规则表（动作 id + 键位 + 修饰键），供 cosy://shortcuts// 渲染。只放行内置帧；规则键值全部标量化，避免把内部对象引用暴露给页面。
-ipcMain.handle('shortcuts-snapshot', (event) => {
-  if (!isShortcutsFrameSender(event)) return { ok: false, error: 'denied', rules: [] };
-  const rules = shortcutKeys.SHORTCUT_RULES.map(r => ({
-    action: String(r.action || ''),
-    key: String(r.key || ''),
-    ctrl: r.ctrl === true ? 1 : r.ctrl === false ? 0 : null,
-    shift: r.shift === true ? 1 : r.shift === false ? 0 : null,
-    alt: r.alt === true ? 1 : r.alt === false ? 0 : null,
-  }));
-  return { ok: true, rules };
-});
-
-// 内部页导航快照：返回全部已登记内部页（名称 / 标题 / 说明），供 cosy://pages
-// 渲染。只放行内置帧；标题说明为静态文案，名称经白名单校验后才可用于打开。
-ipcMain.handle('pages-snapshot', (event) => {
-  if (!isPagesFrameSender(event)) return { ok: false, error: 'denied', pages: [] };
-  const pages = Object.keys(INTERNAL_PAGES).map(name => ({
-    name,
-    title: INTERNAL_PAGES[name].title,
-    desc: INTERNAL_PAGES[name].desc,
-  }));
-  return { ok: true, pages };
-});
-
-// 内部页导航打开：只接受登记表内存在的页面名，白名单外一律拒绝（防止把任意
-// 字符串拼进 cosy:// 后跳转到未注册地址）。新标签打开。
-ipcMain.handle('pages-open', (event, payload = {}) => {
-  if (!isPagesFrameSender(event)) return { ok: false, error: 'denied' };
-  const name = typeof payload.name === 'string' ? payload.name : '';
-  if (!INTERNAL_PAGES[name]) return { ok: false, error: 'unknown-page' };
-  const tab = createNewTab('cosy://' + name);
-  return { ok: true, id: tab.id, name };
-});
-
-ipcMain.handle('get-https-only', (event) => {
-  if (!isMainSender(event)) return { success: false };
-  return { success: true, enabled: httpsOnlyEnabled };
-});
-
-// HTTPS-Only 站点例外的查询与管理。来源校验交给 ipcGuard（仅受信 file/cosy 帧，
-// 远程网页在主进程边界即被拒）；主机名一律经内核净化，非法输入返回 ok:false，
-// 不接受路径 / 端口 / 控制字符。写操作落盘并向所有受信界面广播变更。
-ipcMain.handle('list-https-exceptions', () => ({
-  enabled: httpsOnlyEnabled,
-  hosts: httpsExceptions.hosts(),
-  size: typeof httpsExceptions.size === 'function' ? httpsExceptions.size() : 0,
-  capacity: httpsExceptions.capacity || 0,
-}));
-
-ipcMain.handle('add-https-exception', (event, payload = {}) => {
-  const host = httpsOnlyCore.normalizeExceptionHost(payload && payload.host);
-  if (!host) return { ok: false, error: '主机名无效' };
-  httpsExceptions.add(host);
-  persistHttpsExceptions();
-  sendToRenderer('https-exceptions-updated', { hosts: httpsExceptions.hosts() });
-  return { ok: true, host };
-});
-
-ipcMain.handle('remove-https-exception', (event, payload = {}) => {
-  const host = httpsOnlyCore.normalizeExceptionHost(payload && payload.host);
-  if (!host) return { ok: false, error: '主机名无效' };
-  const removed = httpsExceptions.remove(host);
-  if (removed) {
-    persistHttpsExceptions();
-    sendToRenderer('https-exceptions-updated', { hosts: httpsExceptions.hosts() });
-  }
-  return { ok: true, removed };
-});
-
-ipcMain.handle('clear-https-exceptions', () => {
-  httpsExceptions.clear();
-  persistHttpsExceptions();
-  sendToRenderer('https-exceptions-updated', { hosts: httpsExceptions.hosts() });
-  return { ok: true };
-});
-
-ipcMain.handle('get-network-status', (event) => {
-  if (!isMainSender(event)) return { success: false };
-  return { success: true, online: net.isOnline() };
-});
-
-// 阅读页读取本次抽取结果（分级 COSY_ONLY，仅 cosy://reader 帧可调）。文章保留到
-// 阅读标签关闭或下一次抽取，便于页面内切换字号 / 暗色后重建时重复取用。
-ipcMain.handle('get-reader-article', () => {
-  const article = readerArticle;
-  return article || { ok: false, contentNodes: [] };
-});
-
-ipcMain.handle('get-trackers', (event) => {
-  if (!isMainSender(event)) return { success: false };
-  return { success: true, enabled: blockTrackers, count: blockedTrackerCount, top: topBlockedHosts() };
-});
-
-ipcMain.on('reset-trackers', (event) => {
-  if (!isMainSender(event)) return;
-  blockedTrackerCount = 0;
-  blockedTrackerByHost.clear();
-  sendToRenderer('trackers-blocked', { count: 0, host: '', top: [] });
-});
+cosyipcregisterMod.registerTabSurfaces();
 
 // ===== 自定义拦截规则 IPC =====
 // 规则以字符串行表达：裸域名 / host:x / glob:https://*.x/* / path:https://x/ads/
 // 所有写操作后立即持久化并重编译，webRequest 管道下一次判定即生效。
-function customRulesSnapshot() {
-  return {
-    host: customRules.host.slice(),
-    glob: customRules.glob.slice(),
-    path: customRules.path.slice(),
-    count: blockRules.ruleCount(customRules),
-  };
-}
+function customRulesSnapshot(...a) { return cosytabsmainMod.customRulesSnapshot(...a); }
 
 ipcMain.handle('get-block-rules', (event) => {
   if (!isMainSender(event)) return { success: false };
@@ -5561,375 +3625,9 @@ ipcMain.handle('clear-block-rules', (event) => {
 // vaultPasswordOK：主进程侧主密码收口校验（渲染层另有 UI 限制，此处纵深防御）。
 // 规则：必须是字符串；1~256 个可见字符；不含控制字符/NUL；非纯空白；
 // UTF-8 编码后不超过 1024 字节，防止超长输入拖垮 PBKDF2 慢化造成 DoS。
-function vaultPasswordOK(pw) {
-  if (typeof pw !== 'string') return false;
-  if (pw.length < 1 || pw.length > 256) return false;
-  if (/[\x00-\x1f\x7f]/.test(pw)) return false;
-  if (/^\s*$/.test(pw)) return false;
-  try {
-    return Buffer.byteLength(pw, 'utf8') <= 1024;
-  } catch {
-    return false;
-  }
-}
+function vaultPasswordOK(...a) { return cosytabsmainMod.vaultPasswordOK(...a); }
 
-ipcMain.handle('vault-status', (event) => {
-  if (!isMainSender(event)) return { success: false };
-  return { success: true, ...vaultStatusSnapshot() };
-});
-
-ipcMain.handle('vault-create', (event, payload = {}) => {
-  if (!isMainSender(event)) return { success: false };
-  const pw = typeof payload === 'string' ? payload : (payload && payload.masterPassword);
-  if (!vaultPasswordOK(pw)) return { success: false, reason: 'bad-password' };
-  return { success: true, ...createNewVault(pw) };
-});
-
-ipcMain.handle('vault-unlock', (event, payload = {}) => {
-  if (!isMainSender(event)) return { success: false };
-  const pw = typeof payload === 'string' ? payload : (payload && payload.masterPassword);
-  if (!vaultPasswordOK(pw)) return { success: false, reason: 'bad-password' };
-  return { success: true, ...unlockVault(pw) };
-});
-
-ipcMain.handle('vault-lock', (event) => {
-  if (!isMainSender(event)) return { success: false };
-  if (vaultHandle) vaultHandle.lock();
-  vaultHandle = null;
-  return { success: true, ...vaultStatusSnapshot() };
-});
-
-ipcMain.handle('vault-list', (event) => {
-  if (!isMainSender(event)) return { success: false };
-  if (!vaultHandle || vaultHandle.locked()) return { success: false, reason: 'locked' };
-  return { success: true, ...vaultHandle.list() };
-});
-
-ipcMain.handle('vault-get', (event, id) => {
-  if (!isMainSender(event)) return { success: false };
-  if (!vaultHandle || vaultHandle.locked()) return { success: false, reason: 'locked' };
-  const g = vaultHandle.get(String(id || ''));
-  if (!g.ok) return { success: false, reason: g.reason };
-  return { success: true, payload: g.payload, ...(vaultHandle.list().ok ? { label: vaultHandle.list().entries.find((e) => e.id === id)?.label } : {}) };
-});
-
-ipcMain.handle('vault-set', (event, payload = {}) => {
-  if (!isMainSender(event)) return { success: false };
-  if (!vaultHandle || vaultHandle.locked()) return { success: false, reason: 'locked' };
-  const r = vaultHandle.set(String(payload.kind || ''), String(payload.label || ''), payload.payload);
-  if (r.ok) persistVaultState();
-  return { success: true, ...r };
-});
-
-ipcMain.handle('vault-update', (event, payload = {}) => {
-  if (!isMainSender(event)) return { success: false };
-  if (!vaultHandle || vaultHandle.locked()) return { success: false, reason: 'locked' };
-  const r = vaultHandle.update(String(payload.id || ''), String(payload.kind || ''),
-    String(payload.label || ''), payload.payload);
-  if (r.ok) persistVaultState();
-  return { success: true, ...r };
-});
-
-ipcMain.handle('vault-delete', (event, id) => {
-  if (!isMainSender(event)) return { success: false };
-  if (!vaultHandle || vaultHandle.locked()) return { success: false, reason: 'locked' };
-  const r = vaultHandle.delete(String(id || ''));
-  if (r.ok) persistVaultState();
-  return { success: true, ...r };
-});
-
-// vault-rekey：修改主密码。传主密码 → PBKDF2 慢化重包裹；留空 → 生成新随机密钥
-// 并重新写回系统安全存储。任一条目解密失败会整体中止，保持原状态。
-ipcMain.handle('vault-rekey', (event, payload = {}) => {
-  if (!isMainSender(event)) return { success: false };
-  if (!vaultHandle || vaultHandle.locked()) return { success: false, reason: 'locked' };
-  const pw = typeof payload === 'string' ? payload : (payload && payload.masterPassword);
-  let key;
-  let kdf;
-  if (typeof pw === 'string' && pw.length > 0) {
-    if (!vaultPasswordOK(pw)) return { success: false, reason: 'bad-password' };
-    key = Buffer.from(pw, 'utf8');
-    kdf = vaultCore.KDF_PBKDF2;
-    vaultUsePasswordMode = true;
-  } else {
-    if (!safeStorage.isEncryptionAvailable()) {
-      return { success: false, reason: 'password-required' };
-    }
-    key = crypto.randomBytes(32);
-    kdf = vaultCore.KDF_HKDF;
-    vaultUsePasswordMode = false;
-  }
-  const rr = vaultHandle.rekey(key, { kdf });
-  if (!rr.ok) return { success: false, reason: rr.reason };
-  persistVaultState();
-  const keyPersisted = vaultUsePasswordMode ? true : persistVaultKey(key);
-  return { success: true, keyPersisted, ...rr, ...vaultStatusSnapshot() };
-});
-
-// vault-export-backup：返回密文 JSON 文本（不含密钥/明文），供用户自行保存。
-ipcMain.handle('vault-export-backup', (event) => {
-  if (!isMainSender(event)) return { success: false };
-  if (!vaultHandle || vaultHandle.locked()) return { success: false, reason: 'locked' };
-  const ex = vaultHandle.exportState();
-  if (!ex.ok) return { success: false, reason: ex.reason };
-  return { success: true, backup: JSON.stringify(ex.state) };
-});
-
-// vault-import-backup：合并同一主密钥包裹的备份密文；格式/密钥不匹配整体拒绝。
-ipcMain.handle('vault-import-backup', (event, text) => {
-  if (!isMainSender(event)) return { success: false };
-  if (!vaultHandle || vaultHandle.locked()) return { success: false, reason: 'locked' };
-  let state;
-  try {
-    state = JSON.parse(String(text || ''));
-  } catch {
-    return { success: false, reason: 'bad-state' };
-  }
-  const rr = vaultHandle.mergeFromState(state);
-  if (rr.ok) persistVaultState();
-  return { success: true, ...rr };
-});
-
-// ===== 站点数据清理 IPC =====
-// 流程固定为：枚举 → 规划（纯函数）→ 用户确认 plan → 执行 → 审计。
-// 执行只接受 filterSiteEntries 产出的 plan 对象（含 targets 白名单）。
-ipcMain.handle('cleaner-enumerate', async (event) => {
-  if (!isMainSender(event)) return { success: false };
-  return { success: true, ...enumerateSiteStorage() };
-});
-
-ipcMain.handle('cleaner-plan', (event, payload = {}) => {
-  if (!isMainSender(event)) return { success: false };
-  const src = enumerateSiteStorage();
-  const filtered = cleanerCore.filterSiteEntries(src.entries, {
-    matchMode: payload.matchMode,
-    host: payload.host,
-    since: payload.since,
-    storageTypes: payload.storageTypes,
-  });
-  if (!filtered.ok) return { success: false, ...filtered };
-  return {
-    success: true,
-    ...filtered,
-    storageTypes: payload.storageTypes || [],
-    ...cleanerCore.summarizePlan(filtered, payload.actions || []),
-  };
-});
-
-ipcMain.handle('cleaner-execute', async (event, plan) => {
-  if (!isMainSender(event)) return { success: false };
-  const res = await executeCleanPlan(plan);
-  return { success: true, ...res };
-});
-
-ipcMain.handle('cleaner-audit', (event) => {
-  if (!isMainSender(event)) return { success: false };
-  return { success: true, entries: cleanAuditLog.slice() };
-});
-
-ipcMain.handle('cleaner-prune-audit', (event, keep) => {
-  if (!isMainSender(event)) return { success: false };
-  const r = cleanerCore.pruneAuditLog(cleanAuditLog, Number(keep) || 0);
-  if (r.ok) persistCleanAudit();
-  return { success: true, ...r };
-});
-
-// ===== UA 覆盖策略 IPC =====
-// get-ua-policy：返回当前策略、改写统计与生效 UA（含 default 时的自算值），
-// 供 cosy://privacy 页展示。set/reset 都会持久化并立刻应用到 defaultSession
-// （隔离会话下一次请求时也会吃到新策略，因为 resolveEffectiveUa 每次现算）。
-ipcMain.handle('get-ua-policy', (event) => {
-  if (!isMainSender(event)) return { success: false };
-  return {
-    success: true,
-    ...uaPolicyCore.policyToPlain(uaPolicyState),
-    effectiveUa: resolveEffectiveUa(),
-    overrideCount: uaOverrideCount,
-    lastOverrideAt: uaLastOverrideAt,
-  };
-});
-
-ipcMain.handle('set-ua-policy', (event, payload = {}) => {
-  if (!isMainSender(event)) return { success: false };
-  const next = uaPolicyCore.sanitizePolicy(payload);
-  uaPolicyState = next;
-  persistUaPolicyState();
-  applyUaPolicyToSession(session.defaultSession);
-  return {
-    success: true,
-    ...uaPolicyCore.policyToPlain(uaPolicyState),
-    effectiveUa: resolveEffectiveUa(),
-  };
-});
-
-ipcMain.handle('reset-ua-policy', (event) => {
-  if (!isMainSender(event)) return { success: false };
-  uaPolicyState = { ...uaPolicyCore.DEFAULT_POLICY };
-  uaOverrideCount = 0;
-  uaLastOverrideAt = 0;
-  persistUaPolicyState();
-  applyUaPolicyToSession(session.defaultSession);
-  return { success: true, ...uaPolicyCore.policyToPlain(uaPolicyState), effectiveUa: resolveEffectiveUa() };
-});
-
-// 随机预览一条 Chrome UA（只展示不改状态）：从内置池随机取。
-// 仅主窗口可调用。
-ipcMain.handle('preview-random-ua', (event) => {
-  if (!isMainSender(event)) return { success: false };
-  const pool = uaPolicyCore && Array.isArray(uaPolicyCore.COMMON_CHROME_UAS) ? uaPolicyCore.COMMON_CHROME_UAS : [];
-  if (pool.length === 0) return { success: false, reason: 'empty-pool' };
-  const ua = uaPolicyCore.pickRandomChromeUa();
-  return { success: true, ua: String(ua || '') };
-});
-
-// ===== 下载限速 IPC =====
-ipcMain.handle('get-security-posture', (event) => {
-  if (!isMainSender(event)) return { ok: false };
-  const decisions = listPermissionDecisions();
-  const riskyOrigins = new Set();
-  for (const decision of decisions) {
-    if (decision.state !== permissionGrants.STATE.ALLOW) continue;
-    if ((permissionGrants.HIGH_RISK_WEIGHT[decision.permission] || 0) >= 2) riskyOrigins.add(decision.origin);
-  }
-  let criticalEvents = 0;
-  for (const item of listSecurityEvents('', 200)) {
-    if (item.severity === 'critical') criticalEvents += 1;
-  }
-  const cspStats = getCspReportStats();
-  const headerStats = getHeaderGradeStats();
-  loadCertExceptions();
-  const report = securityPosture.scorePosture({
-    httpsOnly: httpsOnlyEnabled,
-    blockRules: (compiledCustomRules.host ? compiledCustomRules.host.size : 0)
-      + (compiledCustomRules.glob ? compiledCustomRules.glob.length : 0)
-      + (compiledCustomRules.path ? compiledCustomRules.path.length : 0),
-    cspReports: Number(cspStats.totalHits) || 0,
-    certExceptions: certExceptions.length,
-    riskyOrigins: riskyOrigins.size,
-    criticalEvents,
-    headerGrades: headerStats.byGrade,
-    expiredGrants: decisions.filter((decision) => decision.state === permissionGrants.STATE.EXPIRED).length,
-  });
-  return {
-    ok: true,
-    report,
-    description: securityPosture.describePosture(report),
-    worst: securityPosture.worstSeverity(report),
-  };
-});
-
-ipcMain.handle('get-download-journal-export', (event, payload = {}) => {
-  if (!isMainSender(event)) return { ok: false };
-  const requested = Number.isInteger(payload.limit) && payload.limit > 0 ? payload.limit : downloadJournalModule.DEFAULT_MAX_ENTRIES;
-  const entries = getDownloadJournal().snapshot().slice(0, requested);
-  const exported = downloadJournalExport.buildJournalExport(entries);
-  return {
-    ok: true,
-    export: exported,
-    description: downloadJournalExport.describeExport(exported),
-    leaked: downloadJournalExport.exportContainsLocalPaths(exported),
-  };
-});
-
-ipcMain.handle('get-permission-risk-report', (event, payload = {}) => {
-  if (!isMainSender(event)) return { ok: false };
-  const requested = Number.isInteger(payload.limit) && payload.limit > 0 ? payload.limit : 50;
-  const report = permissionRiskReport.buildPermissionReport(listPermissionDecisions(), { limit: requested });
-  return {
-    ok: true,
-    report,
-    description: permissionRiskReport.describePermissionReport(report),
-    attention: permissionRiskReport.needsAttention(report),
-  };
-});
-
-ipcMain.handle('get-download-rate-limit', (event) => {
-  if (!isMainSender(event)) return { success: false };
-  return { success: true, bytesPerSecond: downloadRateLimit, kbps: Math.round(downloadRateLimit / 1024) };
-});
-
-ipcMain.handle('set-download-rate-limit', (event, payload = {}) => {
-  if (!isMainSender(event)) return { success: false };
-  const raw = Number(payload && payload.bytesPerSecond);
-  if (!Number.isFinite(raw) || raw < 0) return { success: false, reason: 'invalid-rate' };
-  downloadRateLimit = Math.floor(Math.min(raw, 1024 * 1024 * 1024)); // 封顶 1 GiB/s
-  persistRateLimitState();
-  // 已在进行中的下载项逐个应用新限速（未开始的在 will-download 时套用）。
-  for (const d of downloads) {
-    if (d.item && d.isItemValid) applyRateLimitToItem(d.item);
-  }
-  return { success: true, bytesPerSecond: downloadRateLimit };
-});
-
-ipcMain.handle('get-download-max-bytes', (event) => {
-  if (!isMainSender(event)) return { success: false };
-  return { success: true, bytes: downloadMaxBytes };
-});
-
-ipcMain.handle('set-download-max-bytes', (event, payload = {}) => {
-  if (!isMainSender(event)) return { success: false };
-  const raw = Number(payload && payload.bytes);
-  if (!Number.isFinite(raw) || raw < 0) return { success: false, reason: 'invalid-limit' };
-  downloadMaxBytes = downloadSizeGuard.normalizeLimit(raw);
-  try {
-    const settingsPath = path.join(app.getPath('userData'), 'cosySettings.json');
-    const cur = ledgerStore.readJSONStore(settingsPath, {});
-    ledgerStore.writeJSONStore(settingsPath, sanitizeSettings(Object.assign({}, cur, { downloadMaxBytes })), { pretty: true });
-  } catch (e) { console.error('保存下载体积上限失败:', e); }
-  return { success: true, bytes: downloadMaxBytes };
-});
-
-ipcMain.handle('get-download-journal', (event, payload = {}) => {
-  const requested = Number.isInteger(payload.limit) && payload.limit > 0 ? payload.limit : 50;
-  const limit = Math.min(requested, downloadJournalModule.DEFAULT_MAX_ENTRIES);
-  return getDownloadJournal().snapshot().slice(0, limit).map((entry) => ({
-    id: entry.id,
-    filename: entry.filename,
-    host: entry.host,
-    totalBytes: entry.totalBytes,
-    receivedBytes: entry.receivedBytes,
-    state: entry.state,
-    startedAt: entry.startedAt,
-    updatedAt: entry.updatedAt,
-    resumable: entry.resumable === true,
-    resumeReason: entry.resumeReason,
-    resumeOffset: entry.resumeOffset,
-    fileCheck: entry.fileCheck || downloadReconcileModule.VERDICT.SKIPPED,
-    fileCheckReason: downloadReconcileModule.describeVerdict(entry.fileCheck || downloadReconcileModule.VERDICT.SKIPPED),
-    fileBytes: Number.isFinite(entry.fileBytes) ? entry.fileBytes : null,
-  }));
-});
-
-ipcMain.handle('reconcile-download-journal', (event) => {
-  if (!isMainSender(event)) return { success: false };
-  const result = getDownloadJournal().reconcile(downloadJournalFileProbe());
-  return {
-    success: result.ok,
-    summary: result.summary,
-    description: downloadReconcileModule.summarizeReconcile(result.summary),
-    changes: result.changes.length,
-  };
-});
-
-ipcMain.handle('clear-download-journal', () => getDownloadJournal().clear());
-
-// 崩溃横幅上的“强制刷新”：按 tabId 找到对应标签重载（无响应 / 连续崩溃后由用户手动触发）。
-ipcMain.on('reload-tab-by-id', (event, tabId) => {
-  if (!isMainSender(event)) return;
-  const id = Number(tabId);
-  const tab = tabs.find(t => t.view && t.view.webContents.id === id);
-  const wc = tab?.view?.webContents;
-  if (wc && !wc.isDestroyed()) {
-    crashReloadCounts.delete(id);
-    wc.reload();
-  }
-});
-
-// 崩溃横幅上的“重新打开”：连续崩溃不再自动重载时，让用户在全新标签里重试该 URL。
-ipcMain.on('reopen-tab-url', (event, url) => {
-  if (!isMainSender(event)) return;
-  if (typeof url === 'string' && isSafeUrl(url)) createNewTab(url);
-});
+cosyipcregisterMod.registerSettingsPanels();
 
 // purgeBrowsingDataOnExit 在用户开启“退出时清除浏览数据”时执行一次性彻底清理：
 // 网络缓存、Cookie / localStorage / IndexedDB 等站点存储、历史与下载记录，
@@ -6009,14 +3707,6 @@ ipcMain.handle('clear-site-data', async (event, payload = {}) => {
 const SITE_DATA_MAX_ROWS = 500;
 const SITE_DATA_MAX_NAMES = 10;
 const SITE_DATA_SEARCH_MAX = 200;
-
-
-
-
-
-
-
-
 
 // 汇总每个域名下的 Cookie 数量与名称样本，供管理页列表使用。
 ipcMain.handle('list-site-data', async (event, payload = {}) => {
@@ -6155,8 +3845,6 @@ const SUGGEST_TIMEOUT_MS = 2500;
 // 当前生效的默认搜索引擎 id；随 cosySettings.searchEngine 加载/保存，未知值
 // 一律回落内核默认（bing）。
 let searchProviderId = searchProvider.DEFAULT_PROVIDER_ID;
-
-
 
 ipcMain.handle('get-search-suggestions', async (event, payload = {}) => {
   if (!isMainSender(event)) return { success: false, suggestions: [] };
