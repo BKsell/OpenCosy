@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { hasControlCharsV2 } = require('./modutil');
 const hasControlChars = hasControlCharsV2;
@@ -73,24 +74,15 @@ function inspectETag(value) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK:
-      return 'etag 合规';
-    case REASON.MISSING:
-      return '响应未声明 etag';
-    case REASON.MALFORMED:
-      return 'etag 取值非法，已剥除';
-    case REASON.OVERLONG:
-      return 'etag 超长，已剥除';
-    case REASON.PATH_LEAK:
-      return 'etag 暴露文件系统路径，已替换为不透明弱校验器';
-    case REASON.PREDICTABLE:
-      return 'etag 可由序号推算，已替换为不透明弱校验器';
-    case REASON.UNSAFE_CHARS:
-      return 'etag 含控制字符或非 ASCII，已剥除';
-    default:
-      return 'etag 未识别状态';
-  }
+  return describeReasonFrom({
+    [REASON.OK]: 'etag 合规',
+    [REASON.MISSING]: '响应未声明 etag',
+    [REASON.MALFORMED]: 'etag 取值非法，已剥除',
+    [REASON.OVERLONG]: 'etag 超长，已剥除',
+    [REASON.PATH_LEAK]: 'etag 暴露文件系统路径，已替换为不透明弱校验器',
+    [REASON.PREDICTABLE]: 'etag 可由序号推算，已替换为不透明弱校验器',
+    [REASON.UNSAFE_CHARS]: 'etag 含控制字符或非 ASCII，已剥除',
+  }, reason, 'etag 未识别状态');
 }
 
 function applyETagGuard(headers) {
