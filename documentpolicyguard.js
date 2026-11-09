@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -82,28 +83,17 @@ function inspectDocumentPolicy(value) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK:
-      return 'document-policy 合规';
-    case REASON.MISSING:
-      return '响应未声明 document-policy';
-    case REASON.MALFORMED:
-      return 'document-policy 取值非法';
-    case REASON.OVERLONG:
-      return 'document-policy 超长';
-    case REASON.UNKNOWN_DIRECTIVE:
-      return 'document-policy 含未知或非法指令，已剔除';
-    case REASON.DUPLICATE_DIRECTIVE:
-      return 'document-policy 重复指令已去重';
-    case REASON.BAD_VALUE:
-      return 'document-policy 指令取值非法';
-    case REASON.DOCUMENT_DOMAIN_ALLOWED:
-      return 'document-policy 允许 document.domain，已剔除';
-    case REASON.SYNC_XHR_ALLOWED:
-      return 'document-policy 允许同步 XHR，已剔除';
-    default:
-      return 'document-policy 未识别状态';
-  }
+  return describeReasonFrom({
+    [REASON.OK]: 'document-policy 合规',
+    [REASON.MISSING]: '响应未声明 document-policy',
+    [REASON.MALFORMED]: 'document-policy 取值非法',
+    [REASON.OVERLONG]: 'document-policy 超长',
+    [REASON.UNKNOWN_DIRECTIVE]: 'document-policy 含未知或非法指令，已剔除',
+    [REASON.DUPLICATE_DIRECTIVE]: 'document-policy 重复指令已去重',
+    [REASON.BAD_VALUE]: 'document-policy 指令取值非法',
+    [REASON.DOCUMENT_DOMAIN_ALLOWED]: 'document-policy 允许 document.domain，已剔除',
+    [REASON.SYNC_XHR_ALLOWED]: 'document-policy 允许同步 XHR，已剔除',
+  }, reason, 'document-policy 未识别状态');
 }
 
 function applyDocumentPolicyGuard(headers) {
