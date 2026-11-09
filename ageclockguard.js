@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { firstValue, headerKey } = require('./headerutil');
 
@@ -75,20 +76,13 @@ function applyAgeClockGuard(headers, nowMs) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.MALFORMED:
-      return 'Age 头不是十进制秒数';
-    case REASON.OVERLONG:
-      return 'Age 超出合法区间';
-    case REASON.NEGATIVE_AGE:
-      return 'Age 出现负值或符号前缀';
-    case REASON.DATE_SKEW:
-      return 'Date 与本地时间偏差超出预算';
-    case REASON.STALE:
-      return 'Age 表示缓存已过期';
-    default:
-      return 'Age 与 Date 校验通过';
-  }
+  return describeReasonFrom({
+    [REASON.MALFORMED]: 'Age 头不是十进制秒数',
+    [REASON.OVERLONG]: 'Age 超出合法区间',
+    [REASON.NEGATIVE_AGE]: 'Age 出现负值或符号前缀',
+    [REASON.DATE_SKEW]: 'Date 与本地时间偏差超出预算',
+    [REASON.STALE]: 'Age 表示缓存已过期',
+  }, reason, 'Age 与 Date 校验通过');
 }
 
 module.exports = {
