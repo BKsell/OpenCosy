@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { countValues, deleteHeader, headerKey } = require('./headerutil');
 
@@ -28,20 +29,13 @@ function applySetCookie2Guard(headers) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK:
-      return 'Set-Cookie2 状态正常';
-    case REASON.MISSING:
-      return '未声明 Set-Cookie2';
-    case REASON.OBSOLETE_HEADER:
-      return 'Set-Cookie2 已废弃，按 RFC 6265 应改用 Set-Cookie';
-    case REASON.MULTI_VALUE:
-      return 'Set-Cookie2 出现多条取值';
-    case REASON.OVERSIZED_SET:
-      return 'Set-Cookie2 条目数量异常';
-    default:
-      return 'Set-Cookie2 未知状态';
-  }
+  return describeReasonFrom({
+    [REASON.OK]: 'Set-Cookie2 状态正常',
+    [REASON.MISSING]: '未声明 Set-Cookie2',
+    [REASON.OBSOLETE_HEADER]: 'Set-Cookie2 已废弃，按 RFC 6265 应改用 Set-Cookie',
+    [REASON.MULTI_VALUE]: 'Set-Cookie2 出现多条取值',
+    [REASON.OVERSIZED_SET]: 'Set-Cookie2 条目数量异常',
+  }, reason, 'Set-Cookie2 未知状态');
 }
 
 module.exports = {
