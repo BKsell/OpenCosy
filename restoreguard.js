@@ -1,5 +1,6 @@
 'use strict';
-const { stripControlChars, collapseSpaces, fallbackTitleFor } = require('./modutil');
+const { stripControlChars, collapseSpaces, sanitizeDisplayTitle, fallbackTitleFor } = require('./modutil');
+const urlEntry = require('./urlentryguard');
 
 // restoreguard.js —— 退出 / 崩溃后“会话标签恢复”与“最近关闭标签”落盘读取的
 // 写入净化 + 逐条校验 + 有界维护内核。
@@ -52,35 +53,18 @@ const constants = Object.freeze({
 // sanitizeRestoreTitle 清洗恢复标签标题：制表 / 换行 / 回车先归一为空格，再删除其余
 // 控制字符，压空白，截断上界。非字符串给空串。
 function sanitizeRestoreTitle(rawTitle) {
-  let t = typeof rawTitle === 'string' ? rawTitle : '';
-  t = t.replace(/[\t\n\r]+/g, ' ');
-  t = collapseSpaces(stripControlChars(t));
-  if (t.length > MAX_TITLE_CHARS) t = t.slice(0, MAX_TITLE_CHARS);
-  return t;
+  return sanitizeDisplayTitle(rawTitle, MAX_TITLE_CHARS);
 }
 
 // sanitizeRestoreUrl 校验可恢复的标签 URL：仅 http/https、可解析、长度有界、host
 // 非空。返回 {ok,url,reason}。
 function sanitizeRestoreUrl(rawUrl) {
-  if (typeof rawUrl !== 'string' || rawUrl.length === 0) {
-    return { ok: false, url: '', reason: SKIP_BAD_URL };
-  }
-  if (rawUrl.length > MAX_URL_CHARS) {
-    return { ok: false, url: '', reason: SKIP_URL_TOO_LONG };
-  }
-  let u;
-  try {
-    u = new URL(rawUrl);
-  } catch {
-    return { ok: false, url: '', reason: SKIP_BAD_URL };
-  }
-  if (!ALLOWED_PROTOCOLS.includes(u.protocol)) {
-    return { ok: false, url: '', reason: SKIP_BAD_PROTOCOL };
-  }
-  if (!u.hostname) {
-    return { ok: false, url: '', reason: SKIP_BAD_URL };
-  }
-  return { ok: true, url: u.href, reason: '' };
+  return urlEntry.sanitizeWebUrl(rawUrl, {
+    empty: SKIP_BAD_URL,
+    tooLong: SKIP_URL_TOO_LONG,
+    badUrl: SKIP_BAD_URL,
+    badProtocol: SKIP_BAD_PROTOCOL,
+  }, MAX_URL_CHARS);
 }
 
 // sanitizeSessionTab 校验并规范化单个待恢复标签 {url,title}。
