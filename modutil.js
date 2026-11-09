@@ -145,6 +145,17 @@ function sanitizeDisplayTitle(rawTitle, maxChars) {
   return t;
 }
 
+function readStoredSection(readStore, path, pick, label) {
+  try {
+    const data = readStore(path, null);
+    if (!data || typeof data !== 'object') return [];
+    return pick(data);
+  } catch (e) {
+    console.error(label, e);
+    return [];
+  }
+}
+
 module.exports = Object.assign({}, require('./modutil_part2'), {
   pruneOlderThan,
   singleAlt,
@@ -156,6 +167,7 @@ module.exports = Object.assign({}, require('./modutil_part2'), {
   stripControlChars,
   collapseSpaces,
   sanitizeDisplayTitle,
+  readStoredSection,
   schemeOf,
   originOf,
   isObj,
