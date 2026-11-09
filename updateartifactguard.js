@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -52,26 +53,16 @@ function applyUpdateArtifactGuard(manifest) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.INVALID:
-      return '更新清单为空或不是对象';
-    case REASON.VERSION:
-      return '更新版本号不符合语义化版本';
-    case REASON.URL:
-      return '更新包地址不是 HTTPS';
-    case REASON.USERINFO:
-      return '更新包地址内嵌账号密码';
-    case REASON.HASH:
-      return '更新包 SHA-512 值非法';
-    case REASON.SIGNATURE:
-      return '更新包签名格式非法';
-    case REASON.SIZE:
-      return '更新包体积超出允许范围';
-    case REASON.PLATFORM:
-      return '更新包目标平台不受支持';
-    default:
-      return '更新清单校验通过';
-  }
+  return describeReasonFrom({
+    [REASON.INVALID]: '更新清单为空或不是对象',
+    [REASON.VERSION]: '更新版本号不符合语义化版本',
+    [REASON.URL]: '更新包地址不是 HTTPS',
+    [REASON.USERINFO]: '更新包地址内嵌账号密码',
+    [REASON.HASH]: '更新包 SHA-512 值非法',
+    [REASON.SIGNATURE]: '更新包签名格式非法',
+    [REASON.SIZE]: '更新包体积超出允许范围',
+    [REASON.PLATFORM]: '更新包目标平台不受支持',
+  }, reason, '更新清单校验通过');
 }
 
 module.exports = {
