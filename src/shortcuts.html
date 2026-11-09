@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+<title>快捷键 - OpenCosy</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+:root{--bg:#f3f3f3;--card:#fff;--text:#222;--sub:#666;--border:#dfe4e1;--accent:#0078d4;--kbd-bg:#eef1f4;--kbd-border:#c9d0d6;}
+[data-theme="dark"]{--bg:#1a1a1a;--card:#2d2d2d;--text:#e6e6e6;--sub:#9a9a9a;--border:#444;--kbd-bg:#3a3a3a;--kbd-border:#555;}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);padding:24px;transition:.3s;max-width:760px;margin:0 auto;}
+h1{font-size:20px;margin-bottom:4px;}
+.tip{color:var(--sub);font-size:13px;margin-bottom:16px;}
+input.search{width:100%;padding:9px 14px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font-size:14px;outline:none;margin-bottom:14px;}
+input.search:focus{border-color:var(--accent);}
+.group{margin-bottom:16px;}
+.group h2{font-size:14px;color:var(--sub);margin-bottom:8px;font-weight:600;}
+.row{display:flex;gap:12px;align-items:center;padding:7px 0;border-bottom:1px dashed var(--border);font-size:13px;}
+.row:last-child{border-bottom:none;}
+.row .label{flex:1;color:var(--text);}
+.row .keys{flex:none;font-family:Consolas,'Courier New',monospace;font-size:12px;}
+kbd{display:inline-block;padding:2px 7px;border:1px solid var(--kbd-border);border-radius:5px;background:var(--kbd-bg);color:var(--text);font-size:11px;margin:0 2px;}
+.empty-page{padding:40px;text-align:center;color:var(--sub);}
+</style>
+</head>
+<body>
+<h1>快捷键</h1>
+<div class="tip">按动作名或组合键过滤。规则按优先级排序：组合键更长 / 更具体的规则排前，短组合会被更长规则共享修饰键的规则抢先命中（例如 Ctrl+Shift+E 命中标签概览而非打印）。</div>
+<input class="search" id="search" type="text" placeholder="过滤快捷键…" autofocus>
+<div id="root"><div class="empty-page">加载中…</div></div>
+<script>
+(function () {
+  'use strict';
+  var root = document.getElementById('root');
+  var searchEl = document.getElementById('search');
+  var data = { rules: [], actions: {} };
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = String(text);
+    return e;
+  }
+
+  function modsOf(rule) {
+    var parts = [];
+    if (rule.ctrl === true) parts.push('Ctrl');
+    if (rule.alt === true) parts.push('Alt');
+    if (rule.shift === true) parts.push('Shift');
+    return parts;
+  }
+
+  function keyText(key) {
+    if (!key) return '';
+    if (key.length === 1) return key.toUpperCase();
+    return key.charAt(0).toUpperCase() + key.slice(1);
+  }
+
+  function render() {
+    var q = String(searchEl.value || '').trim().toLowerCase();
+    root.textContent = '';
+    if (!data.rules || data.rules.length === 0) {
+      root.appendChild(el('div', 'empty-page', '快捷键数据加载失败'));
+      return;
+    }
+    var seen = {};
+    data.rules.forEach(function (rule) {
+      if (rule.hidden) return;
+      if (q && String(rule.action || '').toLowerCase().indexOf(q) < 0
+        && String(rule.key || '').toLowerCase().indexOf(q) < 0) return;
+      var row = el('div', 'row');
+      row.appendChild(el('div', 'label', String(rule.action || rule.key || '')));
+      var keys = el('div', 'keys');
+      var mods = modsOf(rule);
+      mods.forEach(function (m) { keys.appendChild(el('kbd', '', m)); });
+      keys.appendChild(el('kbd', '', keyText(rule.key)));
+      row.appendChild(keys);
+      root.appendChild(row);
+      seen[rule.action] = true;
+    });
+    if (root.childNodes.length === 0) {
+      root.appendChild(el('div', 'empty-page', '没有匹配的快捷键'));
+    }
+  }
+
+  searchEl.addEventListener('input', function () { render(); });
+
+  function load() {
+    if (!window.electronAPI || !window.electronAPI.invoke) return;
+    window.electronAPI.invoke('shortcuts-snapshot', {})
+      .then(function (r) {
+        if (!r || !r.ok) return;
+        data.rules = r.rules || [];
+        render();
+      })
+      .catch(function () { render(); });
+  }
+  load();
+})();
+</script>
+</body>
+</html>
