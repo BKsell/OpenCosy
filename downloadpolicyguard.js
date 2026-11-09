@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { hasControlChars } = require('./modutil');
 
@@ -99,30 +100,18 @@ function applyDownloadPolicyGuard(download) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.MISSING_NAME:
-      return '下载缺少文件名';
-    case REASON.CONTROL_CHARS:
-      return '下载文件名含控制字符';
-    case REASON.BIDI_OVERRIDE:
-      return '下载文件名含双向文本覆盖字符';
-    case REASON.TRAILING_DOT:
-      return '下载文件名以点结尾';
-    case REASON.TOO_LONG:
-      return '下载文件名超过长度上限';
-    case REASON.DANGEROUS_EXTENSION:
-      return '下载文件为可执行或脚本类型';
-    case REASON.DOUBLE_EXTENSION:
-      return '下载文件使用双扩展名伪装';
-    case REASON.MIME_MISMATCH:
-      return '下载文件扩展名与 MIME 不一致';
-    case REASON.TOO_LARGE:
-      return '下载文件超过体积上限';
-    case REASON.INSECURE_URL:
-      return '下载来源不是 HTTPS';
-    default:
-      return '下载文件通过策略检查';
-  }
+  return describeReasonFrom({
+    [REASON.MISSING_NAME]: '下载缺少文件名',
+    [REASON.CONTROL_CHARS]: '下载文件名含控制字符',
+    [REASON.BIDI_OVERRIDE]: '下载文件名含双向文本覆盖字符',
+    [REASON.TRAILING_DOT]: '下载文件名以点结尾',
+    [REASON.TOO_LONG]: '下载文件名超过长度上限',
+    [REASON.DANGEROUS_EXTENSION]: '下载文件为可执行或脚本类型',
+    [REASON.DOUBLE_EXTENSION]: '下载文件使用双扩展名伪装',
+    [REASON.MIME_MISMATCH]: '下载文件扩展名与 MIME 不一致',
+    [REASON.TOO_LARGE]: '下载文件超过体积上限',
+    [REASON.INSECURE_URL]: '下载来源不是 HTTPS',
+  }, reason, '下载文件通过策略检查');
 }
 
 module.exports = {
