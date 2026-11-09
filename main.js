@@ -1416,12 +1416,22 @@ function applyRateLimitToItem(item) {
   try { item.setRate(downloadRateLimit); } catch {}
 }
 
+let atomicWriteSeq = 0;
+
 function atomicWriteJSON(filePath, obj) {
   const dir = path.dirname(filePath);
-  const tmp = path.join(dir, '.' + path.basename(filePath) + '.tmp-' + process.pid);
-  fsSync.writeFileSync(tmp, JSON.stringify(obj), 'utf8');
-  try { fsSync.renameSync(tmp, filePath); }
-  catch (e) {
+  const tmp = path.join(dir, '.' + path.basename(filePath) + '.tmp-' + process.pid + '-'
+    + (atomicWriteSeq += 1) + '-' + Date.now().toString(36));
+  let fd = null;
+  try {
+    fd = fsSync.openSync(tmp, 'wx', 0o600);
+    fsSync.writeFileSync(fd, JSON.stringify(obj), 'utf8');
+    fsSync.fsyncSync(fd);
+    fsSync.closeSync(fd);
+    fd = null;
+    fsSync.renameSync(tmp, filePath);
+  } catch (e) {
+    if (fd !== null) { try { fsSync.closeSync(fd); } catch {} }
     try { fsSync.unlinkSync(tmp); } catch {}
     throw e;
   }
@@ -1451,13 +1461,16 @@ function persistCleanAudit() {
 }
 
 function persistVaultKey(keyBuf) {
+  if (!safeStorage.isEncryptionAvailable()) {
+    recordSecurityEvent('vault-key', 'critical',
+      '系统加密不可用，拒绝以明文形式落盘保险库主密钥', 'vault');
+    return false;
+  }
   try {
-    let wrapped = keyBuf;
-    if (safeStorage.isEncryptionAvailable()) {
-      wrapped = safeStorage.encryptString(keyBuf.toString('hex'));
-    }
-    atomicWriteJSON(vaultKeyPath, { v: 1, wrapped: wrapped.toString('base64') });
-  } catch (e) { console.error('写入保险库密钥失败:', e); }
+    const wrapped = safeStorage.encryptString(keyBuf.toString('hex'));
+    atomicWriteJSON(vaultKeyPath, { v: 1, s: 'safe', wrapped: wrapped.toString('base64') });
+    return true;
+  } catch (e) { console.error('写入保险库密钥失败:', e); return false; }
 }
 
 // initVaultOnStartup：启动时尝试用 safeStorage 包层自动解锁；无 keychain 时
@@ -1468,10 +1481,14 @@ function initVaultOnStartup() {
   try {
     const raw = JSON.parse(fsSync.readFileSync(vaultKeyPath, 'utf8'));
     if (!raw || raw.v !== 1 || typeof raw.wrapped !== 'string') return { ok: true, unlocked: false };
+    if (raw.s !== 'safe') {
+      recordSecurityEvent('vault-key', 'critical',
+        '保险库密钥未经系统加密保护，已拒绝自动解锁', 'vault');
+      return { ok: true, unlocked: false, reason: 'untrusted-key' };
+    }
+    if (!safeStorage.isEncryptionAvailable()) return { ok: true, unlocked: false, reason: 'no-safe-storage' };
     const wrapped = Buffer.from(raw.wrapped, 'base64');
-    const hex = safeStorage.isEncryptionAvailable()
-      ? safeStorage.decryptString(wrapped)
-      : wrapped.toString('utf8');
+    const hex = safeStorage.decryptString(wrapped);
     const key = Buffer.from(hex, 'hex');
     if (key.length < vaultCore.MIN_MASTER_KEY_BYTES) return { ok: true, unlocked: false };
     if (!vaultState) return { ok: true, unlocked: false };
@@ -1514,6 +1531,11 @@ function createNewVault(masterPassword) {
     kdf = vaultCore.KDF_PBKDF2;
     vaultUsePasswordMode = true;
   } else {
+    if (!safeStorage.isEncryptionAvailable()) {
+      recordSecurityEvent('vault-key', 'critical',
+        '缺少可用的系统加密，创建保险库必须设置主密码', 'vault');
+      return { ok: false, reason: 'password-required' };
+    }
     key = crypto.randomBytes(32);
   }
   const c = vaultCore.createVault(key, { kdf });
@@ -9446,6 +9468,9 @@ ipcMain.handle('vault-rekey', (event, payload = {}) => {
     kdf = vaultCore.KDF_PBKDF2;
     vaultUsePasswordMode = true;
   } else {
+    if (!safeStorage.isEncryptionAvailable()) {
+      return { success: false, reason: 'password-required' };
+    }
     key = crypto.randomBytes(32);
     kdf = vaultCore.KDF_HKDF;
     vaultUsePasswordMode = false;
