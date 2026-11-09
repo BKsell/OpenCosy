@@ -22,6 +22,9 @@ function sanitizeWebUrl(rawUrl, reasons, limit) {
   if (!u.hostname) {
     return { ok: false, url: '', reason: reasons.badUrl };
   }
+  if (u.username || u.password) {
+    return { ok: false, url: '', reason: reasons.credentials || reasons.badUrl };
+  }
   return { ok: true, url: u.href, reason: '' };
 }
 
