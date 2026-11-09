@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { headerKey } = require('./headerutil');
 
@@ -70,22 +71,14 @@ function applyRetryAfterGuard(headers, nowMs) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.MISSING:
-      return '未声明 Retry-After';
-    case REASON.MALFORMED:
-      return 'Retry-After 无法解析，已移除';
-    case REASON.NEGATIVE:
-      return 'Retry-After 为负数或已过期，已移除';
-    case REASON.OVERLONG:
-      return 'Retry-After 数值溢出，已移除';
-    case REASON.BAD_DATE:
-      return 'Retry-After 日期格式非法，已移除';
-    case REASON.TOO_FAR:
-      return 'Retry-After 等待窗口过长，已截断';
-    default:
-      return 'Retry-After 通过校验';
-  }
+  return describeReasonFrom({
+    [REASON.MISSING]: '未声明 Retry-After',
+    [REASON.MALFORMED]: 'Retry-After 无法解析，已移除',
+    [REASON.NEGATIVE]: 'Retry-After 为负数或已过期，已移除',
+    [REASON.OVERLONG]: 'Retry-After 数值溢出，已移除',
+    [REASON.BAD_DATE]: 'Retry-After 日期格式非法，已移除',
+    [REASON.TOO_FAR]: 'Retry-After 等待窗口过长，已截断',
+  }, reason, 'Retry-After 通过校验');
 }
 
 module.exports = {
