@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { headerKey } = require('./headerutil');
 
@@ -94,24 +95,15 @@ function applyWwwAuthenticateGuard(headers, name) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.MISSING:
-      return '未声明认证挑战';
-    case REASON.MALFORMED:
-      return '认证挑战参数无法解析，已移除';
-    case REASON.BAD_SCHEME:
-      return '认证方案名非法，已移除';
-    case REASON.CONTROL_CHAR:
-      return '认证挑战含控制字符，已移除';
-    case REASON.OVERLONG:
-      return '认证挑战超长，已移除';
-    case REASON.BAD_REALM:
-      return 'realm 引号不完整，已移除';
-    case REASON.TOO_MANY:
-      return '认证挑战数量超限，已移除';
-    default:
-      return '认证挑战通过校验';
-  }
+  return describeReasonFrom({
+    [REASON.MISSING]: '未声明认证挑战',
+    [REASON.MALFORMED]: '认证挑战参数无法解析，已移除',
+    [REASON.BAD_SCHEME]: '认证方案名非法，已移除',
+    [REASON.CONTROL_CHAR]: '认证挑战含控制字符，已移除',
+    [REASON.OVERLONG]: '认证挑战超长，已移除',
+    [REASON.BAD_REALM]: 'realm 引号不完整，已移除',
+    [REASON.TOO_MANY]: '认证挑战数量超限，已移除',
+  }, reason, '认证挑战通过校验');
 }
 
 module.exports = {
