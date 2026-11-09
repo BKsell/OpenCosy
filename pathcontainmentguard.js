@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -61,26 +62,16 @@ function applyPathContainmentGuard(baseDir, target) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.EMPTY:
-      return '路径为空或不是字符串';
-    case REASON.CONTROL:
-      return '路径包含控制字符';
-    case REASON.TOO_LONG:
-      return '路径超过长度上限';
-    case REASON.ABSOLUTE:
-      return '路径为绝对路径';
-    case REASON.UNC:
-      return '路径为 UNC 网络路径';
-    case REASON.TRAVERSAL:
-      return '路径包含上级目录片段';
-    case REASON.ENCODED_TRAVERSAL:
-      return '路径包含编码后的上级目录片段';
-    case REASON.OUTSIDE:
-      return '路径解析后落在根目录之外';
-    default:
-      return '路径位于允许的根目录之内';
-  }
+  return describeReasonFrom({
+    [REASON.EMPTY]: '路径为空或不是字符串',
+    [REASON.CONTROL]: '路径包含控制字符',
+    [REASON.TOO_LONG]: '路径超过长度上限',
+    [REASON.ABSOLUTE]: '路径为绝对路径',
+    [REASON.UNC]: '路径为 UNC 网络路径',
+    [REASON.TRAVERSAL]: '路径包含上级目录片段',
+    [REASON.ENCODED_TRAVERSAL]: '路径包含编码后的上级目录片段',
+    [REASON.OUTSIDE]: '路径解析后落在根目录之外',
+  }, reason, '路径位于允许的根目录之内');
 }
 
 module.exports = {
