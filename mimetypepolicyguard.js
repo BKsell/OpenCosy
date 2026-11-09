@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -56,24 +57,15 @@ function applyMimeTypePolicyGuard(value, options) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.EMPTY:
-      return 'Content-Type 为空';
-    case REASON.MALFORMED:
-      return 'Content-Type 格式非法';
-    case REASON.WILDCARD:
-      return 'Content-Type 使用通配类型';
-    case REASON.BAD_CHARSET:
-      return '文本类型使用非 UTF-8 字符集';
-    case REASON.DUPLICATE_PARAM:
-      return 'Content-Type 参数重复';
-    case REASON.HTML_DISALLOWED:
-      return '当前上下文不允许 HTML 类型';
-    case REASON.SNIFFABLE:
-      return '下载响应使用易被嗅探的通用类型';
-    default:
-      return 'Content-Type 合法';
-  }
+  return describeReasonFrom({
+    [REASON.EMPTY]: 'Content-Type 为空',
+    [REASON.MALFORMED]: 'Content-Type 格式非法',
+    [REASON.WILDCARD]: 'Content-Type 使用通配类型',
+    [REASON.BAD_CHARSET]: '文本类型使用非 UTF-8 字符集',
+    [REASON.DUPLICATE_PARAM]: 'Content-Type 参数重复',
+    [REASON.HTML_DISALLOWED]: '当前上下文不允许 HTML 类型',
+    [REASON.SNIFFABLE]: '下载响应使用易被嗅探的通用类型',
+  }, reason, 'Content-Type 合法');
 }
 
 module.exports = {
