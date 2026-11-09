@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 const { originOf } = require('./modutil');
 
 const { firstValue, headerKey } = require('./headerutil');
@@ -143,18 +144,12 @@ function applyReportingGuard(headers, details) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.MALFORMED:
-      return '上报端点声明格式非法';
-    case REASON.CROSS_ORIGIN:
-      return '上报端点指向第三方源';
-    case REASON.INSECURE:
-      return '上报端点使用明文 HTTP';
-    case REASON.MISSING:
-      return '未声明上报端点';
-    default:
-      return '上报端点通过校验';
-  }
+  return describeReasonFrom({
+    [REASON.MALFORMED]: '上报端点声明格式非法',
+    [REASON.CROSS_ORIGIN]: '上报端点指向第三方源',
+    [REASON.INSECURE]: '上报端点使用明文 HTTP',
+    [REASON.MISSING]: '未声明上报端点',
+  }, reason, '上报端点通过校验');
 }
 
 module.exports = {
