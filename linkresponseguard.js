@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -154,30 +155,18 @@ function inspectLink(value, docOrigin) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK:
-      return 'link 提示合规';
-    case REASON.MISSING:
-      return '响应未声明 link 提示';
-    case REASON.MALFORMED:
-      return 'link 取值非法';
-    case REASON.OVERLONG:
-      return 'link 超长';
-    case REASON.NO_REL:
-      return 'link 缺少 rel 参数，已剔除';
-    case REASON.UNKNOWN_REL:
-      return 'link 关系类型不在白名单，已剔除';
-    case REASON.INSECURE:
-      return 'link 指向明文或本地资源，已剔除';
-    case REASON.CREDENTIALS:
-      return 'link 目标内嵌凭据，已剔除';
-    case REASON.CROSS_ORIGIN:
-      return 'link 跨源预载未声明 crossorigin，已剔除';
-    case REASON.DUPLICATE:
-      return 'link 重复目标已去重';
-    default:
-      return 'link 未识别状态';
-  }
+  return describeReasonFrom({
+    [REASON.OK]: 'link 提示合规',
+    [REASON.MISSING]: '响应未声明 link 提示',
+    [REASON.MALFORMED]: 'link 取值非法',
+    [REASON.OVERLONG]: 'link 超长',
+    [REASON.NO_REL]: 'link 缺少 rel 参数，已剔除',
+    [REASON.UNKNOWN_REL]: 'link 关系类型不在白名单，已剔除',
+    [REASON.INSECURE]: 'link 指向明文或本地资源，已剔除',
+    [REASON.CREDENTIALS]: 'link 目标内嵌凭据，已剔除',
+    [REASON.CROSS_ORIGIN]: 'link 跨源预载未声明 crossorigin，已剔除',
+    [REASON.DUPLICATE]: 'link 重复目标已去重',
+  }, reason, 'link 未识别状态');
 }
 
 function applyLinkResponseGuard(headers, docOrigin) {
