@@ -47,3 +47,21 @@ test('describeReason 覆盖两种拒绝', () => {
   assert.equal(protocolRate.describeReason('rate-limited'), '外部协议唤起过于频繁');
   assert.equal(protocolRate.describeReason(''), '');
 });
+
+test('桶数量有界，不会随来源无限增长', () => {
+  const limiter = protocolRate.createLimiter({ windowMs: 60000, maxPerWindow: 99, duplicateWindowMs: 0 });
+  for (let i = 0; i < 700; i += 1) {
+    protocolRate.check(limiter, 'https://host' + i + '.test', 'mailto:', 'mailto:a@b.test?i=' + i, 5000 + i);
+  }
+  assert.ok(limiter.buckets.size <= 512, '双向 map 应被压回上限内, got ' + limiter.buckets.size);
+});
+
+test('过期键被清理，窗口内键保留', () => {
+  const limiter = protocolRate.createLimiter({ windowMs: 1000, maxPerWindow: 99, duplicateWindowMs: 2000 });
+  protocolRate.check(limiter, 'https://old.test', 'tel:', 'tel:1', 0);
+  protocolRate.check(limiter, 'https://fresh.test', 'tel:', 'tel:2', 900);
+  protocolRate.sweep(limiter, 5000);
+  assert.equal(limiter.buckets.has('https://old.test|tel:'), false);
+  assert.equal(limiter.buckets.has('https://fresh.test|tel:'), false);
+  assert.equal(limiter.lastUrl.size, 0);
+});
