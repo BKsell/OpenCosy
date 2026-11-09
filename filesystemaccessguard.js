@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -78,28 +79,17 @@ function inspectFileSystemAccess(rawUrl) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK:
-      return '文件系统访问请求来源安全';
-    case REASON.MALFORMED:
-      return '文件系统访问请求地址非法';
-    case REASON.UNSAFE_SCHEME:
-      return '文件系统访问仅允许安全来源';
-    case REASON.EMBEDDED_CREDENTIALS:
-      return '来源地址内嵌凭据，拒绝文件系统访问';
-    case REASON.PATH_TRAVERSAL:
-      return '来源地址含路径穿越片段，拒绝文件系统访问';
-    case REASON.PUNYCODE_HOST:
-      return '来源主机为 punycode 同形域名，拒绝文件系统访问';
-    case REASON.IP_LITERAL_HOST:
-      return '来源主机为裸 IP，拒绝文件系统访问';
-    case REASON.OVERLONG:
-      return '来源地址超长，拒绝文件系统访问';
-    case REASON.OPAQUE_ORIGIN:
-      return '来源为不透明来源，拒绝文件系统访问';
-    default:
-      return '文件系统访问来源未识别状态';
-  }
+  return describeReasonFrom({
+    [REASON.OK]: '文件系统访问请求来源安全',
+    [REASON.MALFORMED]: '文件系统访问请求地址非法',
+    [REASON.UNSAFE_SCHEME]: '文件系统访问仅允许安全来源',
+    [REASON.EMBEDDED_CREDENTIALS]: '来源地址内嵌凭据，拒绝文件系统访问',
+    [REASON.PATH_TRAVERSAL]: '来源地址含路径穿越片段，拒绝文件系统访问',
+    [REASON.PUNYCODE_HOST]: '来源主机为 punycode 同形域名，拒绝文件系统访问',
+    [REASON.IP_LITERAL_HOST]: '来源主机为裸 IP，拒绝文件系统访问',
+    [REASON.OVERLONG]: '来源地址超长，拒绝文件系统访问',
+    [REASON.OPAQUE_ORIGIN]: '来源为不透明来源，拒绝文件系统访问',
+  }, reason, '文件系统访问来源未识别状态');
 }
 
 function applyFileSystemAccessGuard(url) {
