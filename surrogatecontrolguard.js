@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { deleteHeader, headerKey } = require('./headerutil');
 
@@ -85,24 +86,15 @@ function applySurrogateControlGuard(headers) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK:
-      return 'Surrogate-Control 已收敛为 CDN 安全指令';
-    case REASON.MISSING:
-      return '未声明 Surrogate-Control';
-    case REASON.UNKNOWN_DIRECTIVE:
-      return 'Surrogate-Control 使用未知指令';
-    case REASON.BAD_RANGE:
-      return 'Surrogate-Control 缓存时长越界';
-    case REASON.MULTI_VALUE:
-      return 'Surrogate-Control 出现多个取值';
-    case REASON.OVERLONG:
-      return 'Surrogate-Control 取值超长';
-    case REASON.MALFORMED:
-      return 'Surrogate-Control 取值无法解析';
-    default:
-      return 'Surrogate-Control 未知状态';
-  }
+  return describeReasonFrom({
+    [REASON.OK]: 'Surrogate-Control 已收敛为 CDN 安全指令',
+    [REASON.MISSING]: '未声明 Surrogate-Control',
+    [REASON.UNKNOWN_DIRECTIVE]: 'Surrogate-Control 使用未知指令',
+    [REASON.BAD_RANGE]: 'Surrogate-Control 缓存时长越界',
+    [REASON.MULTI_VALUE]: 'Surrogate-Control 出现多个取值',
+    [REASON.OVERLONG]: 'Surrogate-Control 取值超长',
+    [REASON.MALFORMED]: 'Surrogate-Control 取值无法解析',
+  }, reason, 'Surrogate-Control 未知状态');
 }
 
 module.exports = {
