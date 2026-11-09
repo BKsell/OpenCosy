@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -54,26 +55,16 @@ function applyAcceptRangesGuard(headers) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK:
-      return 'Accept-Ranges 支持字节范围';
-    case REASON.MISSING:
-      return '未声明 Accept-Ranges';
-    case REASON.NONE_ONLY:
-      return 'Accept-Ranges 声明不支持范围请求';
-    case REASON.UNKNOWN_UNIT:
-      return 'Accept-Ranges 使用未知单位';
-    case REASON.MULTI_VALUE:
-      return 'Accept-Ranges 出现多个取值';
-    case REASON.OVERLONG:
-      return 'Accept-Ranges 取值超长';
-    case REASON.UNBACKED_BYTES:
-      return 'Accept-Ranges 声称 bytes 但缺少长度证据';
-    case REASON.MALFORMED:
-      return 'Accept-Ranges 取值无法解析';
-    default:
-      return 'Accept-Ranges 未知状态';
-  }
+  return describeReasonFrom({
+    [REASON.OK]: 'Accept-Ranges 支持字节范围',
+    [REASON.MISSING]: '未声明 Accept-Ranges',
+    [REASON.NONE_ONLY]: 'Accept-Ranges 声明不支持范围请求',
+    [REASON.UNKNOWN_UNIT]: 'Accept-Ranges 使用未知单位',
+    [REASON.MULTI_VALUE]: 'Accept-Ranges 出现多个取值',
+    [REASON.OVERLONG]: 'Accept-Ranges 取值超长',
+    [REASON.UNBACKED_BYTES]: 'Accept-Ranges 声称 bytes 但缺少长度证据',
+    [REASON.MALFORMED]: 'Accept-Ranges 取值无法解析',
+  }, reason, 'Accept-Ranges 未知状态');
 }
 
 module.exports = {
