@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { firstValue, headerKey } = require('./headerutil');
 
@@ -89,24 +90,15 @@ function applyContentRangeGuard(headers) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.MALFORMED:
-      return 'Content-Range 格式非法';
-    case REASON.OVERLONG:
-      return 'Content-Range 过长或数值溢出';
-    case REASON.BAD_ORDER:
-      return 'Content-Range 起止顺序颠倒';
-    case REASON.BAD_TOTAL:
-      return 'Content-Range 总长与区间矛盾';
-    case REASON.UNSATISFIABLE:
-      return 'Content-Range 声明不可满足区间';
-    case REASON.LENGTH_MISMATCH:
-      return 'Content-Range 与 Content-Length 不一致';
-    case REASON.UNKNOWN_TOTAL:
-      return 'Content-Range 未声明总长';
-    default:
-      return 'Content-Range 通过校验';
-  }
+  return describeReasonFrom({
+    [REASON.MALFORMED]: 'Content-Range 格式非法',
+    [REASON.OVERLONG]: 'Content-Range 过长或数值溢出',
+    [REASON.BAD_ORDER]: 'Content-Range 起止顺序颠倒',
+    [REASON.BAD_TOTAL]: 'Content-Range 总长与区间矛盾',
+    [REASON.UNSATISFIABLE]: 'Content-Range 声明不可满足区间',
+    [REASON.LENGTH_MISMATCH]: 'Content-Range 与 Content-Length 不一致',
+    [REASON.UNKNOWN_TOTAL]: 'Content-Range 未声明总长',
+  }, reason, 'Content-Range 通过校验');
 }
 
 module.exports = {
