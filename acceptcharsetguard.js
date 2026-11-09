@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { normalizeCharset } = require('./modutil');
 
@@ -63,24 +64,15 @@ function inspectAcceptCharset(value) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK:
-      return 'accept-charset 取值合规但该响应头已废弃';
-    case REASON.MISSING:
-      return '响应未声明 accept-charset';
-    case REASON.MALFORMED:
-      return 'accept-charset 取值非法';
-    case REASON.OVERLONG:
-      return 'accept-charset 超长';
-    case REASON.WILDCARD:
-      return 'accept-charset 声明通配字符集，已剔除';
-    case REASON.UNKNOWN_CHARSET:
-      return 'accept-charset 含未知字符集，已剔除';
-    case REASON.DEPRECATED_HEADER:
-      return 'accept-charset 已废弃，整头剥除';
-    default:
-      return 'accept-charset 未识别状态';
-  }
+  return describeReasonFrom({
+    [REASON.OK]: 'accept-charset 取值合规但该响应头已废弃',
+    [REASON.MISSING]: '响应未声明 accept-charset',
+    [REASON.MALFORMED]: 'accept-charset 取值非法',
+    [REASON.OVERLONG]: 'accept-charset 超长',
+    [REASON.WILDCARD]: 'accept-charset 声明通配字符集，已剔除',
+    [REASON.UNKNOWN_CHARSET]: 'accept-charset 含未知字符集，已剔除',
+    [REASON.DEPRECATED_HEADER]: 'accept-charset 已废弃，整头剥除',
+  }, reason, 'accept-charset 未识别状态');
 }
 
 function applyAcceptCharsetGuard(headers) {
