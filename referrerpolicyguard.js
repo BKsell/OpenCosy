@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { headerKey } = require('./headerutil');
 
@@ -105,22 +106,14 @@ function applyReferrerPolicyGuard(headers) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.MISSING:
-      return '未声明 Referrer-Policy';
-    case REASON.MALFORMED:
-      return 'Referrer-Policy 无法解析，回退到严格策略';
-    case REASON.OVERLONG:
-      return 'Referrer-Policy 超长，回退到严格策略';
-    case REASON.UNSAFE:
-      return 'Referrer-Policy 使用 unsafe-url，已收紧';
-    case REASON.UNKNOWN_TOKEN:
-      return 'Referrer-Policy 含未知取值，已剔除';
-    case REASON.TOO_MANY:
-      return 'Referrer-Policy 取值过多，回退到严格策略';
-    default:
-      return 'Referrer-Policy 通过校验';
-  }
+  return describeReasonFrom({
+    [REASON.MISSING]: '未声明 Referrer-Policy',
+    [REASON.MALFORMED]: 'Referrer-Policy 无法解析，回退到严格策略',
+    [REASON.OVERLONG]: 'Referrer-Policy 超长，回退到严格策略',
+    [REASON.UNSAFE]: 'Referrer-Policy 使用 unsafe-url，已收紧',
+    [REASON.UNKNOWN_TOKEN]: 'Referrer-Policy 含未知取值，已剔除',
+    [REASON.TOO_MANY]: 'Referrer-Policy 取值过多，回退到严格策略',
+  }, reason, 'Referrer-Policy 通过校验');
 }
 
 module.exports = {
