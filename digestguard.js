@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { firstValue, headerKey } = require('./headerutil');
 
@@ -107,18 +108,12 @@ function applyDigestGuard(headers) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.MALFORMED:
-      return '摘要字段格式非法或算法未知';
-    case REASON.WEAK_ALGORITHM:
-      return '摘要使用已淘汰的弱算法';
-    case REASON.DUPLICATE:
-      return '同一算法重复声明摘要';
-    case REASON.MISSING:
-      return '未声明内容摘要';
-    default:
-      return '内容摘要通过校验';
-  }
+  return describeReasonFrom({
+    [REASON.MALFORMED]: '摘要字段格式非法或算法未知',
+    [REASON.WEAK_ALGORITHM]: '摘要使用已淘汰的弱算法',
+    [REASON.DUPLICATE]: '同一算法重复声明摘要',
+    [REASON.MISSING]: '未声明内容摘要',
+  }, reason, '内容摘要通过校验');
 }
 
 module.exports = {
