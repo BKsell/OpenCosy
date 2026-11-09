@@ -204,6 +204,7 @@ const permissionRiskReport = require('./permissionriskreport');
 const downloadDiskSpace = require('./downloaddiskspace');
 const downloadDiskMonitorModule = require('./downloaddiskmonitor');
 const downloadPathCollision = require('./downloadpathcollision');
+const downloadSizeGuard = require('./downloadsizeguard');
 const downloadHostGuard = require('./downloadhostguard');
 const downloadSlotReservation = require('./downloadslotreservation');
 const downloadFinishGuard = require('./downloadfinishguard');
@@ -1365,6 +1366,7 @@ let uaPolicyState = { ...uaPolicyCore.DEFAULT_POLICY };
 let uaOverrideCount = 0;
 let uaLastOverrideAt = 0;
 let downloadRateLimit = 0; // 字节/秒；0 = 不限速
+let downloadMaxBytes = downloadSizeGuard.DEFAULT_LIMIT_BYTES; // 单次下载体积上限；0 = 不限
 const downloadDiskMonitor = downloadDiskMonitorModule.createDiskMonitor({ minFreeBytes: downloadDiskSpace.MIN_FREE_BYTES });
 const downloadSlotGuard = downloadSlotReservation.createSlotReservation();
 
@@ -6826,6 +6828,23 @@ function handleDownloadEvent(event, item, webContents) {
     const riskAnalysis = admission.analysis || { decision: '', finalExt: '', risks: [] };
     const finalFilename = admission.finalFilename || 'download';
     const dlHost = admission.host;
+    const declaredSize = downloadSizeGuard.decideDeclared(
+      typeof item.getTotalBytes === 'function' ? item.getTotalBytes() : -1,
+      downloadMaxBytes,
+    );
+    if (declaredSize.action === downloadSizeGuard.ACTION.CANCEL) {
+      try { item.cancel(); } catch {}
+      const described = downloadSizeGuard.describe(declaredSize);
+      recordSecurityEvent('download-size', 'critical', `下载体积超过上限已取消: ${described}`,
+        originOfContents(webContents));
+      recordDownloadRisk({
+        filename: finalFilename, host: dlHost, decision: 'reject', action: 'rejected',
+        ext: riskAnalysis.finalExt || '', reasons: [described],
+      });
+      sendToRenderer('show-toast', `下载体积超过上限，已取消：${described}`);
+      sendShelf();
+      return;
+    }
     const chainCheck = downloadChain.analyzeDownloadChain(
       typeof item.getURLChain === 'function' ? item.getURLChain() : null,
     );
@@ -7077,6 +7096,16 @@ function handleDownloadEvent(event, item, webContents) {
         }
         const receivedBytes = item.getReceivedBytes();
         const totalBytes = item.getTotalBytes();
+        const sizeDecision = downloadSizeGuard.decideProgress(receivedBytes, downloadMaxBytes);
+        if (sizeDecision.action === downloadSizeGuard.ACTION.CANCEL) {
+          try { item.cancel(); } catch {}
+          const described = downloadSizeGuard.describe(sizeDecision);
+          recordSecurityEvent('download-size', 'critical', `下载体积超过上限已中断: ${described}`,
+            originOfContents(webContents));
+          sendToRenderer('show-toast', `下载体积超过上限，已中断：${described}`);
+          sendShelf();
+          return;
+        }
         let liveFreeBytes = downloadInfo.diskFreeBytes;
         try {
           const liveStat = fsSync.statfsSync(downloadRoot);
@@ -7515,6 +7544,7 @@ app.whenReady().then(async () => {
   const persisted = readPersistedSettings();
   spellcheckEnabled = persisted.spellcheckEnabled !== false;
   spellcheckLanguages = sanitizeSpellcheckLanguages(persisted.spellcheckLanguages);
+  downloadMaxBytes = downloadSizeGuard.normalizeLimit(persisted.downloadMaxBytes);
   applySpellcheckSettings();
   searchProviderId = searchProvider.sanitizeProviderChoice(persisted.searchEngine);
   loadUaPolicyStateFromDisk();
@@ -8628,6 +8658,7 @@ const ALLOWED_SETTING_KEYS = {
   reduceClientHints: v => typeof v === 'boolean',
   blockAdSignals: v => typeof v === 'boolean',
   blockHyperlinkPing: v => typeof v === 'boolean',
+  downloadMaxBytes: v => Number.isFinite(v) && v >= 0,
   stripAcceptCh: v => typeof v === 'boolean',
   allowPictureInPicture: v => typeof v === 'boolean',
   webrtcMode: v => typeof v === 'string' &&
@@ -8717,6 +8748,7 @@ ipcMain.on('save-settings', (event, settings) => {
     if ('confirmCloseMultiple' in clean) confirmCloseMultiple = !!clean.confirmCloseMultiple;
     if ('spellcheckEnabled' in clean) spellcheckEnabled = !!clean.spellcheckEnabled;
     if ('spellcheckLanguages' in clean) spellcheckLanguages = sanitizeSpellcheckLanguages(clean.spellcheckLanguages);
+    if ('downloadMaxBytes' in clean) downloadMaxBytes = downloadSizeGuard.normalizeLimit(clean.downloadMaxBytes);
     applySpellcheckSettings();
     event.reply('settings-saved', { success: true });
   } catch (e) {
@@ -9589,6 +9621,24 @@ ipcMain.handle('set-download-rate-limit', (event, payload = {}) => {
     if (d.item && d.isItemValid) applyRateLimitToItem(d.item);
   }
   return { success: true, bytesPerSecond: downloadRateLimit };
+});
+
+ipcMain.handle('get-download-max-bytes', (event) => {
+  if (!isMainSender(event)) return { success: false };
+  return { success: true, bytes: downloadMaxBytes };
+});
+
+ipcMain.handle('set-download-max-bytes', (event, payload = {}) => {
+  if (!isMainSender(event)) return { success: false };
+  const raw = Number(payload && payload.bytes);
+  if (!Number.isFinite(raw) || raw < 0) return { success: false, reason: 'invalid-limit' };
+  downloadMaxBytes = downloadSizeGuard.normalizeLimit(raw);
+  try {
+    const settingsPath = path.join(app.getPath('userData'), 'cosySettings.json');
+    const cur = ledgerStore.readJSONStore(settingsPath, {});
+    ledgerStore.writeJSONStore(settingsPath, sanitizeSettings(Object.assign({}, cur, { downloadMaxBytes })), { pretty: true });
+  } catch (e) { console.error('保存下载体积上限失败:', e); }
+  return { success: true, bytes: downloadMaxBytes };
 });
 
 ipcMain.handle('get-download-journal', (event, payload = {}) => {
