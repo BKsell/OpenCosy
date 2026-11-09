@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -60,22 +61,14 @@ function applyReplyGuard(value) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.UNSUPPORTED_TYPE:
-      return 'IPC 返回值包含不可序列化类型';
-    case REASON.NOT_FINITE:
-      return 'IPC 返回值包含非有限数值';
-    case REASON.CIRCULAR:
-      return 'IPC 返回值存在循环引用';
-    case REASON.TOO_DEEP:
-      return 'IPC 返回值嵌套层级过深';
-    case REASON.TOO_LARGE:
-      return 'IPC 返回值超过体积上限';
-    case REASON.SERIALIZE_FAILED:
-      return 'IPC 返回值序列化失败';
-    default:
-      return 'IPC 返回值结构合法';
-  }
+  return describeReasonFrom({
+    [REASON.UNSUPPORTED_TYPE]: 'IPC 返回值包含不可序列化类型',
+    [REASON.NOT_FINITE]: 'IPC 返回值包含非有限数值',
+    [REASON.CIRCULAR]: 'IPC 返回值存在循环引用',
+    [REASON.TOO_DEEP]: 'IPC 返回值嵌套层级过深',
+    [REASON.TOO_LARGE]: 'IPC 返回值超过体积上限',
+    [REASON.SERIALIZE_FAILED]: 'IPC 返回值序列化失败',
+  }, reason, 'IPC 返回值结构合法');
 }
 
 module.exports = {
