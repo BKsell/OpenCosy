@@ -41,11 +41,11 @@ function performDownloadOpen(resolved, opts) {
   }
   if (target.action === d.dloadOpen.ACTION.CONFIRM) {
     const host = originUrl ? d.urlResolve.safeHost(originUrl, originUrl) : '未知来源';
-    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isMinimized()) mainWindow.restore();
+    if (d.mainWindow && !d.mainWindow.isDestroyed() && d.mainWindow.isMinimized()) d.mainWindow.restore();
     const advice = (target.reasons && target.reasons.length)
       ? target.reasons.join('\n')
       : '该文件是可执行程序或脚本，来自互联网（或来源不明），可能会危害您的计算机或更改系统设置。';
-    const choice = d.dialog.showMessageBoxSync(mainWindow, {
+    const choice = d.dialog.showMessageBoxSync(d.mainWindow, {
       type: 'warning',
       buttons: ['取消', '仍然运行'],
       defaultId: 0,
@@ -85,7 +85,7 @@ function confirmDownloadDecision(analysis, originUrl) {
     '',
     '此文件可能会运行程序、更改系统设置，或经过伪装诱导打开。请仅在确认来源可信时保存。',
   ].join('\n');
-  const choice = d.dialog.showMessageBoxSync(mainWindow, {
+  const choice = d.dialog.showMessageBoxSync(d.mainWindow, {
     type: 'warning',
     buttons: ['取消下载', '仍然保存'],
     defaultId: 0,
@@ -209,10 +209,10 @@ function downloadNotifyDeps() {
       performDownloadOpen(d.path.resolve(String(savePath)), { notifySource: true });
     },
     focusWindow() {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.show();
-        mainWindow.focus();
+      if (d.mainWindow && !d.mainWindow.isDestroyed()) {
+        if (d.mainWindow.isMinimized()) d.mainWindow.restore();
+        d.mainWindow.show();
+        d.mainWindow.focus();
       }
     },
   };
