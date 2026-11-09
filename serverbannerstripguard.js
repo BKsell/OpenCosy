@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { firstValue, headerKey } = require('./headerutil');
 
@@ -111,20 +112,13 @@ function applyServerBannerStripGuard(headers) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.BANNER_LEAK:
-      return '响应头泄露技术栈指纹';
-    case REASON.PROXY_LEAK:
-      return '响应头泄露代理/内网拓扑';
-    case REASON.MALFORMED:
-      return 'Server 头格式非法已清空';
-    case REASON.SERVER_SANITIZED:
-      return 'Server 头版本号已剥离';
-    case REASON.MISSING:
-      return '未发现技术栈指纹头';
-    default:
-      return '响应头已脱敏';
-  }
+  return describeReasonFrom({
+    [REASON.BANNER_LEAK]: '响应头泄露技术栈指纹',
+    [REASON.PROXY_LEAK]: '响应头泄露代理/内网拓扑',
+    [REASON.MALFORMED]: 'Server 头格式非法已清空',
+    [REASON.SERVER_SANITIZED]: 'Server 头版本号已剥离',
+    [REASON.MISSING]: '未发现技术栈指纹头',
+  }, reason, '响应头已脱敏');
 }
 
 module.exports = {
