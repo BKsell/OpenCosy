@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { firstValue, headerKey } = require('./headerutil');
 
@@ -52,18 +53,12 @@ function applyContentLanguageGuard(headers) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.MALFORMED:
-      return 'Content-Language 不是合法 BCP47 标签';
-    case REASON.OVERLONG:
-      return 'Content-Language 字段或标签超长';
-    case REASON.TOO_MANY:
-      return 'Content-Language 标签数量超限';
-    case REASON.WILDCARD:
-      return 'Content-Language 使用通配标签';
-    default:
-      return 'Content-Language 通过校验';
-  }
+  return describeReasonFrom({
+    [REASON.MALFORMED]: 'Content-Language 不是合法 BCP47 标签',
+    [REASON.OVERLONG]: 'Content-Language 字段或标签超长',
+    [REASON.TOO_MANY]: 'Content-Language 标签数量超限',
+    [REASON.WILDCARD]: 'Content-Language 使用通配标签',
+  }, reason, 'Content-Language 通过校验');
 }
 
 module.exports = {
