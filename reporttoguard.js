@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { splitItems } = require('./modutil');
 const splitPairs = splitItems;
@@ -135,28 +136,17 @@ function inspectReportTo(value) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK:
-      return '上报端点配置合规';
-    case REASON.MISSING:
-      return '响应未声明上报端点';
-    case REASON.MALFORMED:
-      return '上报端点配置非法';
-    case REASON.OVERLONG:
-      return '上报端点配置超长';
-    case REASON.INSECURE_ENDPOINT:
-      return '上报端点不是 HTTPS，已剔除';
-    case REASON.ENDPOINT_CREDENTIALS:
-      return '上报端点内嵌凭据，已剔除';
-    case REASON.ENDPOINT_PATH_SHAPE:
-      return '上报端点包含路径穿越片段，已剔除';
-    case REASON.UNSAFE_MAX_AGE:
-      return '上报缓存时长超出上限，已剔除';
-    case REASON.UNKNOWN_GROUP:
-      return '上报分组不在白名单，已剔除';
-    default:
-      return '上报端点未识别状态';
-  }
+  return describeReasonFrom({
+    [REASON.OK]: '上报端点配置合规',
+    [REASON.MISSING]: '响应未声明上报端点',
+    [REASON.MALFORMED]: '上报端点配置非法',
+    [REASON.OVERLONG]: '上报端点配置超长',
+    [REASON.INSECURE_ENDPOINT]: '上报端点不是 HTTPS，已剔除',
+    [REASON.ENDPOINT_CREDENTIALS]: '上报端点内嵌凭据，已剔除',
+    [REASON.ENDPOINT_PATH_SHAPE]: '上报端点包含路径穿越片段，已剔除',
+    [REASON.UNSAFE_MAX_AGE]: '上报缓存时长超出上限，已剔除',
+    [REASON.UNKNOWN_GROUP]: '上报分组不在白名单，已剔除',
+  }, reason, '上报端点未识别状态');
 }
 
 function applyReportingEndpointsGuard(headers) {
