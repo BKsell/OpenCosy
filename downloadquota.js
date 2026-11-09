@@ -96,16 +96,26 @@ class DownloadQuota {
     const hostBytes = this.byHost.get(key);
     if (hostBytes === undefined || hostBytes < reserved) return false;
     const delta = actual - reserved;
-    if (delta > 0 && this.totalBytes + delta > this.globalMaxBytes) {
-      return false;
-    }
-    if (delta > 0 && hostBytes + delta > this.hostMaxBytes) {
+    if (delta > 0 && (this.totalBytes + delta > this.globalMaxBytes || hostBytes + delta > this.hostMaxBytes)) {
+      this.rollbackReservation(key, reserved);
       return false;
     }
     this.totalBytes += delta;
     this.byHost.set(key, hostBytes + delta);
     if (this.byHost.get(key) === 0 && this.byHost.size > 0) {
       this.byHost.delete(key);
+    }
+    return true;
+  }
+
+  rollbackReservation(key, reserved) {
+    const hostBytes = this.byHost.get(key);
+    if (hostBytes === undefined) return false;
+    this.totalBytes = Math.max(0, this.totalBytes - reserved);
+    if (hostBytes <= reserved) {
+      this.byHost.delete(key);
+    } else {
+      this.byHost.set(key, hostBytes - reserved);
     }
     return true;
   }
