@@ -115,3 +115,75 @@ test('describeAllocation explains each outcome', () => {
   assert.match(collision.describeAllocation({ reason: collision.REASON.INVALID_DIR }), /绝对路径/);
   assert.match(collision.describeAllocation(null), /缺失/);
 });
+
+function memoryFs() {
+  const files = new Map();
+  const calls = [];
+  return {
+    files,
+    calls,
+    openSync(target, flags, mode) {
+      calls.push({ target, flags, mode });
+      assert.strictEqual(flags, 'wx');
+      assert.strictEqual(mode, 0o600);
+      if (files.has(target)) {
+        const err = new Error('exists');
+        err.code = 'EEXIST';
+        throw err;
+      }
+      files.set(target, 'claimed');
+      return 7;
+    },
+    closeSync(fd) {
+      assert.strictEqual(fd, 7);
+    },
+  };
+}
+
+test('claimUniquePath holds an O_EXCL placeholder for the chosen name', () => {
+  const fake = memoryFs();
+  const result = collision.claimUniquePath({ dir: DIR, filename: 'report.pdf', taken: [] }, { fs: fake });
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.claimed, true);
+  assert.strictEqual(result.name, 'report.pdf');
+  assert.strictEqual(fake.files.get(path.join(DIR, 'report.pdf')), 'claimed');
+  assert.strictEqual(fake.calls.length, 1);
+});
+
+test('claimUniquePath re-claims the next suffix when a racer takes the name', () => {
+  const fake = memoryFs();
+  fake.files.set(path.join(DIR, 'report.pdf'), 'raced');
+  const result = collision.claimUniquePath({ dir: DIR, filename: 'report.pdf', taken: [] }, { fs: fake });
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.name, 'report (1).pdf');
+  assert.strictEqual(fake.calls.length, 2);
+});
+
+test('claimUniquePath surfaces non-collision filesystem failures', () => {
+  const fake = memoryFs();
+  fake.openSync = () => {
+    const err = new Error('denied');
+    err.code = 'EACCES';
+    throw err;
+  };
+  const result = collision.claimUniquePath({ dir: DIR, filename: 'report.pdf', taken: [] }, { fs: fake });
+  assert.strictEqual(result.ok, false);
+  assert.strictEqual(result.reason, collision.REASON.CLAIM_FAILED);
+  assert.strictEqual(result.claimed, false);
+});
+
+test('claimUniquePath gives up after the attempt budget', () => {
+  const fake = memoryFs();
+  const result = collision.claimUniquePath(
+    { dir: DIR, filename: 'report.pdf', taken: [], maxAttempts: 2 },
+    { fs: fake },
+  );
+  assert.strictEqual(result.ok, true);
+  const blocked = collision.claimUniquePath(
+    { dir: DIR, filename: 'report.pdf', taken: ['report.pdf', 'report (1).pdf'], maxAttempts: 2 },
+    { fs: fake },
+  );
+  assert.strictEqual(blocked.ok, false);
+  assert.strictEqual(blocked.reason, collision.REASON.EXHAUSTED);
+  assert.strictEqual(blocked.claimed, false);
+});
