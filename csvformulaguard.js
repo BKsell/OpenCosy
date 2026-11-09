@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -65,20 +66,13 @@ function applyCsvFormulaGuard(rows) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.NOT_LIST:
-      return 'CSV 单元格不是列表';
-    case REASON.TOO_MANY_CELLS:
-      return 'CSV 行单元格数量过多';
-    case REASON.TOO_LONG_CELL:
-      return 'CSV 单元格内容超长';
-    case REASON.FORMULA_ESCAPED:
-      return 'CSV 单元格公式前缀已转义';
-    case REASON.CONTROL_STRIPPED:
-      return 'CSV 单元格控制字符已清除';
-    default:
-      return 'CSV 内容安全';
-  }
+  return describeReasonFrom({
+    [REASON.NOT_LIST]: 'CSV 单元格不是列表',
+    [REASON.TOO_MANY_CELLS]: 'CSV 行单元格数量过多',
+    [REASON.TOO_LONG_CELL]: 'CSV 单元格内容超长',
+    [REASON.FORMULA_ESCAPED]: 'CSV 单元格公式前缀已转义',
+    [REASON.CONTROL_STRIPPED]: 'CSV 单元格控制字符已清除',
+  }, reason, 'CSV 内容安全');
 }
 
 module.exports = {
