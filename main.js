@@ -15,10 +15,173 @@ const netAuthGuard = require('./netauthguard');
 const cookieGuard = require('./cookieguard');
 const pnaGuard = require('./pna');
 const fpGuard = require('./fpguard');
-
-function noteGuardResult(...a) { return cosyguardmainMod.noteGuardResult(...a); }
-
-function noteGuardDenied(...a) { return cosyguardmainMod.noteGuardDenied(...a); }
+const {
+	noteGuardResult,
+	noteGuardDenied,
+	allowPopupForTab,
+	getContentsState,
+	reloadCustomRules,
+	loadCustomRulesFromDisk,
+	persistCustomRules,
+	hostMatchesTracker,
+	isTrackerRequest,
+	recordBlockedTracker,
+	topBlockedHosts,
+	isTrackingQueryKey,
+	stripTrackingFromUrl,
+	hostnameHasSuspiciousChars,
+	analyzeHostForSpoof,
+	originOf,
+	sanitizeSpellcheckLanguages,
+	applySpellcheckSettings,
+	readPersistedSettings,
+	isMainSender,
+	isInternalFileFrame,
+	sendToRenderer,
+	shelfSnapshot,
+	sendShelf,
+	downloadsStorePath,
+	persistDownloads,
+	notifyDownloadResult,
+	getSafeDirs,
+	isInSafeDirs,
+	getHttpStatusCode,
+	getErrorMessage,
+	getBrowserErrorText,
+	isSafeUrl,
+	sanitizePath,
+	isPathInDir,
+	realpathForContainment,
+	isValidColor,
+	getCurrentTabWebContents,
+	toggleDevTools,
+	goHome,
+	addToHistory,
+	saveHistory,
+	loadHistory,
+	saveBookmarks,
+	loadBookmarks,
+	saveReadingList,
+	loadReadingList,
+	saveSession,
+	loadSession,
+	clearSession,
+	addToRecentlyClosed,
+	getLastClosedTab,
+	isPrivateNetworkHost,
+	readStoredSettings,
+	loadHttpsExceptions,
+	persistHttpsExceptions,
+	isHttpExceptionHost,
+	loadUaPolicyStateFromDisk,
+	persistUaPolicyState,
+	persistRateLimitState,
+	applyUaPolicyToSession,
+	resolveEffectiveUa,
+	applyRateLimitToItem,
+	atomicWriteJSON,
+	loadVaultStateFromDisk,
+	persistVaultState,
+	persistCleanAudit,
+	persistVaultKey,
+	maybeFallbackAfterUpgradeFailure,
+	applyDarkMode,
+	loadPnaLedger,
+	persistPnaLedger,
+	pnaLedgerStats,
+	recordPnaBlock,
+	loadFpLedger,
+	persistFpLedger,
+	applyWebRtcPolicy,
+	loadDohLedger,
+	persistDohLedger,
+	dohStatus,
+	applyWebRequestFiltering,
+	originOfContents,
+	persistHeaderGrades,
+	listHeaderGrades,
+	clearHeaderGrades,
+	getHeaderGradeStats,
+	loadRequestLog,
+	persistRequestLog,
+	listRequestLogEntries,
+	getRequestLogStats,
+	clearRequestLog,
+	persistBrandSpoofs,
+	listBrandSpoofEntries,
+	getBrandSpoofStats,
+	clearBrandSpoofs,
+	loadClientCertChoices,
+	persistClientCertChoices,
+	rejectAuthChallenge,
+	getClientCertChoiceStats,
+	setupNetworkStatus,
+	setupSystemEventGuards,
+	setupExtraSessionHardening,
+	getTabLayout,
+	getDefaultTabUrl,
+	createWindow,
+	registerShortcuts,
+	getUrlProtocol,
+	openTaskManagerTab,
+	openTabOverviewTab,
+	showErrorPage,
+	pushNavState,
+	recordCrash,
+	canAutoRecover,
+	destroyTabView,
+	rebuildCrashedTab,
+	handleRenderProcessGone,
+	discardTab,
+	reloadDiscardedTab,
+	sweepDiscardableTabs,
+	startMemorySaver,
+	discardAllBackgroundTabs,
+	buildTabPidMap,
+	loadTabContent,
+	showCosyError,
+	savePinsNow,
+	persistPins,
+	loadStoredPins,
+	clearStoredPins,
+	findTabIndexById,
+	broadcastPinnedState,
+	applyPinnedState,
+	movePinnedTabsToFront,
+	pinTab,
+	unpinTab,
+	toggleTabPinned,
+	rehydratePinnedTabs,
+	ensurePinnedTabsOpened,
+	closeTabsByIds,
+	planAndCloseTabs,
+	rehydrateTabGroups,
+	sanitizeDownloadFilename,
+	resolveUniqueDownloadPath,
+	rememberDownloadOrigin,
+	persistDownloadRisks,
+	recordDownloadRisk,
+	listDownloadRisks,
+	clearDownloadRisks,
+	analyzeDownloadSafety,
+	handleDownloadEvent,
+	downloadJournalFileProbe,
+	attachDownloadManager,
+	setupDownloadManager,
+	formatSpeed,
+	reviewToOpenUrl,
+	resolveStartupDeepLink,
+	resolveStartupArgv,
+	originOfUrl,
+	applyFind,
+	createContextMenu,
+	sanitizeSettings,
+	sanitizeBookmarkLike,
+	openUrlFromInternalFrame,
+	addToReadingList,
+	customRulesSnapshot,
+	vaultPasswordOK,
+} = require('./cosymaindelegates');
 
 const corsGuard = require('./corsmisconfigguard');
 const authChallengeGuard = require('./httpauthchallengeguard');
@@ -341,8 +504,6 @@ const POPUP_WINDOW_MAX = 3;
 const POPUP_WINDOW_MS = 5000;
 const popupOpenTimes = new Map();
 
-function allowPopupForTab(...a) { return cosyguardmainMod.allowPopupForTab(...a); }
-
 // httpsOnlyEnabled 是运行时开关，默认 true；用户可以在设置里关掉。
 // onBeforeRequest 据此决定是否把 http:// 升级成 https://。
 let httpsOnlyEnabled = true;
@@ -441,7 +602,6 @@ const RAW_IPC_SEND_ALLOWED = new Set([
 const RAW_IPC_SYNC_ALLOWED = new Set();
 
 // getContentsState 读取按需创建的 per-contents 小状态；destroyed 时统一清理。
-function getContentsState(...a) { return cosyguardmainMod.getContentsState(...a); }
 // 本次会话累计拦截数与按域名计数，渲染层用来显示“已拦截 N 个追踪器”。
 let blockedTrackerCount = 0;
 const blockedTrackerByHost = new Map();
@@ -532,24 +692,12 @@ let compiledCustomRules = blockRules.compileRules(customRules);
 let customRulesLoaded = false;
 let customRulesFile = '';
 
-function reloadCustomRules(...a) { return cosyguardmainMod.reloadCustomRules(...a); }
-
-function loadCustomRulesFromDisk(...a) { return cosyguardmainMod.loadCustomRulesFromDisk(...a); }
-
-function persistCustomRules(...a) { return cosyguardmainMod.persistCustomRules(...a); }
-
 // hostMatchesTracker 判断主机是否为已知追踪域（精确或其子域）。
 // 归一化（小写/去尾点）与精确-子域边界判断统一由 hostmatch 内核负责，
 // 避免与 Cookie 归属、私网判定各写一套口径。
-function hostMatchesTracker(...a) { return cosyguardmainMod.hostMatchesTracker(...a); }
 
 // isTrackerRequest 只拦子资源，顶层框架 / iframe 框架文档一律放行，避免误伤导航。
 // 自定义规则优先（decideBlocked 先查 host/glob/path），内置列表兜底。
-function isTrackerRequest(...a) { return cosyguardmainMod.isTrackerRequest(...a); }
-
-function recordBlockedTracker(...a) { return cosyguardmainMod.recordBlockedTracker(...a); }
-
-function topBlockedHosts(...a) { return cosyguardmainMod.topBlockedHosts(...a); }
 
 // ===== 导航 URL 追踪参数剥离（privacy hygiene）=====
 // stripTrackingParams：地址栏直接打开 / 跳转的顶层页面，去掉 utm_*、fbclid、gclid 等
@@ -568,10 +716,7 @@ const TRACKING_QUERY_KEYS = new Set([
 // 按前缀匹配的追踪参数名（小写），覆盖 utm_source / utm_medium / utm_campaign 等整族。
 const TRACKING_QUERY_PREFIXES = ['utm_', 'pk_', 'piwik_', 'matomo_', 'ga_', 'oasid_'];
 
-function isTrackingQueryKey(...a) { return cosyguardmainMod.isTrackingQueryKey(...a); }
-
 // 返回剥离追踪参数后的 URL；没有可删参数时返回 null（调用方据此避免无谓重定向）。
-function stripTrackingFromUrl(...a) { return cosyguardmainMod.stripTrackingFromUrl(...a); }
 
 // ===== 同形异义（homograph / IDN）反钓鱼提示 =====
 // 只“提示”不拦截：对包含非 ASCII（含西里尔/希腊等与拉丁形近的字符）或易混拉丁字符、
@@ -583,9 +728,6 @@ const SKEW_LATIN_HOSTS = new Set([
 ]);
 
 // 主机里只要出现这些码位就视为“可能在冒充拉丁字母”。
-function hostnameHasSuspiciousChars(...a) { return cosyguardmainMod.hostnameHasSuspiciousChars(...a); }
-
-function analyzeHostForSpoof(...a) { return cosyguardmainMod.analyzeHostForSpoof(...a); }
 
 // ===== Referrer 收敛（默认 strict-origin-when-cross-origin 语义）=====
 // 网页自己的 <meta name=referrer> / 页面策略由 Chromium 处理；这里兜底修正 Electron
@@ -594,7 +736,6 @@ function analyzeHostForSpoof(...a) { return cosyguardmainMod.analyzeHostForSpoof
 //   - 同源：保留完整 Referer；
 //   - 跨源且安全等级不降低：收敛为源（origin/）；
 //   - https → http 降级：直接去除 Referer。
-function originOf(...a) { return cosyguardmainMod.originOf(...a); }
 
 // clearOnExit：退出时自动清空缓存 / Cookie / 站点存储 / 历史 / 下载记录（隐私模式）。
 // confirmCloseMultiple：仍有多个标签页时点 × 先二次确认，防止误关整窗。
@@ -625,24 +766,18 @@ let spellcheckLanguages = DEFAULT_SPELLCHECK_LANGUAGES.slice();
 
 // sanitizeSpellcheckLanguages 归一化语言数组：去重、限数量、白名单校验。
 // 空数组 / 非数组一律回退默认，保证拼写检查不会因为设置文件损坏而彻底失效。
-function sanitizeSpellcheckLanguages(...a) { return cosysettingsmainMod.sanitizeSpellcheckLanguages(...a); }
 
 // applySpellcheckSettings 把当前拼写检查开关 / 语言应用到默认会话。
 // 每次保存设置都会重新调用；语言列表只保留当前平台真正可用的词典。
-function applySpellcheckSettings(...a) { return cosysettingsmainMod.applySpellcheckSettings(...a); }
 
 // readPersistedSettings 在 app 启动早期同步读取已保存的设置，
 // 让拼写检查这类需要在第一个页面加载前生效的偏好不必等渲染层来取。
-function readPersistedSettings(...a) { return cosysettingsmainMod.readPersistedSettings(...a); }
 
 const isDev = !app.isPackaged;
-
-function isMainSender(...a) { return cosysettingsmainMod.isMainSender(...a); }
 
 // 判断一个 file: 帧是否为“应用自带的内置静态页”（如 tab 视图加载的 src/error.html、
 // src/download/index.html）。这些页物理上位于安装目录 __dirname 内；用户在标签里
 // 打开的任意本地 html（D:\xxx.html）在目录外，必须按不可信帧处理。
-function isInternalFileFrame(...a) { return cosysettingsmainMod.isInternalFileFrame(...a); }
 
 // 入站 IPC 统一来源守卫：默认只放行主窗口外壳（file: 的 index.html）与 cosy: 内置
 // 帧；远程网页、data/blob/about、以及用户在标签里打开的本地 html（local-file）一律
@@ -667,18 +802,12 @@ ipcGuard.installIpcGuard(ipcMain, {
   },
 });
 
-function sendToRenderer(...a) { return cosysettingsmainMod.sendToRenderer(...a); }
-
 // ===== 底部下载栏（download shelf）=====
 // 现代浏览器在窗口底部用一条 shelf 展示下载进度，不必每次下载都新开标签页打断浏览。
 // 主进程只推送可序列化的快照给主界面；DownloadItem 等 Electron 对象绝不跨进程暴露。
 // 快照构建与字段净化收口到 downloadshelf 内核：剥控制字符/ANSI、按字节截断、
 // 状态白名单、进度 clamp、savePath 只留存在性标记、附带整张台账的统计角标。
 const MAX_SHELF_ITEMS = 3;
-
-function shelfSnapshot(...a) { return cosysettingsmainMod.shelfSnapshot(...a); }
-
-function sendShelf(...a) { return cosysettingsmainMod.sendShelf(...a); }
 
 // ===== 下载记录持久化（downloads.json）=====
 // 下载台账此前只活在内存里，重启即丢。这里落盘到 userData/downloads.json：
@@ -688,10 +817,6 @@ function sendShelf(...a) { return cosysettingsmainMod.sendShelf(...a); }
 // 不阻断下载流程。
 const MAX_PERSISTED_DOWNLOADS = 500;
 
-function downloadsStorePath(...a) { return cosysettingsmainMod.downloadsStorePath(...a); }
-
-function persistDownloads(...a) { return cosysettingsmainMod.persistDownloads(...a); }
-
 // ===== 下载系统通知（downloadnotify 内核的 Electron 接线）=====
 // 窗口最小化 / 失焦时用户看不到底部下载栏，完成与失败都要弹系统通知（Chrome、
 // Edge 同款行为）。通知内容已由 downloadnotify 内核净化：剥控制字符与 CSI 序列、
@@ -699,11 +824,6 @@ function persistDownloads(...a) { return cosysettingsmainMod.persistDownloads(..
 // Notification 与点击动作上（完成点开文件，失败只聚焦窗口并留给用户显式重试）。
 
 // notifyDownloadResult 把一次下载结果接成系统通知；通知失败只审计，不打断下载流程。
-function notifyDownloadResult(...a) { return cosysettingsmainMod.notifyDownloadResult(...a); }
-
-function getSafeDirs(...a) { return cosysettingsmainMod.getSafeDirs(...a); }
-
-function isInSafeDirs(...a) { return cosysettingsmainMod.isInSafeDirs(...a); }
 
 class Tab {
   constructor(id, url = 'cosy://newtab') {
@@ -730,28 +850,6 @@ class Tab {
   }
 }
 
-function getHttpStatusCode(...a) { return cosysettingsmainMod.getHttpStatusCode(...a); }
-
-function getErrorMessage(...a) { return cosysettingsmainMod.getErrorMessage(...a); }
-
-function getBrowserErrorText(...a) { return cosysettingsmainMod.getBrowserErrorText(...a); }
-
-function isSafeUrl(...a) { return cosysettingsmainMod.isSafeUrl(...a); }
-
-function sanitizePath(...a) { return cosysettingsmainMod.sanitizePath(...a); }
-
-function isPathInDir(...a) { return cosysettingsmainMod.isPathInDir(...a); }
-
-function realpathForContainment(...a) { return cosysettingsmainMod.realpathForContainment(...a); }
-
-function isValidColor(...a) { return cosysettingsmainMod.isValidColor(...a); }
-
-function getCurrentTabWebContents(...a) { return cosysettingsmainMod.getCurrentTabWebContents(...a); }
-
-function toggleDevTools(...a) { return cosysettingsmainMod.toggleDevTools(...a); }
-
-function goHome(...a) { return cosysettingsmainMod.goHome(...a); }
-
 async function showOpenFileDialog() {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: '打开文件',
@@ -766,37 +864,11 @@ async function showOpenFileDialog() {
   }
 }
 
-function addToHistory(...a) { return cosysettingsmainMod.addToHistory(...a); }
-
-function saveHistory(...a) { return cosysettingsmainMod.saveHistory(...a); }
-
-function loadHistory(...a) { return cosysettingsmainMod.loadHistory(...a); }
-
-function saveBookmarks(...a) { return cosysettingsmainMod.saveBookmarks(...a); }
-
-function loadBookmarks(...a) { return cosysettingsmainMod.loadBookmarks(...a); }
-
 // saveReadingList 写稍后读列表：复用 bookmarkGuard 的净化口径（仅 http/https、
 // title 去控制字符并限长、按 url 去重），与书签同款有界落盘。
-function saveReadingList(...a) { return cosysettingsmainMod.saveReadingList(...a); }
-
-function loadReadingList(...a) { return cosysettingsmainMod.loadReadingList(...a); }
-
-function saveSession(...a) { return cosysettingsmainMod.saveSession(...a); }
-
-function loadSession(...a) { return cosysettingsmainMod.loadSession(...a); }
-
-function clearSession(...a) { return cosysettingsmainMod.clearSession(...a); }
-
-function addToRecentlyClosed(...a) { return cosysettingsmainMod.addToRecentlyClosed(...a); }
-
-function getLastClosedTab(...a) { return cosysettingsmainMod.getLastClosedTab(...a); }
-
-function isPrivateNetworkHost(...a) { return cosysettingsmainMod.isPrivateNetworkHost(...a); }
 
 // readStoredSettings 只读不校验，启动时用来还原 darkMode / httpsOnly 等运行时状态。
 // 校验交给 save-settings 里的 sanitizeSettings。
-function readStoredSettings(...a) { return cosysettingsmainMod.readStoredSettings(...a); }
 
 // ===== HTTPS-Only 站点例外（https-exceptions.json / cosy://httpsonly 面板）=====
 // HTTPS-Only 默认把公网 http 主动升级到 https；但确实存在只有明文 HTTP 的老站点 /
@@ -809,12 +881,7 @@ const httpsExceptions = new httpsOnlyCore.HttpExceptionStore(500);
 let httpsExceptionsLoaded = false;
 let httpsExceptionSaveTimer = null;
 
-function loadHttpsExceptions(...a) { return cosyledgerchainmainMod.loadHttpsExceptions(...a); }
-
-function persistHttpsExceptions(...a) { return cosyledgerchainmainMod.persistHttpsExceptions(...a); }
-
 // isHttpExceptionHost 供请求管道与回退逻辑共用，输入可以是 URL 或主机名。
-function isHttpExceptionHost(...a) { return cosyledgerchainmainMod.isHttpExceptionHost(...a); }
 
 // ===== 加密保险库（vault）与站点数据清理（cleaner）=====
 // 保险库：主密钥由 safeStorage（OS 级加密）保护后落盘 vault-key.bin；vault.json
@@ -844,34 +911,15 @@ let downloadMaxBytes = downloadSizeGuard.DEFAULT_LIMIT_BYTES; // 单次下载体
 const downloadDiskMonitor = downloadDiskMonitorModule.createDiskMonitor({ minFreeBytes: downloadDiskSpace.MIN_FREE_BYTES });
 const downloadSlotGuard = downloadSlotReservation.createSlotReservation();
 
-function loadUaPolicyStateFromDisk(...a) { return cosyledgerchainmainMod.loadUaPolicyStateFromDisk(...a); }
-
-function persistUaPolicyState(...a) { return cosyledgerchainmainMod.persistUaPolicyState(...a); }
-
-function persistRateLimitState(...a) { return cosyledgerchainmainMod.persistRateLimitState(...a); }
-
 // applyUaPolicyToSession：把当前策略应用到目标 session（导航级 UA）。
 // webRequest 层的按请求改写由 applyOutboundHeaderHardening 负责；这里只在
 // 启动与策略变更时调用，让导航请求也吃到最新 UA。
-function applyUaPolicyToSession(...a) { return cosyledgerchainmainMod.applyUaPolicyToSession(...a); }
 
 // resolveEffectiveUa 是 webRequest 层每次请求都读取的 UA 取值器。
-function resolveEffectiveUa(...a) { return cosyledgerchainmainMod.resolveEffectiveUa(...a); }
 
 // applyRateLimitToItem：对新下载项套限速（0 表示不限，setRate 无效时不抛）。
-function applyRateLimitToItem(...a) { return cosyledgerchainmainMod.applyRateLimitToItem(...a); }
 
 let atomicWriteSeq = 0;
-
-function atomicWriteJSON(...a) { return cosyledgerchainmainMod.atomicWriteJSON(...a); }
-
-function loadVaultStateFromDisk(...a) { return cosyledgerchainmainMod.loadVaultStateFromDisk(...a); }
-
-function persistVaultState(...a) { return cosyledgerchainmainMod.persistVaultState(...a); }
-
-function persistCleanAudit(...a) { return cosyledgerchainmainMod.persistCleanAudit(...a); }
-
-function persistVaultKey(...a) { return cosyledgerchainmainMod.persistVaultKey(...a); }
 
 // initVaultOnStartup：启动时尝试用 safeStorage 包层自动解锁；无 keychain 时
 // 保留锁定态（vault:status 会报告 locked，由 UI 引导用户输主密码）。
@@ -894,11 +942,9 @@ function persistVaultKey(...a) { return cosyledgerchainmainMod.persistVaultKey(.
 // maybeFallbackAfterUpgradeFailure 在“HTTPS-Only 升级后加载失败”时，判断并执行
 // 一次性的、用户知情的 http 回退。返回 true 表示已接手（弹过框 / 已回退），调用方
 // 不再显示通用错误页；false 表示不属于可回退场景，交给正常错误页。
-function maybeFallbackAfterUpgradeFailure(...a) { return cosyledgerchainmainMod.maybeFallbackAfterUpgradeFailure(...a); }
 
 // applyDarkMode 切 Chromium 原生暗色主题，影响滚动条、文件对话框、DevTools 外壳。
 // renderer 的 CSS 暗色由 settings-loaded 自己管，这里只管原生 UI。
-function applyDarkMode(...a) { return cosyledgerchainmainMod.applyDarkMode(...a); }
 
 // ===== Set-Cookie 加固台账（cookie-hardening.json / cosy://security 面板）=====
 // 纯判定在 cookieguard.js；这里负责在 onHeadersReceived 里应用改写、聚合落盘，
@@ -917,14 +963,6 @@ const pnaLedger = new Map(); // host -> { host, space, hits, lastTime, types:Set
 let pnaLedgerLoaded = false;
 let pnaLedgerSaveTimer = null;
 
-function loadPnaLedger(...a) { return cosyledgerchainmainMod.loadPnaLedger(...a); }
-
-function persistPnaLedger(...a) { return cosyledgerchainmainMod.persistPnaLedger(...a); }
-
-function pnaLedgerStats(...a) { return cosyledgerchainmainMod.pnaLedgerStats(...a); }
-
-function recordPnaBlock(...a) { return cosyledgerchainmainMod.recordPnaBlock(...a); }
-
 // ===== 指纹 / 跨站追踪收敛台账（fp-leaks.json / cosy://security 面板）=====
 const fpLedgerStorePath = path.join(app.getPath('userData'), 'fp-leaks.json');
 const MAX_FP_LEDGER = 500;
@@ -932,28 +970,16 @@ const fpLedger = fpGuard.createFingerprintLedger(MAX_FP_LEDGER);
 let fpLedgerLoaded = false;
 let fpLedgerSaveTimer = null;
 
-function loadFpLedger(...a) { return cosyledgerchainmainMod.loadFpLedger(...a); }
-
-function persistFpLedger(...a) { return cosyledgerchainmainMod.persistFpLedger(...a); }
-
 // recordFpHit 按主机+类别登记一条被收敛的指纹/追踪信号。
 
 // applyCookieHardening 就地加固响应头里的 Set-Cookie，返回本次动作列表。
 // 任何异常都不阻断浏览：出错时保留原始响应头。
-
-function applyWebRtcPolicy(...a) { return cosyledgerchainmainMod.applyWebRtcPolicy(...a); }
 
 // ===== 安全 DNS（DoH）状态与落盘 =====
 const dohStorePath = path.join(app.getPath('userData'), 'doh-status.json');
 const dohLedger = dohGuard.createDohLedger(200);
 let dohLedgerLoaded = false;
 let dohSaveTimer = null;
-
-function loadDohLedger(...a) { return cosyledgerchainmainMod.loadDohLedger(...a); }
-
-function persistDohLedger(...a) { return cosyledgerchainmainMod.persistDohLedger(...a); }
-
-function dohStatus(...a) { return cosyledgerchainmainMod.dohStatus(...a); }
 
 // applySecureDns 在启动 / 设置变更时把安全 DNS 策略下发给宿主解析器。
 // 老版本 Electron 没有 setHostResolverControls 时静默降级为关闭，不阻断浏览。
@@ -1027,8 +1053,6 @@ const { hardenResponseHeaders } = require('./responseharden').create({
 // buildRequestPipelineDeps 组装纯决策内核所需的守卫 / 台账 / 横幅能力。
 // 三个开关是可变设置（用户可在设置页切换），用 getter 保证每次判定都读到当前值。
 
-function applyWebRequestFiltering(...a) { return cosyledgerchainmainMod.applyWebRequestFiltering(...a); }
-
 // 注意：'openExternal' 不再自动放行。网页调 window.openExternal / <a href="ms-*:">
 // 之前只要在这个集合里就会被静默拉系统程序，等于把 Follina 那类协议投毒开放给任意站点。
 // 外部协议走 confirmAndOpenExternal()，先白名单 scheme 再弹原生确认框。
@@ -1070,8 +1094,6 @@ const {
 //   'confirm'  ：外部协议但可在确认后交给系统（mailto/tel）；
 //   'block'    ：危险 / 不允许的协议，必须取消。
 
-function originOfContents(...a) { return cosyledgerchainmainMod.originOfContents(...a); }
-
 // launchExternalWithPrompt 是所有"页面想唤起外部程序"的唯一出口。
 // remembered 决定直接兑现，否则弹原生确认框；remember=true 时按 origin+scheme 记忆。
 const protocolRateLimiter = protocolRate.createLimiter();
@@ -1106,15 +1128,7 @@ const headerGrades = [];
 let headerGradesLoaded = false;
 let headerGradeSaveTimer = null;
 
-function persistHeaderGrades(...a) { return cosyledgerchainmainMod.persistHeaderGrades(...a); }
-
 // recordHeaderGrade 对一次顶层文档响应评级并按 host 聚合。纯计算，不抛错。
-
-function listHeaderGrades(...a) { return cosyledgerchainmainMod.listHeaderGrades(...a); }
-
-function clearHeaderGrades(...a) { return cosyledgerchainmainMod.clearHeaderGrades(...a); }
-
-function getHeaderGradeStats(...a) { return cosyledgerchainmainMod.getHeaderGradeStats(...a); }
 
 // ===== 后台跨主机连接台账（request-log.json / cosy://security）=====
 // onBeforeRequest 对每条 http(s) 请求只抽取“主机/资源类型/是否被拦/是否顶层
@@ -1128,17 +1142,7 @@ let requestLogLoaded = false;
 let requestLogSaveTimer = null;
 let requestLogNotifyTimer = null;
 
-function loadRequestLog(...a) { return cosyledgerchainmainMod.loadRequestLog(...a); }
-
-function persistRequestLog(...a) { return cosyledgerchainmainMod.persistRequestLog(...a); }
-
 // recordRequestAttempt 由 onBeforeRequest 调用；任何异常都不影响浏览。
-
-function listRequestLogEntries(...a) { return cosyledgerchainmainMod.listRequestLogEntries(...a); }
-
-function getRequestLogStats(...a) { return cosyledgerchainmainMod.getRequestLogStats(...a); }
-
-function clearRequestLog(...a) { return cosyledgerchainmainMod.clearRequestLog(...a); }
 
 // ===== 品牌仿冒 / 拼写劫持命中台账（brand-spoofs.json / cosy://security）=====
 // 顶层导航命中 brandguard 后，把“主机 + 被仿冒品牌 + 命中原因”按主机聚合落盘，
@@ -1157,16 +1161,8 @@ let brandSpoofsLoaded = false;
 let brandSpoofSaveTimer = null;
 let brandSpoofNotifyTimer = null;
 
-function persistBrandSpoofs(...a) { return cosyledgerchainmainMod.persistBrandSpoofs(...a); }
-
 // recordBrandSpoof 由 onBeforeRequest 顶层导航调用；入参来自纯模块，仍重新白名单化，
 // 防止脏数据写盘。任何异常都不影响浏览。
-
-function listBrandSpoofEntries(...a) { return cosyledgerchainmainMod.listBrandSpoofEntries(...a); }
-
-function getBrandSpoofStats(...a) { return cosyledgerchainmainMod.getBrandSpoofStats(...a); }
-
-function clearBrandSpoofs(...a) { return cosyledgerchainmainMod.clearBrandSpoofs(...a); }
 
 // ===== TLS 证书错误硬拦截 + 主机/指纹绑定例外（cert-exceptions.json）=====
 // Electron 默认在证书校验失败时“放行”，这对浏览器是致命的：中间人代理、
@@ -1228,14 +1224,8 @@ let clientCertSaveTimer = null;
 // 等待渲染层返回；统一放 Map 里，超时或窗口关闭时统一取消，绝不遗留悬挂回调。
 const pendingAuthChallenges = new Map();
 
-function loadClientCertChoices(...a) { return cosyledgerchainmainMod.loadClientCertChoices(...a); }
-
-function persistClientCertChoices(...a) { return cosyledgerchainmainMod.persistClientCertChoices(...a); }
-
 // failAuthCallback 在“不弹框 / 超时 / 窗口关闭”等路径上安全地兑现一个空凭据，
 // 让请求以未认证失败，而不是卡住或回退到系统默认行为。
-
-function rejectAuthChallenge(...a) { return cosyledgerchainmainMod.rejectAuthChallenge(...a); }
 
 // sanitizeCertPickList 只把证书的非敏感摘要给渲染层，绝不传证书对象本体。
 
@@ -1243,8 +1233,6 @@ function rejectAuthChallenge(...a) { return cosyledgerchainmainMod.rejectAuthCha
 const cosyipcregisterMod = require('./cosyipcregister');
 cosyipcregisterMod.bindDeps({ get ALLOWED_SPELLCHECK_LANGUAGES() { return ALLOWED_SPELLCHECK_LANGUAGES; }, set ALLOWED_SPELLCHECK_LANGUAGES(v) { ALLOWED_SPELLCHECK_LANGUAGES = v; }, get INTERNAL_PAGES() { return INTERNAL_PAGES; }, set INTERNAL_PAGES(v) { INTERNAL_PAGES = v; }, get addToReadingList() { return addToReadingList; }, set addToReadingList(v) { addToReadingList = v; }, get allowPictureInPicture() { return allowPictureInPicture; }, set allowPictureInPicture(v) { allowPictureInPicture = v; }, get app() { return app; }, set app(v) { app = v; }, get applyDarkMode() { return applyDarkMode; }, set applyDarkMode(v) { applyDarkMode = v; }, get applyRateLimitToItem() { return applyRateLimitToItem; }, set applyRateLimitToItem(v) { applyRateLimitToItem = v; }, get applySecureDns() { return applySecureDns; }, set applySecureDns(v) { applySecureDns = v; }, get applySpellcheckSettings() { return applySpellcheckSettings; }, set applySpellcheckSettings(v) { applySpellcheckSettings = v; }, get applyUaPolicyToSession() { return applyUaPolicyToSession; }, set applyUaPolicyToSession(v) { applyUaPolicyToSession = v; }, get applyWebRtcPolicy() { return applyWebRtcPolicy; }, set applyWebRtcPolicy(v) { applyWebRtcPolicy = v; }, get authLimiter() { return authLimiter; }, set authLimiter(v) { authLimiter = v; }, get authStats() { return authStats; }, set authStats(v) { authStats = v; }, get blockAdSignals() { return blockAdSignals; }, set blockAdSignals(v) { blockAdSignals = v; }, get blockHyperlinkPing() { return blockHyperlinkPing; }, set blockHyperlinkPing(v) { blockHyperlinkPing = v; }, get blockLocalNetworkAccess() { return blockLocalNetworkAccess; }, set blockLocalNetworkAccess(v) { blockLocalNetworkAccess = v; }, get blockThirdPartyCookies() { return blockThirdPartyCookies; }, set blockThirdPartyCookies(v) { blockThirdPartyCookies = v; }, get blockTrackers() { return blockTrackers; }, set blockTrackers(v) { blockTrackers = v; }, get blockedTrackerByHost() { return blockedTrackerByHost; }, set blockedTrackerByHost(v) { blockedTrackerByHost = v; }, get blockedTrackerCount() { return blockedTrackerCount; }, set blockedTrackerCount(v) { blockedTrackerCount = v; }, get bookmarkBarVisible() { return bookmarkBarVisible; }, set bookmarkBarVisible(v) { bookmarkBarVisible = v; }, get bookmarkIO() { return bookmarkIO; }, set bookmarkIO(v) { bookmarkIO = v; }, get bookmarks() { return bookmarks; }, set bookmarks(v) { bookmarks = v; }, get certExceptions() { return certExceptions; }, set certExceptions(v) { certExceptions = v; }, get cleanAuditLog() { return cleanAuditLog; }, set cleanAuditLog(v) { cleanAuditLog = v; }, get cleanerCore() { return cleanerCore; }, set cleanerCore(v) { cleanerCore = v; }, get clearOnExit() { return clearOnExit; }, set clearOnExit(v) { clearOnExit = v; }, get clientCertStore() { return clientCertStore; }, set clientCertStore(v) { clientCertStore = v; }, get compiledCustomRules() { return compiledCustomRules; }, set compiledCustomRules(v) { compiledCustomRules = v; }, get confirmCloseMultiple() { return confirmCloseMultiple; }, set confirmCloseMultiple(v) { confirmCloseMultiple = v; }, get cookieLedger() { return cookieLedger; }, set cookieLedger(v) { cookieLedger = v; }, get crashRecoveryEnabled() { return crashRecoveryEnabled; }, set crashRecoveryEnabled(v) { crashRecoveryEnabled = v; }, get crashReloadCounts() { return crashReloadCounts; }, set crashReloadCounts(v) { crashReloadCounts = v; }, get createNewTab() { return createNewTab; }, set createNewTab(v) { createNewTab = v; }, get createNewVault() { return createNewVault; }, set createNewVault(v) { createNewVault = v; }, get crypto() { return crypto; }, set crypto(v) { crypto = v; }, get dialog() { return dialog; }, set dialog(v) { dialog = v; }, get dohCustomUrl() { return dohCustomUrl; }, set dohCustomUrl(v) { dohCustomUrl = v; }, get dohGuard() { return dohGuard; }, set dohGuard(v) { dohGuard = v; }, get dohLedger() { return dohLedger; }, set dohLedger(v) { dohLedger = v; }, get dohMode() { return dohMode; }, set dohMode(v) { dohMode = v; }, get dohProvider() { return dohProvider; }, set dohProvider(v) { dohProvider = v; }, get dohStatus() { return dohStatus; }, set dohStatus(v) { dohStatus = v; }, get downloadJournalExport() { return downloadJournalExport; }, set downloadJournalExport(v) { downloadJournalExport = v; }, get downloadJournalFileProbe() { return downloadJournalFileProbe; }, set downloadJournalFileProbe(v) { downloadJournalFileProbe = v; }, get downloadJournalModule() { return downloadJournalModule; }, set downloadJournalModule(v) { downloadJournalModule = v; }, get downloadMaxBytes() { return downloadMaxBytes; }, set downloadMaxBytes(v) { downloadMaxBytes = v; }, get downloadRateLimit() { return downloadRateLimit; }, set downloadRateLimit(v) { downloadRateLimit = v; }, get downloadReconcileModule() { return downloadReconcileModule; }, set downloadReconcileModule(v) { downloadReconcileModule = v; }, get downloadSizeGuard() { return downloadSizeGuard; }, set downloadSizeGuard(v) { downloadSizeGuard = v; }, get downloads() { return downloads; }, set downloads(v) { downloads = v; }, get enumerateSiteStorage() { return enumerateSiteStorage; }, set enumerateSiteStorage(v) { enumerateSiteStorage = v; }, get executeCleanPlan() { return executeCleanPlan; }, set executeCleanPlan(v) { executeCleanPlan = v; }, get fpGuard() { return fpGuard; }, set fpGuard(v) { fpGuard = v; }, get fpLedger() { return fpLedger; }, set fpLedger(v) { fpLedger = v; }, get fsSync() { return fsSync; }, set fsSync(v) { fsSync = v; }, get getClientCertChoiceStats() { return getClientCertChoiceStats; }, set getClientCertChoiceStats(v) { getClientCertChoiceStats = v; }, get getCspReportStats() { return getCspReportStats; }, set getCspReportStats(v) { getCspReportStats = v; }, get getDownloadJournal() { return getDownloadJournal; }, set getDownloadJournal(v) { getDownloadJournal = v; }, get getHeaderGradeStats() { return getHeaderGradeStats; }, set getHeaderGradeStats(v) { getHeaderGradeStats = v; }, get getRequestLogStats() { return getRequestLogStats; }, set getRequestLogStats(v) { getRequestLogStats = v; }, get hardenCookies() { return hardenCookies; }, set hardenCookies(v) { hardenCookies = v; }, get history() { return history; }, set history(v) { history = v; }, get httpsExceptions() { return httpsExceptions; }, set httpsExceptions(v) { httpsExceptions = v; }, get httpsOnlyCore() { return httpsOnlyCore; }, set httpsOnlyCore(v) { httpsOnlyCore = v; }, get httpsOnlyEnabled() { return httpsOnlyEnabled; }, set httpsOnlyEnabled(v) { httpsOnlyEnabled = v; }, get inputGuard() { return inputGuard; }, set inputGuard(v) { inputGuard = v; }, get ipcMain() { return ipcMain; }, set ipcMain(v) { ipcMain = v; }, get isAboutFrameSender() { return isAboutFrameSender; }, set isAboutFrameSender(v) { isAboutFrameSender = v; }, get isMainSender() { return isMainSender; }, set isMainSender(v) { isMainSender = v; }, get isPagesFrameSender() { return isPagesFrameSender; }, set isPagesFrameSender(v) { isPagesFrameSender = v; }, get isReadingListFrameSender() { return isReadingListFrameSender; }, set isReadingListFrameSender(v) { isReadingListFrameSender = v; }, get isSafeUrl() { return isSafeUrl; }, set isSafeUrl(v) { isSafeUrl = v; }, get isShortcutsFrameSender() { return isShortcutsFrameSender; }, set isShortcutsFrameSender(v) { isShortcutsFrameSender = v; }, get isValidColor() { return isValidColor; }, set isValidColor(v) { isValidColor = v; }, get ledgerStore() { return ledgerStore; }, set ledgerStore(v) { ledgerStore = v; }, get listPermissionDecisions() { return listPermissionDecisions; }, set listPermissionDecisions(v) { listPermissionDecisions = v; }, get listSecurityEvents() { return listSecurityEvents; }, set listSecurityEvents(v) { listSecurityEvents = v; }, get loadCertExceptions() { return loadCertExceptions; }, set loadCertExceptions(v) { loadCertExceptions = v; }, get loadClientCertChoices() { return loadClientCertChoices; }, set loadClientCertChoices(v) { loadClientCertChoices = v; }, get loadCookieLedger() { return loadCookieLedger; }, set loadCookieLedger(v) { loadCookieLedger = v; }, get loadDohLedger() { return loadDohLedger; }, set loadDohLedger(v) { loadDohLedger = v; }, get loadFpLedger() { return loadFpLedger; }, set loadFpLedger(v) { loadFpLedger = v; }, get loadPnaLedger() { return loadPnaLedger; }, set loadPnaLedger(v) { loadPnaLedger = v; }, get mainWindow() { return mainWindow; }, set mainWindow(v) { mainWindow = v; }, get memorySaverEnabled() { return memorySaverEnabled; }, set memorySaverEnabled(v) { memorySaverEnabled = v; }, get net() { return net; }, set net(v) { net = v; }, get netAuthGuard() { return netAuthGuard; }, set netAuthGuard(v) { netAuthGuard = v; }, get openUrlFromInternalFrame() { return openUrlFromInternalFrame; }, set openUrlFromInternalFrame(v) { openUrlFromInternalFrame = v; }, get originOfContents() { return originOfContents; }, set originOfContents(v) { originOfContents = v; }, get path() { return path; }, set path(v) { path = v; }, get pendingAuthChallenges() { return pendingAuthChallenges; }, set pendingAuthChallenges(v) { pendingAuthChallenges = v; }, get permPolicy() { return permPolicy; }, set permPolicy(v) { permPolicy = v; }, get permissionGrants() { return permissionGrants; }, set permissionGrants(v) { permissionGrants = v; }, get permissionRiskReport() { return permissionRiskReport; }, set permissionRiskReport(v) { permissionRiskReport = v; }, get persistCleanAudit() { return persistCleanAudit; }, set persistCleanAudit(v) { persistCleanAudit = v; }, get persistClientCertChoices() { return persistClientCertChoices; }, set persistClientCertChoices(v) { persistClientCertChoices = v; }, get persistCookieLedger() { return persistCookieLedger; }, set persistCookieLedger(v) { persistCookieLedger = v; }, get persistDohLedger() { return persistDohLedger; }, set persistDohLedger(v) { persistDohLedger = v; }, get persistFpLedger() { return persistFpLedger; }, set persistFpLedger(v) { persistFpLedger = v; }, get persistHttpsExceptions() { return persistHttpsExceptions; }, set persistHttpsExceptions(v) { persistHttpsExceptions = v; }, get persistPnaLedger() { return persistPnaLedger; }, set persistPnaLedger(v) { persistPnaLedger = v; }, get persistRateLimitState() { return persistRateLimitState; }, set persistRateLimitState(v) { persistRateLimitState = v; }, get persistUaPolicyState() { return persistUaPolicyState; }, set persistUaPolicyState(v) { persistUaPolicyState = v; }, get persistVaultKey() { return persistVaultKey; }, set persistVaultKey(v) { persistVaultKey = v; }, get persistVaultState() { return persistVaultState; }, set persistVaultState(v) { persistVaultState = v; }, get pnaLedger() { return pnaLedger; }, set pnaLedger(v) { pnaLedger = v; }, get pnaLedgerStats() { return pnaLedgerStats; }, set pnaLedgerStats(v) { pnaLedgerStats = v; }, get readStoredSettings() { return readStoredSettings; }, set readStoredSettings(v) { readStoredSettings = v; }, get readerArticle() { return readerArticle; }, set readerArticle(v) { readerArticle = v; }, get readingList() { return readingList; }, set readingList(v) { readingList = v; }, get recordSecurityEvent() { return recordSecurityEvent; }, set recordSecurityEvent(v) { recordSecurityEvent = v; }, get reduceClientHints() { return reduceClientHints; }, set reduceClientHints(v) { reduceClientHints = v; }, get rejectAuthChallenge() { return rejectAuthChallenge; }, set rejectAuthChallenge(v) { rejectAuthChallenge = v; }, get resolveEffectiveUa() { return resolveEffectiveUa; }, set resolveEffectiveUa(v) { resolveEffectiveUa = v; }, get safeStorage() { return safeStorage; }, set safeStorage(v) { safeStorage = v; }, get sanitizeSettings() { return sanitizeSettings; }, set sanitizeSettings(v) { sanitizeSettings = v; }, get sanitizeSpellcheckLanguages() { return sanitizeSpellcheckLanguages; }, set sanitizeSpellcheckLanguages(v) { sanitizeSpellcheckLanguages = v; }, get saveBookmarks() { return saveBookmarks; }, set saveBookmarks(v) { saveBookmarks = v; }, get saveHistory() { return saveHistory; }, set saveHistory(v) { saveHistory = v; }, get saveReadingList() { return saveReadingList; }, set saveReadingList(v) { saveReadingList = v; }, get searchProvider() { return searchProvider; }, set searchProvider(v) { searchProvider = v; }, get searchProviderId() { return searchProviderId; }, set searchProviderId(v) { searchProviderId = v; }, get securityPosture() { return securityPosture; }, set securityPosture(v) { securityPosture = v; }, get sendToRenderer() { return sendToRenderer; }, set sendToRenderer(v) { sendToRenderer = v; }, get session() { return session; }, set session(v) { session = v; }, get shortcutKeys() { return shortcutKeys; }, set shortcutKeys(v) { shortcutKeys = v; }, get spellcheckEnabled() { return spellcheckEnabled; }, set spellcheckEnabled(v) { spellcheckEnabled = v; }, get spellcheckLanguages() { return spellcheckLanguages; }, set spellcheckLanguages(v) { spellcheckLanguages = v; }, get stripAcceptCh() { return stripAcceptCh; }, set stripAcceptCh(v) { stripAcceptCh = v; }, get stripTrackingParams() { return stripTrackingParams; }, set stripTrackingParams(v) { stripTrackingParams = v; }, get tabs() { return tabs; }, set tabs(v) { tabs = v; }, get topBlockedHosts() { return topBlockedHosts; }, set topBlockedHosts(v) { topBlockedHosts = v; }, get uaLastOverrideAt() { return uaLastOverrideAt; }, set uaLastOverrideAt(v) { uaLastOverrideAt = v; }, get uaOverrideCount() { return uaOverrideCount; }, set uaOverrideCount(v) { uaOverrideCount = v; }, get uaPolicyCore() { return uaPolicyCore; }, set uaPolicyCore(v) { uaPolicyCore = v; }, get uaPolicyState() { return uaPolicyState; }, set uaPolicyState(v) { uaPolicyState = v; }, get unlockVault() { return unlockVault; }, set unlockVault(v) { unlockVault = v; }, get vaultCore() { return vaultCore; }, set vaultCore(v) { vaultCore = v; }, get vaultHandle() { return vaultHandle; }, set vaultHandle(v) { vaultHandle = v; }, get vaultPasswordOK() { return vaultPasswordOK; }, set vaultPasswordOK(v) { vaultPasswordOK = v; }, get vaultStatusSnapshot() { return vaultStatusSnapshot; }, set vaultStatusSnapshot(v) { vaultStatusSnapshot = v; }, get vaultUsePasswordMode() { return vaultUsePasswordMode; }, set vaultUsePasswordMode(v) { vaultUsePasswordMode = v; }, get webrtcMode() { return webrtcMode; }, set webrtcMode(v) { webrtcMode = v; } });
 cosyipcregisterMod.registerNetworkGuards();
-
-function getClientCertChoiceStats(...a) { return cosyledgerchainmainMod.getClientCertChoiceStats(...a); }
 
 const downloadHashes = require('./downloadhashes');
 const securityledger = require('./securityledger');
@@ -1645,12 +1633,10 @@ const { setupGlobalWebContentsHooks } = require('./webcontentshooks').create({
 
 // setupNetworkStatus 监听 Chromium 的 online/offline 事件，把状态推给 renderer，
 // 地址栏/错误页可以据此显示"已断开连接"横幅。
-function setupNetworkStatus(...a) { return cosyledgerchainmainMod.setupNetworkStatus(...a); }
 
 // r34：GPU 进程崩溃 / GPU 信息更新 / 无障碍支持变化是 app 级系统事件，与具体标签弱
 // 关联，用进程级单份状态去重。崩溃风暴折叠为一条审计并提示重载；GPU 重枚举只保留
 // 白名单字段，软件渲染回退时留痕；系统读屏被打开（渲染路径变化）留痕。
-function setupSystemEventGuards(...a) { return cosyledgerchainmainMod.setupSystemEventGuards(...a); }
 
 // r34：补齐“只加固 defaultSession、漏了后续 fromPartition 会话”的纵深防御缺口。
 // app 'session-created' 对每个新会话触发（defaultSession 已在 setupPermissionHandlers /
@@ -1670,11 +1656,6 @@ const setupExtraSessionHardeningCtx = {
   get urlResolve() { return urlResolve; },
   get webContents() { return webContents; },
 };
-function setupExtraSessionHardening(...a) { return cosyledgerchainmainMod.setupExtraSessionHardening(...a); }
-
-function getTabLayout(...a) { return cosywinmainMod.getTabLayout(...a); }
-
-function getDefaultTabUrl(...a) { return cosywinmainMod.getDefaultTabUrl(...a); }
 
 const createWindowCtx = {
   get DEFAULT_WINDOW_HEIGHT() { return DEFAULT_WINDOW_HEIGHT; },
@@ -1705,7 +1686,6 @@ const createWindowCtx = {
   get tabs() { return tabs; },
   get updateBrowserViewBounds() { return updateBrowserViewBounds; },
 };
-function createWindow(...a) { return cosywinmainMod.createWindow(...a); }
 
 const registerShortcutsCtx = {
   get applyFind() { return applyFind; },
@@ -1734,21 +1714,16 @@ const registerShortcutsCtx = {
   get zoomIn() { return zoomIn; },
   get zoomOut() { return zoomOut; },
 };
-function registerShortcuts(...a) { return cosywinmainMod.registerShortcuts(...a); }
-
-function getUrlProtocol(...a) { return cosywinmainMod.getUrlProtocol(...a); }
 
 const TASK_MANAGER_URL = 'cosy://taskmanager';
 
 // openTaskManagerTab 打开（或切到已有的）任务管理器内置页。任务管理器是 cosy: 页，
 // 承载在普通标签视图里；已开则复用，避免连按 Shift+Esc 开出一堆相同页。
-function openTaskManagerTab(...a) { return cosywinmainMod.openTaskManagerTab(...a); }
 
 const TAB_OVERVIEW_URL = 'cosy://taboverview';
 
 // openTabOverviewTab 打开（或切到已有的）标签页概览网格页。与任务管理器同款
 // 语义：已开则复用，避免 Ctrl+Shift+E 连按开出一堆相同页。
-function openTabOverviewTab(...a) { return cosywinmainMod.openTabOverviewTab(...a); }
 
 const READER_PAGE_URL = 'cosy://reader';
 
@@ -1761,10 +1736,7 @@ let readerArticle = null;
 // 净化后的数据打开阅读页。抽取脚本运行在页面主世界但只调用只读 DOM API；返回值
 // 经主进程二次形状校验。cosy:/file: 等内置页不支持阅读模式。
 
-function showErrorPage(...a) { return cosywinmainMod.showErrorPage(...a); }
-
 // pushNavState 每次导航完成后同步 canGoBack/canGoForward，让 renderer 知道按钮该灰掉还是点亮
-function pushNavState(...a) { return cosywinmainMod.pushNavState(...a); }
 
 // ===== 渲染进程崩溃恢复 =====
 // 渲染进程崩溃（OOM、被杀、完整性失败）后 WebContentsView 已不可用，
@@ -1780,17 +1752,9 @@ const CRASH_REASON_TEXT = {
 const MAX_CRASH_AUTO_RECOVER = 3;   // 时间窗内自动恢复次数上限
 const CRASH_WINDOW_MS = 60 * 1000; // 崩溃计数滑动窗口
 
-function recordCrash(...a) { return cosywinmainMod.recordCrash(...a); }
-
-function canAutoRecover(...a) { return cosywinmainMod.canAutoRecover(...a); }
-
 // 销毁已经死亡的视图；webContents 在崩溃后可能已被回收，全部容错。
-function destroyTabView(...a) { return cosywinmainMod.destroyTabView(...a); }
 
 // 重建崩溃标签的视图；超过自动恢复上限时改显错误页，不再自动加载原 URL。
-function rebuildCrashedTab(...a) { return cosywinmainMod.rebuildCrashedTab(...a); }
-
-function handleRenderProcessGone(...a) { return cosywinmainMod.handleRenderProcessGone(...a); }
 
 // ===== 内存节省（Memory Saver）：自动休眠后台标签 =====
 // 对齐 Chrome "Memory Saver"：长时间不看的后台标签，其渲染进程（HTML/JS、
@@ -1805,19 +1769,13 @@ let memorySaverTimer = null;
 // tabKeepsAlive 判断标签是否必须常驻、不能被休眠。
 
 // discardTab 回收一个后台标签的渲染进程并保留标签壳。
-function discardTab(...a) { return cosywinmainMod.discardTab(...a); }
 
 // reloadDiscardedTab 唤醒休眠标签：按记录的 URL 重建视图并重新加载。
-function reloadDiscardedTab(...a) { return cosywinmainMod.reloadDiscardedTab(...a); }
 
 // sweepDiscardableTabs 把超过空闲阈值且无需常驻的后台标签休眠掉。
-function sweepDiscardableTabs(...a) { return cosywinmainMod.sweepDiscardableTabs(...a); }
-
-function startMemorySaver(...a) { return cosywinmainMod.startMemorySaver(...a); }
 
 // discardAllBackgroundTabs 立即休眠除活动标签外所有可休眠的后台标签，
 // 返回成功休眠的数量，供快捷键 / 右键菜单给用户一个明确反馈。
-function discardAllBackgroundTabs(...a) { return cosywinmainMod.discardAllBackgroundTabs(...a); }
 
 ipcMain.handle('discard-tab', (event, payload = {}) => {
   if (!isMainSender(event)) return { success: false };
@@ -1850,7 +1808,6 @@ const isTaskManagerFrameSender = internalFrame.makeInternalFrameSender({ isMainS
 
 // 汇总各标签渲染进程 OS pid -> {id,title,index}，用于把进程指标关联到具体标签。
 // 视图已销毁 / pid 取不到的标签跳过，不让单个坏标签影响整页指标。
-function buildTabPidMap(...a) { return cosywinmainMod.buildTabPidMap(...a); }
 
 ipcMain.handle('get-task-manager-processes', (event) => {
   if (!isTaskManagerFrameSender(event)) {
@@ -1960,9 +1917,6 @@ const loadTabContentCtx = {
   get toggleDevTools() { return toggleDevTools; },
   get updateBrowserViewBounds() { return updateBrowserViewBounds; },
 };
-function loadTabContent(...a) { return cosywinmainMod.loadTabContent(...a); }
-
-function showCosyError(...a) { return cosywinmainMod.showCosyError(...a); }
 
 // ===== 固定标签页（Pinned Tabs）=====
 // 权威固定集合由 pintabs 纯内核维护；这里负责把固定状态落到 Tab 对象、把固定
@@ -1973,49 +1927,26 @@ const pinModel = new pinTabs.PinModel();
 const pinStorePath = path.join(app.getPath('userData'), 'pintabs.json');
 let pinSaveTimer = null;
 
-function savePinsNow(...a) { return cosytabsmainMod.savePinsNow(...a); }
-
-function persistPins(...a) { return cosytabsmainMod.persistPins(...a); }
-
-function loadStoredPins(...a) { return cosytabsmainMod.loadStoredPins(...a); }
-
-function clearStoredPins(...a) { return cosytabsmainMod.clearStoredPins(...a); }
-
-function findTabIndexById(...a) { return cosytabsmainMod.findTabIndexById(...a); }
-
 // broadcastPinnedState 把单个标签的固定 / 取消固定结果推给渲染层。
-function broadcastPinnedState(...a) { return cosytabsmainMod.broadcastPinnedState(...a); }
 
 // applyPinnedState 设置标签固定态并同步内核；不负责重排，重排统一走
 // movePinnedTabsToFront，便于批量重水合时只重排一次。
-function applyPinnedState(...a) { return cosytabsmainMod.applyPinnedState(...a); }
 
 // movePinnedTabsToFront 依据内核的稳定分区结果，物理重排 tabs 数组（视图对象挂在
 // Tab 上，随元素一起移动，不需要重建），并修正当前标签索引，最后让渲染层同步顺序。
-function movePinnedTabsToFront(...a) { return cosytabsmainMod.movePinnedTabsToFront(...a); }
-
-function pinTab(...a) { return cosytabsmainMod.pinTab(...a); }
-
-function unpinTab(...a) { return cosytabsmainMod.unpinTab(...a); }
-
-function toggleTabPinned(...a) { return cosytabsmainMod.toggleTabPinned(...a); }
 
 // rehydratePinnedTabs 在启动恢复出标签后，用磁盘上的固定 URL 清单匹配本次新标签，
 // 一次性恢复固定态并把它们排到最前。匹配不到（对应页本次没恢复）的固定项忽略。
-function rehydratePinnedTabs(...a) { return cosytabsmainMod.rehydratePinnedTabs(...a); }
 
 // ensurePinnedTabsOpened 在启动会话恢复之后调用：固定标签独立于 session.json
 // 持久化，即使会话文件被清，也应把固定的 http/https 页补开后再重水合。固定的
 // cosy 内置页不主动补开（避免与默认新标签页重复），只在它本次本就存在时固定。
-function ensurePinnedTabsOpened(...a) { return cosytabsmainMod.ensurePinnedTabsOpened(...a); }
 
 // closeTabsByIds 按一组标签 id 批量关闭。为避免 splice 导致的索引漂移，统一从
 // 最大索引向最小索引关闭。返回实际关闭数量。
-function closeTabsByIds(...a) { return cosytabsmainMod.closeTabsByIds(...a); }
 
 // planAndCloseTabs 是批量关闭的唯一权威入口：先由 pintabs 内核裁决哪些标签允许
 // 关闭（固定标签在任何模式下都保留），再真正关闭。渲染层不再自己循环关标签。
-function planAndCloseTabs(...a) { return cosytabsmainMod.planAndCloseTabs(...a); }
 
 // ===== 标签分组（Tab Groups）=====
 // 权威分组集合由 tabgroups 纯内核维护；这里负责把分组状态落到 IPC / 磁盘、按分组
@@ -2048,7 +1979,6 @@ let tabGroupSaveTimer = null;
 // rehydrateTabGroups 在启动会话恢复出标签之后调用：读取磁盘分组清单，按“组内
 // 标签 id 与本次打开的非固定标签匹配”重水合模型（不匹配的组内标签剔除，变空的
 // 组丢弃），然后按分组重排一次标签栏。
-function rehydrateTabGroups(...a) { return cosytabsmainMod.rehydrateTabGroups(...a); }
 
 // tabGroupError 把内核拒绝原因转成渲染层可读的 { ok:false, reason }。
 
@@ -2246,10 +2176,8 @@ cosyipcwireMod.registerProtocolIpc();
 // 服务端可能在 filename 里塞 "../../evil.exe"、RTL 反转符、结尾点空格或
 // Windows 保留设备名。这里委托 dloadguard.sanitizeName：剥离目录组件与不可见
 // 字符、剥掉结尾点空格、给保留名加前缀，返回可安全落盘的纯文件名。
-function sanitizeDownloadFilename(...a) { return cosytabsmainMod.sanitizeDownloadFilename(...a); }
 
 // resolveUniqueDownloadPath 如果目标已存在，自动追加 (1)/(2)/... 避免覆盖
-function resolveUniqueDownloadPath(...a) { return cosytabsmainMod.resolveUniqueDownloadPath(...a); }
 
 // ===== 下载文件名伪装 / 危险类型台账（download-risk.json / cosy://security）=====
 // 旧实现只看 path.extname 的最后一个扩展名，挡不住双扩展伪装（发票.exe.pdf）、
@@ -2264,24 +2192,15 @@ const MAX_DOWNLOAD_RISK_RECORDS = 500;
 // 重启后清空（无来源信息的可执行文件同样会要求确认，宁严勿纵）。有界防膨胀。
 const MAX_DOWNLOAD_ORIGIN_ENTRIES = 1000;
 const downloadOriginByPath = new Map();
-function rememberDownloadOrigin(...a) { return cosytabsmainMod.rememberDownloadOrigin(...a); }
 
 const downloadRiskRecords = [];
 let downloadRiskLoaded = false;
 let downloadRiskSaveTimer = null;
 
-function persistDownloadRisks(...a) { return cosytabsmainMod.persistDownloadRisks(...a); }
-
-function recordDownloadRisk(...a) { return cosytabsmainMod.recordDownloadRisk(...a); }
-
 // listDownloadRisks 返回最近的风险记录（倒序，新的在前），供安全中心只读展示。
-function listDownloadRisks(...a) { return cosytabsmainMod.listDownloadRisks(...a); }
-
-function clearDownloadRisks(...a) { return cosytabsmainMod.clearDownloadRisks(...a); }
 
 // 兼容旧调用名：现在基于 dloadguard 判断“是否需要用户确认/拒绝”。
 // 返回 dloadguard 的完整分析结果（含原因链），供确认对话框展示。
-function analyzeDownloadSafety(...a) { return cosytabsmainMod.analyzeDownloadSafety(...a); }
 
 // confirmDownloadDecision 针对需要确认的下载弹出原生对话框，列出具体命中原因。
 
@@ -2315,33 +2234,23 @@ const handleDownloadEventCtx = {
   get sendShelf() { return sendShelf; },
   get sendToRenderer() { return sendToRenderer; },
 };
-function handleDownloadEvent(...a) { return cosytabsmainMod.handleDownloadEvent(...a); }
 
 // managedDownloadSessions 记录已挂过下载保护的 session。will-download 若对同一
 // session 注册两次，一次下载会触发两轮回调：弹两次确认框、写两条台账、落盘后补两次
 // MOTW。defaultSession 走 setupDownloadManager、分区走 session-created，理论上互斥，
 // 但仍用 WeakSet 做幂等兜底（session 回收后条目自动消失，不泄漏）。
-function downloadJournalFileProbe(...a) { return cosytabsmainMod.downloadJournalFileProbe(...a); }
 
 const managedDownloadSessions = new WeakSet();
 
 // attachDownloadManager 把同一套下载保护挂到任意 session；defaultSession 与分区会话
 // 都必须经过它，避免隔离 / 访客分区下载绕过文件名净化、危险类型确认与 MOTW。
-function attachDownloadManager(...a) { return cosytabsmainMod.attachDownloadManager(...a); }
-
-function setupDownloadManager(...a) { return cosytabsmainMod.setupDownloadManager(...a); }
-
-function formatSpeed(...a) { return cosytabsmainMod.formatSpeed(...a); }
 
 // reviewToOpenUrl 把 deeplinkguard 的放行结论转成可打开 URL；本地文件需存在。
-function reviewToOpenUrl(...a) { return cosytabsmainMod.reviewToOpenUrl(...a); }
 
 // resolveStartupDeepLink 把一条不可信入口参数（argv / open-file / open-url）
 // 经 deeplinkguard 消毒后，统一转成可打开的目标 URL；不合法返回 null 并记审计。
-function resolveStartupDeepLink(...a) { return cosytabsmainMod.resolveStartupDeepLink(...a); }
 
 // resolveStartupArgv 从整条命令行里找第一个合法深链（Windows 协议唤起位置不固定）。
-function resolveStartupArgv(...a) { return cosytabsmainMod.resolveStartupArgv(...a); }
 
 const startupTarget = resolveStartupArgv(process.argv);
 if (startupTarget) fileToOpen = startupTarget;
@@ -2380,8 +2289,6 @@ const MAX_REMEMBERED_ORIGINS = 500;
 const zoomStorePath = path.join(app.getPath('userData'), 'zoom-store.json');
 let zoomSaveTimer = null;
 
-function originOfUrl(...a) { return cosytabsmainMod.originOfUrl(...a); }
-
 // loadZoomFactors 启动时从 userData 读取按站点记忆的缩放（对齐 Chrome 跨重启保留缩放）。
 // 文件损坏 / 被外部塞非法内容时静默丢弃，绝不因此影响浏览器启动。
 
@@ -2400,7 +2307,6 @@ let findState = { text: '', matchCase: false, wholeWord: false };
 let findRateState = findGuard.createFindState(Date.now());
 
 // applyFind 在当前活动标签上按 findState 执行一次查找。
-function applyFind(...a) { return cosytabsmainMod.applyFind(...a); }
 
 const cosyipcwire2Mod = require('./cosyipcwire2');
 cosyipcwire2Mod.bindDeps({
@@ -2473,8 +2379,6 @@ cosyipcwire2Mod.bindDeps({
     get zoomOut() { return zoomOut; },
 });
 cosyipcwire2Mod.registerFindIpc();
-
-function createContextMenu(...a) { return cosytabsmainMod.createContextMenu(...a); }
 
 const userDataPath = path.join(os.homedir(), 'AppData', 'Roaming', 'OpenCosy', 'browser', 'userdata');
 const extensionsPath = path.join(userDataPath, 'extensions');
@@ -2591,20 +2495,16 @@ const ALLOWED_SETTING_KEYS = {
     && v.every(l => typeof l === 'string' && ALLOWED_SPELLCHECK_LANGUAGES.includes(l)),
 };
 
-function sanitizeSettings(...a) { return cosytabsmainMod.sanitizeSettings(...a); }
-
 cosyipcregisterMod.registerDownloadShelf();
 
 // sanitizeBookmarkLike 把书签 / 稍后读条目收敛成可进内部页 DOM 的标量快照：
 // url、title 限长，addedDate 只接受字符串。两个管理器历史上各自内联了同一段映射，
 // 集中到这里，避免标题长度上限或类型收口在某一处被改漏。
-function sanitizeBookmarkLike(...a) { return cosytabsmainMod.sanitizeBookmarkLike(...a); }
 
 // openUrlFromInternalFrame 是历史 / 书签 / 稍后读三个内部页“点击条目新开标签”的
 // 公共内核：frameOk 是该页自己的帧来源判定；URL 必须过 isSafeUrl（http/https），
 // cosy:// 内置页则交由 createNewTab 的 pageMap 白名单兜底，其余协议一律拒绝。
 // 三个 handler 过去逐字复制了同一段校验，集中后任何收紧只需改这一处。
-function openUrlFromInternalFrame(...a) { return cosytabsmainMod.openUrlFromInternalFrame(...a); }
 
 // 历史页快照：全量返回历史数组（上限 1000 条，磁盘加载已按 MAX_HISTORY_ENTRIES
 // 截断）。只放行历史页帧 / 主窗口外壳；返回前对每条做类型收口，绝不让脏标题
@@ -2613,14 +2513,12 @@ cosyipcwire2Mod.registerCertificateIpc();
 
 // 稍后读新增（右键菜单“加入稍后读”/页面内部调用）：URL 必须经 isSafeUrl 校验
 // （http/https），标题去控制字符并限长。已存在的同 URL 条目忽略（幂等）。
-function addToReadingList(...a) { return cosytabsmainMod.addToReadingList(...a); }
 
 cosyipcregisterMod.registerTabSurfaces();
 
 // ===== 自定义拦截规则 IPC =====
 // 规则以字符串行表达：裸域名 / host:x / glob:https://*.x/* / path:https://x/ads/
 // 所有写操作后立即持久化并重编译，webRequest 管道下一次判定即生效。
-function customRulesSnapshot(...a) { return cosytabsmainMod.customRulesSnapshot(...a); }
 
 const cosyipcwire3Mod = require('./cosyipcwire3');
 cosyipcwire3Mod.bindDeps({
@@ -2664,7 +2562,6 @@ cosyipcwire3Mod.registerBlockRulesIpc();
 // vaultPasswordOK：主进程侧主密码收口校验（渲染层另有 UI 限制，此处纵深防御）。
 // 规则：必须是字符串；1~256 个可见字符；不含控制字符/NUL；非纯空白；
 // UTF-8 编码后不超过 1024 字节，防止超长输入拖垮 PBKDF2 慢化造成 DoS。
-function vaultPasswordOK(...a) { return cosytabsmainMod.vaultPasswordOK(...a); }
 
 cosyipcregisterMod.registerSettingsPanels();
 
