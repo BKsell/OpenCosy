@@ -106,6 +106,8 @@ const COSY_ONLY_CHANNELS = new Set([
   'set-ua-policy',
   'reset-ua-policy',
   'set-download-rate-limit',
+  'get-download-max-bytes',
+  'set-download-max-bytes',
   'set-search-provider',
   'about-export-diagnostics',
   'about-snapshot',
