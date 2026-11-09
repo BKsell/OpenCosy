@@ -1,0 +1,2093 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>安全事件中心 - OpenCosy</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #f3f3f3; color: #1f1f1f; min-height: 100vh;
+    transition: background 0.3s, color 0.3s;
+  }
+  body.dark-mode { background: #1a1a1a; color: #e0e0e0; }
+  .container { max-width: 980px; margin: 0 auto; padding: 32px 24px 60px; }
+  header { margin-bottom: 24px; }
+  h1 { font-size: 26px; font-weight: 600; color: #0078d4; margin-bottom: 6px; }
+  body.dark-mode h1 { color: #4da3ff; }
+  .subtitle { color: #666; font-size: 13px; line-height: 1.6; }
+  body.dark-mode .subtitle { color: #999; }
+
+  .toolbar {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    background: #fff; border-radius: 10px; padding: 14px 16px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08); margin-bottom: 16px;
+  }
+  body.dark-mode .toolbar { background: #2d2d2d; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+  .search-box {
+    flex: 1; min-width: 220px; padding: 9px 12px; border: 1px solid #d0d0d0;
+    border-radius: 6px; font-size: 14px; outline: none; background: #fafafa; color: inherit;
+  }
+  .search-box:focus { border-color: #0078d4; }
+  body.dark-mode .search-box { background: #3d3d3d; border-color: #555; }
+  select {
+    padding: 9px 10px; border: 1px solid #d0d0d0; border-radius: 6px; font-size: 13px;
+    background: #fafafa; color: inherit; outline: none; font-family: inherit;
+  }
+  body.dark-mode select { background: #3d3d3d; border-color: #555; }
+  button {
+    border: none; border-radius: 6px; padding: 8px 14px; font-size: 13px;
+    cursor: pointer; transition: background 0.15s, opacity 0.15s; font-family: inherit;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary { background: #0078d4; color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: #106ebe; }
+  .btn-ghost { background: transparent; color: #0078d4; border: 1px solid #0078d4; }
+  .btn-ghost:hover:not(:disabled) { background: rgba(0,120,212,0.08); }
+  body.dark-mode .btn-ghost { color: #4da3ff; border-color: #4da3ff; }
+  .btn-danger-ghost { background: transparent; color: #c42b1c; border: 1px solid #c42b1c; }
+  .btn-danger-ghost:hover:not(:disabled) { background: rgba(196,43,28,0.08); }
+  body.dark-mode .btn-danger-ghost { color: #ff6a5c; border-color: #ff6a5c; }
+
+  .range-chips { display: inline-flex; gap: 6px; align-items: center; }
+  .range-chip {
+    background: transparent; color: #444; border: 1px solid #ccc; border-radius: 12px;
+    padding: 3px 10px; font-size: 12px; cursor: pointer; line-height: 1.4;
+  }
+  .range-chip:hover { border-color: #0078d4; color: #0078d4; }
+  .range-chip.active { background: #0078d4; color: #fff; border-color: #0078d4; }
+  body.dark-mode .range-chip { color: #bbb; border-color: #444; }
+  body.dark-mode .range-chip:hover { border-color: #4da3ff; color: #4da3ff; }
+  body.dark-mode .range-chip.active { background: #4da3ff; color: #0b0b0f; border-color: #4da3ff; }
+
+  .stats { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  .stat-card {
+    flex: 1; min-width: 150px; background: #fff; border-radius: 10px; padding: 14px 18px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+  }
+  body.dark-mode .stat-card { background: #2d2d2d; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+  .stat-num { font-size: 22px; font-weight: 600; color: #0078d4; }
+  body.dark-mode .stat-num { color: #4da3ff; }
+  .stat-num.critical { color: #c42b1c; }
+  body.dark-mode .stat-num.critical { color: #ff6a5c; }
+  .stat-num.warning { color: #9a6200; }
+  body.dark-mode .stat-num.warning { color: #f0b450; }
+  .stat-label { font-size: 12px; color: #777; margin-top: 2px; }
+  body.dark-mode .stat-label { color: #999; }
+
+  .event-list { display: flex; flex-direction: column; gap: 10px; }
+  .event-row {
+    background: #fff; border-radius: 10px; padding: 13px 18px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    border-left: 4px solid #0078d4;
+  }
+  body.dark-mode .event-row { background: #2d2d2d; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+  .event-row.severity-warn { border-left-color: #f0a020; }
+  .event-row.severity-critical { border-left-color: #c42b1c; }
+  .event-row.severity-info { border-left-color: #4a8cf7; }
+  .event-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .event-type { font-size: 14px; font-weight: 600; flex: 1; min-width: 0; }
+  .event-origin {
+    font-size: 12px; color: #555; background: #eef3f8; border-radius: 5px;
+    padding: 2px 8px; max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  body.dark-mode .event-origin { color: #c7d3e0; background: #34404d; }
+  .event-time { font-size: 11px; color: #999; }
+  body.dark-mode .event-time { color: #8a8a8a; }
+  .event-detail {
+    margin-top: 8px; font-size: 13px; line-height: 1.6; color: #444;
+    word-break: break-all;
+  }
+  body.dark-mode .event-detail { color: #c4c4c4; }
+
+  .badge {
+    display: inline-block; padding: 2px 9px; border-radius: 10px; font-size: 11px; font-weight: 600;
+  }
+  .badge.info { background: #e8f1fb; color: #0f5a9e; }
+  body.dark-mode .badge.info { background: #16314d; color: #6cb0f0; }
+  .badge.warn { background: #fdf3e0; color: #9a6200; }
+  body.dark-mode .badge.warn { background: #4d3810; color: #f0b450; }
+  .badge.critical { background: #fdeaea; color: #c42b1c; }
+  body.dark-mode .badge.critical { background: #431d1a; color: #ff6a5c; }
+  .badge.neutral { background: #ececec; color: #555; }
+  body.dark-mode .badge.neutral { background: #3a3a3a; color: #bbb; }
+
+  .empty {
+    text-align: center; padding: 70px 20px; color: #888; background: #fff;
+    border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+  }
+  body.dark-mode .empty { background: #2d2d2d; color: #999; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+  .empty .big { font-size: 40px; margin-bottom: 10px; }
+
+  .modal-mask {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+    align-items: center; justify-content: center; z-index: 100; padding: 20px;
+  }
+  .modal-mask.show { display: flex; }
+  .modal { background: #fff; border-radius: 12px; width: 100%; max-width: 440px; overflow: hidden; }
+  body.dark-mode .modal { background: #2d2d2d; }
+  .modal-head { padding: 16px 20px; border-bottom: 1px solid #eee; font-size: 16px; font-weight: 600; }
+  body.dark-mode .modal-head { border-bottom-color: #444; }
+  .modal-body { padding: 14px 20px; font-size: 13px; line-height: 1.7; }
+  .modal-foot { padding: 14px 20px; border-top: 1px solid #eee; display: flex; gap: 10px; justify-content: flex-end; }
+  body.dark-mode .modal-foot { border-top-color: #444; }
+
+  #toast {
+    position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: #323232; color: #fff; padding: 10px 20px; border-radius: 8px;
+    font-size: 13px; opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; z-index: 200;
+    max-width: 80vw;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.error { background: #c42b1c; }
+  .back-link { display: inline-block; margin-bottom: 14px; font-size: 13px; text-decoration: none; }
+
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .tab {
+    padding: 8px 18px; border-radius: 8px; border: 1px solid #d0d0d0; background: #fff;
+    color: #555; font-size: 13px; font-weight: 600;
+  }
+  body.dark-mode .tab { background: #2d2d2d; border-color: #555; color: #bbb; }
+  .tab.active { background: #0078d4; border-color: #0078d4; color: #fff; }
+  body.dark-mode .tab.active { background: #106ebe; border-color: #106ebe; color: #fff; }
+  .mono {
+    font-family: Consolas, "Courier New", monospace; font-size: 12px;
+    background: #f4f4f4; border-radius: 4px; padding: 1px 6px; word-break: break-all;
+  }
+  body.dark-mode .mono { background: #3a3a3a; }
+  .csp-meta { margin-top: 6px; font-size: 12px; color: #888; word-break: break-all; }
+  body.dark-mode .csp-meta { color: #9a9a9a; }
+  .view { display: none; }
+  .view.active { display: block; }
+  .hits-badge {
+    display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 10px;
+    font-size: 11px; font-weight: 600; background: #eef3f8; color: #0f5a9e;
+  }
+  body.dark-mode .hits-badge { background: #34404d; color: #9cc8f2; }
+  .row-remove {
+    background: transparent; border: 1px solid #c9c9c9; color: #888;
+    padding: 3px 10px; font-size: 12px; border-radius: 5px;
+  }
+  .row-remove:hover:not(:disabled) { color: #c42b1c; border-color: #c42b1c; }
+  body.dark-mode .row-remove { border-color: #555; color: #aaa; }
+  .grade-letter {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; border-radius: 8px; font-size: 17px; font-weight: 700;
+    background: #ececec; color: #555; flex: none;
+  }
+  body.dark-mode .grade-letter { background: #3a3a3a; color: #ccc; }
+  .grade-letter.gA { background: #dff6e4; color: #1a7f37; }
+  .grade-letter.gB { background: #e6f4d7; color: #4d7c0f; }
+  .grade-letter.gC { background: #fdf3e0; color: #9a6200; }
+  .grade-letter.gD { background: #fbe6d4; color: #b25000; }
+  .grade-letter.gF { background: #fdeaea; color: #c42b1c; }
+  body.dark-mode .grade-letter.gA { background: #14351f; color: #57d17c; }
+  body.dark-mode .grade-letter.gB { background: #26390f; color: #a9d35f; }
+  body.dark-mode .grade-letter.gC { background: #4d3810; color: #f0b450; }
+  body.dark-mode .grade-letter.gD { background: #4a2a12; color: #ff9a4d; }
+  body.dark-mode .grade-letter.gF { background: #431d1a; color: #ff6a5c; }
+  .grade-host { font-size: 14px; font-weight: 600; word-break: break-all; flex: 1; min-width: 0; }
+  .grade-bar-wrap { height: 6px; border-radius: 3px; background: #e6e6e6; margin-top: 8px; overflow: hidden; }
+  body.dark-mode .grade-bar-wrap { background: #444; }
+  .grade-bar { height: 100%; border-radius: 3px; background: #0078d4; }
+  .check-chip {
+    display: inline-block; margin: 3px 4px 0 0; padding: 2px 8px; border-radius: 10px;
+    font-size: 11px; background: #f0f0f0; color: #666;
+  }
+  body.dark-mode .check-chip { background: #3a3a3a; color: #bbb; }
+  .check-chip.pass { background: #dff6e4; color: #1a7f37; }
+  body.dark-mode .check-chip.pass { background: #14351f; color: #57d17c; }
+  .check-chip.missing { background: #fdeaea; color: #c42b1c; }
+  body.dark-mode .check-chip.missing { background: #431d1a; color: #ff6a5c; }
+</style>
+</head>
+<body>
+<div class="container">
+  <a class="back-link btn-ghost" style="display:inline-block;" href="cosy://setting">&larr; 返回设置</a>
+  <header>
+    <h1>安全事件中心</h1>
+    <p class="subtitle">
+      这里记录浏览器替你拦下的安全动作：危险的外部协议唤起、被取消的可执行文件下载、
+      网站对 HID / 串口 / 蓝牙等设备权限的请求、扩展的危险权限申请等。事件只保存在本机，
+      最多保留最近 1000 条，可随时清空。
+    </p>
+  </header>
+
+  <div class="tabs">
+    <button class="tab active" id="tabEvents" type="button">安全拦截事件</button>
+    <button class="tab" id="tabCsp" type="button">CSP 违规报告 <span id="cspCountBadge" style="display:none;"></span></button>
+    <button class="tab" id="tabHeaders" type="button">站点安全头 <span id="headerCountBadge" style="display:none;"></span></button>
+    <button class="tab" id="tabRequests" type="button">后台连接 <span id="reqCountBadge" style="display:none;"></span></button>
+    <button class="tab" id="tabBrand" type="button">品牌仿冒 <span id="brandCountBadge" style="display:none;"></span></button>
+<button class="tab" id="tabCert" type="button">证书例外 <span id="certCountBadge" style="display:none;"></span></button>
+<button class="tab" id="tabNetAuth" type="button">网络认证 <span id="netAuthCountBadge" style="display:none;"></span></button>
+<button class="tab" id="tabCookie" type="button">Cookie 加固 <span id="cookieCountBadge" style="display:none;"></span></button>
+<button class="tab" id="tabPna" type="button">内网访问防护 <span id="pnaCountBadge" style="display:none;"></span></button>
+<button class="tab" id="tabFp" type="button">指纹追踪收敛 <span id="fpCountBadge" style="display:none;"></span></button>
+<button class="tab" id="tabDoh" type="button">安全 DNS</button>
+<button class="tab" id="tabDload" type="button">下载伪装防护 <span id="dloadCountBadge" style="display:none;"></span></button>
+  </div>
+
+  <div class="view active" id="viewEvents">
+  <div class="stats">
+    <div class="stat-card"><div class="stat-num" id="statTotal">-</div><div class="stat-label">事件总数</div></div>
+    <div class="stat-card"><div class="stat-num" id="statWarn">-</div><div class="stat-label">警告</div></div>
+    <div class="stat-card"><div class="stat-num critical" id="statCritical">-</div><div class="stat-label">高危拦截</div></div>
+  </div>
+
+  <div class="toolbar">
+    <input class="search-box" id="searchInput" type="search" placeholder="按来源或内容搜索" autocomplete="off">
+    <select id="filterSelect">
+      <option value="">全部类型</option>
+      <option value="protocol-blocked">外部协议拦截</option>
+      <option value="protocol-denied">外部协议拒绝</option>
+      <option value="download-blocked">下载拦截</option>
+      <option value="download-rejected">危险下载取消</option>
+      <option value="permission-blocked">浏览器权限拒绝</option>
+      <option value="device-permission-blocked">设备权限拒绝</option>
+      <option value="extension-blocked">扩展拦截</option>
+<option value="mixed-content-blocked">混合内容拦截</option>
+<option value="auth-blocked">凭据探测拦截</option>
+<option value="auth-rate-limited">认证弹框限流</option>
+<option value="client-cert-blocked">客户端证书保护</option>
+    </select>
+    <select id="severitySelect">
+      <option value="">全部级别</option>
+      <option value="critical">仅高危</option>
+      <option value="warn">仅警告</option>
+      <option value="info">仅提示</option>
+    </select>
+    <button class="btn-primary" id="refreshBtn">刷新</button>
+    <button class="btn-ghost" id="exportBtn" type="button">导出事件</button>
+    <button class="btn-danger-ghost" id="clearBtn">清空记录</button>
+  </div>
+
+  <div class="event-list" id="eventList"></div>
+  <div class="empty" id="emptyState" style="display:none;">
+    <div class="big">&#128737;&#65039;</div>
+    <div id="emptyText">近期没有安全拦截事件</div>
+  </div>
+  </div><!-- /viewEvents -->
+
+  <div class="view" id="viewCsp">
+    <div class="toolbar">
+      <input class="search-box" id="cspSearchInput" type="search" placeholder="按内部页面、指令或被拦截地址搜索" autocomplete="off">
+      <button class="btn-primary" id="cspRefreshBtn" type="button">刷新</button>
+      <button class="btn-danger-ghost" id="cspClearBtn" type="button">清空 CSP 报告</button>
+    </div>
+    <div class="event-list" id="cspList"></div>
+    <div class="empty" id="cspEmptyState" style="display:none;">
+      <div class="big">&#128274;</div>
+      <div id="cspEmptyText">内部页面没有 CSP 违规记录</div>
+    </div>
+    <p class="subtitle" style="margin-top:14px;">
+      这里只收集 <span class="mono">cosy://</span> 内部页面自己的内容安全策略违规
+      （脚本注入、被拦截的外部资源等）。公网网页的报告不会进入此台账，上报来源由主进程
+      按帧地址重新校验，页面自报的来源一律不采信。
+    </p>
+  </div><!-- /viewCsp -->
+
+  <div class="view" id="viewHeaders">
+    <div class="stats">
+      <div class="stat-card"><div class="stat-num" id="hgStatHosts">-</div><div class="stat-label">已评级站点</div></div>
+      <div class="stat-card"><div class="stat-num" id="hgStatWeak">-</div><div class="stat-label">评级 D / F</div></div>
+      <div class="stat-card"><div class="stat-num critical" id="hgStatInsecure">-</div><div class="stat-label">仍用明文 HTTP</div></div>
+    </div>
+    <div class="toolbar">
+      <input class="search-box" id="hgSearchInput" type="search" placeholder="按主机名搜索" autocomplete="off">
+      <select id="hgGradeSelect">
+        <option value="">全部评级</option>
+        <option value="A">仅 A</option>
+        <option value="B">仅 B</option>
+        <option value="C">仅 C</option>
+        <option value="D">仅 D</option>
+        <option value="F">仅 F</option>
+        <option value="weak">仅薄弱（D/F）</option>
+      </select>
+      <button class="btn-primary" id="hgRefreshBtn" type="button">刷新</button>
+      <button class="btn-danger-ghost" id="hgClearBtn" type="button">清空评级</button>
+    </div>
+    <div class="event-list" id="hgList"></div>
+    <div class="empty" id="hgEmptyState" style="display:none;">
+      <div class="big">&#128274;</div>
+      <div id="hgEmptyText">还没有站点安全头评级，浏览几个网站后这里会自动汇总</div>
+    </div>
+    <p class="subtitle" style="margin-top:14px;">
+      评级只依据网站服务器<strong>自己下发</strong>的响应头（HSTS、CSP、nosniff、框架隔离、
+      Referrer-Policy、Permissions-Policy、COOP/CORP/COEP），在浏览器补头<strong>之前</strong>采样，
+      反映站点本身的真实安全姿态；仅统计顶层页面、按主机去重，不含第三方子资源，也不记录完整网址。
+    </p>
+  </div><!-- /viewHeaders -->
+
+  <div class="view" id="viewRequests">
+    <div class="stats">
+      <div class="stat-card"><div class="stat-num" id="reqStatHosts">-</div><div class="stat-label">连接主机数</div></div>
+      <div class="stat-card"><div class="stat-num" id="reqStatRequests">-</div><div class="stat-label">请求总数</div></div>
+      <div class="stat-card"><div class="stat-num warning" id="reqStatBackground">-</div><div class="stat-label">仅后台连接</div></div>
+      <div class="stat-card"><div class="stat-num critical" id="reqStatBlocked">-</div><div class="stat-label">已拦截</div></div>
+    </div>
+    <div class="toolbar">
+      <input class="search-box" id="reqSearchInput" type="search" placeholder="按主机名搜索" autocomplete="off">
+      <select id="reqFilterSelect">
+        <option value="">全部主机</option>
+        <option value="background">仅后台连接</option>
+        <option value="blocked">仅被拦截过</option>
+        <option value="insecure">仅明文 HTTP</option>
+      </select>
+      <button class="btn-primary" id="reqRefreshBtn" type="button">刷新</button>
+      <button class="btn-danger-ghost" id="reqClearBtn" type="button">清空台账</button>
+    </div>
+    <div class="event-list" id="reqList"></div>
+    <div class="empty" id="reqEmptyState" style="display:none;">
+      <div class="big">&#128225;</div>
+      <div id="reqEmptyText">还没有连接记录，浏览几个网站后这里会按主机汇总后台请求</div>
+    </div>
+    <p class="subtitle" style="margin-top:14px;">
+      只统计 http(s) 请求并<strong>按主机名聚合</strong>，不记录路径、查询、Cookie 或请求内容；
+      最多保留 400 个最活跃主机。“仅后台连接”指该主机从未作为顶层页面打开、只在后台被请求，
+      通常对应统计、广告、埋点、CDN 等第三方资源。
+    </p>
+  </div><!-- /viewRequests -->
+
+  <div class="view" id="viewBrand">
+    <div class="stats">
+      <div class="stat-card"><div class="stat-num critical" id="brandStatHosts">-</div><div class="stat-label">疑似仿冒主机</div></div>
+      <div class="stat-card"><div class="stat-num" id="brandStatTypo">-</div><div class="stat-label">拼写劫持</div></div>
+      <div class="stat-card"><div class="stat-num" id="brandStatSub">-</div><div class="stat-label">子域碰瓷</div></div>
+      <div class="stat-card"><div class="stat-num" id="brandStatBrand">-</div><div class="stat-label">涉及品牌数</div></div>
+      <div class="stat-card"><div class="stat-num critical" id="brandStatStruct">-</div><div class="stat-label">URL结构钓鱼</div></div>
+    </div>
+    <div class="toolbar">
+      <input class="search-box" id="brandSearchInput" type="search" placeholder="按主机名或品牌搜索" autocomplete="off">
+      <select id="brandFilterSelect">
+        <option value="">全部类型</option>
+        <option value="typo-domain">拼写劫持</option>
+        <option value="brand-in-subdomain">子域碰瓷</option>
+        <option value="brand-keyword-impersonation">品牌词+诱导词</option>
+        <option value="url-structural">URL结构钓鱼</option>
+      </select>
+      <button class="btn-primary" id="brandRefreshBtn" type="button">刷新</button>
+      <button class="btn-danger-ghost" id="brandClearBtn" type="button">清空记录</button>
+    </div>
+    <div class="event-list" id="brandList"></div>
+    <div class="empty" id="brandEmptyState" style="display:none;">
+      <div class="big">&#128737;&#65039;</div>
+      <div id="brandEmptyText">还没有品牌仿冒提示，浏览时命中拼写劫持/子域碰瓷会自动汇总到这里</div>
+    </div>
+    <p class="subtitle" style="margin-top:14px;">
+      这里汇总<strong>纯拉丁域名</strong>里与知名品牌仅一个字符之差（拼写劫持）、把品牌名塞进子域、
+      或在注册名里同时堆叠品牌词与“登录/验证/安全”等诱导词的疑似钓鱼主机。检测只看主机名、不记录路径，
+      且品牌自己的官方域名（如 paypal.com、apple.com）永不入库；混用其他文字字符的同形异义钓鱼由地址栏红色横幅单独提示。
+    </p>
+  </div><!-- /viewBrand -->
+
+  <div class="view" id="viewCert">
+    <div class="stats">
+      <div class="stat-card"><div class="stat-num critical" id="certStatTotal">-</div><div class="stat-label">生效中的例外</div></div>
+      <div class="stat-card"><div class="stat-num" id="certStatHosts">-</div><div class="stat-label">涉及主机</div></div>
+    </div>
+    <div class="toolbar">
+      <input class="search-box" id="certSearchInput" type="search" placeholder="按主机名搜索" autocomplete="off">
+      <button class="btn-primary" id="certRefreshBtn" type="button">刷新</button>
+      <button class="btn-danger-ghost" id="certClearBtn" type="button">清空全部例外</button>
+    </div>
+    <div class="event-list" id="certList"></div>
+    <div class="empty" id="certEmptyState" style="display:none;">
+      <div class="big">&#128274;</div>
+      <div id="certEmptyText">还没有证书例外。证书校验失败时浏览器默认拦截，只有你在拦截页显式放行才会出现记录。</div>
+    </div>
+    <p class="subtitle" style="margin-top:14px;">
+      证书错误默认<strong>硬拦截</strong>，不会像部分浏览器那样无声放行。你添加的每条例外都同时绑定
+      <strong>主机名与该张证书的 SHA-256 指纹</strong>：同一主机之后若换成另一张证书（中间人劫持的典型信号），
+      会重新被拦截。吊销、公钥固定等硬错误不提供放行入口。不再需要的内网/自签名站点例外请及时在此删除。
+    </p>
+  </div><!-- /viewCert -->
+
+  <div class="view" id="viewNetAuth">
+    <div class="stats">
+      <div class="stat-card"><div class="stat-num critical" id="authStatBlocked">-</div><div class="stat-label">拦截/取消的认证</div></div>
+      <div class="stat-card"><div class="stat-num" id="authStatPrompted">-</div><div class="stat-label">允许的登录弹框</div></div>
+      <div class="stat-card"><div class="stat-num" id="authStatRateLimited">-</div><div class="stat-label">限流次数</div></div>
+      <div class="stat-card"><div class="stat-num" id="authStatCertSuppressed">-</div><div class="stat-label">证书自动发送阻止</div></div>
+    </div>
+    <p class="subtitle">
+      网页里子框架 / 跨源偷偷发起的 401、407 登录请求（常用于探测你是否已登录内网或复用系统凭据）
+      会被<strong>静默取消</strong>，只有顶层主框架的正常登录才会弹框；同一主机短时间内反复弹框会进入冷却。
+      网站请求 TLS 客户端证书时，浏览器<strong>默认一张都不发送</strong>，需你手动选择；勾选“记住”后才会在下表登记主机与指纹。
+    </p>
+
+    <h3 style="margin:18px 0 8px 0; font-size:15px;">已记住的客户端证书</h3>
+    <div class="toolbar">
+      <button class="btn-primary" id="netAuthRefreshBtn" type="button">刷新</button>
+      <button class="btn-danger-ghost" id="netAuthClearBtn" type="button">清空全部记住的证书</button>
+    </div>
+    <div class="event-list" id="rememberedCertList"></div>
+    <div class="empty" id="rememberedCertEmptyState" style="display:none;">
+      <div class="big">&#128389;</div>
+      <div>还没有记住任何客户端证书。删除后，该主机再次请求证书时需要你重新手动选择。</div>
+    </div>
+  </div><!-- /viewNetAuth -->
+
+  <div class="view" id="viewCookie">
+    <div class="stats">
+      <div class="stat-card"><div class="stat-num critical" id="cookieStatBlocked">-</div><div class="stat-label">剥离的 Cookie 数</div></div>
+      <div class="stat-card"><div class="stat-num" id="cookieStatRewritten">-</div><div class="stat-label">补 SameSite=Lax 数</div></div>
+      <div class="stat-card"><div class="stat-num" id="cookieStatHosts">-</div><div class="stat-label">涉及主机数</div></div>
+      <div class="stat-card"><div class="stat-num" id="cookieStatEntries">-</div><div class="stat-label">台账条目数</div></div>
+    </div>
+    <p class="subtitle">
+      跨站（第三方）上下文试图种下的 Cookie 会被<strong>直接剥离</strong>，掐断跨站追踪与 CSRF；
+      第一方 Cookie 若没写 SameSite 会自动补 <strong>SameSite=Lax</strong>，
+      SameSite=None 却缺 Secure 时降级为 Lax。<br>
+      另外 <strong>__Host- / __Secure-</strong> 名前缀是浏览器的来源完整性承诺，
+      不满足 Secure / Path=/ / 无 Domain 约束时本就会被浏览器丢弃，这里同样剥离并登记；
+      http:// 页面种的 Secure Cookie 也会被丢弃。全部处理只在本机进行，不上报任何站点。
+    </p>
+
+    <div class="toolbar" style="margin:12px 0;">
+      <input type="text" id="cookieSearchInput" placeholder="按主机或 Cookie 名筛选…"
+        style="flex:1;min-width:180px;padding:8px 10px;border-radius:8px;border:1px solid var(--border-color,#dadce0);background:var(--input-bg,#fff);color:inherit;">
+      <button class="btn-primary" id="cookieRefreshBtn" type="button">刷新</button>
+      <button class="btn-danger-ghost" id="cookieClearBtn" type="button">清空台账</button>
+    </div>
+    <div class="event-list" id="cookieList"></div>
+    <div class="empty" id="cookieEmptyState" style="display:none;">
+      <div class="big">&#127850;</div>
+      <div>还没有处理过不安全的 Set-Cookie。开启第三方 Cookie 拦截后，跨站追踪 Cookie 会在这里记录。</div>
+    </div>
+  </div><!-- /viewCookie -->
+
+  <div class="view" id="viewPna">
+    <div class="stats">
+      <div class="stat-card"><div class="stat-num critical" id="pnaStatBlocked">-</div><div class="stat-label">拦截的内网访问次数</div></div>
+      <div class="stat-card"><div class="stat-num" id="pnaStatHosts">-</div><div class="stat-label">涉及内网主机数</div></div>
+    </div>
+    <p class="subtitle">
+      你在公网打开的网页，其脚本本不该能借你的浏览器去访问“更私有”的网络：
+      <strong>本机服务</strong>（127.0.0.1 / localhost）、<strong>内网与路由器后台</strong>
+      （10.x、172.16-31.x、192.168.x）以及<strong>链路本地 / 云主机元数据</strong>
+      （169.254.169.254）。命中即取消该子资源请求，防止 CSRF 打内网、DNS 重绑定和
+      云凭据窃取。<strong>你直接访问内网、或内网页面之间的调用不受影响</strong>；
+      域名形式（如 router.local）在解析前无法判定，会放行以避免误伤。
+    </p>
+    <div class="toolbar" style="margin:12px 0;">
+      <input type="text" id="pnaSearchInput" placeholder="按主机筛选…"
+        style="flex:1;min-width:180px;padding:8px 10px;border-radius:8px;border:1px solid var(--border-color,#dadce0);background:var(--input-bg,#fff);color:inherit;">
+      <button class="btn-primary" id="pnaRefreshBtn" type="button">刷新</button>
+      <button class="btn-danger-ghost" id="pnaClearBtn" type="button">清空台账</button>
+    </div>
+    <div class="event-list" id="pnaList"></div>
+    <div class="empty" id="pnaEmptyState" style="display:none;">
+      <div class="big">&#128274;</div>
+      <div>还没有公网网页尝试访问内网或本机。开启后，可疑的私有网络请求会在这里记录。</div>
+    </div>
+  </div><!-- /viewPna -->
+
+  <div class="view" id="viewFp">
+    <div class="stats">
+      <div class="stat-card"><div class="stat-num critical" id="fpStatHits">-</div><div class="stat-label">收敛的追踪信号次数</div></div>
+      <div class="stat-card"><div class="stat-num" id="fpStatHosts">-</div><div class="stat-label">涉及主机数</div></div>
+      <div class="stat-card"><div class="stat-num" id="fpStatPing">-</div><div class="stat-label">拦截的超链接打点</div></div>
+    </div>
+    <p class="subtitle">
+      现代浏览器会向站点暴露一批高熵特征：完整浏览器版本、操作系统小版本、CPU 架构与位数等
+      <strong>Client Hints</strong>，以及广告兴趣主题 / 归因（Topics、Attribution Reporting）请求头；
+      <strong>&lt;a ping&gt;</strong> 还能在你点击链接时静默向第三方打点。此面板记录被自动剥离的
+      高熵提示、广告信号、超链接打点与站点下发的 <strong>Accept-CH / Critical-CH</strong> 订阅。
+      另在设置里可把 <strong>WebRTC</strong> IP 处理设为严格模式，避免内网 / 真实公网 IP 穿透 VPN 泄漏。
+    </p>
+    <div class="toolbar" style="margin:12px 0;">
+      <input type="text" id="fpSearchInput" placeholder="按主机筛选…"
+        style="flex:1;min-width:180px;padding:8px 10px;border-radius:8px;border:1px solid var(--border-color,#dadce0);background:var(--input-bg,#fff);color:inherit;">
+      <button class="btn-primary" id="fpRefreshBtn" type="button">刷新</button>
+      <button class="btn-danger-ghost" id="fpClearBtn" type="button">清空台账</button>
+    </div>
+    <div class="event-list" id="fpList"></div>
+    <div class="empty" id="fpEmptyState" style="display:none;">
+      <div class="big">&#128065;</div>
+      <div>还没有收敛到指纹 / 广告追踪信号。开启后，高熵 Client Hints、归因头与超链接打点会在这里记录。</div>
+    </div>
+  </div><!-- /viewFp -->
+
+  <div class="view" id="viewDoh">
+    <div class="stats">
+      <div class="stat-card"><div class="stat-num" id="dohStatSupported">-</div><div class="stat-label">宿主是否支持安全 DNS</div></div>
+      <div class="stat-card"><div class="stat-num" id="dohStatActive">-</div><div class="stat-label">当前是否已加密解析</div></div>
+      <div class="stat-card"><div class="stat-num" id="dohStatEvents">-</div><div class="stat-label">状态 / 降级记录</div></div>
+    </div>
+    <p class="subtitle">
+      系统默认的 DNS 多为明文：同网段的人能看到你解析的全部域名，也能用污染应答把你引到钓鱼站。
+      <strong>安全 DNS（DNS-over-HTTPS）</strong>把解析请求经 HTTPS 发往可信解析器。
+      仅允许 <strong>https</strong> 服务器，并拒绝指向本机 / 内网 / 云元数据地址（避免把全部域名泄露给本地攻击者或形成 SSRF）；
+      当自定义服务器非法时会回退到自动模式并记录告警，<strong>绝不静默退回明文</strong>。可在「设置 → 隐私与安全」调整模式与解析器。
+    </p>
+    <div class="toolbar" style="margin:12px 0;">
+      <button class="btn-primary" id="dohRefreshBtn" type="button">刷新状态</button>
+      <button class="btn-danger-ghost" id="dohClearBtn" type="button">清空记录</button>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 14px;">
+      <span style="font-size:13px;color:var(--text-secondary,#5f6368);align-self:center;">当前模式：</span>
+      <span class="chip" id="dohModeChip">-</span>
+      <span style="font-size:13px;color:var(--text-secondary,#5f6368);align-self:center;">解析器：</span>
+      <span class="chip" id="dohProviderChip">-</span>
+    </div>
+    <div class="event-list" id="dohList"></div>
+    <div class="empty" id="dohEmptyState" style="display:none;">
+      <div class="big">&#128274;</div>
+      <div>暂无安全 DNS 状态记录。切换模式或解析器后会在这里显示应用 / 降级结果。</div>
+    </div>
+    <h3 style="margin:20px 0 8px;font-size:15px;">响应头强制关闭的浏览器能力</h3>
+    <p class="subtitle">
+      下列广告 / 跨站追踪特性由 Permissions-Policy 内核强制下发 <code>()</code>，
+      任何站点都无法重新开启；特性名做白名单校验，防止响应头注入。
+    </p>
+    <div id="permForcedList" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;"></div>
+  </div><!-- /viewDoh -->
+
+  <div class="view" id="viewDload">
+    <div class="stats">
+      <div class="stat-card"><div class="stat-num" id="dloadStatConfirm">-</div><div class="stat-label">需确认 / 已拦截的高风险下载</div></div>
+      <div class="stat-card"><div class="stat-num" id="dloadStatWarn">-</div><div class="stat-label">已保存但提示的风险</div></div>
+      <div class="stat-card"><div class="stat-num" id="dloadStatReject">-</div><div class="stat-label">文件名非法直接拒绝</div></div>
+    </div>
+    <p class="subtitle">
+      下载安全不能只看最后一个扩展名。这里记录每次下载的<strong>文件名伪装分析</strong>：
+      双扩展名伪装（<code>发票.exe.pdf</code>）、RTL 反转字符、结尾点空格、Windows 保留设备名、
+      MIME 内容类型与扩展名不符等；可执行 / 伪装文件会<strong>先弹原生确认</strong>，文件名无法净化的直接取消，
+      压缩 / 镜像容器（内部文件不继承网络来源标记）与本地 HTML 会保存但提示。
+    </p>
+    <div class="toolbar" style="margin:12px 0;">
+      <button class="btn-primary" id="dloadRefreshBtn" type="button">刷新记录</button>
+      <button class="btn-danger-ghost" id="dloadClearBtn" type="button">清空记录</button>
+    </div>
+    <div class="event-list" id="dloadRiskList"></div>
+    <div class="empty" id="dloadEmptyState" style="display:none;">
+      <div class="big">&#128229;</div>
+      <div>暂无下载风险记录。出现可执行 / 伪装 / 类型不符的下载时会在这里列出命中的具体原因。</div>
+    </div>
+
+    <h3 style="margin:22px 0 8px;font-size:15px;">链接净化（去追踪参数 / 解跳转包装）</h3>
+    <p class="subtitle">
+      粘贴一条分享链接，可剥离 <code>utm_*</code>、<code>fbclid</code>、<code>gclid</code> 等公认营销 / 跨站追踪参数，
+      并解出 Google / Facebook 等“跳转包装”链接里的真实目标。纯本地处理，不会发起网络请求。
+    </p>
+    <div style="display:flex;flex-direction:column;gap:8px;margin:10px 0;">
+      <input type="text" id="cleanUrlInput" placeholder="https://www.google.com/url?q=https%3A%2F%2Fexample.com%2Fp%3Futm_source%3Dx"
+        style="width:100%;padding:9px 11px;border-radius:8px;border:1px solid var(--border,#dadce0);background:var(--surface,#fff);color:inherit;box-sizing:border-box;" />
+      <div style="display:flex;gap:8px;">
+        <button class="btn-primary" id="cleanUrlBtn" type="button">净化链接</button>
+        <button class="btn-ghost" id="copyCleanUrlBtn" type="button">复制结果</button>
+      </div>
+      <div class="chip" id="cleanUrlMeta" style="display:none;align-self:flex-start;"></div>
+      <input type="text" id="cleanUrlOutput" readonly placeholder="净化后的链接会显示在这里"
+        style="width:100%;padding:9px 11px;border-radius:8px;border:1px solid var(--border,#dadce0);background:var(--surface,#fff);color:inherit;box-sizing:border-box;" />
+    </div>
+  </div><!-- /viewDload -->
+</div>
+
+<div class="modal-mask" id="confirmModal">
+  <div class="modal">
+    <div class="modal-head">确认操作</div>
+    <div class="modal-body">将清空全部安全事件记录，且无法恢复。继续？</div>
+    <div class="modal-foot">
+      <button class="btn-ghost" id="confirmCancel">取消</button>
+      <button class="btn-danger-ghost" id="confirmOk">确认清空</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+const api = window.electronAPI;
+const state = { rows: [] };
+
+const TYPE_LABELS = {
+  'protocol-blocked': '外部协议拦截',
+  'protocol-denied': '外部协议拒绝',
+  'download-blocked': '下载拦截',
+  'download-rejected': '危险下载取消',
+  'permission-blocked': '浏览器权限拒绝',
+  'device-permission-blocked': '设备权限拒绝',
+  'extension-blocked': '扩展拦截',
+  'mixed-content-blocked': '混合内容拦截',
+  'auth-blocked': '凭据探测拦截',
+  'auth-rate-limited': '认证弹框限流',
+  'client-cert-blocked': '客户端证书保护',
+};
+const SEVERITY_LABELS = { info: '提示', warn: '警告', critical: '高危' };
+
+const $ = id => document.getElementById(id);
+
+function applyDarkMode() {
+  let settings = {};
+  try { settings = JSON.parse(localStorage.getItem('cosySettings') || '{}'); } catch { settings = {}; }
+  if (settings.darkMode === true || settings.darkMode === 'true') {
+    document.body.classList.add('dark-mode');
+  }
+}
+
+function toast(message, isError = false) {
+  const el = $('toast');
+  el.textContent = message;
+  el.classList.toggle('error', isError);
+  el.classList.add('show');
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+function showConfirm(message) {
+  return new Promise(resolve => {
+    const modal = $('confirmModal');
+    if (message) document.querySelector('#confirmModal .modal-body').textContent = message;
+    modal.classList.add('show');
+    const done = ok => {
+      modal.classList.remove('show');
+      $('confirmOk').onclick = null;
+      $('confirmCancel').onclick = null;
+      resolve(ok);
+    };
+    $('confirmOk').onclick = () => done(true);
+    $('confirmCancel').onclick = () => done(false);
+  });
+}
+
+function formatTime(ts) {
+  const n = Number(ts);
+  if (!n) return '';
+  try { return new Date(n).toLocaleString(); } catch { return ''; }
+}
+
+function render() {
+  const query = $('searchInput').value.trim().toLowerCase();
+  const type = $('filterSelect').value;
+  const severity = $('severitySelect').value;
+  const list = $('eventList');
+  list.textContent = '';
+
+  let warnCount = 0, criticalCount = 0;
+  for (const e of state.rows) {
+    if (e.severity === 'warn') warnCount++;
+    if (e.severity === 'critical') criticalCount++;
+  }
+  $('statTotal').textContent = state.rows.length;
+  $('statWarn').textContent = warnCount;
+  $('statCritical').textContent = criticalCount;
+
+  const rows = state.rows.filter(e => {
+    if (type && e.type !== type) return false;
+    if (severity && e.severity !== severity) return false;
+    if (state.timeRange !== 'all' && !timeInRange(e.time || e.ts, state.timeRange)) return false;
+    if (query) {
+      const hay = ((e.origin || '') + ' ' + (e.detail || '') + ' ' + (TYPE_LABELS[e.type] || '')).toLowerCase();
+      if (!hay.includes(query)) return false;
+    }
+    return true;
+  });
+
+  $('emptyState').style.display = rows.length ? 'none' : 'block';
+  $('emptyText').textContent = query || type || severity ? '没有事件匹配当前筛选' : '近期没有安全拦截事件';
+
+  // 所有内容一律走 textContent，事件明细来自 URL / 文件名等不可信数据。
+  for (const e of rows) {
+    const row = document.createElement('div');
+    row.className = 'event-row severity-' + (e.severity || 'info');
+
+    const head = document.createElement('div');
+    head.className = 'event-head';
+
+    const typeLabel = document.createElement('span');
+    typeLabel.className = 'event-type';
+    typeLabel.textContent = TYPE_LABELS[e.type] || e.type;
+
+    const badge = document.createElement('span');
+    badge.className = 'badge ' + (e.severity || 'info');
+    badge.textContent = SEVERITY_LABELS[e.severity] || e.severity || 'info';
+
+    const origin = document.createElement('span');
+    origin.className = 'event-origin';
+    origin.textContent = e.origin || '未知来源';
+    origin.title = e.origin || '';
+
+    const time = document.createElement('span');
+    time.className = 'event-time';
+    time.textContent = formatTime(e.time);
+
+    head.append(typeLabel, badge);
+    if (e.origin) head.appendChild(origin);
+    head.appendChild(time);
+
+    const detail = document.createElement('div');
+    detail.className = 'event-detail';
+    detail.textContent = e.detail || '';
+
+    row.append(head, detail);
+    list.appendChild(row);
+  }
+}
+
+async function loadData() {
+  $('refreshBtn').disabled = true;
+  try {
+    const rows = await api.invoke('list-security-events', { type: '', limit: 1000 });
+    state.rows = Array.isArray(rows) ? rows : [];
+    buildTimeRangeChips();
+    render();
+  } catch (e) {
+    toast('加载失败：' + (e && e.message ? e.message : e), true);
+  } finally {
+    $('refreshBtn').disabled = false;
+  }
+}
+
+$('refreshBtn').onclick = loadData;
+
+// 导出当前安全事件（按当前严重级筛选结果）为 JSON 文件，便于离线分析或
+// 反馈给开发者；字段经过裁剪，不含 Cookie / 凭据 / 本地路径细节。
+function exportEvents() {
+  const sev = $('severitySelect') ? $('severitySelect').value : '';
+  const range = state.timeRange || 'all';
+  const rows = (Array.isArray(state.rows) ? state.rows : [])
+    .filter(r => !sev || r.severity === sev)
+    .filter(r => range === 'all' || timeInRange(r.time || r.ts, range))
+    .map(r => ({
+      time: r.ts || r.time || 0,
+      type: String(r.type || ''),
+      severity: String(r.severity || 'info'),
+      summary: String(r.summary || '').slice(0, 300),
+      host: String(r.host || '').slice(0, 200),
+    }));
+  const data = { exportedAt: new Date().toISOString(), filter: sev || 'all', range: range, count: rows.length, events: rows };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'cosy-security-events-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 800);
+  toast('已导出 ' + rows.length + ' 条事件');
+}
+
+// 时间范围筛选：全部 / 近24小时 / 近7天 / 近30天。
+// 事件时间戳来自 main 进程（list-security-events），只读展示，不做任何解析回写。
+state.timeRange = 'all';
+const TIME_RANGES = [
+  { key: 'all', label: '全部' },
+  { key: '24h', label: '近24小时' },
+  { key: '7d', label: '近7天' },
+  { key: '30d', label: '近30天' },
+];
+function timeInRange(ts, range) {
+  const n = Number(ts);
+  if (!Number.isFinite(n) || n <= 0) return range === 'all';
+  const ms = { '24h': 86400000, '7d': 604800000, '30d': 2592000000 }[range];
+  return Date.now() - n <= ms;
+}
+function buildTimeRangeChips() {
+  const host = $('filterSelect').parentElement;
+  if (!host || host.querySelector('.range-chips')) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'range-chips';
+  for (const r of TIME_RANGES) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'range-chip' + (state.timeRange === r.key ? ' active' : '');
+    chip.textContent = r.label;
+    chip.dataset.range = r.key;
+    chip.onclick = () => {
+      state.timeRange = r.key;
+      wrap.querySelectorAll('.range-chip').forEach(c => c.classList.toggle('active', c.dataset.range === r.key));
+      render();
+    };
+    wrap.appendChild(chip);
+  }
+  host.appendChild(wrap);
+}
+
+$('exportBtn').onclick = exportEvents;
+$('clearBtn').onclick = async () => {
+  const ok = await showConfirm('将清空全部安全事件记录，且无法恢复。继续？');
+  if (!ok) return;
+  const r = await api.invoke('clear-security-events');
+  if (r && r.success) { toast('已清空安全事件记录'); loadData(); }
+  else toast('清空失败', true);
+};
+
+// ===== CSP 违规报告面板 =====
+const cspState = { rows: [] };
+
+function switchView(which) {
+  const map = {
+    events: ['tabEvents', 'viewEvents'],
+    csp: ['tabCsp', 'viewCsp'],
+    headers: ['tabHeaders', 'viewHeaders'],
+    requests: ['tabRequests', 'viewRequests'],
+    brand: ['tabBrand', 'viewBrand'],
+    cert: ['tabCert', 'viewCert'],
+    netauth: ['tabNetAuth', 'viewNetAuth'],
+    cookie: ['tabCookie', 'viewCookie'],
+    pna: ['tabPna', 'viewPna'],
+    fp: ['tabFp', 'viewFp'],
+    doh: ['tabDoh', 'viewDoh'],
+    dload: ['tabDload', 'viewDload'],
+  };
+  for (const [key, [tabId, viewId]] of Object.entries(map)) {
+    $(tabId).classList.toggle('active', key === which);
+    $(viewId).classList.toggle('active', key === which);
+  }
+  if (which === 'csp') loadCspData();
+  if (which === 'headers') loadHeaderGradeData();
+  if (which === 'requests') loadRequestLogData();
+  if (which === 'brand') loadBrandSpoofData();
+  if (which === 'cert') loadCertExceptionsData();
+  if (which === 'netauth') loadNetAuthData();
+  if (which === 'cookie') loadCookieData();
+  if (which === 'pna') loadPnaData();
+  if (which === 'fp') loadFpData();
+  if (which === 'doh') loadDohData();
+  if (which === 'dload') loadDownloadRisksData();
+}
+$('tabEvents').onclick = () => switchView('events');
+$('tabCsp').onclick = () => switchView('csp');
+$('tabHeaders').onclick = () => switchView('headers');
+$('tabRequests').onclick = () => switchView('requests');
+$('tabBrand').onclick = () => switchView('brand');
+$('tabCert').onclick = () => switchView('cert');
+$('tabNetAuth').onclick = () => switchView('netauth');
+$('tabCookie').onclick = () => switchView('cookie');
+$('tabPna').onclick = () => switchView('pna');
+$('tabFp').onclick = () => switchView('fp');
+$('tabDoh').onclick = () => switchView('doh');
+$('tabDload').onclick = () => switchView('dload');
+
+function updateCspBadge() {
+  const badge = $('cspCountBadge');
+  const n = cspState.rows.length;
+  badge.style.display = n ? 'inline-block' : 'none';
+  badge.textContent = n > 99 ? '99+' : String(n);
+}
+
+function renderCsp() {
+  const query = $('cspSearchInput').value.trim().toLowerCase();
+  const list = $('cspList');
+  list.textContent = '';
+  const rows = cspState.rows.filter(r => {
+    if (!query) return true;
+    const hay = [r.documentUri, r.directive, r.blockedUri, r.sourceFile].join(' ').toLowerCase();
+    return hay.includes(query);
+  });
+  $('cspEmptyState').style.display = rows.length ? 'none' : 'block';
+  $('cspEmptyText').textContent = query ? '没有 CSP 报告匹配当前搜索' : '内部页面没有 CSP 违规记录';
+
+  for (const r of rows) {
+    const row = document.createElement('div');
+    row.className = 'event-row severity-warn';
+
+    const head = document.createElement('div');
+    head.className = 'event-head';
+
+    const dir = document.createElement('span');
+    dir.className = 'event-type mono';
+    dir.textContent = r.directive || '(未知指令)';
+    if (r.hits > 1) {
+      const hitsTag = document.createElement('span');
+      hitsTag.className = 'hits-badge';
+      hitsTag.textContent = '×' + r.hits;
+      hitsTag.title = '同一页面 / 指令 / 被拦截资源累计触发次数';
+      dir.appendChild(hitsTag);
+    }
+
+    const badge = document.createElement('span');
+    badge.className = 'badge ' + (r.disposition === 'report' ? 'info' : 'warn');
+    badge.textContent = r.disposition === 'report' ? '仅报告' : '已拦截';
+
+    const time = document.createElement('span');
+    time.className = 'event-time';
+    time.textContent = formatTime(r.lastTime || r.time);
+    time.title = r.hits > 1 ? '最近一次触发时间' : '';
+
+    // event-type 自身 flex:1，会把后面的控件整体推到行尾。
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'row-remove';
+    removeBtn.textContent = '删除';
+    removeBtn.onclick = async () => {
+      const res = await api.invoke('remove-csp-report', { id: r.id });
+      if (res && res.success) { toast('已删除该条 CSP 报告'); loadCspData(); }
+      else toast('删除失败', true);
+    };
+
+    head.append(dir, badge, time, removeBtn);
+    row.appendChild(head);
+
+    if (r.hits > 1) {
+      const hits = document.createElement('div');
+      hits.className = 'csp-meta';
+      hits.textContent = '累计触发 ' + r.hits + ' 次（同一页面 / 指令 / 被拦截资源已合并，时间为最近一次）';
+      row.appendChild(hits);
+    }
+    if (r.blockedUri && r.blockedUri !== 'about:blank#blocked') {
+      const blocked = document.createElement('div');
+      blocked.className = 'csp-meta';
+      blocked.textContent = '被拦截资源：' + r.blockedUri;
+      row.appendChild(blocked);
+    }
+    if (r.sourceFile) {
+      const src = document.createElement('div');
+      src.className = 'csp-meta';
+      src.textContent = '触发位置：' + r.sourceFile +
+        (r.lineNumber ? ':' + r.lineNumber + (r.columnNumber ? ':' + r.columnNumber : '') : '');
+      row.appendChild(src);
+    }
+    const doc = document.createElement('div');
+    doc.className = 'csp-meta';
+    doc.textContent = '内部页面：' + (r.documentUri || '未知');
+    row.appendChild(doc);
+
+    list.appendChild(row);
+  }
+  updateCspBadge();
+}
+
+async function loadCspData() {
+  $('cspRefreshBtn').disabled = true;
+  try {
+    const rows = await api.invoke('list-csp-reports', { limit: 500 });
+    cspState.rows = Array.isArray(rows) ? rows : [];
+    renderCsp();
+  } catch (e) {
+    toast('CSP 报告加载失败：' + (e && e.message ? e.message : e), true);
+  } finally {
+    $('cspRefreshBtn').disabled = false;
+  }
+}
+
+$('cspRefreshBtn').onclick = loadCspData;
+$('cspSearchInput').addEventListener('input', renderCsp);
+$('cspClearBtn').onclick = async () => {
+  const ok = await showConfirm('将清空全部 CSP 违规报告，且无法恢复。继续？');
+  if (!ok) return;
+  const r = await api.invoke('clear-csp-reports');
+  if (r && r.success) { toast('已清空 CSP 报告'); loadCspData(); }
+  else toast('清空失败', true);
+};
+
+// 主进程记录新报告后刷新角标；停留在 CSP 面板时同步列表。
+api.on('csp-report-added', () => {
+  if ($('viewCsp').classList.contains('active')) {
+    loadCspData();
+  } else {
+    // 后台轻量刷新，只让角标数字保持最新。
+    api.invoke('list-csp-reports', { limit: 500 }).then(rows => {
+      cspState.rows = Array.isArray(rows) ? rows : [];
+      updateCspBadge();
+    }).catch(() => {});
+  }
+});
+// ===== 站点响应安全头评级面板 =====
+const hgState = { rows: [] };
+
+function updateHeaderBadge() {
+  const badge = $('headerCountBadge');
+  let weak = 0;
+  for (const h of hgState.rows) if (h.grade === 'D' || h.grade === 'F') weak++;
+  badge.style.display = weak ? 'inline-block' : 'none';
+  badge.textContent = weak > 99 ? '99+' : String(weak);
+}
+
+function renderHeaderGrades() {
+  const query = $('hgSearchInput').value.trim().toLowerCase();
+  const gradeFilter = $('hgGradeSelect').value;
+  const list = $('hgList');
+  list.textContent = '';
+
+  let weak = 0, insecure = 0;
+  for (const h of hgState.rows) {
+    if (h.grade === 'D' || h.grade === 'F') weak++;
+    if (h.insecureTransport) insecure++;
+  }
+  $('hgStatHosts').textContent = hgState.rows.length;
+  $('hgStatWeak').textContent = weak;
+  $('hgStatInsecure').textContent = insecure;
+
+  const rows = hgState.rows.filter(h => {
+    if (query && !(h.host || '').toLowerCase().includes(query)) return false;
+    if (gradeFilter === 'weak') return h.grade === 'D' || h.grade === 'F';
+    if (gradeFilter && h.grade !== gradeFilter) return false;
+    return true;
+  });
+
+  $('hgEmptyState').style.display = rows.length ? 'none' : 'block';
+  $('hgEmptyText').textContent = query || gradeFilter ? '没有站点匹配当前筛选' : '还没有站点安全头评级，浏览几个网站后这里会自动汇总';
+
+  for (const h of rows) {
+    const row = document.createElement('div');
+    row.className = 'event-row';
+
+    const head = document.createElement('div');
+    head.className = 'event-head';
+
+    const letter = document.createElement('span');
+    letter.className = 'grade-letter g' + (h.grade || 'F');
+    letter.textContent = h.grade || '?';
+    letter.title = (h.percent || 0) + ' / 100';
+
+    const hostWrap = document.createElement('div');
+    hostWrap.style.flex = '1';
+    hostWrap.style.minWidth = '0';
+    const host = document.createElement('div');
+    host.className = 'grade-host';
+    host.textContent = h.host || '未知主机';
+    if (h.insecureTransport) {
+      const httpTag = document.createElement('span');
+      httpTag.className = 'badge critical';
+      httpTag.textContent = 'HTTP 明文';
+      httpTag.style.marginLeft = '8px';
+      host.appendChild(httpTag);
+    }
+    const barWrap = document.createElement('div');
+    barWrap.className = 'grade-bar-wrap';
+    const bar = document.createElement('div');
+    bar.className = 'grade-bar';
+    bar.style.width = Math.max(0, Math.min(100, Number(h.percent) || 0)) + '%';
+    barWrap.appendChild(bar);
+    hostWrap.append(host, barWrap);
+
+    const time = document.createElement('span');
+    time.className = 'event-time';
+    time.textContent = formatTime(h.time);
+
+    head.append(letter, hostWrap, time);
+    row.appendChild(head);
+
+    const checks = Array.isArray(h.checks) ? h.checks : [];
+    if (checks.length) {
+      const chips = document.createElement('div');
+      for (const c of checks) {
+        if (c.status === 'pass') continue; // 只把缺失/半项铺出来，满项不刷屏
+        const chip = document.createElement('span');
+        chip.className = 'check-chip ' + (c.status === 'missing' ? 'missing' : '');
+        chip.textContent = (c.status === 'partial' ? '△ ' : '✕ ') + (c.name || c.id);
+        chip.title = c.note || '';
+        chips.appendChild(chip);
+      }
+      if (chips.children.length) row.appendChild(chips);
+    }
+
+    const warnings = Array.isArray(h.warnings) ? h.warnings : [];
+    for (const w of warnings.slice(0, 3)) {
+      const warn = document.createElement('div');
+      warn.className = 'csp-meta';
+      warn.textContent = '⚠ ' + w;
+      row.appendChild(warn);
+    }
+
+    list.appendChild(row);
+  }
+  updateHeaderBadge();
+}
+
+async function loadHeaderGradeData() {
+  $('hgRefreshBtn').disabled = true;
+  try {
+    const rows = await api.invoke('list-header-grades', { limit: 300 });
+    hgState.rows = Array.isArray(rows) ? rows : [];
+    renderHeaderGrades();
+  } catch (e) {
+    toast('站点评级加载失败：' + (e && e.message ? e.message : e), true);
+  } finally {
+    $('hgRefreshBtn').disabled = false;
+  }
+}
+
+$('hgRefreshBtn').onclick = loadHeaderGradeData;
+$('hgSearchInput').addEventListener('input', renderHeaderGrades);
+$('hgGradeSelect').addEventListener('change', renderHeaderGrades);
+$('hgClearBtn').onclick = async () => {
+  const ok = await showConfirm('将清空全部站点安全头评级，且无法恢复。继续？');
+  if (!ok) return;
+  const r = await api.invoke('clear-header-grades');
+  if (r && r.success) { toast('已清空站点评级'); loadHeaderGradeData(); }
+  else toast('清空失败', true);
+};
+
+// 浏览到新站点、评级落库后，角标与当前列表实时刷新。
+api.on('header-grade-updated', () => {
+  if ($('viewHeaders').classList.contains('active')) {
+    loadHeaderGradeData();
+  } else {
+    api.invoke('list-header-grades', { limit: 300 }).then(rows => {
+      hgState.rows = Array.isArray(rows) ? rows : [];
+      updateHeaderBadge();
+    }).catch(() => {});
+  }
+});
+
+// ===== 后台跨主机连接台账 =====
+const reqState = { rows: [] };
+
+function updateReqBadge(count) {
+  const badge = $('reqCountBadge');
+  const n = Number(count) || 0;
+  badge.style.display = n ? 'inline-block' : 'none';
+  badge.textContent = n > 99 ? '99+' : String(n);
+}
+
+function renderRequestLog() {
+  const query = $('reqSearchInput').value.trim().toLowerCase();
+  const filter = $('reqFilterSelect').value;
+  const list = $('reqList');
+  list.textContent = '';
+
+  const rows = reqState.rows.filter(r => {
+    if (query && !(r.host || '').toLowerCase().includes(query)) return false;
+    if (filter === 'background' && r.navigated) return false;
+    if (filter === 'blocked' && !(r.blocked > 0)) return false;
+    if (filter === 'insecure' && !(r.http > 0)) return false;
+    return true;
+  });
+
+  $('reqEmptyState').style.display = rows.length ? 'none' : 'block';
+  $('reqEmptyText').textContent = query || filter ? '没有主机匹配当前筛选' : '还没有连接记录，浏览几个网站后这里会按主机汇总后台请求';
+
+  for (const r of rows) {
+    const row = document.createElement('div');
+    row.className = 'event-row';
+
+    const head = document.createElement('div');
+    head.className = 'event-head';
+
+    const hostWrap = document.createElement('div');
+    hostWrap.style.flex = '1';
+    hostWrap.style.minWidth = '0';
+    const host = document.createElement('div');
+    host.className = 'grade-host';
+    host.textContent = r.host || '未知主机';
+    if (r.http > 0 && r.https === 0) {
+      const tag = document.createElement('span');
+      tag.className = 'badge critical';
+      tag.textContent = '仅 HTTP';
+      tag.style.marginLeft = '8px';
+      host.appendChild(tag);
+    }
+    if (!r.navigated) {
+      const tag = document.createElement('span');
+      tag.className = 'badge neutral';
+      tag.textContent = '后台';
+      tag.style.marginLeft = '8px';
+      host.appendChild(tag);
+    }
+    hostWrap.appendChild(host);
+
+    const nums = document.createElement('div');
+    nums.className = 'event-type';
+    const total = document.createElement('strong');
+    total.textContent = r.requests + ' 次';
+    nums.appendChild(total);
+    if (r.blocked > 0) {
+      const blk = document.createElement('span');
+      blk.className = 'csp-meta';
+      blk.style.color = '#c42b1c';
+      blk.textContent = '已拦 ' + r.blocked;
+      blk.style.marginLeft = '10px';
+      nums.appendChild(blk);
+    }
+    hostWrap.appendChild(nums);
+
+    const time = document.createElement('span');
+    time.className = 'event-time';
+    time.textContent = formatTime(r.lastTime);
+
+    head.append(hostWrap, time);
+    row.appendChild(head);
+
+    const types = Array.isArray(r.types) ? r.types : [];
+    if (types.length) {
+      const chips = document.createElement('div');
+      for (const t of types.slice(0, 8)) {
+        const chip = document.createElement('span');
+        chip.className = 'check-chip';
+        chip.textContent = (t.type || 'other') + ' ×' + t.count;
+        chips.appendChild(chip);
+      }
+      row.appendChild(chips);
+    }
+    list.appendChild(row);
+  }
+}
+
+function applyReqStats(s) {
+  if (!s) return;
+  $('reqStatHosts').textContent = s.hosts || 0;
+  $('reqStatRequests').textContent = s.requests || 0;
+  $('reqStatBackground').textContent = s.backgroundHosts || 0;
+  $('reqStatBlocked').textContent = s.blocked || 0;
+  updateReqBadge(s.backgroundHosts || 0);
+}
+
+async function loadRequestLogData() {
+  $('reqRefreshBtn').disabled = true;
+  try {
+    const [rows, s] = await Promise.all([
+      api.invoke('list-request-log', { limit: 400 }),
+      api.invoke('get-request-log-stats'),
+    ]);
+    reqState.rows = Array.isArray(rows) ? rows : [];
+    applyReqStats(s);
+    renderRequestLog();
+  } catch (e) {
+    toast('连接台账加载失败：' + (e && e.message ? e.message : e), true);
+  } finally {
+    $('reqRefreshBtn').disabled = false;
+  }
+}
+
+$('reqRefreshBtn').onclick = loadRequestLogData;
+$('reqSearchInput').addEventListener('input', renderRequestLog);
+$('reqFilterSelect').addEventListener('change', renderRequestLog);
+$('reqClearBtn').onclick = async () => {
+  const ok = await showConfirm('将清空全部后台连接台账，且无法恢复。继续？');
+  if (!ok) return;
+  const r = await api.invoke('clear-request-log');
+  if (r && r.success) { toast('已清空连接台账'); loadRequestLogData(); }
+  else toast('清空失败', true);
+};
+
+api.on('request-log-updated', s => {
+  applyReqStats(s);
+  if ($('viewRequests').classList.contains('active')) loadRequestLogData();
+});
+
+// ===== 品牌仿冒 / 拼写劫持面板 =====
+const brandState = { rows: [] };
+const BRAND_REASON_LABELS = {
+  'typo-domain': '拼写劫持',
+  'brand-in-subdomain': '子域碰瓷',
+  'brand-keyword-impersonation': '品牌词+诱导词',
+  'url-structural': 'URL结构钓鱼',
+};
+
+function updateBrandBadge(n) {
+  const badge = $('brandCountBadge');
+  badge.style.display = n ? 'inline-block' : 'none';
+  badge.textContent = n > 99 ? '99+' : String(n);
+}
+
+function renderBrandSpoof() {
+  const query = $('brandSearchInput').value.trim().toLowerCase();
+  const reason = $('brandFilterSelect').value;
+  const list = $('brandList');
+  list.textContent = '';
+  const rows = brandState.rows.filter(r => {
+    if (reason && r.reason !== reason) return false;
+    if (query) {
+      const hay = ((r.host || '') + ' ' + (r.brand || '') + ' ' + (r.hint || '')).toLowerCase();
+      if (!hay.includes(query)) return false;
+    }
+    return true;
+  });
+  $('brandEmptyState').style.display = rows.length ? 'none' : 'block';
+  $('brandEmptyText').textContent = query || reason ? '没有记录匹配当前筛选' : '还没有品牌仿冒提示';
+
+  for (const r of rows) {
+    const row = document.createElement('div');
+    row.className = 'event-row severity-critical';
+
+    const head = document.createElement('div');
+    head.className = 'event-head';
+
+    const typeLabel = document.createElement('span');
+    typeLabel.className = 'event-type';
+    typeLabel.textContent = BRAND_REASON_LABELS[r.reason] || r.reason;
+
+    const badge = document.createElement('span');
+    badge.className = 'badge critical';
+    badge.textContent = r.brand ? ('冒充 ' + r.brand) : '疑似钓鱼';
+
+    const host = document.createElement('span');
+    host.className = 'event-origin mono';
+    host.textContent = r.host || '';
+    host.title = r.host || '';
+
+    const time = document.createElement('span');
+    time.className = 'event-time';
+    time.textContent = formatTime(r.lastTime);
+
+    head.append(typeLabel, badge);
+    head.appendChild(host);
+    head.appendChild(time);
+
+    const detail = document.createElement('div');
+    detail.className = 'event-detail';
+    const hitCount = Number(r.count) || 1;
+    detail.textContent = '命中品牌拼写 “' + (r.hint || r.brand || '') + '”，共提示 ' + hitCount +
+      ' 次，首次 ' + formatTime(r.firstTime) + '。请勿在此站点输入账号或付款信息。';
+
+    row.append(head, detail);
+    list.appendChild(row);
+  }
+}
+
+function applyBrandStats(s) {
+  if (!s) return;
+  $('brandStatHosts').textContent = s.hosts || 0;
+  $('brandStatTypo').textContent = (s.byReason && s.byReason['typo-domain']) || 0;
+  $('brandStatSub').textContent = (s.byReason && s.byReason['brand-in-subdomain']) || 0;
+  $('brandStatStruct').textContent = (s.byReason && s.byReason['url-structural']) || 0;
+  $('brandStatBrand').textContent = s.distinctBrands || 0;
+  updateBrandBadge(s.hosts || 0);
+}
+
+async function loadBrandSpoofData() {
+  $('brandRefreshBtn').disabled = true;
+  try {
+    const [rows, s] = await Promise.all([
+      api.invoke('list-brand-spoofs', { limit: 300 }),
+      api.invoke('get-brand-spoof-stats'),
+    ]);
+    brandState.rows = Array.isArray(rows) ? rows : [];
+    applyBrandStats(s);
+    renderBrandSpoof();
+  } catch (e) {
+    toast('品牌仿冒台账加载失败：' + (e && e.message ? e.message : e), true);
+  } finally {
+    $('brandRefreshBtn').disabled = false;
+  }
+}
+
+$('brandRefreshBtn').onclick = loadBrandSpoofData;
+$('brandSearchInput').addEventListener('input', renderBrandSpoof);
+$('brandFilterSelect').addEventListener('change', renderBrandSpoof);
+$('brandClearBtn').onclick = async () => {
+  const ok = await showConfirm('将清空全部品牌仿冒记录，且无法恢复。继续？');
+  if (!ok) return;
+  const r = await api.invoke('clear-brand-spoofs');
+  if (r && r.success) { toast('已清空品牌仿冒记录'); loadBrandSpoofData(); }
+  else toast('清空失败', true);
+};
+
+api.on('brand-spoof-updated', s => {
+  applyBrandStats(s);
+  if ($('viewBrand').classList.contains('active')) loadBrandSpoofData();
+});
+
+// ===== 证书例外面板 =====
+const certState = { rows: [] };
+
+function shortFp(fp) {
+  fp = String(fp || '').replace(/[^0-9a-fA-F]/g, '').toLowerCase();
+  if (fp.length !== 64) return fp;
+  return fp.slice(0, 8) + '…' + fp.slice(-8);
+}
+
+function applyCertStats(s) {
+  s = s || {};
+  $('certStatTotal').textContent = s.exceptions || 0;
+  $('certStatHosts').textContent = s.hosts || 0;
+  const badge = $('certCountBadge');
+  const n = s.exceptions || 0;
+  badge.style.display = n ? 'inline-block' : 'none';
+  badge.textContent = n > 99 ? '99+' : String(n);
+}
+
+function renderCertExceptions() {
+  const query = $('certSearchInput').value.trim().toLowerCase();
+  const list = $('certList');
+  list.textContent = '';
+  const rows = certState.rows.filter(r => !query || String(r.host || '').toLowerCase().includes(query));
+  $('certEmptyState').style.display = rows.length ? 'none' : 'block';
+  $('certEmptyText').textContent = query ? '没有例外匹配当前搜索' : '还没有证书例外，放行自签名站点后会显示在这里';
+
+  for (const r of rows) {
+    const row = document.createElement('div');
+    row.className = 'event-row severity-critical';
+
+    const head = document.createElement('div');
+    head.className = 'event-head';
+    const host = document.createElement('span');
+    host.textContent = r.host || '';
+    const time = document.createElement('span');
+    time.className = 'event-time';
+    time.textContent = r.addedAt ? formatTime(r.addedAt) : '';
+    head.appendChild(host);
+    head.appendChild(time);
+    row.appendChild(head);
+
+    const meta = document.createElement('div');
+    meta.style.cssText = 'margin-top:4px;font-size:12px;color:#9aa0a6;word-break:break-all;';
+    const bits = [
+      r.code ? '错误 ' + r.code : '',
+      r.issuer ? '颁发者 ' + r.issuer : '',
+      r.fingerprint ? '指纹 ' + shortFp(r.fingerprint) : '',
+    ].filter(Boolean);
+    meta.textContent = bits.join('　·　');
+    row.appendChild(meta);
+
+    const actions = document.createElement('div');
+    actions.style.cssText = 'margin-top:8px;';
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'btn-danger-ghost';
+    del.textContent = '删除该例外';
+    del.addEventListener('click', async () => {
+      const ok = await showConfirm(`删除 ${r.host} 的证书例外后，下次访问将重新拦截。继续？`);
+      if (!ok) return;
+      const res = await api.invoke('remove-cert-exception', { host: r.host, fingerprint: r.fingerprint });
+      if (res && res.ok) { toast('已删除该例外'); loadCertExceptionsData(); }
+      else toast('删除失败', true);
+    });
+    actions.appendChild(del);
+    row.appendChild(actions);
+
+    list.appendChild(row);
+  }
+}
+
+async function loadCertExceptionsData() {
+  $('certRefreshBtn').disabled = true;
+  try {
+    const res = await api.invoke('list-cert-exceptions', { limit: 300 });
+    certState.rows = (res && Array.isArray(res.entries)) ? res.entries : [];
+    applyCertStats(res && res.stats);
+    renderCertExceptions();
+  } catch (e) {
+    toast('证书例外台账加载失败：' + (e && e.message ? e.message : e), true);
+  } finally {
+    $('certRefreshBtn').disabled = false;
+  }
+}
+// 供浏览器主界面 renderer 在例外变更时调用（本页存在时刷新角标）。
+function refreshCertExceptions() {
+  api.invoke('get-cert-exception-stats').then(applyCertStats).catch(() => {});
+  if ($('viewCert').classList.contains('active')) loadCertExceptionsData();
+}
+
+$('certRefreshBtn').onclick = loadCertExceptionsData;
+$('certSearchInput').addEventListener('input', renderCertExceptions);
+$('certClearBtn').onclick = async () => {
+  const ok = await showConfirm('将清空全部证书例外，被放行的自签名站点下次将重新拦截。继续？');
+  if (!ok) return;
+  const res = await api.invoke('clear-cert-exceptions');
+  if (res && res.ok) { toast('已清空全部证书例外'); loadCertExceptionsData(); }
+  else toast('清空失败', true);
+};
+api.on('cert-exception-updated', s => {
+  applyCertStats(s);
+  if ($('viewCert').classList.contains('active')) loadCertExceptionsData();
+});
+
+// ===== 网络认证 & 客户端证书台账（r22）=====
+const netAuthState = { rows: [] };
+
+function applyAuthStats(s) {
+  s = s || {};
+  const blocked = (s.cancelled || 0);
+  $('authStatBlocked').textContent = blocked;
+  $('authStatPrompted').textContent = s.prompted || 0;
+  $('authStatRateLimited').textContent = s.rateLimited || 0;
+  $('authStatCertSuppressed').textContent = s.certSuppressed || 0;
+}
+
+function applyRememberedCertBadge(count) {
+  const badge = $('netAuthCountBadge');
+  badge.style.display = count ? 'inline-block' : 'none';
+  badge.textContent = count > 99 ? '99+' : String(count);
+}
+
+function renderRememberedCerts() {
+  const list = $('rememberedCertList');
+  list.textContent = '';
+  const rows = netAuthState.rows;
+  $('rememberedCertEmptyState').style.display = rows.length ? 'none' : 'block';
+
+  for (const r of rows) {
+    const row = document.createElement('div');
+    row.className = 'event-row severity-warn';
+
+    const head = document.createElement('div');
+    head.className = 'event-head';
+    const host = document.createElement('span');
+    host.textContent = r.host || '';
+    const time = document.createElement('span');
+    time.className = 'event-time';
+    time.textContent = r.updatedAt ? formatTime(r.updatedAt) : '';
+    head.appendChild(host);
+    head.appendChild(time);
+    row.appendChild(head);
+
+    const meta = document.createElement('div');
+    meta.style.cssText = 'margin-top:4px;font-size:12px;color:#9aa0a6;word-break:break-all;';
+    const bits = [
+      r.subject ? '主题 ' + r.subject : '',
+      r.issuer ? '签发者 ' + r.issuer : '',
+      r.fingerprint ? '指纹 ' + shortFp(r.fingerprint) : '',
+    ].filter(Boolean);
+    meta.textContent = bits.join('　·　');
+    row.appendChild(meta);
+
+    const actions = document.createElement('div');
+    actions.style.cssText = 'margin-top:8px;';
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'btn-danger-ghost';
+    del.textContent = '忘记该证书';
+    del.addEventListener('click', async () => {
+      const ok = await showConfirm(`将删除 ${r.host} 记住的客户端证书，下次需重新手动选择。继续？`);
+      if (!ok) return;
+      const res = await api.invoke('forget-remembered-cert', { host: r.host });
+      if (res && res.ok) { toast('已忘记该证书'); loadNetAuthData(); }
+      else toast('删除失败', true);
+    });
+    actions.appendChild(del);
+    row.appendChild(actions);
+
+    list.appendChild(row);
+  }
+}
+
+async function loadNetAuthData() {
+  $('netAuthRefreshBtn').disabled = true;
+  try {
+    const [certRes, statsRes] = await Promise.all([
+      api.invoke('list-remembered-certs', { limit: 100 }),
+      api.invoke('get-auth-stats'),
+    ]);
+    netAuthState.rows = (certRes && Array.isArray(certRes.entries)) ? certRes.entries : [];
+    applyRememberedCertBadge(netAuthState.rows.length);
+    renderRememberedCerts();
+    if (statsRes && statsRes.ok) applyAuthStats(statsRes.stats);
+  } catch (e) {
+    toast('网络认证台账加载失败：' + (e && e.message ? e.message : e), true);
+  } finally {
+    $('netAuthRefreshBtn').disabled = false;
+  }
+}
+
+function refreshRememberedCerts() {
+  if ($('viewNetAuth').classList.contains('active')) loadNetAuthData();
+}
+
+$('netAuthRefreshBtn').onclick = loadNetAuthData;
+$('netAuthClearBtn').onclick = async () => {
+  const ok = await showConfirm('将清空所有已记住的客户端证书，之后每个主机请求证书时都需重新手动选择。继续？');
+  if (!ok) return;
+  const res = await api.invoke('clear-remembered-certs');
+  if (res && res.ok) { toast('已清空记住的证书'); loadNetAuthData(); }
+  else toast('清空失败', true);
+};
+api.on('client-cert-choices-updated', () => {
+  if ($('viewNetAuth').classList.contains('active')) loadNetAuthData();
+});
+
+// ===== Cookie 加固面板 =====
+const cookieState = { rows: [] };
+const COOKIE_REASON_TEXT = {
+  'cross-site-set-cookie': '跨站第三方 Cookie',
+  'secure-on-insecure-origin': 'http 页面带 Secure',
+  'host-prefix-not-secure': '__Host- 前缀缺 Secure',
+  'host-prefix-domain': '__Host- 前缀带 Domain',
+  'host-prefix-path': '__Host- 前缀 Path 不是 /',
+  'secure-prefix-not-secure': '__Secure- 前缀缺 Secure',
+  'samesite-none-without-secure': 'SameSite=None 缺 Secure',
+  'samesite-missing-default-lax': '未声明 SameSite，补 Lax',
+};
+
+function cookieReasonText(r) {
+  return COOKIE_REASON_TEXT[r.reason] || r.reason || '未知';
+}
+
+function applyCookieStats(stats) {
+  if (!stats) return;
+  $('cookieStatBlocked').textContent = String(stats.blocked || 0);
+  $('cookieStatRewritten').textContent = String(stats.rewritten || 0);
+  $('cookieStatHosts').textContent = String(stats.hosts || 0);
+  $('cookieStatEntries').textContent = String(stats.entries || 0);
+  const n = stats.totalHits || 0;
+  const badge = $('cookieCountBadge');
+  badge.style.display = n ? 'inline-block' : 'none';
+  badge.textContent = n > 99 ? '99+' : String(n);
+}
+
+function renderCookieRows() {
+  const query = ($('cookieSearchInput').value || '').trim().toLowerCase();
+  const list = $('cookieList');
+  list.textContent = '';
+  const rows = cookieState.rows.filter(r => {
+    if (!query) return true;
+    return String(r.host || '').toLowerCase().includes(query) ||
+      String(r.name || '').toLowerCase().includes(query);
+  });
+  $('cookieEmptyState').style.display = rows.length ? 'none' : 'block';
+
+  for (const r of rows) {
+    const row = document.createElement('div');
+    row.className = 'event-row severity-warn';
+    if (r.action === 'samesite-default-lax') row.style.borderLeftColor = '#1a73e8';
+
+    const head = document.createElement('div');
+    head.className = 'event-head';
+    const host = document.createElement('span');
+    host.textContent = r.host || '';
+    const time = document.createElement('span');
+    time.className = 'event-time';
+    time.textContent = r.lastTime ? formatTime(r.lastTime) : '';
+    head.appendChild(host);
+    head.appendChild(time);
+    row.appendChild(head);
+
+    const meta = document.createElement('div');
+    meta.style.cssText = 'margin-top:4px;font-size:12px;color:#9aa0a6;word-break:break-all;';
+    const tag = document.createElement('span');
+    tag.textContent = `${r.name || '(无名)'}　·　${cookieReasonText(r)}`;
+    meta.appendChild(tag);
+    row.appendChild(meta);
+
+    const foot = document.createElement('div');
+    foot.style.cssText = 'margin-top:4px;font-size:12px;color:#9aa0a6;';
+    foot.textContent = `命中 ${r.hits || 1} 次${r.crossSite ? '　·　跨站' : ''}`;
+    row.appendChild(foot);
+
+    list.appendChild(row);
+  }
+}
+
+async function loadCookieData() {
+  $('cookieRefreshBtn').disabled = true;
+  try {
+    const [listRes, statsRes] = await Promise.all([
+      api.invoke('list-cookie-hardening'),
+      api.invoke('get-cookie-hardening-stats'),
+    ]);
+    cookieState.rows = (listRes && Array.isArray(listRes.entries)) ? listRes.entries : [];
+    renderCookieRows();
+    if (statsRes && statsRes.ok) applyCookieStats(statsRes.stats);
+  } catch (e) {
+    toast('Cookie 加固台账加载失败：' + (e && e.message ? e.message : e), true);
+  } finally {
+    $('cookieRefreshBtn').disabled = false;
+  }
+}
+
+$('cookieRefreshBtn').onclick = loadCookieData;
+$('cookieClearBtn').onclick = async () => {
+  const ok = await showConfirm('将清空 Cookie 加固台账，已记录的剥离与改写统计会归零。继续？');
+  if (!ok) return;
+  const res = await api.invoke('clear-cookie-hardening');
+  if (res && res.ok) { toast('已清空 Cookie 台账'); loadCookieData(); }
+  else toast('清空失败', true);
+};
+$('cookieSearchInput').addEventListener('input', renderCookieRows);
+api.on('cookie-hardening-updated', (stats) => {
+  applyCookieStats(stats);
+  if ($('viewCookie').classList.contains('active')) loadCookieData();
+});
+
+// ===== 内网访问防护（PNA）面板 =====
+const pnaState = { rows: [] };
+const PNA_SPACE_TEXT = {
+  loopback: '本机环回',
+  private: '内网私有地址',
+  'link-local': '链路本地 / 云元数据',
+  public: '公网',
+  unknown: '未知',
+};
+
+function applyPnaStats(stats) {
+  if (!stats) return;
+  $('pnaStatBlocked').textContent = String(stats.blocked || 0);
+  $('pnaStatHosts').textContent = String(stats.hosts || 0);
+  const n = stats.blocked || 0;
+  const badge = $('pnaCountBadge');
+  badge.style.display = n ? 'inline-block' : 'none';
+  badge.textContent = n > 99 ? '99+' : String(n);
+}
+
+function renderPnaRows() {
+  const query = ($('pnaSearchInput').value || '').trim().toLowerCase();
+  const list = $('pnaList');
+  list.textContent = '';
+  const rows = pnaState.rows.filter(r => String(r.host || '').toLowerCase().includes(query));
+  $('pnaEmptyState').style.display = rows.length ? 'none' : 'block';
+
+  for (const r of rows) {
+    const row = document.createElement('div');
+    row.className = 'event-row severity-warn';
+
+    const head = document.createElement('div');
+    head.className = 'event-head';
+    const host = document.createElement('span');
+    host.textContent = r.host || '';
+    const time = document.createElement('span');
+    time.className = 'event-time';
+    time.textContent = r.lastTime ? formatTime(r.lastTime) : '';
+    head.appendChild(host);
+    head.appendChild(time);
+    row.appendChild(head);
+
+    const meta = document.createElement('div');
+    meta.style.cssText = 'margin-top:4px;font-size:12px;color:#9aa0a6;word-break:break-all;';
+    meta.textContent = `${PNA_SPACE_TEXT[r.space] || r.space || '私有地址'}　·　命中 ${r.hits || 1} 次`;
+    row.appendChild(meta);
+
+    list.appendChild(row);
+  }
+}
+
+async function loadPnaData() {
+  $('pnaRefreshBtn').disabled = true;
+  try {
+    const [listRes, statsRes] = await Promise.all([
+      api.invoke('list-pna-blocks'),
+      api.invoke('get-pna-block-stats'),
+    ]);
+    pnaState.rows = (listRes && Array.isArray(listRes.entries)) ? listRes.entries : [];
+    renderPnaRows();
+    if (statsRes && statsRes.ok) applyPnaStats(statsRes.stats);
+  } catch (e) {
+    toast('内网访问防护台账加载失败：' + (e && e.message ? e.message : e), true);
+  } finally {
+    $('pnaRefreshBtn').disabled = false;
+  }
+}
+
+$('pnaRefreshBtn').onclick = loadPnaData;
+$('pnaClearBtn').onclick = async () => {
+  const ok = await showConfirm('将清空内网访问防护台账，拦截统计会归零。继续？');
+  if (!ok) return;
+  const res = await api.invoke('clear-pna-blocks');
+  if (res && res.ok) { toast('已清空内网访问台账'); loadPnaData(); }
+  else toast('清空失败', true);
+};
+$('pnaSearchInput').addEventListener('input', renderPnaRows);
+api.on('pna-blocked-updated', (stats) => {
+  applyPnaStats(stats);
+  if ($('viewPna').classList.contains('active')) loadPnaData();
+});
+
+// ===== 指纹 / 跨站追踪收敛面板 =====
+const fpState = { rows: [] };
+const FP_CATEGORY_TEXT = {
+  'client-hints': '高熵 Client Hints',
+  'ad-signals': '广告归因 / Topics',
+  'ping': '超链接打点',
+  'accept-ch': 'Accept-CH 订阅',
+};
+
+function applyFpStats(stats) {
+  if (!stats) return;
+  const byCat = stats.byCategory || {};
+  $('fpStatHits').textContent = String(stats.hits || 0);
+  $('fpStatHosts').textContent = String(stats.hosts || 0);
+  $('fpStatPing').textContent = String(byCat.ping || 0);
+  const n = stats.hits || 0;
+  const badge = $('fpCountBadge');
+  badge.style.display = n ? 'inline-block' : 'none';
+  badge.textContent = n > 99 ? '99+' : String(n);
+}
+
+function renderFpRows() {
+  const query = ($('fpSearchInput').value || '').trim().toLowerCase();
+  const list = $('fpList');
+  list.textContent = '';
+  const rows = fpState.rows.filter(r => {
+    if (!query) return true;
+    return String(r.host || '').toLowerCase().includes(query) ||
+      (r.signals || []).some(s => String(s).toLowerCase().includes(query));
+  });
+  $('fpEmptyState').style.display = rows.length ? 'none' : 'block';
+
+  for (const r of rows) {
+    const row = document.createElement('div');
+    row.className = 'event-row severity-info';
+
+    const head = document.createElement('div');
+    head.className = 'event-head';
+    const host = document.createElement('span');
+    host.textContent = r.host || '';
+    const time = document.createElement('span');
+    time.className = 'event-time';
+    time.textContent = r.lastTime ? formatTime(r.lastTime) : '';
+    head.appendChild(host);
+    head.appendChild(time);
+    row.appendChild(head);
+
+    const meta = document.createElement('div');
+    meta.style.cssText = 'margin-top:4px;font-size:12px;color:#9aa0a6;word-break:break-all;';
+    meta.textContent = `${FP_CATEGORY_TEXT[r.category] || r.category || '追踪信号'}　·　收敛 ${r.hits || 1} 次`;
+    row.appendChild(meta);
+
+    if (Array.isArray(r.signals) && r.signals.length) {
+      const sig = document.createElement('div');
+      sig.style.cssText = 'margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;';
+      for (const s of r.signals.slice(0, 12)) {
+        const chip = document.createElement('span');
+        chip.textContent = s;
+        chip.style.cssText = 'font-size:11px;padding:1px 7px;border-radius:10px;background:rgba(138,180,248,.15);color:#8ab0f8;word-break:break-all;';
+        sig.appendChild(chip);
+      }
+      row.appendChild(sig);
+    }
+
+    list.appendChild(row);
+  }
+}
+
+async function loadFpData() {
+  $('fpRefreshBtn').disabled = true;
+  try {
+    const [listRes, statsRes] = await Promise.all([
+      api.invoke('list-fingerprint-entries'),
+      api.invoke('get-fingerprint-stats'),
+    ]);
+    fpState.rows = (listRes && Array.isArray(listRes.entries)) ? listRes.entries : [];
+    renderFpRows();
+    if (statsRes && statsRes.ok) applyFpStats(statsRes.stats);
+  } catch (e) {
+    toast('指纹追踪台账加载失败：' + (e && e.message ? e.message : e), true);
+  } finally {
+    $('fpRefreshBtn').disabled = false;
+  }
+}
+
+$('fpRefreshBtn').onclick = loadFpData;
+$('fpClearBtn').onclick = async () => {
+  const ok = await showConfirm('将清空指纹 / 追踪收敛台账，统计会归零。继续？');
+  if (!ok) return;
+  const res = await api.invoke('clear-fingerprint-entries');
+  if (res && res.ok) { toast('已清空指纹追踪台账'); loadFpData(); }
+  else toast('清空失败', true);
+};
+$('fpSearchInput').addEventListener('input', renderFpRows);
+api.on('fingerprint-blocked-updated', (stats) => {
+  applyFpStats(stats);
+  if ($('viewFp').classList.contains('active')) loadFpData();
+});
+
+const dohState = { events: [] };
+const DOH_MODE_TEXT = { off: '关闭', automatic: '自动（能加密则加密）', secure: '强制加密' };
+const DOH_EVENT_TEXT = {
+  applied: '已应用',
+  fallback: '已回退（配置非法）',
+  unsupported: '宿主不支持',
+  error: '应用出错',
+};
+
+function escText(v) {
+  return String(v == null ? '' : v);
+}
+
+function renderDohEvents() {
+  const list = $('dohList');
+  list.textContent = '';
+  const rows = dohState.events || [];
+  $('dohEmptyState').style.display = rows.length ? 'none' : 'block';
+  for (const ev of rows) {
+    const row = document.createElement('div');
+    row.className = 'event-row ' + (ev.event === 'error' || ev.event === 'fallback' ? 'severity-warn' : 'severity-info');
+    const time = document.createElement('div');
+    time.className = 'event-time';
+    time.textContent = ev.time ? new Date(ev.time).toLocaleString() : '';
+    const title = document.createElement('div');
+    title.className = 'event-title';
+    title.textContent = (DOH_EVENT_TEXT[ev.event] || ev.event || '事件') +
+      (ev.mode ? ' · 模式 ' + (DOH_MODE_TEXT[ev.mode] || ev.mode) : '');
+    const detail = document.createElement('div');
+    detail.className = 'event-detail';
+    detail.textContent = escText(ev.detail);
+    row.appendChild(time);
+    row.appendChild(title);
+    row.appendChild(detail);
+    list.appendChild(row);
+  }
+  $('dohStatEvents').textContent = String(rows.length);
+}
+
+function renderPermForced(features) {
+  const box = $('permForcedList');
+  box.textContent = '';
+  for (const f of (Array.isArray(features) ? features : [])) {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.textContent = f + ' = ()';
+    box.appendChild(chip);
+  }
+}
+
+async function loadDohData() {
+  $('dohRefreshBtn').disabled = true;
+  try {
+    const res = await api.invoke('get-doh-status');
+    if (res && res.ok) {
+      $('dohStatSupported').textContent = res.supported ? '支持' : '不支持';
+      const st = res.status || {};
+      $('dohStatActive').textContent = res.supported && st.active ? '已启用' : (st.mode === 'off' ? '已关闭' : '未生效');
+      $('dohModeChip').textContent = DOH_MODE_TEXT[st.mode] || st.mode || '-';
+      const providers = Array.isArray(res.providers) ? res.providers : [];
+      const providerName = st.provider === 'custom'
+        ? '自定义'
+        : ((providers.find(p => p.id === st.provider) || {}).name || st.provider || '-');
+      $('dohProviderChip').textContent = providerName;
+      dohState.events = Array.isArray(st.events) ? st.events : [];
+      renderDohEvents();
+      renderPermForced(res.forcedFeatures);
+    } else {
+      toast('安全 DNS 状态加载失败', true);
+    }
+  } catch (e) {
+    toast('安全 DNS 状态加载失败：' + (e && e.message ? e.message : e), true);
+  } finally {
+    $('dohRefreshBtn').disabled = false;
+  }
+}
+$('dohRefreshBtn').onclick = loadDohData;
+$('dohClearBtn').onclick = async () => {
+  const ok = await showConfirm('将清空安全 DNS 状态记录（不改变当前设置）。继续？');
+  if (!ok) return;
+  const res = await api.invoke('clear-doh-events');
+  if (res && res.ok) { toast('已清空安全 DNS 记录'); loadDohData(); }
+  else toast('清空失败', true);
+};
+
+// ===== 下载伪装防护面板 =====
+const dloadState = { rows: [] };
+
+const DLOAD_ACTION_TEXT = {
+  saved: '已保存', confirmed: '用户确认后保存', cancelled: '用户取消', rejected: '已拒绝',
+};
+const DLOAD_DECISION_TEXT = {
+  allow: '无风险', warn: '已提示', confirm: '需确认', reject: '已拒绝',
+};
+
+function dloadRowClass(rec) {
+  if (rec.decision === 'reject' || rec.action === 'rejected') return 'severity-critical';
+  if (rec.decision === 'confirm') return 'severity-warn';
+  return 'severity-info';
+}
+
+function renderDownloadRisks() {
+  const list = $('dloadRiskList');
+  list.textContent = '';
+  const rows = dloadState.rows;
+  $('dloadEmptyState').style.display = rows.length ? 'none' : 'block';
+
+  let confirmN = 0, warnN = 0, rejectN = 0;
+  for (const rec of rows) {
+    if (rec.decision === 'reject' || rec.action === 'rejected') rejectN++;
+    else if (rec.decision === 'confirm') confirmN++;
+    else if (rec.decision === 'warn') warnN++;
+
+    const row = document.createElement('div');
+    row.className = 'event-row ' + dloadRowClass(rec);
+    const time = document.createElement('div');
+    time.className = 'event-time';
+    time.textContent = rec.time ? new Date(rec.time).toLocaleString() : '';
+    const title = document.createElement('div');
+    title.className = 'event-title';
+    title.textContent = (rec.filename || '(未知文件)') +
+      (rec.ext ? '  ·  .' + rec.ext : '') +
+      '  ·  ' + (DLOAD_ACTION_TEXT[rec.action] || rec.action || '');
+    const detail = document.createElement('div');
+    detail.className = 'event-detail';
+    const reasons = Array.isArray(rec.risks) ? rec.risks.map(r => r.message).filter(Boolean) : [];
+    detail.textContent = (rec.host ? '来源 ' + rec.host + ' · ' : '') +
+      (DLOAD_DECISION_TEXT[rec.decision] || rec.decision) +
+      (reasons.length ? '：' + reasons.join('；') : '');
+    row.appendChild(time);
+    row.appendChild(title);
+    row.appendChild(detail);
+    list.appendChild(row);
+  }
+
+  $('dloadStatConfirm').textContent = String(confirmN);
+  $('dloadStatWarn').textContent = String(warnN);
+  $('dloadStatReject').textContent = String(rejectN);
+  const badge = $('dloadCountBadge');
+  const total = rows.length;
+  badge.style.display = total ? 'inline-block' : 'none';
+  badge.textContent = total > 99 ? '99+' : String(total);
+}
+
+async function loadDownloadRisksData() {
+  $('dloadRefreshBtn').disabled = true;
+  try {
+    const rows = await api.invoke('list-download-risks', { limit: 300 });
+    dloadState.rows = Array.isArray(rows) ? rows : [];
+    renderDownloadRisks();
+  } catch (e) {
+    toast('下载风险记录加载失败：' + (e && e.message ? e.message : e), true);
+  } finally {
+    $('dloadRefreshBtn').disabled = false;
+  }
+}
+$('dloadRefreshBtn').onclick = loadDownloadRisksData;
+$('dloadClearBtn').onclick = async () => {
+  const ok = await showConfirm('将清空下载风险记录。继续？');
+  if (!ok) return;
+  const res = await api.invoke('clear-download-risks');
+  if (res && res.success) { toast('已清空下载风险记录'); loadDownloadRisksData(); }
+  else toast('清空失败', true);
+};
+
+$('cleanUrlBtn').onclick = async () => {
+  const raw = $('cleanUrlInput').value.trim();
+  const meta = $('cleanUrlMeta');
+  if (!raw) { toast('请先粘贴链接', true); return; }
+  const res = await api.invoke('clean-share-url', { url: raw });
+  if (!res || !res.ok) { toast('链接无法净化（可能不是合法 http(s) 链接）', true); return; }
+  $('cleanUrlOutput').value = res.url || '';
+  const parts = [];
+  if (res.unwrapped) parts.push('已解出跳转包装');
+  if (Array.isArray(res.removedKeys) && res.removedKeys.length) {
+    parts.push('已移除 ' + res.removedKeys.length + ' 个追踪参数');
+  }
+  if (!parts.length) parts.push('未发现需要清理的追踪参数');
+  meta.style.display = 'inline-flex';
+  meta.textContent = parts.join(' · ');
+};
+$('copyCleanUrlBtn').onclick = async () => {
+  const out = $('cleanUrlOutput').value;
+  if (!out) { toast('没有可复制的结果', true); return; }
+  try {
+    await navigator.clipboard.writeText(out);
+    toast('已复制净化后的链接');
+  } catch {
+    $('cleanUrlOutput').select();
+    document.execCommand('copy');
+    toast('已复制净化后的链接');
+  }
+};
+
+$('searchInput').addEventListener('input', render);
+$('filterSelect').addEventListener('change', render);
+$('severitySelect').addEventListener('change', render);$('confirmModal').addEventListener('click', e => {
+  if (e.target === $('confirmModal')) $('confirmModal').classList.remove('show');
+});
+
+applyDarkMode();
+loadData();
+// 首屏只取一次 CSP 数量用于角标，切到面板时才完整加载列表。
+api.invoke('list-csp-reports', { limit: 500 }).then(rows => {
+  cspState.rows = Array.isArray(rows) ? rows : [];
+  updateCspBadge();
+}).catch(() => {});
+api.invoke('list-header-grades', { limit: 300 }).then(rows => {
+  hgState.rows = Array.isArray(rows) ? rows : [];
+  updateHeaderBadge();
+}).catch(() => {});
+api.invoke('get-request-log-stats').then(applyReqStats).catch(() => {});
+api.invoke('get-brand-spoof-stats').then(applyBrandStats).catch(() => {});
+api.invoke('get-cert-exception-stats').then(applyCertStats).catch(() => {});
+api.invoke('list-remembered-certs', { limit: 100 }).then(res => {
+  const n = (res && Array.isArray(res.entries)) ? res.entries.length : 0;
+  applyRememberedCertBadge(n);
+}).catch(() => {});
+api.invoke('get-auth-stats').then(res => { if (res && res.ok) applyAuthStats(res.stats); }).catch(() => {});
+api.invoke('get-cookie-hardening-stats').then(res => { if (res && res.ok) applyCookieStats(res.stats); }).catch(() => {});
+api.invoke('get-pna-block-stats').then(res => { if (res && res.ok) applyPnaStats(res.stats); }).catch(() => {});
+api.invoke('get-fingerprint-stats').then(res => { if (res && res.ok) applyFpStats(res.stats); }).catch(() => {});
+</script>
+</body>
+</html>
