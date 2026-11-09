@@ -69,11 +69,12 @@ test('settle adjusts reservation to actual size', () => {
   assert.strictEqual(q.snapshot().totalBytes, 50);
 });
 
-test('settle refuses to grow beyond budget', () => {
+test('settle refuses to grow beyond budget and rolls the reservation back', () => {
   const q = new quota.DownloadQuota({ globalMaxBytes: 1000 });
   q.reserve('a.test', 900);
   assert.strictEqual(q.settle('a.test', 900, 1500), false);
-  assert.strictEqual(q.snapshot().totalBytes, 900);
+  assert.strictEqual(q.snapshot().totalBytes, 0);
+  assert.strictEqual(q.snapshot().hostCount, 0);
 });
 
 test('settle rejects unknown host and inconsistent reservation', () => {
@@ -128,4 +129,31 @@ test('describe rejects are unique and non empty', () => {
     seen.add(msg);
   }
   assert.ok(quota.describeQuotaReject('unknown', '').length > 0);
+});
+
+test('settle rolls the reservation back when actual bytes break the global budget', () => {
+  const q = new quota.DownloadQuota({ globalMaxBytes: 1000, hostMaxBytes: 1000, maxHosts: 4 });
+  assert.strictEqual(q.reserve('a.example', 500).ok, true);
+  assert.strictEqual(q.reserve('b.example', 400).ok, true);
+  assert.strictEqual(q.settle('a.example', 500, 900), false);
+  const snap = q.snapshot();
+  assert.strictEqual(snap.totalBytes, 400);
+  assert.strictEqual(snap.hosts['a.example'], undefined);
+  assert.strictEqual(snap.hosts['b.example'], 400);
+});
+
+test('settle rolls the reservation back when actual bytes break the per-host budget', () => {
+  const q = new quota.DownloadQuota({ globalMaxBytes: 4096, hostMaxBytes: 1000, maxHosts: 4 });
+  assert.strictEqual(q.reserve('a.example', 600).ok, true);
+  assert.strictEqual(q.settle('a.example', 600, 1500), false);
+  assert.strictEqual(q.snapshot().totalBytes, 0);
+  assert.strictEqual(q.snapshot().hostCount, 0);
+});
+
+test('settle refunds the difference when the download finishes under budget', () => {
+  const q = new quota.DownloadQuota({ globalMaxBytes: 2000, hostMaxBytes: 2000, maxHosts: 4 });
+  assert.strictEqual(q.reserve('a.example', 700).ok, true);
+  assert.strictEqual(q.settle('a.example', 700, 300), true);
+  assert.strictEqual(q.snapshot().totalBytes, 300);
+  assert.strictEqual(q.snapshot().hosts['a.example'], 300);
 });
