@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { headerKey } = require('./headerutil');
 
@@ -136,22 +137,14 @@ function applyCrossOriginPolicyGuard(headers) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.MISSING:
-      return '未声明跨源隔离头';
-    case REASON.INVALID:
-      return '跨源隔离头取值非法，已移除';
-    case REASON.PERMISSIVE:
-      return '跨源隔离策略过于宽松';
-    case REASON.DUPLICATE:
-      return '跨源隔离头重复，已合并';
-    case REASON.DOWNGRADED:
-      return '跨源隔离策略已收紧';
-    case REASON.MALFORMED:
-      return '跨源隔离头为空，已移除';
-    default:
-      return '跨源隔离策略通过校验';
-  }
+  return describeReasonFrom({
+    [REASON.MISSING]: '未声明跨源隔离头',
+    [REASON.INVALID]: '跨源隔离头取值非法，已移除',
+    [REASON.PERMISSIVE]: '跨源隔离策略过于宽松',
+    [REASON.DUPLICATE]: '跨源隔离头重复，已合并',
+    [REASON.DOWNGRADED]: '跨源隔离策略已收紧',
+    [REASON.MALFORMED]: '跨源隔离头为空，已移除',
+  }, reason, '跨源隔离策略通过校验');
 }
 
 module.exports = {
