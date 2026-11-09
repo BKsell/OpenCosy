@@ -1,4 +1,5 @@
 'use strict';
+const { readStoredSection } = require('./modutil');
 
 let d = {};
 
@@ -36,14 +37,8 @@ function clearStoredTabGroups() {
 }
 
 function loadStoredTabGroups() {
-  try {
-    const data = d.ledgerStore.readJSONStore(d.tabGroupStorePath, null);
-    if (!data || typeof data !== 'object') return [];
-    return d.tabGroups.sanitizeStoredGroups(data.groups);
-  } catch (e) {
-    console.error('读取标签分组失败:', e);
-    return [];
-  }
+  return readStoredSection(d.ledgerStore.readJSONStore, d.tabGroupStorePath,
+    data => d.tabGroups.sanitizeStoredGroups(data.groups), '读取标签分组失败:');
 }
 
 function persistTabGroups() {
