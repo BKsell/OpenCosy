@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { headerKey } = require('./headerutil');
 
@@ -190,32 +191,19 @@ function applySetCookiePrefixGuard(headers) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.MISSING:
-      return '未下发 Set-Cookie';
-    case REASON.MALFORMED:
-      return 'Set-Cookie 无法解析，已丢弃';
-    case REASON.BAD_NAME:
-      return 'Cookie 名称或属性非法';
-    case REASON.HOST_PREFIX_VIOLATION:
-      return '__Host- 前缀约束被违反，已修正';
-    case REASON.SECURE_PREFIX_VIOLATION:
-      return '__Secure- 前缀缺少 Secure，已补齐';
-    case REASON.NONE_WITHOUT_SECURE:
-      return 'SameSite=None 缺少 Secure，已改为 Lax';
-    case REASON.BAD_SAMESITE:
-      return 'SameSite 取值非法，已改为 Lax';
-    case REASON.SAMESITE_MISSING:
-      return '缺少 SameSite，已补 Lax';
-    case REASON.NOT_HTTPONLY:
-      return 'Cookie 未设置 HttpOnly';
-    case REASON.DUP_ATTRIBUTE:
-      return 'Cookie 属性重复';
-    case REASON.OVERLONG:
-      return 'Set-Cookie 超长，已丢弃';
-    default:
-      return 'Set-Cookie 通过校验';
-  }
+  return describeReasonFrom({
+    [REASON.MISSING]: '未下发 Set-Cookie',
+    [REASON.MALFORMED]: 'Set-Cookie 无法解析，已丢弃',
+    [REASON.BAD_NAME]: 'Cookie 名称或属性非法',
+    [REASON.HOST_PREFIX_VIOLATION]: '__Host- 前缀约束被违反，已修正',
+    [REASON.SECURE_PREFIX_VIOLATION]: '__Secure- 前缀缺少 Secure，已补齐',
+    [REASON.NONE_WITHOUT_SECURE]: 'SameSite=None 缺少 Secure，已改为 Lax',
+    [REASON.BAD_SAMESITE]: 'SameSite 取值非法，已改为 Lax',
+    [REASON.SAMESITE_MISSING]: '缺少 SameSite，已补 Lax',
+    [REASON.NOT_HTTPONLY]: 'Cookie 未设置 HttpOnly',
+    [REASON.DUP_ATTRIBUTE]: 'Cookie 属性重复',
+    [REASON.OVERLONG]: 'Set-Cookie 超长，已丢弃',
+  }, reason, 'Set-Cookie 通过校验');
 }
 
 module.exports = {
