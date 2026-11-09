@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -77,24 +78,15 @@ function applyClipboardTextGuard(value, limits) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.EMPTY:
-      return '剪贴板内容为空';
-    case REASON.NOT_TEXT:
-      return '剪贴板内容不是文本';
-    case REASON.NUL_STRIPPED:
-      return '剪贴板文本含空字节已清除';
-    case REASON.CONTROL_STRIPPED:
-      return '剪贴板文本含控制字符已替换';
-    case REASON.TOO_LARGE:
-      return '剪贴板文本超过体积上限';
-    case REASON.TOO_MANY_LINES:
-      return '剪贴板文本行数过多';
-    case REASON.TRUNCATED:
-      return '剪贴板文本超过输出上限已截断';
-    default:
-      return '剪贴板文本合法';
-  }
+  return describeReasonFrom({
+    [REASON.EMPTY]: '剪贴板内容为空',
+    [REASON.NOT_TEXT]: '剪贴板内容不是文本',
+    [REASON.NUL_STRIPPED]: '剪贴板文本含空字节已清除',
+    [REASON.CONTROL_STRIPPED]: '剪贴板文本含控制字符已替换',
+    [REASON.TOO_LARGE]: '剪贴板文本超过体积上限',
+    [REASON.TOO_MANY_LINES]: '剪贴板文本行数过多',
+    [REASON.TRUNCATED]: '剪贴板文本超过输出上限已截断',
+  }, reason, '剪贴板文本合法');
 }
 
 module.exports = {
