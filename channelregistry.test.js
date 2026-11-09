@@ -34,6 +34,7 @@ const MAIN_SOURCE = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8')
   + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipctabsurface.js'), 'utf8')
   + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipctabsurface_aux.js'), 'utf8')
   + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcsettingspanel.js'), 'utf8')
+  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcjournalipc.js'), 'utf8')
   + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcvaultipc.js'), 'utf8');
 const PRELOAD_SOURCE = fs.readFileSync(path.join(ROOT, 'preload.js'), 'utf8');
 
