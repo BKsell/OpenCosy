@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -70,26 +71,16 @@ function applyCspNonceGuard(csp, nonce) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.EMPTY:
-      return 'CSP nonce 为空';
-    case REASON.BAD_NONCE:
-      return 'CSP nonce 不是合法 base64';
-    case REASON.SHORT_NONCE:
-      return 'CSP nonce 随机熵不足';
-    case REASON.CSP_MISSING:
-      return '缺少 Content-Security-Policy 头';
-    case REASON.CSP_NO_NONCE:
-      return 'CSP 未绑定当前响应 nonce';
-    case REASON.UNSAFE_INLINE:
-      return 'CSP 允许 unsafe-inline';
-    case REASON.WILDCARD:
-      return 'CSP 使用通配来源';
-    case REASON.DUPLICATE_DIRECTIVE:
-      return 'CSP 存在重复指令';
-    default:
-      return 'CSP 与 nonce 绑定正确';
-  }
+  return describeReasonFrom({
+    [REASON.EMPTY]: 'CSP nonce 为空',
+    [REASON.BAD_NONCE]: 'CSP nonce 不是合法 base64',
+    [REASON.SHORT_NONCE]: 'CSP nonce 随机熵不足',
+    [REASON.CSP_MISSING]: '缺少 Content-Security-Policy 头',
+    [REASON.CSP_NO_NONCE]: 'CSP 未绑定当前响应 nonce',
+    [REASON.UNSAFE_INLINE]: 'CSP 允许 unsafe-inline',
+    [REASON.WILDCARD]: 'CSP 使用通配来源',
+    [REASON.DUPLICATE_DIRECTIVE]: 'CSP 存在重复指令',
+  }, reason, 'CSP 与 nonce 绑定正确');
 }
 
 module.exports = {
