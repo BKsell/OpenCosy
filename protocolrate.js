@@ -8,6 +8,7 @@
 const DEFAULT_WINDOW_MS = 60000;
 const DEFAULT_MAX_PER_WINDOW = 3;
 const DUPLICATE_WINDOW_MS = 2000;
+const MAX_TRACKED_KEYS = 512;
 
 function createLimiter(options) {
   const opts = options || {};
@@ -23,8 +24,24 @@ function prune(times, now, windowMs) {
   return i > 0 ? times.slice(i) : times;
 }
 
+function sweep(limiter, now) {
+  for (const [key, times] of limiter.buckets) {
+    const kept = prune(times, now, limiter.windowMs);
+    if (kept.length === 0) limiter.buckets.delete(key);
+    else if (kept !== times) limiter.buckets.set(key, kept);
+  }
+  for (const [key, rec] of limiter.lastUrl) {
+    if (now - rec.at >= limiter.windowMs) limiter.lastUrl.delete(key);
+  }
+}
+
 function check(limiter, origin, scheme, url, now) {
   const t = Number.isFinite(Number(now)) ? Number(now) : Date.now();
+  if (limiter.buckets.size >= MAX_TRACKED_KEYS) sweep(limiter, t);
+  if (limiter.buckets.size >= MAX_TRACKED_KEYS) {
+    const oldest = limiter.buckets.keys().next();
+    if (!oldest.done) limiter.buckets.delete(oldest.value);
+  }
   const key = String(origin || '') + '|' + String(scheme || '');
   const prevTimes = prune(limiter.buckets.get(key) || [], t, limiter.windowMs);
 
@@ -52,4 +69,4 @@ function describeReason(reason) {
   return '';
 }
 
-module.exports = { createLimiter, check, describeReason };
+module.exports = { createLimiter, check, sweep, describeReason };
