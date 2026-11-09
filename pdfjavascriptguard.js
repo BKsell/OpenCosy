@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -46,30 +47,18 @@ function applyPdfJavaScriptGuard(buffer) {
 }
 
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.EMPTY:
-      return 'PDF 内容为空';
-    case REASON.NOT_BUFFER:
-      return '待检查内容不是二进制缓冲';
-    case REASON.NOT_PDF:
-      return '内容缺少 PDF 文件头';
-    case REASON.TOO_LARGE:
-      return 'PDF 超过体积上限';
-    case REASON.JAVASCRIPT:
-      return 'PDF 含 JavaScript 动作';
-    case REASON.LAUNCH:
-      return 'PDF 含外部程序启动动作';
-    case REASON.EMBEDDED_FILE:
-      return 'PDF 含内嵌附件';
-    case REASON.OPEN_ACTION:
-      return 'PDF 打开即触发动作';
-    case REASON.RICH_MEDIA:
-      return 'PDF 含富媒体嵌入';
-    case REASON.ENCRYPTED:
-      return 'PDF 已加密';
-    default:
-      return 'PDF 未包含主动内容';
-  }
+  return describeReasonFrom({
+    [REASON.EMPTY]: 'PDF 内容为空',
+    [REASON.NOT_BUFFER]: '待检查内容不是二进制缓冲',
+    [REASON.NOT_PDF]: '内容缺少 PDF 文件头',
+    [REASON.TOO_LARGE]: 'PDF 超过体积上限',
+    [REASON.JAVASCRIPT]: 'PDF 含 JavaScript 动作',
+    [REASON.LAUNCH]: 'PDF 含外部程序启动动作',
+    [REASON.EMBEDDED_FILE]: 'PDF 含内嵌附件',
+    [REASON.OPEN_ACTION]: 'PDF 打开即触发动作',
+    [REASON.RICH_MEDIA]: 'PDF 含富媒体嵌入',
+    [REASON.ENCRYPTED]: 'PDF 已加密',
+  }, reason, 'PDF 未包含主动内容');
 }
 
 module.exports = {
