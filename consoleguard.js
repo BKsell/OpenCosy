@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 const { pruneOlderThan, countSince } = require('./modutil');
 
 // consoleguard.js —— 渲染进程 console-message 事件的不可信输入收口内核。
@@ -163,17 +164,14 @@ function decideConsole(state, entry, now) {
   };
 }
 
+const CONSOLE_REASON_TEXT = {
+  [CS_EMPTY]: '空白控制台输出已跳过',
+  [CS_FLOOD]: '网页控制台输出频率异常（疑似日志洪泛），冷却期内的输出已丢弃',
+  [CS_COOLDOWN]: '控制台洪泛冷却期内的输出已丢弃',
+};
+
 function describeConsoleReason(reason) {
-  switch (reason) {
-    case CS_EMPTY:
-      return '空白控制台输出已跳过';
-    case CS_FLOOD:
-      return '网页控制台输出频率异常（疑似日志洪泛），冷却期内的输出已丢弃';
-    case CS_COOLDOWN:
-      return '控制台洪泛冷却期内的输出已丢弃';
-    default:
-      return '控制台输出';
-  }
+  return describeReasonFrom(CONSOLE_REASON_TEXT, reason, '控制台输出');
 }
 
 module.exports = {
