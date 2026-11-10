@@ -246,3 +246,32 @@ test('mergeFromState 拒绝坏格式 / 错 key / 超量备份', () => {
   b.vault.lock();
   assert.strictEqual(b.vault.mergeFromState(good).reason, 'locked');
 });
+
+const VE = require('./vaultentry');
+
+test('openEntry 拒绝文件里伪造的超大 PBKDF2 轮数（防主进程被拖死）', () => {
+  const key = randomKey();
+  const sealed = VE.sealEntry(key, VE.KDF_PBKDF2, VE.newId(), crypto.randomBytes(16),
+    VE.DEFAULT_PBKDF2_ROUNDS, 'note', 'n', { v: 1 });
+  assert.strictEqual(sealed.ok, true);
+  const entry = Object.assign({}, sealed.entry, { r: 100000000 });
+  assert.strictEqual(VE.openEntry(key, entry).reason, 'bad-rounds');
+  assert.strictEqual(VE.normalizeRounds(0), 0);
+  assert.strictEqual(VE.normalizeRounds(1.5), 0);
+  assert.strictEqual(VE.normalizeRounds(VE.MAX_PBKDF2_ROUNDS + 1), 0);
+  assert.strictEqual(VE.normalizeRounds(VE.DEFAULT_PBKDF2_ROUNDS), VE.DEFAULT_PBKDF2_ROUNDS);
+});
+
+test('sealEntry 拒绝越界轮数，openEntry 拒绝长度不符的盐与超大密文', () => {
+  const key = randomKey();
+  const bad = VE.sealEntry(key, VE.KDF_PBKDF2, VE.newId(), crypto.randomBytes(16), 1, 'note', 'n', { v: 1 });
+  assert.strictEqual(bad.ok, false);
+  assert.strictEqual(bad.reason, 'bad-rounds');
+  const sealed = VE.sealEntry(key, VE.KDF_HKDF, VE.newId(), crypto.randomBytes(16), 0, 'note', 'n', { v: 1 });
+  assert.strictEqual(sealed.ok, true);
+  const shortSalt = Object.assign({}, sealed.entry, { s: crypto.randomBytes(8).toString('hex') });
+  assert.strictEqual(VE.openEntry(key, shortSalt).reason, 'bad-salt');
+  const huge = Object.assign({}, sealed.entry, { c: 'a'.repeat((VE.MAX_PAYLOAD_BYTES + 1) * 2) });
+  assert.strictEqual(VE.openEntry(key, huge).reason, 'bad-ciphertext');
+  assert.strictEqual(VE.openEntry(key, sealed.entry).ok, true);
+});
