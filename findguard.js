@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 const { pruneOlderThan, countSince, resetCooldown } = require('./modutil');
 
 // findguard.js —— 页内查找（Ctrl+F → findInPage）IPC 请求的输入与频率收口内核。
@@ -150,21 +151,16 @@ function resetFind(state) {
   state.lastRunAt = 0;
 }
 
+const FIND_REASON_TEXT = {
+  [REJECT_NOT_STRING]: '页内查找查询不是合法字符串，已拒绝',
+  [REJECT_TOO_LONG]: `页内查找查询超过 ${MAX_FIND_QUERY_LEN} 字符上限，已拒绝`,
+  [REJECT_CONTROL]: '页内查找查询包含非法控制字符，已拒绝',
+  [HOLD_BURST]: '页内查找请求短时间内过于频繁，已临时限流',
+  [HOLD_COOLDOWN]: '页内查找冷却期内的重复请求已忽略',
+};
+
 function describeFindReason(reason) {
-  switch (reason) {
-    case REJECT_NOT_STRING:
-      return '页内查找查询不是合法字符串，已拒绝';
-    case REJECT_TOO_LONG:
-      return `页内查找查询超过 ${MAX_FIND_QUERY_LEN} 字符上限，已拒绝`;
-    case REJECT_CONTROL:
-      return '页内查找查询包含非法控制字符，已拒绝';
-    case HOLD_BURST:
-      return '页内查找请求短时间内过于频繁，已临时限流';
-    case HOLD_COOLDOWN:
-      return '页内查找冷却期内的重复请求已忽略';
-    default:
-      return '页内查找请求';
-  }
+  return describeReasonFrom(FIND_REASON_TEXT, reason, '页内查找请求');
 }
 
 module.exports = {
