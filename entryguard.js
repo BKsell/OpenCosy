@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 const { pruneOlderThan, countSince } = require('./modutil');
 
 // entryguard.js —— 导航条目提交事件（webContents 'navigation-entry-committed'）收口内核。
@@ -134,21 +135,16 @@ function decideNavigationEntry(state, rawUrl, now) {
   return { action: ENTRY_ACCEPT, reason: '', url: parsed.url, truncated: parsed.truncated, ...counts() };
 }
 
+const ENTRY_REASON_TEXT = {
+  [HOLD_SAME]: '导航条目地址未变化，已合并地址栏刷新',
+  [HOLD_TOO_SOON]: '导航条目提交过于频繁，已合并地址栏刷新',
+  [DROP_BAD_URL]: '导航条目携带了非法地址文本，已阻止其显示',
+  [DROP_FLOOD]: '页面异常频繁提交历史条目（疑似历史劫持/洪泛），冷却期内冻结地址栏刷新',
+  [DROP_COOLDOWN]: '历史条目洪泛冷却期内的提交已忽略',
+};
+
 function describeEntryReason(reason) {
-  switch (reason) {
-    case HOLD_SAME:
-      return '导航条目地址未变化，已合并地址栏刷新';
-    case HOLD_TOO_SOON:
-      return '导航条目提交过于频繁，已合并地址栏刷新';
-    case DROP_BAD_URL:
-      return '导航条目携带了非法地址文本，已阻止其显示';
-    case DROP_FLOOD:
-      return '页面异常频繁提交历史条目（疑似历史劫持/洪泛），冷却期内冻结地址栏刷新';
-    case DROP_COOLDOWN:
-      return '历史条目洪泛冷却期内的提交已忽略';
-    default:
-      return '导航条目';
-  }
+  return describeReasonFrom(ENTRY_REASON_TEXT, reason, '导航条目');
 }
 
 module.exports = {
