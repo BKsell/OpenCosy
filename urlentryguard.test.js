@@ -64,3 +64,17 @@ test('sanitizeWebUrl tolerates a missing reasons table', () => {
   assert.strictEqual(r.ok, false);
   assert.strictEqual(r.url, '');
 });
+
+test('sanitizeWebUrl rejects percent-encoded host disguises', () => {
+  const r = guard.sanitizeWebUrl('http://%30%30example.com/', reasons, guard.MAX_URL_CHARS);
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'bad-url');
+});
+
+test('sanitizeWebUrl rejects port 0 targets', () => {
+  for (const u of ['http://example.com:0/', 'http://127.0.0.1:0/x']) {
+    const r = guard.sanitizeWebUrl(u, reasons, guard.MAX_URL_CHARS);
+    assert.strictEqual(r.ok, false);
+    assert.strictEqual(r.reason, 'bad-url');
+  }
+});
