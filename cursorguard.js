@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 const { pruneOlderThan, countSince } = require('./modutil');
 
 // cursorguard.js —— 光标变更事件（webContents 'cursor-changed'）收口内核。
@@ -150,25 +151,18 @@ function decideCursorChange(state, type, image, scale, now) {
   return { action: CURSOR_APPLY, reason: '', type, ...counts() };
 }
 
+const CURSOR_REASON_TEXT = {
+  [HOLD_SAME]: '光标类型未变化，已合并',
+  [HOLD_TOO_SOON]: '光标类型变化过快，已合并',
+  [DROP_BAD_TYPE]: '页面请求了未知类型的光标，已回落到默认光标',
+  [DROP_BAD_IMAGE]: '自定义光标位图尺寸或体积超限，已回落到默认光标',
+  [DROP_BAD_SCALE]: '自定义光标缩放比例越界，已回落到默认光标',
+  [DROP_FLOOD]: '页面异常频繁切换光标（疑似抖动 DoS），冷却期内锁定默认光标',
+  [DROP_COOLDOWN]: '光标抖动冷却期内的变更已回落为默认光标',
+};
+
 function describeCursorReason(reason) {
-  switch (reason) {
-    case HOLD_SAME:
-      return '光标类型未变化，已合并';
-    case HOLD_TOO_SOON:
-      return '光标类型变化过快，已合并';
-    case DROP_BAD_TYPE:
-      return '页面请求了未知类型的光标，已回落到默认光标';
-    case DROP_BAD_IMAGE:
-      return '自定义光标位图尺寸或体积超限，已回落到默认光标';
-    case DROP_BAD_SCALE:
-      return '自定义光标缩放比例越界，已回落到默认光标';
-    case DROP_FLOOD:
-      return '页面异常频繁切换光标（疑似抖动 DoS），冷却期内锁定默认光标';
-    case DROP_COOLDOWN:
-      return '光标抖动冷却期内的变更已回落为默认光标';
-    default:
-      return '光标变更';
-  }
+  return describeReasonFrom(CURSOR_REASON_TEXT, reason, '光标变更');
 }
 
 module.exports = {
