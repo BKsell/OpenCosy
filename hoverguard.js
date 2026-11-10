@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 const { pruneOlderThan, countSince } = require('./modutil');
 
 const {
@@ -75,19 +76,14 @@ function decideHoverUrl(state, rawUrl, now) {
   return { action: HOVER_SHOW, reason: '', url: clean.url, truncated: clean.truncated, ...baseCounts() };
 }
 
+const HOVER_REASON_TEXT = {
+  [HOLD_TOO_SOON]: '悬停目标更新过于频繁，已合并本次状态栏刷新',
+  [HOLD_SAME]: '悬停目标未变化，状态栏无需刷新',
+  [DROP_BAD]: '非文本类型的悬停目标已忽略',
+  [DROP_FLOOD]: '悬停目标变更异常频繁（疑似点击劫持/洪泛），冷却期内停止预告',
+  [DROP_COOLDOWN]: '悬停洪泛冷却期内的目标变更已忽略',
+};
+
 function describeHoverReason(reason) {
-  switch (reason) {
-    case HOLD_TOO_SOON:
-      return '悬停目标更新过于频繁，已合并本次状态栏刷新';
-    case HOLD_SAME:
-      return '悬停目标未变化，状态栏无需刷新';
-    case DROP_BAD:
-      return '非文本类型的悬停目标已忽略';
-    case DROP_FLOOD:
-      return '悬停目标变更异常频繁（疑似点击劫持/洪泛），冷却期内停止预告';
-    case DROP_COOLDOWN:
-      return '悬停洪泛冷却期内的目标变更已忽略';
-    default:
-      return '悬停目标';
-  }
+  return describeReasonFrom(HOVER_REASON_TEXT, reason, '悬停目标');
 }
