@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 const { originFromUrl } = require('./modutil');
 
 // revokeguard.js —— 设备授权“撤销（revoked）”事件的统一收口内核。
@@ -40,13 +41,14 @@ const KNOWN_KINDS = new Set([KIND_HID, KIND_SERIAL, KIND_BLUETOOTH]);
 // originFromUrl 从任意 URL 安全取源，非法时返回空串（与其他内核一致）。
 
 // describeKind 给出设备类别中文名，用于安全事件文案。
+const KIND_TEXT = {
+  [KIND_HID]: 'HID',
+  [KIND_SERIAL]: '串口',
+  [KIND_BLUETOOTH]: '蓝牙',
+};
+
 function describeKind(kind) {
-  switch (kind) {
-    case KIND_HID: return 'HID';
-    case KIND_SERIAL: return '串口';
-    case KIND_BLUETOOTH: return '蓝牙';
-    default: return '未知设备';
-  }
+  return describeReasonFrom(KIND_TEXT, kind, '未知设备');
 }
 
 // normalizeKind 把外部事件名 / 入参归一到受支持的类别，无法识别返回空串。
