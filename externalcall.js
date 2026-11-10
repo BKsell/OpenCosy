@@ -120,9 +120,19 @@ function handleFrameNavigationAttempt(contents, url, isMainFrame) {
   return true;
 }
 
+function isWebUrl(url) {
+  if (typeof url !== 'string') return false;
+  try {
+    const scheme = new URL(url).protocol.toLowerCase();
+    return scheme === 'http:' || scheme === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 async function confirmAndOpenExternal(url, origin) {
   if (!url || typeof url !== 'string') return { ok: false, reason: 'empty url' };
-  if (url.startsWith('http://') || url.startsWith('https://')) {
+  if (isWebUrl(url)) {
     if (!d.isSafeUrl(url)) {
       d.recordSecurityEvent('protocol-blocked', 'critical',
         `外部协议入口拒绝了不安全的 http(s) 地址: ${url}`, origin);
@@ -134,4 +144,4 @@ async function confirmAndOpenExternal(url, origin) {
   return await launchExternalWithPrompt(url, origin || '', false);
 }
 
-module.exports = { launchExternalWithPrompt, classifyFrameNavigation, handleFrameNavigationAttempt, confirmAndOpenExternal, bindDeps };
+module.exports = { launchExternalWithPrompt, classifyFrameNavigation, handleFrameNavigationAttempt, confirmAndOpenExternal, isWebUrl, bindDeps };
