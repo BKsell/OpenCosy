@@ -1,9 +1,11 @@
 'use strict';
 
 const {
+  CHILD_ALLOW,
   CHILD_BURST_MAX,
   CHILD_BURST_WINDOW_MS,
   CHILD_CLOSE,
+  CHILD_ISOLATE,
   CHILD_LONG_WINDOW_MS,
   evaluateChildUrl,
   evaluateWebPreferences
@@ -24,6 +26,16 @@ function createChildWindowState() {
     total: 0,
     closed: 0,
   };
+}
+
+function resetForNavigation(st) {
+  if (!st) return createChildWindowState();
+  st.burstStart = -1;
+  st.burstCount = 0;
+  st.longStart = -1;
+  st.longCount = 0;
+  st.cooldownUntil = 0;
+  return st;
 }
 
 // resetForNavigation 在顶层导航后调用：开窗洪泛属于页面行为，换文档后配额归零。
@@ -94,3 +106,13 @@ function evaluateChildWindow(input, st, now) {
     state: gate.state,
   };
 }
+
+module.exports = {
+  CHILD_ALLOW,
+  CHILD_CLOSE,
+  CHILD_ISOLATE,
+  admitChildWindow,
+  createChildWindowState,
+  evaluateChildWindow,
+  resetForNavigation,
+};
