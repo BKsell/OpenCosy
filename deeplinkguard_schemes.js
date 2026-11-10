@@ -58,6 +58,7 @@ function reviewWebUrl(raw) {
     return { ok: false, kind: 'web', reason: 'scheme' };
   }
   if (!u.hostname) return { ok: false, kind: 'web', reason: 'no-host' };
+  if (u.username || u.password) return { ok: false, kind: 'web', reason: 'userinfo' };
   return { ok: true, kind: 'web', value: u.href };
 }
 
