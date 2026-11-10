@@ -64,6 +64,7 @@ test('内部页之间与浏览器自身可以进入 cosy:', () => {
   assert.equal(sg.evaluate('cosy://settings', 'cosy://security').action, 'allow');
   assert.equal(sg.evaluate('cosy://security', '').action, 'allow');
   assert.equal(sg.evaluate('cosy://security', 'about:blank').action, 'allow');
+  assert.equal(sg.evaluate('cosy://security', 'chrome-extension://abcdef/page.html').action, 'block');
 });
 
 test('普通 web 导航照常放行，交给既有链路', () => {

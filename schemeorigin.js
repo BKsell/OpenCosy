@@ -76,7 +76,7 @@ function initiatorSpace(rawUrl) {
   const space = effectiveInitiatorSpace(rawUrl);
   const u = safeParse(rawUrl);
   if (u && u.protocol.toLowerCase() === 'about:') return 'none';
-  return space === 'other' ? 'none' : space;
+  return space;
 }
 
 // 允许导航到特权内部页的来源空间：内部页自身（内部跳转）、本地 file 上下文之外
