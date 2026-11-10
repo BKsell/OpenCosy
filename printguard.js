@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 const { pruneOlderThan, countSince, originFromUrl, resetCooldown, inCooldown } = require('./modutil');
 
 // printguard.js —— 网页 window.print() 打印请求的滥用/DoS 收口内核。
@@ -106,17 +107,14 @@ function decidePrint(state, input, now) {
 // resetCooldown 供“用户显式从某可信内部页打印”等场景手动解除（当前主流程不使用，
 // 预留以便设置页加白），返回解除后的状态。
 
+const PRINT_REASON_TEXT = {
+  [SUPPRESS_BURST]: '网页在短时间内连续请求打印（疑似打印轰炸），本次已拦截',
+  [SUPPRESS_LONG]: '网页持续高频请求打印，本次已拦截并进入冷却',
+  [SUPPRESS_COOLDOWN]: '打印冷却期内的重复打印请求已拦截',
+};
+
 function describePrintReason(reason) {
-  switch (reason) {
-    case SUPPRESS_BURST:
-      return '网页在短时间内连续请求打印（疑似打印轰炸），本次已拦截';
-    case SUPPRESS_LONG:
-      return '网页持续高频请求打印，本次已拦截并进入冷却';
-    case SUPPRESS_COOLDOWN:
-      return '打印冷却期内的重复打印请求已拦截';
-    default:
-      return '打印请求';
-  }
+  return describeReasonFrom(PRINT_REASON_TEXT, reason, '打印请求');
 }
 
 module.exports = {
