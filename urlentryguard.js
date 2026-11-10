@@ -12,6 +12,12 @@ function sanitizeWebUrl(rawUrl, reasons, limit) {
   if (rawUrl.length > cap) {
     return { ok: false, url: '', reason: table.tooLong };
   }
+  for (let i = 0; i < rawUrl.length; i++) {
+    const code = rawUrl.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f || (code >= 0x80 && code <= 0x9f)) {
+      return { ok: false, url: '', reason: table.control || table.badUrl };
+    }
+  }
   let u;
   try {
     u = new URL(rawUrl);
