@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const fs = require('fs');
 const path = require('path');
@@ -91,29 +92,20 @@ function auditSaveTarget(rootDir, targetPath, name) {
   return { ok: true, reason: REASON.OK, path: targetAbs, name: fileName };
 }
 
+const SAVE_TARGET_REJECT_TEXT = {
+  [REASON.OK]: '保存目标通过校验',
+  [REASON.EMPTY_ROOT]: '下载保存根目录为空',
+  [REASON.EMPTY_TARGET]: '下载保存路径为空',
+  [REASON.BAD_PATH]: '下载保存路径不是合法的绝对路径',
+  [REASON.BAD_NAME]: '下载文件名包含非法字符或结构',
+  [REASON.OUTSIDE_ROOT]: '下载保存路径越出下载目录',
+  [REASON.RESERVED_NAME]: '下载文件名是系统保留设备名',
+  [REASON.BAD_EXTENSION_SHAPE]: '下载文件名扩展名结构异常',
+  [REASON.REALPATH_UNRESOLVED]: '下载保存路径的真实父目录无法解析',
+};
+
 function describeSaveTargetReject(reason) {
-  switch (reason) {
-    case REASON.OK:
-      return '保存目标通过校验';
-    case REASON.EMPTY_ROOT:
-      return '下载保存根目录为空';
-    case REASON.EMPTY_TARGET:
-      return '下载保存路径为空';
-    case REASON.BAD_PATH:
-      return '下载保存路径不是合法的绝对路径';
-    case REASON.BAD_NAME:
-      return '下载文件名包含非法字符或结构';
-    case REASON.OUTSIDE_ROOT:
-      return '下载保存路径越出下载目录';
-    case REASON.RESERVED_NAME:
-      return '下载文件名是系统保留设备名';
-    case REASON.BAD_EXTENSION_SHAPE:
-      return '下载文件名扩展名结构异常';
-    case REASON.REALPATH_UNRESOLVED:
-      return '下载保存路径的真实父目录无法解析';
-    default:
-      return '下载保存目标未通过校验';
-  }
+  return describeReasonFrom(SAVE_TARGET_REJECT_TEXT, reason, '下载保存目标未通过校验');
 }
 
 function auditSaveTargetReal(rootDir, targetPath, name, deps) {
