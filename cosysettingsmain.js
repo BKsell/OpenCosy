@@ -218,15 +218,24 @@ function loadHistory() {
     console.error('读取历史记录失败:', e);
   }
 }
+function readSanitizedSection(sectionPath) {
+  if (!d.fsSync.existsSync(sectionPath)) return null;
+  const parsed = d.ledgerStore.readJSONStore(sectionPath, null);
+  if (parsed === null) return null;
+  return d.bookmarkGuard.sanitizeBookmarkList(parsed, Date.now()).items;
+}
+function writeSanitizedSection(sectionPath, items) {
+  const cleaned = d.bookmarkGuard.sanitizeBookmarkList(items, Date.now()).items;
+  d.ledgerStore.writeJSONStore(sectionPath, cleaned, { pretty: true });
+  return cleaned;
+}
 function saveBookmarks() {
   const bookmarksPath = d.path.join(d.app.getPath('userData'), 'bookmarks.json');
   try {
     // r35：写盘前统一过 bookmarkguard——只落 http/https、title 去控制字符并限长、
     // 按 url 去重并收敛到硬上界。无论书签来自批量收藏 / 单条新增 / 导入，都在此收口，
     // 避免不可信标题或海量条目污染 bookmarks.json。
-    const cleaned = d.bookmarkGuard.sanitizeBookmarkList(d.bookmarks, Date.now());
-    d.bookmarks = cleaned.items;
-    d.ledgerStore.writeJSONStore(bookmarksPath, d.bookmarks, { pretty: true });
+    d.bookmarks = writeSanitizedSection(bookmarksPath, d.bookmarks);
   } catch (e) {
     console.error('保存书签失败:', e);
   }
@@ -234,12 +243,10 @@ function saveBookmarks() {
 function loadBookmarks() {
   const bookmarksPath = d.path.join(d.app.getPath('userData'), 'bookmarks.json');
   try {
-    if (d.fsSync.existsSync(bookmarksPath)) {
-      // bookmarks.json 不是信任边界（可被手改 / 同步盘 / 恶意进程替换 / 崩溃截断）：
-      // 非数组视为空，逐条做对象 / 字段 / scheme 校验，脏项丢弃，绝不把脏结构送进 UI。
-      const parsed = d.ledgerStore.readJSONStore(bookmarksPath, null);
-      if (parsed !== null) d.bookmarks = d.bookmarkGuard.sanitizeBookmarkList(parsed, Date.now()).items;
-    }
+    // bookmarks.json 不是信任边界（可被手改 / 同步盘 / 恶意进程替换 / 崩溃截断）：
+    // 非数组视为空，逐条做对象 / 字段 / scheme 校验，脏项丢弃，绝不把脏结构送进 UI。
+    const cleaned = readSanitizedSection(bookmarksPath);
+    if (cleaned !== null) d.bookmarks = cleaned;
   } catch (e) {
     console.error('读取书签失败:', e);
   }
@@ -247,9 +254,7 @@ function loadBookmarks() {
 function saveReadingList() {
   const rlPath = d.path.join(d.app.getPath('userData'), 'readinglist.json');
   try {
-    const cleaned = d.bookmarkGuard.sanitizeBookmarkList(d.readingList, Date.now());
-    d.readingList = cleaned.items;
-    d.ledgerStore.writeJSONStore(rlPath, d.readingList, { pretty: true });
+    d.readingList = writeSanitizedSection(rlPath, d.readingList);
   } catch (e) {
     console.error('保存稍后读失败:', e);
   }
@@ -257,10 +262,8 @@ function saveReadingList() {
 function loadReadingList() {
   const rlPath = d.path.join(d.app.getPath('userData'), 'readinglist.json');
   try {
-    if (d.fsSync.existsSync(rlPath)) {
-      const parsed = d.ledgerStore.readJSONStore(rlPath, null);
-      if (parsed !== null) d.readingList = d.bookmarkGuard.sanitizeBookmarkList(parsed, Date.now()).items;
-    }
+    const cleaned = readSanitizedSection(rlPath);
+    if (cleaned !== null) d.readingList = cleaned;
   } catch (e) {
     console.error('读取稍后读失败:', e);
   }
