@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 const { originFromUrl } = require('./modutil');
 
 // devtoolsguard.js —— 开发者工具内“在浏览器打开链接”（devtools-open-url）的收口内核。
@@ -70,23 +71,17 @@ function decideDevToolsUrl(rawUrl) {
   return { action: ACTION_BLOCK, url, scheme, origin: '', reason: REASON_UNSUPPORTED_SCHEME };
 }
 
+const DEV_TOOLS_REASON_TEXT = {
+  [REASON_ALLOW_HTTP]: 'DevTools 链接已在应用内新标签页打开',
+  [REASON_ALLOW_COSY]: 'DevTools 内部页面链接已在应用内打开',
+  [REASON_EMPTY]: 'DevTools 请求打开的链接为空，已忽略',
+  [REASON_MALFORMED]: 'DevTools 请求打开的 URL 非法，已拦截',
+  [REASON_DANGEROUS_SCHEME]: 'DevTools 试图打开 file/data/javascript 等危险协议链接，已拦截',
+  [REASON_UNSUPPORTED_SCHEME]: 'DevTools 试图唤起外部应用协议，已拦截（仅允许 http/https 在应用内打开）',
+};
+
 function describeDevToolsReason(reason) {
-  switch (reason) {
-    case REASON_ALLOW_HTTP:
-      return 'DevTools 链接已在应用内新标签页打开';
-    case REASON_ALLOW_COSY:
-      return 'DevTools 内部页面链接已在应用内打开';
-    case REASON_EMPTY:
-      return 'DevTools 请求打开的链接为空，已忽略';
-    case REASON_MALFORMED:
-      return 'DevTools 请求打开的 URL 非法，已拦截';
-    case REASON_DANGEROUS_SCHEME:
-      return 'DevTools 试图打开 file/data/javascript 等危险协议链接，已拦截';
-    case REASON_UNSUPPORTED_SCHEME:
-      return 'DevTools 试图唤起外部应用协议，已拦截（仅允许 http/https 在应用内打开）';
-    default:
-      return 'DevTools 链接请求';
-  }
+  return describeReasonFrom(DEV_TOOLS_REASON_TEXT, reason, 'DevTools 链接请求');
 }
 
 module.exports = {
