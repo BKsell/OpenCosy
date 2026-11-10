@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const REASON = Object.freeze({
   OK: 'ok',
@@ -136,18 +137,19 @@ function createExternalBudget(policy = {}) {
   return { judge, reset, snapshot };
 }
 
+const REASON_TEXT = {
+  [REASON.OK]: '允许',
+  [REASON.BLOCKED_SCHEME]: '协议不在可唤起白名单',
+  [REASON.EMPTY_TARGET]: '外部唤起目标为空或来源缺失',
+  [REASON.CONTROL_CHAR]: '目标含控制字符',
+  [REASON.TOO_LONG]: '目标超长',
+  [REASON.USERINFO]: '目标内嵌账号口令',
+  [REASON.FLOOD]: '同一来源唤起过于频繁',
+  [REASON.SCHEME_FLOOD]: '该协议唤起次数超限',
+};
+
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK: return '允许';
-    case REASON.BLOCKED_SCHEME: return '协议不在可唤起白名单';
-    case REASON.EMPTY_TARGET: return '外部唤起目标为空或来源缺失';
-    case REASON.CONTROL_CHAR: return '目标含控制字符';
-    case REASON.TOO_LONG: return '目标超长';
-    case REASON.USERINFO: return '目标内嵌账号口令';
-    case REASON.FLOOD: return '同一来源唤起过于频繁';
-    case REASON.SCHEME_FLOOD: return '该协议唤起次数超限';
-    default: return '未知原因';
-  }
+  return describeReasonFrom(REASON_TEXT, reason, '未知原因');
 }
 
 module.exports = {
