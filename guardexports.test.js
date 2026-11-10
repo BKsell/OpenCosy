@@ -14,6 +14,7 @@ const API = {
   certguard: ['sanitizeExceptionRecord', 'createException', 'normalizeHost', 'normalizeFingerprint',
     'classifyCertError', 'exceptionMatches', 'shortFingerprint', 'errorInfo', 'HARD_DENY_CODES'],
   deeplinkguard: ['reviewStartupArg', 'describeReason', 'pickDeepLinkFromArgv'],
+  switchguard: ['SEVERITY_CRITICAL', 'auditSwitches', 'collectSources'],
 };
 
 for (const [modName, names] of Object.entries(API)) {
@@ -37,4 +38,16 @@ test('deeplinkguard resolves startup args end to end', () => {
   assert.equal(link.ok, true);
   assert.equal(guard.reviewStartupArg('cosy://evil/x').reason, 'host');
   assert.equal(guard.describeReason('host'), '内部深链主机不在白名单');
+});
+
+test('switchguard blocks security-disabling launch switches', () => {
+  const guard = require('./switchguard');
+  const audit = guard.auditSwitches(guard.collectSources({
+    argv: ['cosy.exe', '/app', '--disable-web-security'],
+    env: { ELECTRON_EXTRA_LAUNCH_ARGS: '--no-sandbox' },
+  }));
+  assert.equal(audit.hasCritical, true);
+  assert.deepEqual(audit.criticalFlags.map((f) => f.raw).sort(),
+    ['--disable-web-security', '--no-sandbox']);
+  assert.equal(guard.auditSwitches(guard.collectSources({ argv: ['cosy.exe', '/app'], env: {} })).hasCritical, false);
 });
