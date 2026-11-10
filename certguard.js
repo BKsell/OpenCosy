@@ -104,3 +104,5 @@ function sanitizeExceptionRecord(raw) {
     addedAt: Number(raw.addedAt) || 0,
   };
 }
+
+module.exports = { HARD_DENY_CODES, classifyCertError, createException, errorInfo, exceptionMatches, sanitizeExceptionRecord, shortFingerprint, ...require('./certguard_resolve') };
