@@ -1185,23 +1185,7 @@ const certChallenges = new Map(); // nonce -> 拦截上下文
 // 证书校验失败：默认阻止。命中已批准例外才放行；否则向主界面推送全屏
 // 拦截页（仅主框架导航）。证书对象在送渲染进程前经 summarizeCertificate
 // 脱敏，只给展示所需字段。
-const cosyipcwire4Mod = require('./cosyipcwire4');
-cosyipcwire4Mod.bindDeps({
-    get addCertException() { return addCertException; },
-    get app() { return app; },
-    get certExceptionAllowed() { return certExceptionAllowed; },
-    get certGuard() { return certGuard; },
-    get clearCertExceptions() { return clearCertExceptions; },
-    get consumeCertChallenge() { return consumeCertChallenge; },
-    get getCertExceptionStats() { return getCertExceptionStats; },
-    get ipcMain() { return ipcMain; },
-    get listCertExceptionEntries() { return listCertExceptionEntries; },
-    get makeCertChallenge() { return makeCertChallenge; },
-    get removeCertException() { return removeCertException; },
-    get sendToRenderer() { return sendToRenderer; },
-    get webContents() { return webContents; },
-});
-cosyipcwire4Mod.installCertificateErrorHandler();
+cosyipcwireMod.installCertificateErrorHandler();
 
 // ===== 网络身份认证治理（login / select-client-certificate）=====
 // Electron 缺省会对任何框架的 HTTP 401 弹原生登录框，且可能静默复用当前
@@ -2200,6 +2184,27 @@ cosyipcwireMod.bindDeps({
     get validateExtensionFolder() { return validateExtensionFolder; },
     get zoomIn() { return zoomIn; },
     get zoomOut() { return zoomOut; },
+  get addCertException() { return addCertException; },
+  get certExceptionAllowed() { return certExceptionAllowed; },
+  get certGuard() { return certGuard; },
+  get clearCertExceptions() { return clearCertExceptions; },
+  get consumeCertChallenge() { return consumeCertChallenge; },
+  get getCertExceptionStats() { return getCertExceptionStats; },
+  get listCertExceptionEntries() { return listCertExceptionEntries; },
+  get makeCertChallenge() { return makeCertChallenge; },
+  get removeCertException() { return removeCertException; },
+  get SITE_DATA_MAX_NAMES() { return SITE_DATA_MAX_NAMES; },
+  get SITE_DATA_MAX_ROWS() { return SITE_DATA_MAX_ROWS; },
+  get SITE_DATA_SEARCH_MAX() { return SITE_DATA_SEARCH_MAX; },
+  get SITE_DATA_STORAGES() { return SITE_DATA_STORAGES; },
+  get SUGGEST_MAX_CHARS() { return SUGGEST_MAX_CHARS; },
+  get customRulesSnapshot() { return customRulesSnapshot; },
+  get fetchSearchSuggestions() { return fetchSearchSuggestions; },
+  get hostMatch() { return hostMatch; },
+  get normalizeCookieDomain() { return normalizeCookieDomain; },
+  get persistCustomRules() { return persistCustomRules; },
+  get pickCookieFields() { return pickCookieFields; },
+  get removeCookieEntry() { return removeCookieEntry; },
 });
 cosyipcwireMod.registerProtocolIpc();
 
@@ -2481,41 +2486,7 @@ cosyipcregisterMod.registerTabSurfaces();
 // 规则以字符串行表达：裸域名 / host:x / glob:https://*.x/* / path:https://x/ads/
 // 所有写操作后立即持久化并重编译，webRequest 管道下一次判定即生效。
 
-const cosyipcwire3Mod = require('./cosyipcwire3');
-cosyipcwire3Mod.bindDeps({
-    get SITE_DATA_MAX_NAMES() { return SITE_DATA_MAX_NAMES; },
-    get SITE_DATA_MAX_ROWS() { return SITE_DATA_MAX_ROWS; },
-    get SITE_DATA_SEARCH_MAX() { return SITE_DATA_SEARCH_MAX; },
-    get SITE_DATA_STORAGES() { return SITE_DATA_STORAGES; },
-    get SUGGEST_MAX_CHARS() { return SUGGEST_MAX_CHARS; },
-    get app() { return app; },
-    get blockRules() { return blockRules; },
-    get blockTrackers() { return blockTrackers; },
-    set blockTrackers(v) { blockTrackers = v; },
-    get currentTabIndex() { return currentTabIndex; },
-    set currentTabIndex(v) { currentTabIndex = v; },
-    get customRules() { return customRules; },
-    get customRulesSnapshot() { return customRulesSnapshot; },
-    get fetchSearchSuggestions() { return fetchSearchSuggestions; },
-    get hostMatch() { return hostMatch; },
-    get ipcMain() { return ipcMain; },
-    get isMainSender() { return isMainSender; },
-    get ledgerStore() { return ledgerStore; },
-    get normalizeCookieDomain() { return normalizeCookieDomain; },
-    get path() { return path; },
-    get persistCustomRules() { return persistCustomRules; },
-    get pickCookieFields() { return pickCookieFields; },
-    get recordSecurityEvent() { return recordSecurityEvent; },
-    get removeCookieEntry() { return removeCookieEntry; },
-    get sanitizeSettings() { return sanitizeSettings; },
-    get searchProvider() { return searchProvider; },
-    get searchProviderId() { return searchProviderId; },
-    set searchProviderId(v) { searchProviderId = v; },
-    get session() { return session; },
-    get tabs() { return tabs; },
-    set tabs(v) { tabs = v; },
-});
-cosyipcwire3Mod.registerBlockRulesIpc();
+cosyipcwireMod.registerBlockRulesIpc();
 
 // ===== 保险库 IPC =====
 // 写操作（创建/解锁/写入/删除）均走 COSY_ONLY 分级（见 channelpolicy）；读快照走
@@ -2606,7 +2577,7 @@ const SITE_DATA_MAX_NAMES = 10;
 const SITE_DATA_SEARCH_MAX = 200;
 
 // 汇总每个域名下的 Cookie 数量与名称样本，供管理页列表使用。
-cosyipcwire3Mod.registerSiteDataIpc();
+cosyipcwireMod.registerSiteDataIpc();
 
 // 地址栏搜索建议：端点来自 searchprovider 内置白名单（随默认搜索引擎切换），
 // 不接受 renderer 传入的任意 URL，避免被当成 SSRF 跳板。返回严格限定为
@@ -2619,4 +2590,4 @@ const SUGGEST_TIMEOUT_MS = 2500;
 // 一律回落内核默认（bing）。
 let searchProviderId = searchProvider.DEFAULT_PROVIDER_ID;
 
-cosyipcwire3Mod.registerSearchSuggestIpc();
+cosyipcwireMod.registerSearchSuggestIpc();

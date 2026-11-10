@@ -1,5 +1,11 @@
 'use strict';
 
+let d = {};
+
+function bindDeps(x) {
+  d = x;
+}
+
 function registerSiteDataIpc() {
 d.ipcMain.handle('list-site-data', async (event, payload = {}) => {
   if (!d.isMainSender(event)) return { success: false, error: 'Unauthorized' };
@@ -128,4 +134,4 @@ d.ipcMain.handle('print-current-tab', (event) => {
 });
 }
 
-module.exports = { registerSiteDataIpc };
+module.exports = { bindDeps, registerSiteDataIpc };
