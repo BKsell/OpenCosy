@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { safeIntV2 } = require('./modutil');
 const safeInt = safeIntV2;
@@ -185,13 +186,14 @@ function auditGrants(decisions, options = {}) {
   return result;
 }
 
+const GRANT_STATE_TEXT = {
+  [STATE.ALLOW]: '已允许',
+  [STATE.DENY]: '已拒绝',
+  [STATE.EXPIRED]: '已过期',
+};
+
 function describeGrantState(state) {
-  switch (state) {
-    case STATE.ALLOW: return '已允许';
-    case STATE.DENY: return '已拒绝';
-    case STATE.EXPIRED: return '已过期';
-    default: return '状态未知';
-  }
+  return describeReasonFrom(GRANT_STATE_TEXT, state, '状态未知');
 }
 
 function summarizeRisk(report) {
