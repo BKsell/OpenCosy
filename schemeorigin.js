@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { parseUrl } = require('./modutil');
 const safeParse = parseUrl;
@@ -121,15 +122,13 @@ function evaluate(targetUrl, initiatorUrl) {
 
 // describeBlock 把拦截原因转成稳定的中文说明（用于安全事件，不含外部 URL 原文，
 // 由调用方另行脱敏记录）。
+const BLOCK_TEXT = {
+  'untrusted-to-internal': '不可信网页试图导航到浏览器内部特权页面',
+  'untrusted-to-file': '网页试图导航到本地 file:// 资源',
+};
+
 function describeBlock(reason) {
-  switch (reason) {
-    case 'untrusted-to-internal':
-      return '不可信网页试图导航到浏览器内部特权页面';
-    case 'untrusted-to-file':
-      return '网页试图导航到本地 file:// 资源';
-    default:
-      return '不安全的跨上下文导航';
-  }
+  return describeReasonFrom(BLOCK_TEXT, reason, '不安全的跨上下文导航');
 }
 
 module.exports = {
