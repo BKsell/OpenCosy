@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { headerValues, originOf } = require('./modutil');
 
@@ -117,15 +118,16 @@ function applyRefreshHeaderGuard(headers, details) {
   return verdict;
 }
 
+const REASON_TEXT = {
+  [REASON.ok]: 'no header driven navigation',
+  [REASON.refreshHeader]: 'Refresh header removed to keep navigation in-app',
+  [REASON.refreshCrossOrigin]: 'Refresh header pointed at another origin',
+  [REASON.linkPreload]: 'cross-origin preload link removed',
+  [REASON.linkPrefetch]: 'cross-origin prefetch link removed',
+};
+
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.ok: return 'no header driven navigation';
-    case REASON.refreshHeader: return 'Refresh header removed to keep navigation in-app';
-    case REASON.refreshCrossOrigin: return 'Refresh header pointed at another origin';
-    case REASON.linkPreload: return 'cross-origin preload link removed';
-    case REASON.linkPrefetch: return 'cross-origin prefetch link removed';
-    default: return 'unknown refresh verdict';
-  }
+  return describeReasonFrom(REASON_TEXT, reason, 'unknown refresh verdict');
 }
 
 module.exports = {
