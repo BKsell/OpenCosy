@@ -14,6 +14,7 @@ const {
   sendToRenderer,
   upsertDownloadHashRecord
 } = require('./downloadhashes_store');
+const downloadHashStore = require('./downloadhashes_store');
 
 // queueDownloadHashing 把一次下载完成事件排进串行摘要链。
 // 摘要是附加能力，任何失败都静默跳过，绝不能影响下载本身的可用性。
@@ -101,3 +102,15 @@ async function hashLocalFileViaDialog() {
   }
   return { ok: true, filename: path.basename(filePath), size: digest.size, sha256: digest.sha256 };
 }
+
+module.exports = {
+  bindRendererNotifier: downloadHashStore.bindRendererNotifier,
+  bindWindowHost: downloadHashStore.bindWindowHost,
+  clearDownloadHashes,
+  hashLocalFileViaDialog,
+  listDownloadHashes,
+  normalizeExpectedHash,
+  queueDownloadHashing,
+  removeDownloadHashRecord,
+  verifyDownloadHashById,
+};
