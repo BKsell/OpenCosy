@@ -30,6 +30,35 @@ function sanitizeReaderNodes(nodes, depth, budget) {
   return out;
 }
 
+const READER_URL_SCHEMES = new Set(['http:', 'https:']);
+
+function keepReaderUrl(value, baseUrl, maxChars) {
+  if (typeof value !== 'string' || !value) return '';
+  try {
+    const parsed = new URL(value, baseUrl || undefined);
+    if (!READER_URL_SCHEMES.has(parsed.protocol)) return '';
+    const href = parsed.href;
+    return href.length > maxChars ? '' : href;
+  } catch {
+    return '';
+  }
+}
+
+function scrubReaderUrls(nodes, baseUrl) {
+  for (const node of nodes) {
+    if (node.href) {
+      node.href = keepReaderUrl(node.href, baseUrl, d.readerCore.READER_MAX_LINK_CHARS);
+      if (!node.href) delete node.href;
+    }
+    if (node.src) {
+      node.src = keepReaderUrl(node.src, baseUrl, d.readerCore.READER_MAX_LINK_CHARS);
+      if (!node.src) delete node.src;
+    }
+    if (node.children) scrubReaderUrls(node.children, baseUrl);
+  }
+  return nodes;
+}
+
 async function enterReaderMode() {
   const tab = d.tabs[d.currentTabIndex];
   const wc = tab && tab.view && !tab.view.webContents.isDestroyed() ? tab.view.webContents : null;
@@ -57,6 +86,7 @@ async function enterReaderMode() {
 function sanitizeReaderArticle(raw, sourceUrl, sourceTitle) {
   const budget = { left: d.readerCore.READER_MAX_NODES };
   const contentNodes = sanitizeReaderNodes(raw && raw.contentNodes, 0, budget);
+  scrubReaderUrls(contentNodes, sourceUrl);
   return {
     ok: !!(raw && raw.ok && contentNodes.length),
     title: String((raw && raw.title) || sourceTitle || '阅读模式').slice(0, 300),
@@ -82,4 +112,4 @@ function openReaderTab() {
   return d.createNewTab(d.READER_PAGE_URL);
 }
 
-module.exports = { sanitizeReaderNodes, enterReaderMode, sanitizeReaderArticle, clampReaderInt, openReaderTab, bindDeps };
+module.exports = { keepReaderUrl, scrubReaderUrls, sanitizeReaderNodes, enterReaderMode, sanitizeReaderArticle, clampReaderInt, openReaderTab, bindDeps };
