@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 const { pruneOlderThan, countSince, originFromUrl, resetCooldown, inCooldown } = require('./modutil');
 
 // dialogguard.js —— 网页 JS 模态对话框（alert/confirm/prompt）的滥用/DoS 收口内核。
@@ -177,21 +178,16 @@ function decideDialog(state, input, now) {
   };
 }
 
+const DIALOG_REASON_TEXT = {
+  [SUPPRESS_BURST]: '网页在短时间内连续弹出模态对话框（疑似弹窗轰炸），本次已拦截',
+  [SUPPRESS_LONG]: '网页持续高频弹出对话框，本次已拦截并进入冷却',
+  [SUPPRESS_COOLDOWN]: '对话框冷却期内的重复弹窗已拦截',
+  [SUPPRESS_DUPLICATE]: '网页连续弹出相同文案的对话框，已合并拦截',
+  [SUPPRESS_MALFORMED]: '对话框文案含异常控制字符或超长，已做净化展示',
+};
+
 function describeDialogReason(reason) {
-  switch (reason) {
-    case SUPPRESS_BURST:
-      return '网页在短时间内连续弹出模态对话框（疑似弹窗轰炸），本次已拦截';
-    case SUPPRESS_LONG:
-      return '网页持续高频弹出对话框，本次已拦截并进入冷却';
-    case SUPPRESS_COOLDOWN:
-      return '对话框冷却期内的重复弹窗已拦截';
-    case SUPPRESS_DUPLICATE:
-      return '网页连续弹出相同文案的对话框，已合并拦截';
-    case SUPPRESS_MALFORMED:
-      return '对话框文案含异常控制字符或超长，已做净化展示';
-    default:
-      return '对话框请求';
-  }
+  return describeReasonFrom(DIALOG_REASON_TEXT, reason, '对话框请求');
 }
 
 module.exports = {
