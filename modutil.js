@@ -93,13 +93,30 @@ function splitItems(text) {
   return items;
 }
 
-function hasControlChars(value) {
-  for (let i = 0; i < value.length; i += 1) {
-    const code = value.charCodeAt(i);
-    if (code < 0x20 || code === 0x7f) return true;
+function hasAsciiControlChar(s) {
+  if (typeof s !== 'string') return false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c < 0x20 || c === 0x7f) return true;
   }
   return false;
 }
+
+function hasUnicodeControlChar(s) {
+  if (typeof s !== 'string') return false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c < 0x20 || c === 0x7f || c === 0x2028 || c === 0x2029 || c === 0xfeff) return true;
+  }
+  return false;
+}
+
+const hasControlChars = hasAsciiControlChar;
+const hasControlCharsV2 = hasAsciiControlChar;
+const hasControlCharV2 = hasAsciiControlChar;
+const hasControlCharV3 = hasAsciiControlChar;
+const containsControlChar = hasUnicodeControlChar;
+const hasControlChar = hasUnicodeControlChar;
 
 function parseUrl(raw) {
   if (typeof raw !== 'string' || raw === '') return null;
@@ -110,21 +127,7 @@ function parseUrl(raw) {
   }
 }
 
-function safeParse(raw) {
-  try {
-    return new URL(raw);
-  } catch {
-    return null;
-  }
-}
-
-function hasControlCharsV2(text) {
-  for (const ch of text) {
-    const code = ch.charCodeAt(0);
-    if (code < 0x20 || code === 0x7f) return true;
-  }
-  return false;
-}
+const safeParse = parseUrl;
 
 function headerValues(headers, name) {
   const target = String(name || '').toLowerCase();
@@ -171,47 +174,12 @@ function tokensOf(values) {
   return out;
 }
 
-function containsControlChar(s) {
-  if (typeof s !== 'string') return false;
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    if (c < 0x20 || c === 0x7f) return true;
-    if (c === 0x2028 || c === 0x2029 || c === 0xfeff) return true;
-  }
-  return false;
-}
-
-function hasControlChar(s) {
-  if (typeof s !== 'string') return false;
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    if (c < 0x20 || c === 0x7f || c === 0x2028 || c === 0x2029 || c === 0xfeff) return true;
-  }
-  return false;
-}
-
 function fallbackTitleFor(u) {
   try {
     return u.hostname.replace(/^www\./i, '') || u.href;
   } catch {
     return u.href;
   }
-}
-
-function hasControlCharV2(s) {
-  for (let i = 0; i < s.length; i++) {
-    const code = s.charCodeAt(i);
-    if (code <= 0x1F || code === 0x7F) return true;
-  }
-  return false;
-}
-
-function hasControlCharV3(s) {
-  for (let i = 0; i < s.length; i++) {
-    const code = s.charCodeAt(i);
-    if (code < 0x20 || code === 0x7f) return true;
-  }
-  return false;
 }
 
 function asBytes(value) {
