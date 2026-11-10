@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const REASON = Object.freeze({
   OK: 'ok',
@@ -40,15 +41,16 @@ function evaluatePluginResource(input = {}) {
   return { action: 'allow', reason: REASON.OK, detail: '' };
 }
 
+const REASON_TEXT = {
+  [REASON.OK]: '非插件资源',
+  [REASON.LEGACY_OBJECT]: '旧式 object/embed 插件内容',
+  [REASON.FLASH_CONTENT]: 'Flash 内容',
+  [REASON.DATA_OBJECT]: 'data: 插件内容',
+  [REASON.INTERNAL_ALLOWED]: '内置资源放行',
+};
+
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK: return '非插件资源';
-    case REASON.LEGACY_OBJECT: return '旧式 object/embed 插件内容';
-    case REASON.FLASH_CONTENT: return 'Flash 内容';
-    case REASON.DATA_OBJECT: return 'data: 插件内容';
-    case REASON.INTERNAL_ALLOWED: return '内置资源放行';
-    default: return '未知原因';
-  }
+  return describeReasonFrom(REASON_TEXT, reason, '未知原因');
 }
 
 module.exports = {
