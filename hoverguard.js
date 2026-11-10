@@ -7,11 +7,16 @@ const {
   DROP_COOLDOWN,
   DROP_FLOOD,
   HOLD_SAME,
+  HOLD_TOO_SOON,
   HOVER_BURST_WINDOW_MS,
   HOVER_LONG_WINDOW_MS,
   HOVER_MIN_INTERVAL_MS,
+  HOVER_DROP,
+  HOVER_HOLD,
   HOVER_SHOW,
   noteAttempt,
+  createHoverState,
+  resetForNavigation,
   sanitizeHoverUrl
 } = require('./hoverguard_rules');
 
@@ -87,3 +92,17 @@ const HOVER_REASON_TEXT = {
 function describeHoverReason(reason) {
   return describeReasonFrom(HOVER_REASON_TEXT, reason, '悬停目标');
 }
+
+module.exports = {
+  DROP_BAD,
+  DROP_COOLDOWN,
+  DROP_FLOOD,
+  HOLD_SAME,
+  HOVER_DROP,
+  HOVER_HOLD,
+  HOVER_SHOW,
+  createHoverState,
+  decideHoverUrl,
+  describeHoverReason,
+  resetForNavigation,
+};
