@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { tokensOf } = require('./modutil');
 const splitTokens = tokensOf;
@@ -93,18 +94,19 @@ function applyCorsGuard(headers) {
   return { changed: true, verdict };
 }
 
+const REASON_TEXT = {
+  [REASON.OK]: 'CORS 配置正常',
+  [REASON.WILDCARD_CREDENTIALS]: '通配来源同时允许携带凭据',
+  [REASON.NULL_ORIGIN]: '允许 null 来源，沙箱页面可越权读取',
+  [REASON.MULTIPLE_ORIGINS]: '响应中出现多个 Allow-Origin',
+  [REASON.CREDENTIALS_WITHOUT_ORIGIN]: '允许凭据但未声明来源',
+  [REASON.TRACE_METHOD]: 'CORS 允许 TRACE 等方法',
+  [REASON.EXPOSED_SENSITIVE_HEADER]: 'CORS 暴露敏感响应头',
+  [REASON.PRIVATE_NETWORK]: '允许私有网络访问请求',
+};
+
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK: return 'CORS 配置正常';
-    case REASON.WILDCARD_CREDENTIALS: return '通配来源同时允许携带凭据';
-    case REASON.NULL_ORIGIN: return '允许 null 来源，沙箱页面可越权读取';
-    case REASON.MULTIPLE_ORIGINS: return '响应中出现多个 Allow-Origin';
-    case REASON.CREDENTIALS_WITHOUT_ORIGIN: return '允许凭据但未声明来源';
-    case REASON.TRACE_METHOD: return 'CORS 允许 TRACE 等方法';
-    case REASON.EXPOSED_SENSITIVE_HEADER: return 'CORS 暴露敏感响应头';
-    case REASON.PRIVATE_NETWORK: return '允许私有网络访问请求';
-    default: return String(reason || '');
-  }
+  return describeReasonFrom(REASON_TEXT, reason, String(reason || ''));
 }
 
 module.exports = {
