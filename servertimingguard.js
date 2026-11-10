@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { headerValues, originOf } = require('./modutil');
 
@@ -65,15 +66,16 @@ function applyServerTimingGuard(headers, details) {
   return verdict;
 }
 
+const REASON_TEXT = {
+  [REASON.ok]: 'no timing side channel headers',
+  [REASON.serverTiming]: 'Server-Timing removed to avoid exposing internal timings',
+  [REASON.timingAllowOrigin]: 'Timing-Allow-Origin opened cross-origin timing reads',
+  [REASON.reportTo]: 'reporting endpoint removed',
+  [REASON.nel]: 'network error logging header removed',
+};
+
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.ok: return 'no timing side channel headers';
-    case REASON.serverTiming: return 'Server-Timing removed to avoid exposing internal timings';
-    case REASON.timingAllowOrigin: return 'Timing-Allow-Origin opened cross-origin timing reads';
-    case REASON.reportTo: return 'reporting endpoint removed';
-    case REASON.nel: return 'network error logging header removed';
-    default: return 'unknown timing verdict';
-  }
+  return describeReasonFrom(REASON_TEXT, reason, 'unknown timing verdict');
 }
 
 module.exports = {
