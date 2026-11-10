@@ -60,3 +60,9 @@ function collectSources(proc) {
     extraLaunchArgs: env.ELECTRON_EXTRA_LAUNCH_ARGS || '',
   };
 }
+
+module.exports = {
+  SEVERITY_CRITICAL,
+  auditSwitches,
+  collectSources,
+};
