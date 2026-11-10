@@ -51,3 +51,16 @@ test('sanitizeWebUrl returns normalized href for http and https', () => {
   assert.strictEqual(r.url, 'https://example.com/a');
   assert.deepStrictEqual([...guard.ALLOWED_PROTOCOLS], ['http:', 'https:']);
 });
+
+test('sanitizeWebUrl applies the default length cap when limit is omitted', () => {
+  const long = 'https://example.com/' + 'a'.repeat(guard.MAX_URL_CHARS);
+  const r = guard.sanitizeWebUrl(long, reasons);
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'too-long');
+});
+
+test('sanitizeWebUrl tolerates a missing reasons table', () => {
+  const r = guard.sanitizeWebUrl('javascript:alert(1)');
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.url, '');
+});
