@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const REASON = {
   ok: 'ok',
@@ -148,20 +149,21 @@ function applyCookieJarHardening(headers) {
   return verdict;
 }
 
+const REASON_TEXT = {
+  [REASON.ok]: 'cookie scope acceptable',
+  [REASON.publicSuffix]: 'cookie scoped to a public suffix',
+  [REASON.ipDomain]: 'cookie scoped to an IP literal',
+  [REASON.hostPrefix]: '__Host- cookie missing Secure/Path or carrying Domain',
+  [REASON.securePrefix]: '__Secure- cookie missing Secure',
+  [REASON.samesiteNone]: 'SameSite=None cookie without Secure',
+  [REASON.oversized]: 'cookie exceeds the 4KB limit',
+  [REASON.tooMany]: 'response sets too many cookies',
+  [REASON.malformed]: 'cookie pair cannot be parsed',
+  [REASON.controlChars]: 'cookie carries control or bidi characters',
+};
+
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.ok: return 'cookie scope acceptable';
-    case REASON.publicSuffix: return 'cookie scoped to a public suffix';
-    case REASON.ipDomain: return 'cookie scoped to an IP literal';
-    case REASON.hostPrefix: return '__Host- cookie missing Secure/Path or carrying Domain';
-    case REASON.securePrefix: return '__Secure- cookie missing Secure';
-    case REASON.samesiteNone: return 'SameSite=None cookie without Secure';
-    case REASON.oversized: return 'cookie exceeds the 4KB limit';
-    case REASON.tooMany: return 'response sets too many cookies';
-    case REASON.malformed: return 'cookie pair cannot be parsed';
-    case REASON.controlChars: return 'cookie carries control or bidi characters';
-    default: return 'unknown cookie verdict';
-  }
+  return describeReasonFrom(REASON_TEXT, reason, 'unknown cookie verdict');
 }
 
 module.exports = {
