@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 const { originFromUrl } = require('./modutil');
 
 // devicerguard.js —— 串口 / HID / USB 设备“选择器”回调的统一收口内核。
@@ -80,13 +81,14 @@ function decideDeviceChooser(input) {
 }
 
 // describeKind 给出设备类别中文名，用于安全事件文案。
+const KIND_TEXT = {
+  [KIND_SERIAL]: '串口',
+  [KIND_HID]: 'HID',
+  [KIND_USB]: 'USB',
+};
+
 function describeKind(kind) {
-  switch (kind) {
-    case KIND_SERIAL: return '串口';
-    case KIND_HID: return 'HID';
-    case KIND_USB: return 'USB';
-    default: return '未知设备';
-  }
+  return describeReasonFrom(KIND_TEXT, kind, '未知设备');
 }
 
 module.exports = {
