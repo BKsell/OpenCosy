@@ -36,6 +36,7 @@ const REASON_TEXT = {
   unparseable: '深链无法解析',
   scheme: '不允许的深链协议',
   'no-host': '深链缺少主机名',
+  userinfo: '深链携带账号信息',
   host: '内部深链主机不在白名单',
   unc: '不接受网络共享(UNC)路径',
   'not-absolute': '本地文件必须是绝对路径',
@@ -46,3 +47,5 @@ const REASON_TEXT = {
 function describeReason(reason) {
   return describeReasonFrom(REASON_TEXT, reason, '不安全的深链');
 }
+
+module.exports = { MAX_ARGV_SCAN, describeReason, pickDeepLinkFromArgv, ...require('./deeplinkguard_schemes') };
