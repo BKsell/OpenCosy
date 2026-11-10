@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 const { pruneOlderThan, countSince } = require('./modutil');
 
 // mediaguard.js —— 媒体播放状态事件（media-started-playing / media-paused）收口内核。
@@ -110,21 +111,16 @@ function decideMediaEvent(state, event, now) {
   return { action: MEDIA_ACCEPT, reason: '', ...baseCounts() };
 }
 
+const MEDIA_REASON_TEXT = {
+  [HOLD_REDUNDANT]: '重复的媒体播放状态事件已合并',
+  [HOLD_TOO_SOON]: '媒体播放/暂停切换过于频繁，已合并声音状态刷新',
+  [DROP_BAD_EVENT]: '未知类型的媒体事件已忽略',
+  [DROP_FLOOD]: '页面异常频繁切换媒体播放状态（疑似自动播放风暴/媒体键劫持），冷却期内冻结声音指示',
+  [DROP_COOLDOWN]: '媒体播放风暴冷却期内的状态事件已忽略',
+};
+
 function describeMediaReason(reason) {
-  switch (reason) {
-    case HOLD_REDUNDANT:
-      return '重复的媒体播放状态事件已合并';
-    case HOLD_TOO_SOON:
-      return '媒体播放/暂停切换过于频繁，已合并声音状态刷新';
-    case DROP_BAD_EVENT:
-      return '未知类型的媒体事件已忽略';
-    case DROP_FLOOD:
-      return '页面异常频繁切换媒体播放状态（疑似自动播放风暴/媒体键劫持），冷却期内冻结声音指示';
-    case DROP_COOLDOWN:
-      return '媒体播放风暴冷却期内的状态事件已忽略';
-    default:
-      return '媒体播放状态';
-  }
+  return describeReasonFrom(MEDIA_REASON_TEXT, reason, '媒体播放状态');
 }
 
 module.exports = {
