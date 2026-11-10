@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 const { pruneOlderThan, countSince } = require('./modutil');
 
 // themeguard.js —— did-change-theme-color（<meta name="theme-color">）收口内核。
@@ -150,21 +151,16 @@ function decideThemeColor(state, rawColor, now) {
   return { action: THEME_ACCEPT, reason: '', color: parsed.color, ...baseCounts() };
 }
 
+const THEME_REASON_TEXT = {
+  [HOLD_NO_CHANGE]: '页面主题色未变化，已合并',
+  [HOLD_TOO_SOON]: '页面主题色变化过快，已合并',
+  [DROP_BAD_COLOR]: '页面请求的主题色不在允许的颜色格式内，已忽略',
+  [DROP_FLOOD]: '页面异常频繁切换主题色（疑似闪烁干扰/伪装），冷却期内锁定顶栏配色',
+  [DROP_COOLDOWN]: '主题色闪烁冷却期内的变更已忽略',
+};
+
 function describeThemeReason(reason) {
-  switch (reason) {
-    case HOLD_NO_CHANGE:
-      return '页面主题色未变化，已合并';
-    case HOLD_TOO_SOON:
-      return '页面主题色变化过快，已合并';
-    case DROP_BAD_COLOR:
-      return '页面请求的主题色不在允许的颜色格式内，已忽略';
-    case DROP_FLOOD:
-      return '页面异常频繁切换主题色（疑似闪烁干扰/伪装），冷却期内锁定顶栏配色';
-    case DROP_COOLDOWN:
-      return '主题色闪烁冷却期内的变更已忽略';
-    default:
-      return '页面主题色';
-  }
+  return describeReasonFrom(THEME_REASON_TEXT, reason, '页面主题色');
 }
 
 module.exports = {
