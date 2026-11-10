@@ -1,7 +1,7 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
 
-const { deleteHeader, headerKey } = require('./headerutil');
+const { applyVerdictHeaderGuard } = require('./guardapply');
 
 const REASON = {
   OK: 'ok',
@@ -69,20 +69,13 @@ function inspectXRobotsTag(value) {
 }
 
 function applyXRobotsGuard(headers) {
-  const key = headerKey(headers, 'x-robots-tag');
-  if (!key) return { changed: false, reason: REASON.MISSING };
-  const raw = headers[key];
-  if (Array.isArray(raw) && raw.length > 1) {
-    delete headers[key];
-    return { changed: true, reason: REASON.MULTI_VALUE, previous: raw.slice(0, 4) };
-  }
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  const verdict = inspectXRobotsTag(value);
-  if (verdict.reason === REASON.OK) {
-    return { changed: false, reason: REASON.OK, directives: verdict.directives };
-  }
-  delete headers[key];
-  return { changed: true, reason: verdict.reason, directive: verdict.directive || null };
+  return applyVerdictHeaderGuard(headers, 'x-robots-tag', inspectXRobotsTag, {
+    okReason: REASON.OK,
+    missingReason: REASON.MISSING,
+    multiReason: REASON.MULTI_VALUE,
+    okField: 'directives',
+    failField: 'directive',
+  });
 }
 
 const describeReason = describeReasonTable({

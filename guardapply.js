@@ -60,10 +60,27 @@ function applyFindingsGuard(headers, header, inspect, options) {
   return { changed: true, reason: result.reason, findings };
 }
 
+function applyVerdictHeaderGuard(headers, header, inspect, options) {
+  if (!headerKey(headers, header)) return { changed: false, reason: options.missingReason };
+  const raw = headers[headerKey(headers, header)];
+  if (Array.isArray(raw) && raw.length > 1) {
+    deleteHeader(headers, header);
+    return { changed: true, reason: options.multiReason, previous: raw.slice(0, 4) };
+  }
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  const result = inspect(value);
+  if (result.reason === options.okReason) {
+    return { changed: false, reason: options.okReason, [options.okField]: result[options.okField] };
+  }
+  deleteHeader(headers, header);
+  return { changed: true, reason: result.reason, [options.failField]: result[options.failField] || null };
+}
+
 module.exports = {
   applyDeprecatedHeaderGuard,
   applyFindingsGuard,
   applyMemberListGuard,
   applyPinHeaderGuard,
   applySingleHeaderGuard,
+  applyVerdictHeaderGuard,
 };

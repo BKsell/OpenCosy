@@ -1,7 +1,7 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
 
-const { deleteHeader, headerKey } = require('./headerutil');
+const { applyVerdictHeaderGuard } = require('./guardapply');
 
 const REASON = {
   OK: 'ok',
@@ -28,20 +28,13 @@ function inspectPragma(value) {
 }
 
 function applyPragmaCacheGuard(headers) {
-  const key = headerKey(headers, 'pragma');
-  if (!key) return { changed: false, reason: REASON.MISSING };
-  const raw = headers[key];
-  if (Array.isArray(raw) && raw.length > 1) {
-    delete headers[key];
-    return { changed: true, reason: REASON.MULTI_VALUE, previous: raw.slice(0, 4) };
-  }
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  const verdict = inspectPragma(value);
-  if (verdict.reason === REASON.OK) {
-    return { changed: false, reason: REASON.OK, token: verdict.token };
-  }
-  delete headers[key];
-  return { changed: true, reason: verdict.reason, token: verdict.token || null };
+  return applyVerdictHeaderGuard(headers, 'pragma', inspectPragma, {
+    okReason: REASON.OK,
+    missingReason: REASON.MISSING,
+    multiReason: REASON.MULTI_VALUE,
+    okField: 'token',
+    failField: 'token',
+  });
 }
 
 const describeReason = describeReasonTable({
