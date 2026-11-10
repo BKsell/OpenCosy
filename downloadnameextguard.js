@@ -1,5 +1,7 @@
 'use strict';
 
+const { describeReasonFrom } = require('./reasontext');
+
 const REASON = {
   ok: 'ok',
   doubleExtension: 'double-extension',
@@ -168,7 +170,23 @@ function applyDownloadNameGuard(headers) {
   return { changed, verdict: { reason }, names, forcedAttachment };
 }
 
-module.exports = Object.assign({}, require('./downloadnameextguard_part2'), {
+const REASON_TEXT = {
+  [REASON.ok]: 'download name acceptable',
+  [REASON.doubleExtension]: 'executable hidden behind a decoy extension',
+  [REASON.bidiOverride]: 'name carries a bidi override',
+  [REASON.controlChars]: 'name carries control characters',
+  [REASON.trailingDotSpace]: 'name ends with dots or spaces',
+  [REASON.reservedDevice]: 'name maps to a reserved device',
+  [REASON.hiddenFile]: 'name resolves to a hidden file',
+  [REASON.tooLong]: 'name exceeds the length budget',
+  [REASON.malformed]: 'Content-Disposition cannot be parsed',
+};
+
+function describeReason(reason) {
+  return describeReasonFrom(REASON_TEXT, reason, 'unknown download name verdict');
+}
+
+module.exports = Object.assign({}, { describeReason }, {
   REASON,
   MAX_NAME_LENGTH,
   EXECUTABLE_EXTENSIONS,
