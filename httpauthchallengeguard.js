@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { headerValues, setHeader } = require('./headerutil');
 
@@ -74,17 +75,18 @@ function applyAuthChallengeGuard(headers, details = {}) {
   return { changed: true, verdict };
 }
 
+const REASON_TEXT = {
+  [REASON.OK]: '认证挑战正常',
+  [REASON.PROXY_CHALLENGE]: '代理认证挑战已移除',
+  [REASON.NEGOTIATE_SCHEME]: 'Negotiate/Kerberos 会静默复用域凭据',
+  [REASON.NTLM_SCHEME]: 'NTLM 会静默复用系统凭据',
+  [REASON.SUBRESOURCE_CHALLENGE]: '子资源触发认证弹框',
+  [REASON.INSECURE_TRANSPORT]: '明文 HTTP 上的认证挑战',
+  [REASON.NON_HTTP_SCHEME]: '非 HTTP 协议上的认证挑战',
+};
+
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK: return '认证挑战正常';
-    case REASON.PROXY_CHALLENGE: return '代理认证挑战已移除';
-    case REASON.NEGOTIATE_SCHEME: return 'Negotiate/Kerberos 会静默复用域凭据';
-    case REASON.NTLM_SCHEME: return 'NTLM 会静默复用系统凭据';
-    case REASON.SUBRESOURCE_CHALLENGE: return '子资源触发认证弹框';
-    case REASON.INSECURE_TRANSPORT: return '明文 HTTP 上的认证挑战';
-    case REASON.NON_HTTP_SCHEME: return '非 HTTP 协议上的认证挑战';
-    default: return String(reason || '');
-  }
+  return describeReasonFrom(REASON_TEXT, reason, String(reason || ''));
 }
 
 module.exports = {
