@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { hasControlCharV2 } = require('./modutil');
 
@@ -90,14 +91,15 @@ function planBatchClose(tabs, options) {
 }
 
 // describeReject 把拒绝原因码翻译成中文说明，供 IPC 层回传与审计使用。
+const REJECT_TEXT = {
+  [REJECT_NOT_STRING]: '固定标签标识必须是字符串',
+  [REJECT_TOO_LONG]: '固定标签标识或网址超出长度限制',
+  [REJECT_CONTROL]: '固定标签标识包含非法控制字符',
+  [REJECT_LIMIT]: '固定标签数量已达上限',
+};
+
 function describeReject(reason) {
-  switch (reason) {
-    case REJECT_NOT_STRING: return '固定标签标识必须是字符串';
-    case REJECT_TOO_LONG: return '固定标签标识或网址超出长度限制';
-    case REJECT_CONTROL: return '固定标签标识包含非法控制字符';
-    case REJECT_LIMIT: return '固定标签数量已达上限';
-    default: return '固定标签操作被拒绝';
-  }
+  return describeReasonFrom(REJECT_TEXT, reason, '固定标签操作被拒绝');
 }
 
 module.exports = {
