@@ -1,4 +1,5 @@
 'use strict';
+const { parseUrl } = require('./modutil');
 const { describeReasonTable } = require('./reasontext');
 
 const REASON = {
@@ -12,15 +13,6 @@ const REASON = {
 };
 
 const CREDENTIAL_HEADERS = ['authorization', 'cookie', 'proxy-authorization'];
-
-function parseUrl(value) {
-  if (typeof value !== 'string' || !value) return null;
-  try {
-    return new URL(value);
-  } catch (err) {
-    return null;
-  }
-}
 
 function headerKeys(headers, name) {
   const lower = name.toLowerCase();

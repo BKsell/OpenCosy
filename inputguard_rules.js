@@ -1,5 +1,5 @@
 'use strict';
-
+const { hasControlCharsV2: containsControlChar } = require('./modutil');
 
 const REASON = Object.freeze({
   NOT_STRING: 'not-string',
@@ -35,15 +35,6 @@ function fail(reason) {
 
 function pass(value) {
   return { ok: true, value, reason: '' };
-}
-
-function containsControlChar(s) {
-  if (typeof s !== 'string') return false;
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    if (c < 0x20 || c === 0x7f) return true;
-  }
-  return false;
 }
 
 // asString：字符串裁决。opts:

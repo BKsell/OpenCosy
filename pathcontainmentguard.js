@@ -1,4 +1,5 @@
 'use strict';
+const { hasControlChars } = require('./modutil');
 const { describeReasonTable } = require('./reasontext');
 
 const REASON = {
@@ -16,15 +17,6 @@ const REASON = {
 };
 
 const MAX_PATH_LENGTH = 4096;
-
-function hasControlChars(value) {
-  for (let i = 0; i < value.length; i += 1) {
-    const code = value.charCodeAt(i);
-    if (code === 0) return true;
-    if (code < 0x20 || code === 0x7f) return true;
-  }
-  return false;
-}
 
 function decodeOnce(value) {
   return value.replace(/%([0-9a-fA-F]{2})/g, (all, hex) => String.fromCharCode(parseInt(hex, 16)));

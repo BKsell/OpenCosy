@@ -1,4 +1,5 @@
 'use strict';
+const { hasControlCharsV2: hasControlChar } = require('./modutil');
 
 // extensionstore.js — 扩展存储安全内核（纯函数，不接触磁盘）。
 //
@@ -85,12 +86,6 @@ function utf8Length(s) {
 }
 
 // hasControlChar 报告条目名是否含 NUL 或其他控制字符（终端/资源管理器难辨，拒绝）。
-function hasControlChar(name) {
-  for (let i = 0; i < name.length; i += 1) {
-    if (name.charCodeAt(i) <= 0x1f || name.charCodeAt(i) === 0x7f) return true;
-  }
-  return false;
-}
 
 // hasReservedWindowsChar 报告是否含 Windows 保留字符。':' 尤其危险：NTFS 备用数据流
 // （ADS）允许出现 "evil.exe:secret" 这类名，资源管理器只看到 evil.exe，是经典的文件
