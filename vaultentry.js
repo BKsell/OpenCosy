@@ -10,8 +10,17 @@ const MAX_LABEL_BYTES = 256;
 const MAX_PAYLOAD_BYTES = 64 * 1024;
 const MAX_ENTRIES = 512;
 const MIN_MASTER_KEY_BYTES = 16;
+const SALT_BYTES = 16;
+const MAX_PBKDF2_ROUNDS = 1000000;
+const MIN_PBKDF2_ROUNDS = 100000;
 
 // deriveEntryKey 派生单个条目密钥：HKDF 或 PBKDF2（自设密码慢化）。
+function normalizeRounds(rounds) {
+  const n = Number(rounds);
+  if (!Number.isInteger(n) || n <= 0 || n > MAX_PBKDF2_ROUNDS) return 0;
+  return n;
+}
+
 function deriveEntryKey(masterKey, kdf, saltBuf, rounds) {
   if (kdf === KDF_PBKDF2) {
     return crypto.pbkdf2Sync(masterKey, saltBuf, rounds, KEY_BYTES, 'sha256');
@@ -43,6 +52,9 @@ function normalizeLabel(label) {
 
 // sealEntry 加密一个条目。payload 必须可 JSON 序列化且小于上限。
 function sealEntry(masterKey, kdf, id, saltBuf, rounds, kind, label, payload) {
+  if (kdf === KDF_PBKDF2 && normalizeRounds(rounds) < MIN_PBKDF2_ROUNDS) {
+    return { ok: false, reason: 'bad-rounds' };
+  }
   const plain = Buffer.from(JSON.stringify(payload), 'utf8');
   if (plain.length > MAX_PAYLOAD_BYTES) {
     return { ok: false, reason: 'payload-too-large' };
@@ -72,14 +84,17 @@ function sealEntry(masterKey, kdf, id, saltBuf, rounds, kind, label, payload) {
 function openEntry(masterKey, entry) {
   if (!entry || typeof entry !== 'object') return { ok: false, reason: 'bad-entry' };
   const kdf = entry.k === KDF_PBKDF2 ? KDF_PBKDF2 : KDF_HKDF;
-  const rounds = Number.isInteger(entry.r) && entry.r > 0 ? entry.r : DEFAULT_PBKDF2_ROUNDS;
+  const rounds = kdf === KDF_PBKDF2
+    ? normalizeRounds(entry.r === undefined ? DEFAULT_PBKDF2_ROUNDS : entry.r)
+    : DEFAULT_PBKDF2_ROUNDS;
+  if (rounds === 0) return { ok: false, reason: 'bad-rounds' };
   let saltBuf;
   try {
     saltBuf = Buffer.from(String(entry.s), 'hex');
   } catch {
     return { ok: false, reason: 'bad-salt' };
   }
-  if (saltBuf.length === 0) return { ok: false, reason: 'bad-salt' };
+  if (saltBuf.length !== SALT_BYTES) return { ok: false, reason: 'bad-salt' };
   const key = deriveEntryKey(masterKey, kdf, saltBuf, rounds);
   let enc, iv, tag;
   try {
@@ -92,6 +107,7 @@ function openEntry(masterKey, entry) {
   if (iv.length !== 12 || tag.length !== 16) {
     return { ok: false, reason: 'bad-ciphertext' };
   }
+  if (enc.length > MAX_PAYLOAD_BYTES) return { ok: false, reason: 'bad-ciphertext' };
   try {
     const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
     decipher.setAuthTag(tag);
@@ -115,6 +131,10 @@ module.exports = {
   MAX_PAYLOAD_BYTES,
   MAX_ENTRIES,
   MIN_MASTER_KEY_BYTES,
+  SALT_BYTES,
+  MAX_PBKDF2_ROUNDS,
+  MIN_PBKDF2_ROUNDS,
+  normalizeRounds,
   deriveEntryKey,
   newId,
   normalizeKind,
