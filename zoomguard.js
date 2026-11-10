@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 const { pruneOlderThan } = require('./modutil');
 
 // zoomguard.js —— 页面缩放级别（zoom-changed / setZoomLevel）的越界与事件洪泛收口。
@@ -118,14 +119,15 @@ function flushPendingZoom(state, now) {
   return { action: ACTION_BROADCAST, level: state.level, percent: zoomLevelToPercent(state.level) };
 }
 
+const HOLD_REASON_TEXT = {
+  [HOLD_SAME_LEVEL]: '缩放级别未变化',
+  [HOLD_TOO_FAST]: '缩放广播过于密集，已合并',
+  [HOLD_FLOODED]: '缩放事件疑似洪泛，已暂停广播',
+  [HOLD_BAD_STATE]: '缺少有效缩放状态',
+};
+
 function describeHoldReason(reason) {
-  switch (reason) {
-    case HOLD_SAME_LEVEL: return '缩放级别未变化';
-    case HOLD_TOO_FAST: return '缩放广播过于密集，已合并';
-    case HOLD_FLOODED: return '缩放事件疑似洪泛，已暂停广播';
-    case HOLD_BAD_STATE: return '缺少有效缩放状态';
-    default: return '缩放更新';
-  }
+  return describeReasonFrom(HOLD_REASON_TEXT, reason, '缩放更新');
 }
 
 module.exports = {
