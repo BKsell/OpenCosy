@@ -59,3 +59,5 @@ const REASON_TEXT = {
 function describeReason(reason) {
   return describeReasonFrom(REASON_TEXT, reason, '不安全的外部唤起');
 }
+
+module.exports = { MAX_PATH_LENGTH, describeReason, reviewLocalLaunchPath, ...require('./shellguard_check') };
