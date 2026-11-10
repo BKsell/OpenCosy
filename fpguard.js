@@ -99,3 +99,5 @@ function createFingerprintLedger(limit) {
 
   return { record, toJSON, load, stats, entries, clear, size, hostOf };
 }
+
+module.exports = { createFingerprintLedger, ...require('./fpguard_rules') };
