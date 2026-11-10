@@ -53,6 +53,7 @@ const WEIGHTS = {
   hyphenStackWithBrand: 15,
   brandInPathOnForeignHost: 20,
   decimalHexIp: 20,
+  compatFoldedHost: 35,
 };
 const HIGH_SCORE = 40;
 const MEDIUM_SCORE = 20;
@@ -107,6 +108,15 @@ function hostHasPercentEncoding(hostname) {
   return /%[0-9a-fA-F]{2}/.test(hostname);
 }
 
+function foldCompat(rawHost) {
+  const raw = String(rawHost || '').toLowerCase();
+  try {
+    return raw.normalize('NFKC');
+  } catch {
+    return raw;
+  }
+}
+
 function tokenize(text) {
   return String(text || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
 }
@@ -149,6 +159,7 @@ function analyze(rawUrl) {
   // 从而丢掉“用怪写法躲检查”这个信号。因此 IP / 编码检测改用从原始串里切出的
   // 原始主机，子域/注册域等结构判断仍用规范化后的 hostname。
   const rawHost = extractRawHost(rawUrl);
+  const hostFold = foldCompat(rawHost);
 
   const signals = [];
   const add = (code, detail) => {
@@ -168,7 +179,8 @@ function analyze(rawUrl) {
   const brandOnLeft = findBrandToken(leftOfRegistrable);
   const brandInRegistrable = findBrandToken(regLabel);
   const brandInPath = findBrandToken(pathText);
-  const brandAnywhere = brandInUserinfo || brandOnLeft || brandInRegistrable || brandInPath;
+  const brandOnHost = findBrandToken(hostFold);
+  const brandAnywhere = brandInUserinfo || brandOnLeft || brandInRegistrable || brandInPath || brandOnHost;
 
   // 1) userinfo：http://paypal.com@evil.com 是最经典的地址栏障眼法。
   if (userinfo || u.password) {
@@ -179,6 +191,10 @@ function analyze(rawUrl) {
   // 2) 主机里出现百分号编码（%2e 点、%2f 斜杠等），典型的绕过检查手法。
   if (hostHasPercentEncoding(rawHost)) {
     add('encodedHost', '主机名含百分号编码字符');
+  }
+
+  if (hostFold !== rawHost.toLowerCase()) {
+    add('compatFoldedHost', '主机含全角/兼容字符，NFKC 归一化后才等价于 ' + hostFold);
   }
 
   // 3) 裸 IP 主机：正规品牌官网几乎不会让你在 IP 上登录。
