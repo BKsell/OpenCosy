@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { tokensOf } = require('./modutil');
 
@@ -59,14 +60,15 @@ function applyCacheVaryGuard(headers) {
   return { changed: true, verdict };
 }
 
+const REASON_TEXT = {
+  [REASON.OK]: '缓存键无需修补',
+  [REASON.MISSING_VARY]: '按来源变化的响应缺少 Vary: Origin',
+  [REASON.COOKIE_CACHEABLE]: '携带 Set-Cookie 的响应可被缓存',
+  [REASON.PUBLIC_WITH_COOKIE]: '携带 Set-Cookie 却声明 public',
+};
+
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK: return '缓存键无需修补';
-    case REASON.MISSING_VARY: return '按来源变化的响应缺少 Vary: Origin';
-    case REASON.COOKIE_CACHEABLE: return '携带 Set-Cookie 的响应可被缓存';
-    case REASON.PUBLIC_WITH_COOKIE: return '携带 Set-Cookie 却声明 public';
-    default: return String(reason || '');
-  }
+  return describeReasonFrom(REASON_TEXT, reason, String(reason || ''));
 }
 
 module.exports = {
