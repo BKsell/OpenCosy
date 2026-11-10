@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { safeIntV2 } = require('./modutil');
 const safeInt = safeIntV2;
@@ -13,15 +14,16 @@ const VERDICT = {
 
 const DEFAULT_MAX_VERIFY = 200;
 
+const VERDICT_TEXT = {
+  [VERDICT.OK]: '落盘文件与记录一致',
+  [VERDICT.SKIPPED]: '未做文件核对',
+  [VERDICT.MISSING]: '记录存在但文件已被移除',
+  [VERDICT.SIZE_MISMATCH]: '落盘文件大小与记录不一致',
+  [VERDICT.UNREADABLE]: '无法读取落盘文件状态',
+};
+
 function describeVerdict(verdict) {
-  switch (verdict) {
-    case VERDICT.OK: return '落盘文件与记录一致';
-    case VERDICT.SKIPPED: return '未做文件核对';
-    case VERDICT.MISSING: return '记录存在但文件已被移除';
-    case VERDICT.SIZE_MISMATCH: return '落盘文件大小与记录不一致';
-    case VERDICT.UNREADABLE: return '无法读取落盘文件状态';
-    default: return '未知核对结果';
-  }
+  return describeReasonFrom(VERDICT_TEXT, verdict, '未知核对结果');
 }
 
 function reconcileEntry(entry, options = {}) {
