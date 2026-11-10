@@ -85,3 +85,5 @@ function assertShape(input, spec) {
   }
   return { ok: true, value: out, field: '', reason: '' };
 }
+
+module.exports = { measureObject, assertShape, ...require('./inputguard_rules') };
