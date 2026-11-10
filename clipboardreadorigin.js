@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const REASON = Object.freeze({
   OK: 'ok',
@@ -73,18 +74,19 @@ function decideClipboardRead(input = {}) {
   return { allow: true, reason: REASON.OK, detail: '顶层前台标签且具备用户手势' };
 }
 
+const REASON_TEXT = {
+  [REASON.OK]: '允许读取剪贴板',
+  [REASON.NOT_APPLICABLE]: '不在守卫范围',
+  [REASON.NOT_CLIPBOARD_READ]: '非剪贴板读取权限',
+  [REASON.BAD_PAGE_URL]: '页面地址不可解析',
+  [REASON.INSECURE_CONTEXT]: '非安全上下文',
+  [REASON.CROSS_ORIGIN_FRAME]: '跨源或非顶层框架',
+  [REASON.BACKGROUND_TAB]: '后台标签',
+  [REASON.NO_USER_GESTURE]: '缺少用户手势',
+};
+
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK: return '允许读取剪贴板';
-    case REASON.NOT_APPLICABLE: return '不在守卫范围';
-    case REASON.NOT_CLIPBOARD_READ: return '非剪贴板读取权限';
-    case REASON.BAD_PAGE_URL: return '页面地址不可解析';
-    case REASON.INSECURE_CONTEXT: return '非安全上下文';
-    case REASON.CROSS_ORIGIN_FRAME: return '跨源或非顶层框架';
-    case REASON.BACKGROUND_TAB: return '后台标签';
-    case REASON.NO_USER_GESTURE: return '缺少用户手势';
-    default: return '未知原因';
-  }
+  return describeReasonFrom(REASON_TEXT, reason, '未知原因');
 }
 
 module.exports = {
