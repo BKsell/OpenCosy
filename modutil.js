@@ -141,7 +141,11 @@ function sanitizeDisplayTitle(rawTitle, maxChars) {
   let t = typeof rawTitle === 'string' ? rawTitle : '';
   t = t.replace(/[\t\n\r]+/g, ' ');
   t = collapseSpaces(stripControlChars(t));
-  if (t.length > maxChars) t = t.slice(0, maxChars);
+  if (t.length > maxChars) {
+    t = t.slice(0, maxChars);
+    const last = t.charCodeAt(t.length - 1);
+    if (last >= 0xd800 && last <= 0xdbff) t = t.slice(0, -1);
+  }
   return t;
 }
 
