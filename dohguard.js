@@ -110,3 +110,5 @@ function createDohLedger(limit) {
   function clear() { rows.length = 0; }
   return { add, list, toJSON, load, clear, size: () => rows.length };
 }
+
+module.exports = { DEFAULT_MODE, KNOWN_PROVIDERS, SECURE_DNS_MODES, createDohLedger, getProviderById, normalizeMode, resolveControls, resolveServer, ...require('./dohguard_host') };
