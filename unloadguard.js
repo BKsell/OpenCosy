@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 const { pruneOlderThan, countSince, resetCooldown } = require('./modutil');
 
 // unloadguard.js —— 页面 beforeunload 强留页（will-prevent-unload）滥用收口内核。
@@ -91,15 +92,13 @@ function decideUnload(state, now) {
   };
 }
 
+const UNLOAD_REASON_TEXT = {
+  [LEAVE_BURST]: '网页反复阻止离开（强留页），本次已直接放行关闭/导航',
+  [LEAVE_COOLDOWN]: '强留页冷却期内的拦截已忽略，允许离开',
+};
+
 function describeUnloadReason(reason) {
-  switch (reason) {
-    case LEAVE_BURST:
-      return '网页反复阻止离开（强留页），本次已直接放行关闭/导航';
-    case LEAVE_COOLDOWN:
-      return '强留页冷却期内的拦截已忽略，允许离开';
-    default:
-      return '离开确认';
-  }
+  return describeReasonFrom(UNLOAD_REASON_TEXT, reason, '离开确认');
 }
 
 module.exports = {
