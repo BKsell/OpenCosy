@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { safeParse } = require('./modutil');
 const safeParseUrl = safeParse;
@@ -128,17 +129,18 @@ function decideRedirect(state, input, now) {
 }
 
 // describeReason 把内部 code 转成中文说明，供安全面板/日志使用。
+const REASON_TEXT = {
+  'redirect-dangerous-scheme': '重定向到危险协议（file/data/javascript 等）',
+  'redirect-userinfo': '重定向目标在地址中内嵌账号密码',
+  'redirect-downgrade': 'HTTPS 被重定向降级到 HTTP',
+  'redirect-chain-downgrade': '安全链路中途降级到明文 HTTP',
+  'redirect-loop': '检测到重定向环路',
+  'redirect-chain-too-long': '重定向链过长',
+  'redirect-malformed-target': '重定向目标地址无法解析',
+};
+
 function describeReason(code) {
-  switch (code) {
-    case 'redirect-dangerous-scheme': return '重定向到危险协议（file/data/javascript 等）';
-    case 'redirect-userinfo': return '重定向目标在地址中内嵌账号密码';
-    case 'redirect-downgrade': return 'HTTPS 被重定向降级到 HTTP';
-    case 'redirect-chain-downgrade': return '安全链路中途降级到明文 HTTP';
-    case 'redirect-loop': return '检测到重定向环路';
-    case 'redirect-chain-too-long': return '重定向链过长';
-    case 'redirect-malformed-target': return '重定向目标地址无法解析';
-    default: return code;
-  }
+  return describeReasonFrom(REASON_TEXT, code, code);
 }
 
 module.exports = {
