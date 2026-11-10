@@ -1,6 +1,45 @@
 'use strict';
 
-const { deleteHeader, headerText, headerValues, lowerKeys, rawValue, setHeader } = require('./headerutil');
+function lowerKeys(headers) {
+  const map = {};
+  if (!headers || typeof headers !== 'object') return map;
+  for (const key of Object.keys(headers)) {
+    const lower = key.toLowerCase();
+    if (!(lower in map)) map[lower] = key;
+  }
+  return map;
+}
+
+function rawValue(headers, name) {
+  const key = headerKey(headers, name);
+  if (!key) return null;
+  const raw = headers[key];
+  if (raw === undefined || raw === null) return null;
+  return raw;
+}
+
+function headerValues(headers, name) {
+  const raw = rawValue(headers, name);
+  if (raw === null) return [];
+  const list = Array.isArray(raw) ? raw : [raw];
+  return list.filter((item) => typeof item === 'string');
+}
+
+function headerText(headers, name) {
+  const values = headerValues(headers, name);
+  return values.join(', ');
+}
+
+function setHeader(headers, name, values) {
+  if (!headers || typeof headers !== 'object') return;
+  const key = headerKey(headers, name) || name.toLowerCase();
+  headers[key] = Array.isArray(values) ? values : [values];
+}
+
+function deleteHeader(headers, name) {
+  const key = headerKey(headers, name);
+  if (key) delete headers[key];
+}
 
 function headerKey(headers, name) {
   const lower = name.toLowerCase();
