@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { hasControlCharV2 } = require('./modutil');
 
@@ -76,20 +77,21 @@ function arrangeTabs(orderedTabs, model, options) {
 }
 
 // describeReject 把原因码翻译成中文说明，供 IPC 层回传与审计。
+const REJECT_TEXT = {
+  [REJECT_NOT_STRING]: '标识或标题必须是字符串',
+  [REJECT_NOT_ARRAY]: '标签列表必须是数组',
+  [REJECT_TOO_LONG]: '分组标识、标题或标签标识超出长度限制',
+  [REJECT_CONTROL]: '分组字段包含非法控制字符',
+  [REJECT_BAD_COLOR]: '分组颜色不在允许范围内',
+  [REJECT_LIMIT]: '分组数量或单组标签数已达上限',
+  [REJECT_NOT_FOUND]: '目标分组不存在',
+  [REJECT_PINNED]: '固定标签不能加入分组',
+  [REJECT_DUPLICATE]: '分组标识重复',
+  [REJECT_EMPTY]: '没有可加入分组的标签',
+};
+
 function describeReject(reason) {
-  switch (reason) {
-    case REJECT_NOT_STRING: return '标识或标题必须是字符串';
-    case REJECT_NOT_ARRAY: return '标签列表必须是数组';
-    case REJECT_TOO_LONG: return '分组标识、标题或标签标识超出长度限制';
-    case REJECT_CONTROL: return '分组字段包含非法控制字符';
-    case REJECT_BAD_COLOR: return '分组颜色不在允许范围内';
-    case REJECT_LIMIT: return '分组数量或单组标签数已达上限';
-    case REJECT_NOT_FOUND: return '目标分组不存在';
-    case REJECT_PINNED: return '固定标签不能加入分组';
-    case REJECT_DUPLICATE: return '分组标识重复';
-    case REJECT_EMPTY: return '没有可加入分组的标签';
-    default: return '分组操作被拒绝';
-  }
+  return describeReasonFrom(REJECT_TEXT, reason, '分组操作被拒绝');
 }
 
 module.exports = {
