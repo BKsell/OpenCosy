@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { isSwitchLike, reviewStartupArg } = require('./deeplinkguard_schemes');
 
@@ -26,21 +27,22 @@ function pickDeepLinkFromArgv(argv, allowedHosts) {
 }
 
 // describeReason 稳定中文说明（不回显完整输入）。
+const REASON_TEXT = {
+  'not-string': '深链不是字符串',
+  empty: '深链为空',
+  'too-long': '深链过长',
+  'control-char': '深链含控制字符',
+  'switch-like': '深链形似命令行开关',
+  unparseable: '深链无法解析',
+  scheme: '不允许的深链协议',
+  'no-host': '深链缺少主机名',
+  host: '内部深链主机不在白名单',
+  unc: '不接受网络共享(UNC)路径',
+  'not-absolute': '本地文件必须是绝对路径',
+  'not-html': '只接受 .html/.htm 文件',
+  traversal: '本地路径含目录穿越',
+};
+
 function describeReason(reason) {
-  const map = {
-    'not-string': '深链不是字符串',
-    empty: '深链为空',
-    'too-long': '深链过长',
-    'control-char': '深链含控制字符',
-    'switch-like': '深链形似命令行开关',
-    unparseable: '深链无法解析',
-    scheme: '不允许的深链协议',
-    'no-host': '深链缺少主机名',
-    host: '内部深链主机不在白名单',
-    unc: '不接受网络共享(UNC)路径',
-    'not-absolute': '本地文件必须是绝对路径',
-    'not-html': '只接受 .html/.htm 文件',
-    traversal: '本地路径含目录穿越',
-  };
-  return Object.prototype.hasOwnProperty.call(map, reason) ? map[reason] : '不安全的深链';
+  return describeReasonFrom(REASON_TEXT, reason, '不安全的深链');
 }
