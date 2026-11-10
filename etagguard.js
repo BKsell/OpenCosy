@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { hasControlCharsV2 } = require('./modutil');
 const hasControlChars = hasControlCharsV2;
@@ -73,8 +73,7 @@ function inspectETag(value) {
   return { reason: REASON.OK, tag: weak ? `W/"${inner}"` : `"${inner}"`, changed: false };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: 'etag 合规',
     [REASON.MISSING]: '响应未声明 etag',
     [REASON.MALFORMED]: 'etag 取值非法，已剥除',
@@ -82,8 +81,7 @@ function describeReason(reason) {
     [REASON.PATH_LEAK]: 'etag 暴露文件系统路径，已替换为不透明弱校验器',
     [REASON.PREDICTABLE]: 'etag 可由序号推算，已替换为不透明弱校验器',
     [REASON.UNSAFE_CHARS]: 'etag 含控制字符或非 ASCII，已剥除',
-  }, reason, 'etag 未识别状态');
-}
+  }, 'etag 未识别状态');
 
 function applyETagGuard(headers) {
   const value = firstValue(headers, HEADER);

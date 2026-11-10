@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -77,8 +77,7 @@ function applyClipboardTextGuard(value, limits) {
   return { changed: result.changed, reason: result.reason, text: result.text };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.EMPTY]: '剪贴板内容为空',
     [REASON.NOT_TEXT]: '剪贴板内容不是文本',
     [REASON.NUL_STRIPPED]: '剪贴板文本含空字节已清除',
@@ -86,8 +85,7 @@ function describeReason(reason) {
     [REASON.TOO_LARGE]: '剪贴板文本超过体积上限',
     [REASON.TOO_MANY_LINES]: '剪贴板文本行数过多',
     [REASON.TRUNCATED]: '剪贴板文本超过输出上限已截断',
-  }, reason, '剪贴板文本合法');
-}
+  }, '剪贴板文本合法');
 
 module.exports = {
   REASON,

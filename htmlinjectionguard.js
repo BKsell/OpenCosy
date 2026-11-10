@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -47,8 +47,7 @@ function applyHtmlInjectionGuard(value, options) {
   return { changed: !result.ok, reason: result.reason, matches: result.matches };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.EMPTY]: '待注入文本为空或不是字符串',
     [REASON.TOO_LARGE]: '待注入文本超过长度上限',
     [REASON.NUL_BYTE]: '待注入文本含空字节',
@@ -59,8 +58,7 @@ function describeReason(reason) {
     [REASON.JAVASCRIPT_URI]: '待注入文本含脚本伪协议',
     [REASON.DATA_HTML]: '待注入文本含 data:text/html 地址',
     [REASON.STYLE_EXPRESSION]: '待注入文本含样式表达式',
-  }, reason, '待注入文本不含标签');
-}
+  }, '待注入文本不含标签');
 
 module.exports = {
   REASON,

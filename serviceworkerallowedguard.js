@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { headerKey, headerText } = require('./headerutil');
 
@@ -58,15 +58,13 @@ function scopeCovers(scope, scriptPath) {
   return normalized === scope || normalized.startsWith(prefix);
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.TRAVERSAL]: 'Service-Worker-Allowed 含上级目录引用',
     [REASON.OUTSIDE_ORIGIN]: 'Service-Worker-Allowed 不是同源绝对路径',
     [REASON.MALFORMED]: 'Service-Worker-Allowed 取值为空',
     [REASON.TOO_LONG]: 'Service-Worker-Allowed 取值超长',
     [REASON.MISSING]: '响应未声明服务工作线程作用域',
-  }, reason, '服务工作线程作用域合法');
-}
+  }, '服务工作线程作用域合法');
 
 module.exports = {
   REASON,

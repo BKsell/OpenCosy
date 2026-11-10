@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { headerKey, headerText } = require('./headerutil');
 
@@ -94,16 +94,14 @@ function applyClearSiteDataGuard(headers) {
   return result;
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.UNKNOWN_TOKEN]: 'Clear-Site-Data 含未知清理目标',
     [REASON.WILDCARD]: '站点一次性清除全部本地状态',
     [REASON.MALFORMED]: 'Clear-Site-Data 取值为空',
     [REASON.TOO_LONG]: 'Clear-Site-Data 取值超长',
     [REASON.TOO_MANY]: 'Clear-Site-Data 清理目标超过预算',
     [REASON.MISSING]: '响应未声明本地状态清理',
-  }, reason, '本地状态清理目标合法');
-}
+  }, '本地状态清理目标合法');
 
 module.exports = {
   REASON,

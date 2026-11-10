@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -65,8 +65,7 @@ function applyIpcPayloadGuard(payload) {
   return { changed: false, reason: REASON.OK, path: '$' };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.FORBIDDEN_KEY]: 'IPC 负载包含原型污染键名',
     [REASON.TOO_DEEP]: 'IPC 负载嵌套层级过深',
     [REASON.TOO_MANY_KEYS]: 'IPC 负载对象键数量过多',
@@ -75,8 +74,7 @@ function describeReason(reason) {
     [REASON.UNSUPPORTED_TYPE]: 'IPC 负载包含不可序列化类型',
     [REASON.NOT_FINITE]: 'IPC 负载包含非有限数值',
     [REASON.CIRCULAR]: 'IPC 负载存在循环引用',
-  }, reason, 'IPC 负载结构合法');
-}
+  }, 'IPC 负载结构合法');
 
 module.exports = {
   REASON,

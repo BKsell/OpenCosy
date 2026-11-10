@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { headerKey } = require('./headerutil');
 
@@ -93,14 +93,12 @@ function applyHeaderBudgetGuard(headers) {
   return result;
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.TOO_MANY]: '响应头数量超过预算',
     [REASON.TOO_LARGE]: '响应头总字节数超过预算',
     [REASON.OVERSIZE_VALUE]: '单个响应头取值超过预算，已剥除',
     [REASON.EMPTY_NAME]: '响应头存在空名称',
-  }, reason, '响应头体积在预算内');
-}
+  }, '响应头体积在预算内');
 
 module.exports = {
   REASON,

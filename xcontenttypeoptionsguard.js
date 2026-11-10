@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { headerKey } = require('./headerutil');
 
@@ -45,15 +45,13 @@ function applyXContentTypeOptionsGuard(headers) {
   return { changed: true, reason: result.reason, value: REQUIRED_VALUE };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.MISSING]: '缺少 X-Content-Type-Options，已补 nosniff',
     [REASON.INVALID]: 'X-Content-Type-Options 取值非法，已改为 nosniff',
     [REASON.DUPLICATE]: 'X-Content-Type-Options 重复，已合并',
     [REASON.OVERLONG]: 'X-Content-Type-Options 超长，已改为 nosniff',
     [REASON.DOWNGRADED]: 'X-Content-Type-Options 已规范化',
-  }, reason, 'X-Content-Type-Options 通过校验');
-}
+  }, 'X-Content-Type-Options 通过校验');
 
 module.exports = {
   REASON,

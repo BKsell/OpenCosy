@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { tokensOf } = require('./modutil');
 const splitTokens = tokensOf;
@@ -105,9 +105,7 @@ const REASON_TEXT = {
   [REASON.PRIVATE_NETWORK]: '允许私有网络访问请求',
 };
 
-function describeReason(reason) {
-  return describeReasonFrom(REASON_TEXT, reason, String(reason || ''));
-}
+const describeReason = describeReasonTable(REASON_TEXT, String(reason || ''));
 
 module.exports = {
   REASON,

@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -103,16 +103,14 @@ function applyHeaderInjectionGuard(headers) {
   };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.EMPTY]: '响应头为空',
     [REASON.BAD_NAME]: '响应头名含非法字符，已移除',
     [REASON.CONTROL_CHAR]: '响应头值含控制字符，已移除',
     [REASON.OBS_FOLD]: '响应头值含折行，已移除',
     [REASON.OVERLONG]: '响应头值超长，已移除',
     [REASON.TOO_MANY]: '响应头数量超限',
-  }, reason, '响应头通过校验');
-}
+  }, '响应头通过校验');
 
 module.exports = {
   REASON,

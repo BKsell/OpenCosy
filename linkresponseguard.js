@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -154,8 +154,7 @@ function inspectLink(value, docOrigin) {
   return { reason, items: kept };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: 'link 提示合规',
     [REASON.MISSING]: '响应未声明 link 提示',
     [REASON.MALFORMED]: 'link 取值非法',
@@ -166,8 +165,7 @@ function describeReason(reason) {
     [REASON.CREDENTIALS]: 'link 目标内嵌凭据，已剔除',
     [REASON.CROSS_ORIGIN]: 'link 跨源预载未声明 crossorigin，已剔除',
     [REASON.DUPLICATE]: 'link 重复目标已去重',
-  }, reason, 'link 未识别状态');
-}
+  }, 'link 未识别状态');
 
 function applyLinkResponseGuard(headers, docOrigin) {
   const value = firstValue(headers, HEADER);

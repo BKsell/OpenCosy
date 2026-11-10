@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -108,8 +108,7 @@ function encodeToken(payload) {
   return body.replace(/=+$/, '');
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: 'origin-trial 取值合规',
     [REASON.MISSING]: '响应未声明 origin-trial',
     [REASON.MALFORMED]: 'origin-trial 取值非法',
@@ -120,8 +119,7 @@ function describeReason(reason) {
     [REASON.FOREIGN_ORIGIN]: 'origin-trial 令牌声明的来源与当前站点不符，已剔除',
     [REASON.SUBDOMAIN_GRANT]: 'origin-trial 令牌覆盖子域，已剔除',
     [REASON.HIGH_RISK_FEATURE]: 'origin-trial 令牌涉及高风险特性，已剔除',
-  }, reason, 'origin-trial 未识别状态');
-}
+  }, 'origin-trial 未识别状态');
 
 function applyOriginTrialGuard(headers, docOrigin, now) {
   const value = firstValue(headers, HEADER);

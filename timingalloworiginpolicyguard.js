@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { headerKey } = require('./headerutil');
 
@@ -78,15 +78,13 @@ function applyTimingAllowOriginGuard(headers) {
   return { changed: true, reason: result.reason, value: '' };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.MISSING]: '未声明 Timing-Allow-Origin',
     [REASON.MALFORMED]: 'Timing-Allow-Origin 源格式非法，已移除',
     [REASON.WILDCARD_CREDENTIALED]: '带凭据响应使用通配 TAO，已移除',
     [REASON.TOO_MANY]: 'Timing-Allow-Origin 条目过多，已移除',
     [REASON.OVERLONG]: 'Timing-Allow-Origin 超长，已移除',
-  }, reason, 'Timing-Allow-Origin 通过校验');
-}
+  }, 'Timing-Allow-Origin 通过校验');
 
 module.exports = {
   REASON,

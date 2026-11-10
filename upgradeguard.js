@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -57,8 +57,7 @@ function inspectUpgrade(value) {
   return { reason, protocols: kept };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: 'upgrade 协议合规',
     [REASON.MISSING]: '响应未声明 upgrade',
     [REASON.MALFORMED]: 'upgrade 取值非法',
@@ -66,8 +65,7 @@ function describeReason(reason) {
     [REASON.INSECURE_PROTOCOL]: 'upgrade 声明明文或旧式协议，已剔除',
     [REASON.UNKNOWN_PROTOCOL]: 'upgrade 协议不在白名单，已剔除',
     [REASON.WITHOUT_CONNECTION]: 'upgrade 缺少 connection: upgrade 配对，已剥除',
-  }, reason, 'upgrade 未识别状态');
-}
+  }, 'upgrade 未识别状态');
 
 function applyUpgradeHeaderGuard(headers) {
   const value = firstValue(headers, HEADER);

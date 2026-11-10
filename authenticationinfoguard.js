@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { deleteHeader, headerKey } = require('./headerutil');
 
@@ -86,8 +86,7 @@ function applyAuthenticationInfoGuard(headers) {
   return { changed: true, reason: verdict.reason, param: verdict.param || null };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: 'Authentication-Info 参数合法',
     [REASON.MISSING]: '未声明 Authentication-Info',
     [REASON.CONTROL_CHARS]: 'Authentication-Info 含控制字符',
@@ -98,8 +97,7 @@ function describeReason(reason) {
     [REASON.NONCE_TOO_LONG]: 'Authentication-Info nonce 超长',
     [REASON.OVERLONG]: 'Authentication-Info 取值超长',
     [REASON.MALFORMED]: 'Authentication-Info 取值无法解析',
-  }, reason, 'Authentication-Info 未知状态');
-}
+  }, 'Authentication-Info 未知状态');
 
 module.exports = {
   REASON,

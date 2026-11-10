@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { headerValues, originOf } = require('./modutil');
 
@@ -126,9 +126,7 @@ const REASON_TEXT = {
   [REASON.linkPrefetch]: 'cross-origin prefetch link removed',
 };
 
-function describeReason(reason) {
-  return describeReasonFrom(REASON_TEXT, reason, 'unknown refresh verdict');
-}
+const describeReason = describeReasonTable(REASON_TEXT, 'unknown refresh verdict');
 
 module.exports = {
   REASON,

@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -78,8 +78,7 @@ function inspectTrailer(value) {
   return { reason, fields };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: 'trailer 声明合规',
     [REASON.MISSING]: '响应未声明 trailer',
     [REASON.MALFORMED]: 'trailer 含非法字段名，已剥除',
@@ -87,8 +86,7 @@ function describeReason(reason) {
     [REASON.DUPLICATE]: 'trailer 字段重复，已去重',
     [REASON.FORBIDDEN_NAME]: 'trailer 声明了禁止的字段，已剥除',
     [REASON.TOO_MANY]: 'trailer 字段过多，已截断',
-  }, reason, 'trailer 未识别状态');
-}
+  }, 'trailer 未识别状态');
 
 function applyTrailerFieldGuard(headers) {
   const value = firstValue(headers, HEADER);

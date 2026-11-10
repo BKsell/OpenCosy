@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 const { originOf } = require('./modutil');
 
 const { firstValue, headerKey } = require('./headerutil');
@@ -132,15 +132,13 @@ function applyLinkPreloadGuard(headers, details) {
   return result;
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.MALFORMED]: 'Link 头声明格式非法',
     [REASON.CROSS_ORIGIN]: 'Link 头指向第三方源',
     [REASON.BAD_SCHEME]: 'Link 头使用非 HTTP(S) 目标',
     [REASON.TOO_MANY]: 'Link 头条目数量超预算',
     [REASON.MISSING]: '未声明 Link 头',
-  }, reason, 'Link 头通过校验');
-}
+  }, 'Link 头通过校验');
 
 module.exports = {
   REASON,

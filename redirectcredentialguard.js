@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -69,15 +69,13 @@ function applyRedirectCredentialGuard(redirect) {
   return { changed, reason: result.reason, headers: result.headers, stripped: result.stripped };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.INVALID]: '重定向地址无法解析',
     [REASON.CROSS_ORIGIN]: '跨源重定向已剥离凭据头',
     [REASON.DOWNGRADE]: '重定向发生 HTTPS 降级',
     [REASON.LOOP]: '重定向形成循环',
     [REASON.UPGRADE]: '重定向升级为 HTTPS 并剥离凭据头',
-  }, reason, '重定向保持同源');
-}
+  }, '重定向保持同源');
 
 module.exports = {
   REASON,

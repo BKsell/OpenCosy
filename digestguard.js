@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { firstValue, headerKey } = require('./headerutil');
 
@@ -107,14 +107,12 @@ function applyDigestGuard(headers) {
   return result;
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.MALFORMED]: '摘要字段格式非法或算法未知',
     [REASON.WEAK_ALGORITHM]: '摘要使用已淘汰的弱算法',
     [REASON.DUPLICATE]: '同一算法重复声明摘要',
     [REASON.MISSING]: '未声明内容摘要',
-  }, reason, '内容摘要通过校验');
-}
+  }, '内容摘要通过校验');
 
 module.exports = {
   REASON,

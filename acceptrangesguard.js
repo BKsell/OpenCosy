@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -54,8 +54,7 @@ function applyAcceptRangesGuard(headers) {
   return { changed: true, reason: verdict.reason, unit: verdict.unit || null };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: 'Accept-Ranges 支持字节范围',
     [REASON.MISSING]: '未声明 Accept-Ranges',
     [REASON.NONE_ONLY]: 'Accept-Ranges 声明不支持范围请求',
@@ -64,8 +63,7 @@ function describeReason(reason) {
     [REASON.OVERLONG]: 'Accept-Ranges 取值超长',
     [REASON.UNBACKED_BYTES]: 'Accept-Ranges 声称 bytes 但缺少长度证据',
     [REASON.MALFORMED]: 'Accept-Ranges 取值无法解析',
-  }, reason, 'Accept-Ranges 未知状态');
-}
+  }, 'Accept-Ranges 未知状态');
 
 module.exports = {
   REASON,

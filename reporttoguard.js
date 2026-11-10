@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { splitItems } = require('./modutil');
 const splitPairs = splitItems;
@@ -135,8 +135,7 @@ function inspectReportTo(value) {
   return { reason, groups: kept };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: '上报端点配置合规',
     [REASON.MISSING]: '响应未声明上报端点',
     [REASON.MALFORMED]: '上报端点配置非法',
@@ -146,8 +145,7 @@ function describeReason(reason) {
     [REASON.ENDPOINT_PATH_SHAPE]: '上报端点包含路径穿越片段，已剔除',
     [REASON.UNSAFE_MAX_AGE]: '上报缓存时长超出上限，已剔除',
     [REASON.UNKNOWN_GROUP]: '上报分组不在白名单，已剔除',
-  }, reason, '上报端点未识别状态');
-}
+  }, '上报端点未识别状态');
 
 function applyReportingEndpointsGuard(headers) {
   const value = firstValue(headers, ENDPOINTS_HEADER);

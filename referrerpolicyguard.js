@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { headerKey } = require('./headerutil');
 
@@ -105,16 +105,14 @@ function applyReferrerPolicyGuard(headers) {
   return { changed: true, reason: parsed.reason, value: FALLBACK_POLICY };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.MISSING]: '未声明 Referrer-Policy',
     [REASON.MALFORMED]: 'Referrer-Policy 无法解析，回退到严格策略',
     [REASON.OVERLONG]: 'Referrer-Policy 超长，回退到严格策略',
     [REASON.UNSAFE]: 'Referrer-Policy 使用 unsafe-url，已收紧',
     [REASON.UNKNOWN_TOKEN]: 'Referrer-Policy 含未知取值，已剔除',
     [REASON.TOO_MANY]: 'Referrer-Policy 取值过多，回退到严格策略',
-  }, reason, 'Referrer-Policy 通过校验');
-}
+  }, 'Referrer-Policy 通过校验');
 
 module.exports = {
   REASON,

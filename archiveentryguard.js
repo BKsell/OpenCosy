@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { hasControlChars } = require('./modutil');
 
@@ -63,8 +63,7 @@ function applyArchiveEntryGuard(entries, meta) {
   return { changed: !result.ok, reason: result.reason, count: result.count || 0 };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.EMPTY]: '压缩包为空或条目名为空',
     [REASON.NOT_LIST]: '压缩包条目不是列表',
     [REASON.TOO_MANY_ENTRIES]: '压缩包条目数量过多',
@@ -76,8 +75,7 @@ function describeReason(reason) {
     [REASON.CONTROL]: '压缩包条目名含控制字符',
     [REASON.DUPLICATE]: '压缩包存在重复条目',
     [REASON.BOMB_RATIO]: '压缩包压缩比异常疑似压缩炸弹',
-  }, reason, '压缩包条目结构安全');
-}
+  }, '压缩包条目结构安全');
 
 module.exports = {
   REASON,

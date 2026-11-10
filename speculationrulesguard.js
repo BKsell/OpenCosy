@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -61,8 +61,7 @@ function inspectSpeculationRules(value, docOrigin) {
   return { reason: REASON.OK, items: [target] };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: 'speculation-rules 合规',
     [REASON.MISSING]: '响应未声明 speculation-rules',
     [REASON.MALFORMED]: 'speculation-rules 取值非法',
@@ -72,8 +71,7 @@ function describeReason(reason) {
     [REASON.CREDENTIALS]: 'speculation-rules 来源内嵌凭据，已剥除',
     [REASON.PATH_SHAPE]: 'speculation-rules 来源包含路径穿越片段，已剥除',
     [REASON.CROSS_ORIGIN]: 'speculation-rules 来源跨源，已剥除',
-  }, reason, 'speculation-rules 未识别状态');
-}
+  }, 'speculation-rules 未识别状态');
 
 function applySpeculationRulesGuard(headers, docOrigin) {
   const value = firstValue(headers, HEADER);

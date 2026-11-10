@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { firstValue, headerKey } = require('./headerutil');
 
@@ -59,15 +59,13 @@ function applyContentEncodingGuard(headers) {
   return result;
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.MALFORMED]: 'Content-Encoding 取值非法',
     [REASON.UNKNOWN_CODING]: 'Content-Encoding 使用未知压缩算法',
     [REASON.DUPLICATE]: 'Content-Encoding 重复声明同一算法',
     [REASON.TOO_MANY]: 'Content-Encoding 层数超过预算',
     [REASON.MISSING]: '未声明 Content-Encoding',
-  }, reason, 'Content-Encoding 通过校验');
-}
+  }, 'Content-Encoding 通过校验');
 
 module.exports = {
   REASON,

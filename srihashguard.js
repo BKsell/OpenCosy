@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const crypto = require('node:crypto');
 
@@ -74,8 +74,7 @@ function applySriGuard(buffer, value) {
   return { changed: !result.ok, reason: result.reason, matched: result.matched, algorithms: result.algorithms };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.EMPTY]: '未声明完整性校验值',
     [REASON.MALFORMED]: '完整性校验值格式非法',
     [REASON.WEAK_ALGORITHM]: '完整性校验使用弱算法',
@@ -83,8 +82,7 @@ function describeReason(reason) {
     [REASON.DIGEST_LENGTH]: '完整性校验摘要长度不符',
     [REASON.MISMATCH]: '资源内容与完整性校验值不匹配',
     [REASON.NOT_BUFFER]: '待校验内容不是二进制缓冲',
-  }, reason, '资源完整性校验通过');
-}
+  }, '资源完整性校验通过');
 
 module.exports = {
   REASON,

@@ -1,6 +1,6 @@
 'use strict';
 
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const REASON = {
   ok: 'ok',
@@ -182,9 +182,7 @@ const REASON_TEXT = {
   [REASON.malformed]: 'Content-Disposition cannot be parsed',
 };
 
-function describeReason(reason) {
-  return describeReasonFrom(REASON_TEXT, reason, 'unknown download name verdict');
-}
+const describeReason = describeReasonTable(REASON_TEXT, 'unknown download name verdict');
 
 module.exports = Object.assign({}, { describeReason }, {
   REASON,

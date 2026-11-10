@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -78,8 +78,7 @@ function applyPathContainmentGuard(baseDir, target) {
   return { changed: !result.ok, reason: result.reason, resolved: result.resolved };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.EMPTY]: '路径为空或不是字符串',
     [REASON.CONTROL]: '路径包含控制字符',
     [REASON.TOO_LONG]: '路径超过长度上限',
@@ -90,8 +89,7 @@ function describeReason(reason) {
     [REASON.DRIVE_RELATIVE]: '路径为未带分隔符的盘符相对路径',
     [REASON.ALT_STREAM]: '路径包含 NTFS 备用数据流分隔符',
     [REASON.OUTSIDE]: '路径解析后落在根目录之外',
-  }, reason, '路径位于允许的根目录之内');
-}
+  }, '路径位于允许的根目录之内');
 
 module.exports = {
   REASON,

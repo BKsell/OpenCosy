@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { normalizeCharset } = require('./modutil');
 
@@ -63,8 +63,7 @@ function inspectAcceptCharset(value) {
   return { reason, charsets: kept };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: 'accept-charset 取值合规但该响应头已废弃',
     [REASON.MISSING]: '响应未声明 accept-charset',
     [REASON.MALFORMED]: 'accept-charset 取值非法',
@@ -72,8 +71,7 @@ function describeReason(reason) {
     [REASON.WILDCARD]: 'accept-charset 声明通配字符集，已剔除',
     [REASON.UNKNOWN_CHARSET]: 'accept-charset 含未知字符集，已剔除',
     [REASON.DEPRECATED_HEADER]: 'accept-charset 已废弃，整头剥除',
-  }, reason, 'accept-charset 未识别状态');
-}
+  }, 'accept-charset 未识别状态');
 
 function applyAcceptCharsetGuard(headers) {
   const value = firstValue(headers, HEADER);

@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { headerValues, setHeader } = require('./headerutil');
 
@@ -85,9 +85,7 @@ const REASON_TEXT = {
   [REASON.NON_HTTP_SCHEME]: '非 HTTP 协议上的认证挑战',
 };
 
-function describeReason(reason) {
-  return describeReasonFrom(REASON_TEXT, reason, String(reason || ''));
-}
+const describeReason = describeReasonTable(REASON_TEXT, String(reason || ''));
 
 module.exports = {
   REASON,

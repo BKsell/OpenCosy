@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -129,8 +129,7 @@ function inspectCacheStatus(value) {
   return { reason, members };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: 'cache-status 合规',
     [REASON.MISSING]: '响应未声明 cache-status',
     [REASON.MALFORMED]: 'cache-status 取值非法，已剥除',
@@ -139,8 +138,7 @@ function describeReason(reason) {
     [REASON.SENSITIVE_PARAM]: 'cache-status 含敏感参数，已剥离',
     [REASON.FORWARD_CHAIN]: 'cache-status 转发跳数过长，已剥离',
     [REASON.TOO_MANY]: 'cache-status 成员过多，已截断',
-  }, reason, 'cache-status 未识别状态');
-}
+  }, 'cache-status 未识别状态');
 
 function applyCacheStatusGuard(headers) {
   const value = firstValue(headers, HEADER);

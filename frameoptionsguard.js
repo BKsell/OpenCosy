@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { headerKey, headerText } = require('./headerutil');
 
@@ -67,16 +67,14 @@ function applyFrameOptionsGuard(headers) {
   return result;
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.ALLOW_FROM]: 'ALLOW-FROM 已被现代内核忽略，站点误以为仍受保护',
     [REASON.ALLOW_ALL]: '站点显式允许任意来源嵌入',
     [REASON.MULTIPLE_VALUES]: '响应声明了多个 X-Frame-Options 取值',
     [REASON.CSP_CONFLICT]: 'X-Frame-Options 与 CSP frame-ancestors 冲突',
     [REASON.MALFORMED]: 'X-Frame-Options 取值非法',
     [REASON.MISSING]: '站点未声明 X-Frame-Options',
-  }, reason, 'X-Frame-Options 有效');
-}
+  }, 'X-Frame-Options 有效');
 
 module.exports = {
   REASON,

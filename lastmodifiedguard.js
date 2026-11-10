@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { firstValue, headerKey } = require('./headerutil');
 
@@ -53,14 +53,12 @@ function applyLastModifiedGuard(headers, nowMs) {
   return result;
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.MALFORMED]: 'Last-Modified 不是合法 HTTP 日期',
     [REASON.FUTURE_DATE]: 'Last-Modified 指向未来时间',
     [REASON.PRE_EPOCH]: 'Last-Modified 早于 Unix 纪元',
     [REASON.TOO_OLD]: 'Last-Modified 超出可接受陈旧期限',
-  }, reason, 'Last-Modified 校验通过');
-}
+  }, 'Last-Modified 校验通过');
 
 module.exports = {
   REASON,

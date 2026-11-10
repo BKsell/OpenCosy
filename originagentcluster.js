@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { firstValue, headerKey } = require('./headerutil');
 
@@ -49,13 +49,11 @@ function applyOriginAgentClusterGuard(headers) {
   return result;
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.MISSING]: '响应缺少 Origin-Agent-Cluster',
     [REASON.MALFORMED]: 'Origin-Agent-Cluster 取值非法，已收紧为 ?1',
     [REASON.TIGHTENED]: 'Origin-Agent-Cluster 显式放开，已收紧为 ?1',
-  }, reason, 'Origin-Agent-Cluster 已强制同源隔离');
-}
+  }, 'Origin-Agent-Cluster 已强制同源隔离');
 
 module.exports = {
   REASON,

@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { hasControlCharsV2, listValues } = require('./modutil');
 const hasControlChars = hasControlCharsV2;
@@ -37,8 +37,7 @@ function inspectDownloadOptions(rawValues) {
   return { reason: REASON.UNKNOWN_VALUE };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: 'x-download-options 合规',
     [REASON.MISSING]: '响应未声明 x-download-options',
     [REASON.MALFORMED]: 'x-download-options 取值为空',
@@ -46,8 +45,7 @@ function describeReason(reason) {
     [REASON.UNKNOWN_VALUE]: 'x-download-options 非 noopen，已剥除',
     [REASON.MULTIPLE_VALUES]: 'x-download-options 多值冲突，已剥除',
     [REASON.UNSAFE_CHARS]: 'x-download-options 含控制字符，已剥除',
-  }, reason, 'x-download-options 未识别状态');
-}
+  }, 'x-download-options 未识别状态');
 
 function applyXDownloadOptionsGuard(headers) {
   const rawValues = values(headers, HEADER);

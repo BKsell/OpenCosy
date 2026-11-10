@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonTable } = require('./reasontext');
 
 const { parseUrl } = require('./modutil');
 
@@ -110,16 +111,13 @@ function decideUnresponsive(state, now, cooldownMs) {
 }
 
 // describeReason 给出稳定中文说明，用于错误页 / 安全事件（不含 URL）。
-function describeReason(reason) {
-  const map = {
+const describeReason = describeReasonTable({
     'circuit-open': '页面反复崩溃，已停止自动重载',
     'not-reloadable': '崩溃页面不支持自动恢复，请手动打开',
     'rate-limit': '短时间内崩溃次数过多，已停止自动重载',
     'cooldown': '重载间隔过短，已暂停自动恢复',
     'auto-reload': '页面崩溃，正在自动恢复',
-  };
-  return Object.prototype.hasOwnProperty.call(map, reason) ? map[reason] : '页面崩溃';
-}
+  }, '页面崩溃');
 
 module.exports = {
   createState,

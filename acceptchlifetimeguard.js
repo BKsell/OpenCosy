@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { deleteHeader, headerKey } = require('./headerutil');
 
@@ -46,16 +46,14 @@ function applyAcceptChLifetimeGuard(headers) {
   };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: 'Accept-CH-Lifetime 状态正常',
     [REASON.MISSING]: '未声明 Accept-CH-Lifetime',
     [REASON.OBSOLETE_HEADER]: 'Accept-CH-Lifetime 已被规范退役，改用 Accept-CH 的持久化替代',
     [REASON.BAD_RANGE]: 'Accept-CH-Lifetime 有效期越界',
     [REASON.MULTI_VALUE]: 'Accept-CH-Lifetime 出现多个取值',
     [REASON.MALFORMED]: 'Accept-CH-Lifetime 取值无法解析',
-  }, reason, 'Accept-CH-Lifetime 未知状态');
-}
+  }, 'Accept-CH-Lifetime 未知状态');
 
 module.exports = {
   REASON,

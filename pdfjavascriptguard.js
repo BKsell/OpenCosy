@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -46,8 +46,7 @@ function applyPdfJavaScriptGuard(buffer) {
   return { changed: !result.ok, reason: result.reason, markers: result.markers };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.EMPTY]: 'PDF 内容为空',
     [REASON.NOT_BUFFER]: '待检查内容不是二进制缓冲',
     [REASON.NOT_PDF]: '内容缺少 PDF 文件头',
@@ -58,8 +57,7 @@ function describeReason(reason) {
     [REASON.OPEN_ACTION]: 'PDF 打开即触发动作',
     [REASON.RICH_MEDIA]: 'PDF 含富媒体嵌入',
     [REASON.ENCRYPTED]: 'PDF 已加密',
-  }, reason, 'PDF 未包含主动内容');
-}
+  }, 'PDF 未包含主动内容');
 
 module.exports = {
   REASON,

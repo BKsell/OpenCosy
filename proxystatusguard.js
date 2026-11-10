@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { splitItems } = require('./modutil');
 
@@ -99,8 +99,7 @@ function inspectProxyStatus(value) {
   return { reason, items: kept };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: 'proxy-status 合规',
     [REASON.MISSING]: '响应未声明 proxy-status',
     [REASON.MALFORMED]: 'proxy-status 取值非法',
@@ -109,8 +108,7 @@ function describeReason(reason) {
     [REASON.INTERNAL_AGENT]: 'proxy-status 暴露内部地址或路径形态的代理标识，已剔除',
     [REASON.CREDENTIALS]: 'proxy-status 代理标识内嵌凭据，已剔除',
     [REASON.DUPLICATE]: 'proxy-status 重复条目已去重',
-  }, reason, 'proxy-status 未识别状态');
-}
+  }, 'proxy-status 未识别状态');
 
 function applyProxyStatusGuard(headers) {
   const value = firstValue(headers, HEADER);

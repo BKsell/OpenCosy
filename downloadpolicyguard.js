@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { hasControlChars } = require('./modutil');
 
@@ -99,8 +99,7 @@ function applyDownloadPolicyGuard(download) {
   return { changed: !result.allowed, reason: result.reason, name: result.name };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.MISSING_NAME]: '下载缺少文件名',
     [REASON.CONTROL_CHARS]: '下载文件名含控制字符',
     [REASON.BIDI_OVERRIDE]: '下载文件名含双向文本覆盖字符',
@@ -111,8 +110,7 @@ function describeReason(reason) {
     [REASON.MIME_MISMATCH]: '下载文件扩展名与 MIME 不一致',
     [REASON.TOO_LARGE]: '下载文件超过体积上限',
     [REASON.INSECURE_URL]: '下载来源不是 HTTPS',
-  }, reason, '下载文件通过策略检查');
-}
+  }, '下载文件通过策略检查');
 
 module.exports = {
   REASON,

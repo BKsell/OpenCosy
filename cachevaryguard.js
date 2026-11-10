@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { tokensOf } = require('./modutil');
 
@@ -67,9 +67,7 @@ const REASON_TEXT = {
   [REASON.PUBLIC_WITH_COOKIE]: '携带 Set-Cookie 却声明 public',
 };
 
-function describeReason(reason) {
-  return describeReasonFrom(REASON_TEXT, reason, String(reason || ''));
-}
+const describeReason = describeReasonTable(REASON_TEXT, String(reason || ''));
 
 module.exports = {
   REASON,

@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -50,8 +50,7 @@ function applyContentEncodingGuard(headers, options) {
   return { changed: !result.ok, reason: result.reason, encodings: result.encodings || [], length: result.length };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.EMPTY]: '响应头为空',
     [REASON.BASE64]: '响应声明了 base64 编码',
     [REASON.UNSUPPORTED]: '响应使用不支持的压缩编码',
@@ -59,8 +58,7 @@ function describeReason(reason) {
     [REASON.BAD_LENGTH]: '响应 Content-Length 非法',
     [REASON.TOO_LARGE]: '响应声明体积超过上限',
     [REASON.UNKNOWN_LENGTH]: '压缩响应缺少 Content-Length',
-  }, reason, '响应编码与长度合法');
-}
+  }, '响应编码与长度合法');
 
 module.exports = {
   REASON,

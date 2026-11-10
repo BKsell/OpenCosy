@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { firstValue, headerKey } = require('./headerutil');
 
@@ -57,14 +57,12 @@ function applyLegacyPinninguard(headers) {
   return result;
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.DEPRECATED]: '命中已废弃的安全头（Expect-CT / HPKP）',
     [REASON.MALFORMED]: '废弃安全头取值过长',
     [REASON.UNSAFE_PIN]: 'HPKP 固定策略缺少 max-age 或格式异常',
     [REASON.MISSING]: '未声明废弃安全头',
-  }, reason, '未发现废弃安全头');
-}
+  }, '未发现废弃安全头');
 
 module.exports = {
   REASON,

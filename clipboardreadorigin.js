@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const REASON = Object.freeze({
   OK: 'ok',
@@ -85,9 +85,7 @@ const REASON_TEXT = {
   [REASON.NO_USER_GESTURE]: '缺少用户手势',
 };
 
-function describeReason(reason) {
-  return describeReasonFrom(REASON_TEXT, reason, '未知原因');
-}
+const describeReason = describeReasonTable(REASON_TEXT, '未知原因');
 
 module.exports = {
   REASON,

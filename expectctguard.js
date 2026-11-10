@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -64,8 +64,7 @@ function inspectExpectCt(value) {
   return { reason, directives };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: 'expect-ct 取值合规但该响应头已废弃',
     [REASON.MISSING]: '响应未声明 expect-ct',
     [REASON.MALFORMED]: 'expect-ct 指令非法',
@@ -73,8 +72,7 @@ function describeReason(reason) {
     [REASON.DEPRECATED]: 'expect-ct 已废弃，整头剥除',
     [REASON.REPORT_URI_LEAK]: 'expect-ct 携带 report-uri 上报地址，已剥除',
     [REASON.UNSAFE_MAX_AGE]: 'expect-ct 缓存时长超出上限，已剥除',
-  }, reason, 'expect-ct 未识别状态');
-}
+  }, 'expect-ct 未识别状态');
 
 function applyExpectCtGuard(headers) {
   const value = firstValue(headers, HEADER);

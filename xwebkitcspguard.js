@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { deleteHeader, headerKey } = require('./headerutil');
 
@@ -39,14 +39,12 @@ function applyXWebKitCspGuard(headers) {
   };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: '未发现旧版 CSP 头',
     [REASON.MISSING]: '未声明旧版 CSP 头',
     [REASON.LEGACY_CSP]: '旧版 X-WebKit-CSP 已移除，只保留标准 CSP',
     [REASON.CONFLICT]: '旧版 CSP 头与标准 CSP 并存，已移除旧版',
-  }, reason, '旧版 CSP 头状态未知');
-}
+  }, '旧版 CSP 头状态未知');
 
 module.exports = {
   REASON,

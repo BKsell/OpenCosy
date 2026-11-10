@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -78,8 +78,7 @@ function inspectFileSystemAccess(rawUrl) {
   return { allowed: true, reason: REASON.OK };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: '文件系统访问请求来源安全',
     [REASON.MALFORMED]: '文件系统访问请求地址非法',
     [REASON.UNSAFE_SCHEME]: '文件系统访问仅允许安全来源',
@@ -89,8 +88,7 @@ function describeReason(reason) {
     [REASON.IP_LITERAL_HOST]: '来源主机为裸 IP，拒绝文件系统访问',
     [REASON.OVERLONG]: '来源地址超长，拒绝文件系统访问',
     [REASON.OPAQUE_ORIGIN]: '来源为不透明来源，拒绝文件系统访问',
-  }, reason, '文件系统访问来源未识别状态');
-}
+  }, '文件系统访问来源未识别状态');
 
 function applyFileSystemAccessGuard(url) {
   const result = inspectFileSystemAccess(url);

@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -60,16 +60,14 @@ function applyReplyGuard(value) {
   return { changed: false, reason: REASON.OK, json: result.json };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.UNSUPPORTED_TYPE]: 'IPC 返回值包含不可序列化类型',
     [REASON.NOT_FINITE]: 'IPC 返回值包含非有限数值',
     [REASON.CIRCULAR]: 'IPC 返回值存在循环引用',
     [REASON.TOO_DEEP]: 'IPC 返回值嵌套层级过深',
     [REASON.TOO_LARGE]: 'IPC 返回值超过体积上限',
     [REASON.SERIALIZE_FAILED]: 'IPC 返回值序列化失败',
-  }, reason, 'IPC 返回值结构合法');
-}
+  }, 'IPC 返回值结构合法');
 
 module.exports = {
   REASON,

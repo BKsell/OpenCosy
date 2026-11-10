@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { headerKey } = require('./headerutil');
 
@@ -190,8 +190,7 @@ function applySetCookiePrefixGuard(headers) {
   };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.MISSING]: '未下发 Set-Cookie',
     [REASON.MALFORMED]: 'Set-Cookie 无法解析，已丢弃',
     [REASON.BAD_NAME]: 'Cookie 名称或属性非法',
@@ -203,8 +202,7 @@ function describeReason(reason) {
     [REASON.NOT_HTTPONLY]: 'Cookie 未设置 HttpOnly',
     [REASON.DUP_ATTRIBUTE]: 'Cookie 属性重复',
     [REASON.OVERLONG]: 'Set-Cookie 超长，已丢弃',
-  }, reason, 'Set-Cookie 通过校验');
-}
+  }, 'Set-Cookie 通过校验');
 
 module.exports = {
   REASON,

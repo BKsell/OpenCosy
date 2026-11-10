@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { isHttpUrl } = require('./modutil');
 
@@ -74,9 +74,7 @@ const REASON_TEXT = {
   [REASON.DATA_NAVIGATION]: 'data: 顶层导航',
 };
 
-function describeReason(reason) {
-  return describeReasonFrom(REASON_TEXT, reason, '未知原因');
-}
+const describeReason = describeReasonTable(REASON_TEXT, '未知原因');
 
 module.exports = {
   REASON,

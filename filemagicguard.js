@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -102,15 +102,13 @@ function applyFileMagicGuard(buffer, declaredType) {
   return { changed: !allowed, reason: result.reason, kind: result.kind, executable: result.executable };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.EMPTY]: '文件内容为空',
     [REASON.TOO_SHORT]: '文件长度不足以识别类型',
     [REASON.EXECUTABLE_MISMATCH]: '声明为图片但内容是可执行文件',
     [REASON.TYPE_MISMATCH]: '文件内容与声明的类型不一致',
     [REASON.UNKNOWN]: '无法识别文件类型',
-  }, reason, '文件类型与内容一致');
-}
+  }, '文件类型与内容一致');
 
 module.exports = {
   REASON,

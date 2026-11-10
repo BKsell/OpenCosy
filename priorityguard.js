@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -71,8 +71,7 @@ function inspectPriority(value) {
   return { reason, items: kept };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: 'priority 合规',
     [REASON.MISSING]: '响应未声明 priority 请求优先级',
     [REASON.MALFORMED]: 'priority 取值非法',
@@ -81,8 +80,7 @@ function describeReason(reason) {
     [REASON.BAD_URGENCY]: 'priority 紧急度超出 0..7',
     [REASON.BAD_INCREMENTAL]: 'priority 增量标记取值非法',
     [REASON.DUPLICATE_KEY]: 'priority 重复键已去重',
-  }, reason, 'priority 未识别状态');
-}
+  }, 'priority 未识别状态');
 
 function applyPriorityGuard(headers) {
   const value = firstValue(headers, HEADER);

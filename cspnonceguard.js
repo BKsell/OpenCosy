@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -70,8 +70,7 @@ function applyCspNonceGuard(csp, nonce) {
   return { changed: !result.ok, reason: result.reason };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.EMPTY]: 'CSP nonce 为空',
     [REASON.BAD_NONCE]: 'CSP nonce 不是合法 base64',
     [REASON.SHORT_NONCE]: 'CSP nonce 随机熵不足',
@@ -80,8 +79,7 @@ function describeReason(reason) {
     [REASON.UNSAFE_INLINE]: 'CSP 允许 unsafe-inline',
     [REASON.WILDCARD]: 'CSP 使用通配来源',
     [REASON.DUPLICATE_DIRECTIVE]: 'CSP 存在重复指令',
-  }, reason, 'CSP 与 nonce 绑定正确');
-}
+  }, 'CSP 与 nonce 绑定正确');
 
 module.exports = {
   REASON,

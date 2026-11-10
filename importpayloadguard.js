@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -70,8 +70,7 @@ function applyImportPayloadGuard(text) {
   return { changed: false, reason: REASON.OK, value: result.value };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.INVALID_INPUT]: '导入内容不是文本',
     [REASON.TOO_LARGE]: '导入文件超过体积上限',
     [REASON.PARSE_ERROR]: '导入文件不是合法 JSON',
@@ -80,8 +79,7 @@ function describeReason(reason) {
     [REASON.TOO_LONG_STRING]: '导入 JSON 字符串超长',
     [REASON.FORBIDDEN_KEY]: '导入 JSON 包含原型污染键名',
     [REASON.NOT_FINITE]: '导入 JSON 包含非有限数值',
-  }, reason, '导入 JSON 结构合法');
-}
+  }, '导入 JSON 结构合法');
 
 module.exports = {
   REASON,

@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { countValues, deleteHeader, headerKey } = require('./headerutil');
 
@@ -37,16 +37,14 @@ function applyContentBaseGuard(headers) {
   return { changed: true, reason: verdict.reason, previous: value };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: 'Content-Base 状态正常',
     [REASON.MISSING]: '未声明 Content-Base',
     [REASON.OBSOLETE_HEADER]: 'Content-Base 已废弃，会改写相对 URL 基准',
     [REASON.MULTI_VALUE]: 'Content-Base 出现多个取值',
     [REASON.OVERLONG]: 'Content-Base 取值超长',
     [REASON.MALFORMED]: 'Content-Base 取值无法解析',
-  }, reason, 'Content-Base 未知状态');
-}
+  }, 'Content-Base 未知状态');
 
 module.exports = {
   REASON,

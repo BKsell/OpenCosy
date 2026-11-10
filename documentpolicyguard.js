@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -82,8 +82,7 @@ function inspectDocumentPolicy(value) {
   return { reason, directives: kept };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: 'document-policy 合规',
     [REASON.MISSING]: '响应未声明 document-policy',
     [REASON.MALFORMED]: 'document-policy 取值非法',
@@ -93,8 +92,7 @@ function describeReason(reason) {
     [REASON.BAD_VALUE]: 'document-policy 指令取值非法',
     [REASON.DOCUMENT_DOMAIN_ALLOWED]: 'document-policy 允许 document.domain，已剔除',
     [REASON.SYNC_XHR_ALLOWED]: 'document-policy 允许同步 XHR，已剔除',
-  }, reason, 'document-policy 未识别状态');
-}
+  }, 'document-policy 未识别状态');
 
 function applyDocumentPolicyGuard(headers) {
   const value = firstValue(headers, HEADER);

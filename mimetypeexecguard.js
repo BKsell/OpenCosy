@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { headerValues, setHeader } = require('./headerutil');
 
@@ -93,9 +93,7 @@ const REASON_TEXT = {
   [REASON.BAD_DISPOSITION]: 'Content-Disposition 类型非法',
 };
 
-function describeReason(reason) {
-  return describeReasonFrom(REASON_TEXT, reason, String(reason || ''));
-}
+const describeReason = describeReasonTable(REASON_TEXT, String(reason || ''));
 
 module.exports = {
   REASON,

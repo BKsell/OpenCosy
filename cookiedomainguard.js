@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { hasControlChars } = require('./modutil');
 
@@ -83,8 +83,7 @@ function applyCookieDomainGuard(value, requestHost) {
   return { changed: !result.ok, reason: result.reason, name: result.name || '' };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.EMPTY]: 'Set-Cookie 为空',
     [REASON.MALFORMED]: 'Set-Cookie 格式非法',
     [REASON.CONTROL]: 'Set-Cookie 含控制字符',
@@ -95,8 +94,7 @@ function describeReason(reason) {
     [REASON.PREFIX_REQUIRES_HOST_ONLY]: '__Host- Cookie 设置了域或非根路径',
     [REASON.SAMESITE_NONE_INSECURE]: 'SameSite=None 缺少 Secure',
     [REASON.BAD_MAX_AGE]: 'Cookie 有效期非法或过长',
-  }, reason, 'Set-Cookie 属性合法');
-}
+  }, 'Set-Cookie 属性合法');
 
 module.exports = {
   REASON,

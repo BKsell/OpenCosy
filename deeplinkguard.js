@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { isSwitchLike, reviewStartupArg } = require('./deeplinkguard_schemes');
 
@@ -44,8 +44,6 @@ const REASON_TEXT = {
   traversal: '本地路径含目录穿越',
 };
 
-function describeReason(reason) {
-  return describeReasonFrom(REASON_TEXT, reason, '不安全的深链');
-}
+const describeReason = describeReasonTable(REASON_TEXT, '不安全的深链');
 
 module.exports = { MAX_ARGV_SCAN, describeReason, pickDeepLinkFromArgv, ...require('./deeplinkguard_schemes') };

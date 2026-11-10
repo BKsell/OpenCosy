@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { listValues } = require('./modutil');
 
@@ -86,15 +86,13 @@ function applyWarningHeaderGuard(headers, nowMs) {
   return result;
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.MALFORMED]: 'Warning 条目不符合 RFC 7234 语法',
     [REASON.OVERLONG]: 'Warning 条目长度超限',
     [REASON.TOO_MANY]: 'Warning 条目数量超限',
     [REASON.PSEUDO_CODE]: 'Warning 使用 1xx 伪状态码而非警告码',
     [REASON.STALE_DATE]: 'Warning 携带的日期与本地时间偏差过大',
-  }, reason, 'Warning 头通过校验');
-}
+  }, 'Warning 头通过校验');
 
 module.exports = {
   REASON,

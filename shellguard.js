@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { containsControlChar, isExecutableName } = require('./shellguard_check');
 
@@ -56,8 +56,6 @@ const REASON_TEXT = {
   'path-executable': '不允许直接运行可执行或快捷方式文件',
 };
 
-function describeReason(reason) {
-  return describeReasonFrom(REASON_TEXT, reason, '不安全的外部唤起');
-}
+const describeReason = describeReasonTable(REASON_TEXT, '不安全的外部唤起');
 
 module.exports = { MAX_PATH_LENGTH, describeReason, reviewLocalLaunchPath, ...require('./shellguard_check') };

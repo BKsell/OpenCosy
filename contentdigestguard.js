@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -107,8 +107,7 @@ function inspectDigest(value) {
   return { reason, members };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: '摘要头合规',
     [REASON.MISSING]: '响应未声明摘要头',
     [REASON.MALFORMED]: '摘要头取值非法，已剥除',
@@ -118,8 +117,7 @@ function describeReason(reason) {
     [REASON.DUPLICATE_MEMBER]: '摘要重复算法成员，已去重',
     [REASON.TOO_MANY]: '摘要成员过多，已截断',
     [REASON.EMPTY]: '摘要头为空，已剥除',
-  }, reason, '摘要头未识别状态');
-}
+  }, '摘要头未识别状态');
 
 function applyDigestGuard(headers, name) {
   const header = name || 'content-digest';

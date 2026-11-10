@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { firstValue, headerKey } = require('./headerutil');
 
@@ -167,16 +167,14 @@ function applyPermissionsPolicyGuard(headers) {
   return result;
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.WILDCARD_GRANT]: '站点把敏感能力授予任意来源',
     [REASON.MALFORMED]: 'Permissions-Policy 语法非法',
     [REASON.UNKNOWN_FEATURE]: '策略包含未知或已废弃能力',
     [REASON.TOO_MANY]: '策略能力条目超过预算',
     [REASON.TOO_LONG]: '策略取值超长',
     [REASON.MISSING]: '站点未声明权限策略',
-  }, reason, '权限策略有效');
-}
+  }, '权限策略有效');
 
 module.exports = {
   REASON,

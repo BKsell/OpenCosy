@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonTable } = require('./reasontext');
 
 const { parseUrl } = require('./modutil');
 const safeParse = parseUrl;
@@ -154,8 +155,7 @@ function review(webPreferences, params, options) {
 }
 
 // describeReason 把审计枚举转成稳定中文说明。
-function describeReason(reason) {
-  const map = {
+const describeReason = describeReasonTable({
     'guest-src-empty': 'webview 缺少 src',
     'guest-src-unparseable': 'webview src 无法解析',
     'guest-src-scheme': 'webview src 不是 http/https，已拒绝',
@@ -176,9 +176,7 @@ function describeReason(reason) {
     'preferences-blob': 'webview 携带额外偏好 Blob',
     'shared-default-partition': 'webview 试图挂载主会话分区',
     'additional-args-stripped': 'webview 附加参数已被过滤',
-  };
-  return Object.prototype.hasOwnProperty.call(map, reason) ? map[reason] : 'webview 不安全配置';
-}
+  }, 'webview 不安全配置');
 
 module.exports = {
   review,

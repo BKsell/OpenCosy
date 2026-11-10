@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const REASON = {
   ok: 'ok',
@@ -162,9 +162,7 @@ const REASON_TEXT = {
   [REASON.controlChars]: 'cookie carries control or bidi characters',
 };
 
-function describeReason(reason) {
-  return describeReasonFrom(REASON_TEXT, reason, 'unknown cookie verdict');
-}
+const describeReason = describeReasonTable(REASON_TEXT, 'unknown cookie verdict');
 
 module.exports = {
   REASON,

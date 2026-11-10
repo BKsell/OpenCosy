@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { countValues, firstValue, headerKey } = require('./headerutil');
 
@@ -56,15 +56,13 @@ function applyCrossDomainPolicyGuard(headers) {
   return result;
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.MALFORMED]: 'X-Permitted-Cross-Domain-Policies 取值非法，已收紧为 none',
     [REASON.OVERLONG]: 'X-Permitted-Cross-Domain-Policies 字段超长，已收紧为 none',
     [REASON.BROAD_POLICY]: '跨域策略放宽了 flash 读取范围，已收紧为 none',
     [REASON.MULTI_VALUE]: 'X-Permitted-Cross-Domain-Policies 多头下发，已收敛为单值',
     [REASON.MISSING]: '响应未声明 X-Permitted-Cross-Domain-Policies',
-  }, reason, '跨域策略为 none');
-}
+  }, '跨域策略为 none');
 
 module.exports = {
   REASON,

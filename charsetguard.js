@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { firstValue, headerKey } = require('./headerutil');
 
@@ -132,15 +132,13 @@ function applyCharsetGuard(headers) {
   return result;
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.UNSAFE_CHARSET]: 'Content-Type 指定了可构造 XSS 的字符集',
     [REASON.DUPLICATE_CHARSET]: 'Content-Type 重复声明 charset',
     [REASON.BAD_CHARSET_TOKEN]: 'charset 参数不是合法 token',
     [REASON.MALFORMED]: 'Content-Type 结构非法',
     [REASON.OVERLONG]: 'Content-Type 超长',
-  }, reason, 'Content-Type 通过校验');
-}
+  }, 'Content-Type 通过校验');
 
 module.exports = {
   REASON,

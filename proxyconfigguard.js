@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -92,8 +92,7 @@ function applyProxyConfigGuard(config) {
   return { changed: !result.ok, reason: result.reason, sanitized: result.sanitized };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.EMPTY]: '代理配置为空',
     [REASON.INVALID_MODE]: '代理模式非法',
     [REASON.INSECURE_PAC]: 'PAC 脚本地址不是 HTTPS',
@@ -102,8 +101,7 @@ function describeReason(reason) {
     [REASON.BAD_SCHEME]: '代理协议不受支持',
     [REASON.BAD_HOST]: '代理主机或端口非法',
     [REASON.BAD_BYPASS]: '代理绕过列表包含非法条目',
-  }, reason, '代理配置合法');
-}
+  }, '代理配置合法');
 
 module.exports = {
   REASON,

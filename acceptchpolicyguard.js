@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { headerKey } = require('./headerutil');
 
@@ -73,15 +73,13 @@ function applyAcceptChGuard(headers) {
   return result;
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.MALFORMED]: 'Accept-CH 或 Critical-CH 含非法提示词',
     [REASON.TOO_MANY]: '客户端提示数量超过上限',
     [REASON.CRITICAL_UNKNOWN]: 'Critical-CH 声明了未在 Accept-CH 出现的提示',
     [REASON.CRITICAL_EMPTY]: 'Critical-CH 存在但 Accept-CH 为空',
     [REASON.OVERLONG]: '客户端提示字段超长',
-  }, reason, '客户端提示协商一致');
-}
+  }, '客户端提示协商一致');
 
 module.exports = {
   REASON,

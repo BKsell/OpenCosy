@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { normalizeCharset } = require('./modutil');
 const normalizeType = normalizeCharset;
@@ -67,8 +67,7 @@ function inspectAcceptPatch(value) {
   return { reason, types: kept };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: 'accept-patch 合规',
     [REASON.MISSING]: '响应未声明 accept-patch',
     [REASON.MALFORMED]: 'accept-patch 取值非法',
@@ -77,8 +76,7 @@ function describeReason(reason) {
     [REASON.UNSAFE_TYPE]: 'accept-patch 接受可执行或可渲染类型，已剔除',
     [REASON.UNKNOWN_TYPE]: 'accept-patch 类型不在白名单，已剔除',
     [REASON.DUPLICATE]: 'accept-patch 重复类型已去重',
-  }, reason, 'accept-patch 未识别状态');
-}
+  }, 'accept-patch 未识别状态');
 
 function applyAcceptPatchGuard(headers) {
   const value = firstValue(headers, HEADER);

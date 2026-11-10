@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { deleteHeader, headerKey } = require('./headerutil');
 
@@ -33,15 +33,13 @@ function applyContentMd5Guard(headers) {
   return { changed: true, reason: verdict.reason, previous: value };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: 'Content-MD5 状态正常',
     [REASON.MISSING]: '未声明 Content-MD5',
     [REASON.WEAK_MD5]: 'Content-MD5 使用已弱的 MD5 摘要',
     [REASON.MALFORMED_DIGEST]: 'Content-MD5 摘要格式非法',
     [REASON.OVERLONG]: 'Content-MD5 取值超长',
-  }, reason, 'Content-MD5 未知状态');
-}
+  }, 'Content-MD5 未知状态');
 
 module.exports = {
   REASON,

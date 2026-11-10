@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -52,8 +52,7 @@ function applyUpdateArtifactGuard(manifest) {
   return { changed: !result.ok, reason: result.reason, manifest: result.manifest };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.INVALID]: '更新清单为空或不是对象',
     [REASON.VERSION]: '更新版本号不符合语义化版本',
     [REASON.URL]: '更新包地址不是 HTTPS',
@@ -62,8 +61,7 @@ function describeReason(reason) {
     [REASON.SIGNATURE]: '更新包签名格式非法',
     [REASON.SIZE]: '更新包体积超出允许范围',
     [REASON.PLATFORM]: '更新包目标平台不受支持',
-  }, reason, '更新清单校验通过');
-}
+  }, '更新清单校验通过');
 
 module.exports = {
   REASON,

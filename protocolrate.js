@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonTable } = require('./reasontext');
 
 // 外部协议确认的节流内核：页面可以反复调用 open-external-url，
 // 每次都会弹一个原生确认框。恶意页面靠高频弹窗既能把用户逼成"手快点了同意"，
@@ -63,10 +64,9 @@ function check(limiter, origin, scheme, url, now) {
   return { ok: true, reason: '', retryAfterMs: 0 };
 }
 
-function describeReason(reason) {
-  if (reason === 'duplicate') return '重复的协议唤起请求';
-  if (reason === 'rate-limited') return '外部协议唤起过于频繁';
-  return '';
-}
+const describeReason = describeReasonTable({
+  'duplicate': '重复的协议唤起请求',
+  'rate-limited': '外部协议唤起过于频繁',
+}, '');
 
 module.exports = { createLimiter, check, sweep, describeReason };

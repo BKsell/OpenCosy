@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -65,15 +65,13 @@ function applyCsvFormulaGuard(rows) {
   return guardMatrix(rows);
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.NOT_LIST]: 'CSV 单元格不是列表',
     [REASON.TOO_MANY_CELLS]: 'CSV 行单元格数量过多',
     [REASON.TOO_LONG_CELL]: 'CSV 单元格内容超长',
     [REASON.FORMULA_ESCAPED]: 'CSV 单元格公式前缀已转义',
     [REASON.CONTROL_STRIPPED]: 'CSV 单元格控制字符已清除',
-  }, reason, 'CSV 内容安全');
-}
+  }, 'CSV 内容安全');
 
 module.exports = {
   REASON,

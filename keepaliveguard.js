@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { firstValue, headerKey } = require('./headerutil');
 
@@ -69,15 +69,13 @@ function applyKeepAliveGuard(headers) {
   return result;
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.MALFORMED]: 'Keep-Alive 参数语法非法',
     [REASON.OVERLONG]: 'Keep-Alive 字段超长',
     [REASON.TIMEOUT_RANGE]: 'Keep-Alive 超时时间超出预算',
     [REASON.MAX_RANGE]: 'Keep-Alive 请求上限超出预算',
     [REASON.DUPLICATE_PARAM]: 'Keep-Alive 参数重复声明',
-  }, reason, 'Keep-Alive 参数通过校验');
-}
+  }, 'Keep-Alive 参数通过校验');
 
 module.exports = {
   REASON,

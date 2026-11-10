@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { countValues, firstValue, headerKey } = require('./headerutil');
 
@@ -47,15 +47,13 @@ function applyDnsPrefetchGuard(headers) {
   return result;
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.MALFORMED]: 'X-DNS-Prefetch-Control 取值非法，已关闭预取',
     [REASON.OVERLONG]: 'X-DNS-Prefetch-Control 字段超长，已关闭预取',
     [REASON.MULTI_VALUE]: 'X-DNS-Prefetch-Control 重复下发，已收敛为单值',
     [REASON.ENABLED]: '页面开启 DNS 预取，已关闭以收敛跨域探测',
     [REASON.MISSING]: '响应未声明 X-DNS-Prefetch-Control',
-  }, reason, 'X-DNS-Prefetch-Control 已关闭');
-}
+  }, 'X-DNS-Prefetch-Control 已关闭');
 
 module.exports = {
   REASON,

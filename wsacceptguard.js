@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { hasControlCharsV2 } = require('./modutil');
 const hasControlChars = hasControlCharsV2;
@@ -70,8 +70,7 @@ function inspectProtocols(value) {
   return { reason, protocols };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: 'websocket 握手头合规',
     [REASON.MISSING]: '响应未声明 websocket 握手头',
     [REASON.MALFORMED]: 'websocket 握手头取值非法，已剥除',
@@ -79,8 +78,7 @@ function describeReason(reason) {
     [REASON.DUPLICATE]: 'websocket 子协议重复，已去重',
     [REASON.TOO_MANY]: 'websocket 子协议过多，已截断',
     [REASON.UNSAFE_CHARS]: 'websocket 握手头含控制字符，已剥除',
-  }, reason, 'websocket 握手头未识别状态');
-}
+  }, 'websocket 握手头未识别状态');
 
 function applySecWebSocketAcceptGuard(headers) {
   const value = firstValue(headers, ACCEPT_HEADER);

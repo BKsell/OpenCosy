@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { countValues, deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -59,8 +59,7 @@ function applyXuaCompatibleGuard(headers) {
   return { changed: true, reason: verdict.reason, mode: verdict.mode || null };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: 'X-UA-Compatible 已收敛为现代模式',
     [REASON.MISSING]: '未声明 X-UA-Compatible',
     [REASON.LEGACY_MODE]: 'X-UA-Compatible 强制旧版渲染引擎',
@@ -68,8 +67,7 @@ function describeReason(reason) {
     [REASON.MULTI_VALUE]: 'X-UA-Compatible 出现多个冲突取值',
     [REASON.OVERLONG]: 'X-UA-Compatible 取值超长',
     [REASON.MALFORMED]: 'X-UA-Compatible 取值无法解析',
-  }, reason, 'X-UA-Compatible 未知状态');
-}
+  }, 'X-UA-Compatible 未知状态');
 
 module.exports = {
   REASON,

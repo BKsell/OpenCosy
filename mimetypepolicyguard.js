@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -56,8 +56,7 @@ function applyMimeTypePolicyGuard(value, options) {
   return { changed: !result.ok, reason: result.reason, essence: result.essence || '' };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.EMPTY]: 'Content-Type 为空',
     [REASON.MALFORMED]: 'Content-Type 格式非法',
     [REASON.WILDCARD]: 'Content-Type 使用通配类型',
@@ -65,8 +64,7 @@ function describeReason(reason) {
     [REASON.DUPLICATE_PARAM]: 'Content-Type 参数重复',
     [REASON.HTML_DISALLOWED]: '当前上下文不允许 HTML 类型',
     [REASON.SNIFFABLE]: '下载响应使用易被嗅探的通用类型',
-  }, reason, 'Content-Type 合法');
-}
+  }, 'Content-Type 合法');
 
 module.exports = {
   REASON,

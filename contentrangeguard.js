@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { firstValue, headerKey } = require('./headerutil');
 
@@ -89,8 +89,7 @@ function applyContentRangeGuard(headers) {
   return result;
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.MALFORMED]: 'Content-Range 格式非法',
     [REASON.OVERLONG]: 'Content-Range 过长或数值溢出',
     [REASON.BAD_ORDER]: 'Content-Range 起止顺序颠倒',
@@ -98,8 +97,7 @@ function describeReason(reason) {
     [REASON.UNSATISFIABLE]: 'Content-Range 声明不可满足区间',
     [REASON.LENGTH_MISMATCH]: 'Content-Range 与 Content-Length 不一致',
     [REASON.UNKNOWN_TOTAL]: 'Content-Range 未声明总长',
-  }, reason, 'Content-Range 通过校验');
-}
+  }, 'Content-Range 通过校验');
 
 module.exports = {
   REASON,

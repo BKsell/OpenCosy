@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -78,8 +78,7 @@ function inspectCredentialRequest(rawUrl, options) {
   return { allowed: true, reason: REASON.OK };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: '凭据请求来源与依赖方标识一致',
     [REASON.MALFORMED]: '凭据请求地址非法',
     [REASON.UNSAFE_SCHEME]: '凭据请求仅允许安全来源',
@@ -89,8 +88,7 @@ function describeReason(reason) {
     [REASON.RP_ID_SUFFIX_AMBIGUOUS]: '依赖方标识为公共后缀，已拒绝',
     [REASON.PUNYCODE_RP_ID]: '依赖方标识为 punycode 同形域名，已拒绝',
     [REASON.OVERLONG]: '凭据请求地址超长，已拒绝',
-  }, reason, '凭据请求未识别状态');
-}
+  }, '凭据请求未识别状态');
 
 function applyCredentialRequestGuard(url, options) {
   const result = inspectCredentialRequest(url, options);

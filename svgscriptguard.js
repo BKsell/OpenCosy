@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -49,8 +49,7 @@ function applySvgScriptGuard(content) {
   return { changed: !result.ok, reason: result.reason, matches: result.matches };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.EMPTY]: 'SVG 内容为空',
     [REASON.TOO_LARGE]: 'SVG 超过体积上限',
     [REASON.SCRIPT_TAG]: 'SVG 包含 script 标签',
@@ -60,8 +59,7 @@ function describeReason(reason) {
     [REASON.IFRAME_EMBED]: 'SVG 包含 iframe 或 embed',
     [REASON.ENTITY_DECL]: 'SVG 包含实体声明',
     [REASON.EXTERNAL_DTD]: 'SVG 引用外部 DTD',
-  }, reason, 'SVG 内容安全');
-}
+  }, 'SVG 内容安全');
 
 module.exports = {
   REASON,

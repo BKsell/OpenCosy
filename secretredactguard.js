@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const REASON = {
   OK: 'ok',
@@ -50,14 +50,12 @@ function applySecretRedactGuard(text, options) {
   return { changed: result.changed, reason: result.reason, text: result.text, hits: result.hits };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.EMPTY]: '待脱敏文本为空',
     [REASON.NOT_TEXT]: '待脱敏内容不是文本',
     [REASON.REDACTED]: '文本中的凭据已脱敏',
     [REASON.TOO_LARGE]: '待脱敏文本超过体积上限',
-  }, reason, '文本未包含可识别凭据');
-}
+  }, '文本未包含可识别凭据');
 
 module.exports = {
   REASON,

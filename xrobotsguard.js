@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { deleteHeader, headerKey } = require('./headerutil');
 
@@ -85,8 +85,7 @@ function applyXRobotsGuard(headers) {
   return { changed: true, reason: verdict.reason, directive: verdict.directive || null };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: 'X-Robots-Tag 指令合法',
     [REASON.MISSING]: '未声明 X-Robots-Tag',
     [REASON.UNKNOWN_DIRECTIVE]: 'X-Robots-Tag 使用未知指令',
@@ -94,8 +93,7 @@ function describeReason(reason) {
     [REASON.BAD_RANGE]: 'X-Robots-Tag 数值指令越界',
     [REASON.OVERLONG]: 'X-Robots-Tag 取值超长',
     [REASON.MALFORMED]: 'X-Robots-Tag 取值无法解析',
-  }, reason, 'X-Robots-Tag 未知状态');
-}
+  }, 'X-Robots-Tag 未知状态');
 
 module.exports = {
   REASON,

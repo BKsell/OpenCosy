@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { headerValues, originOf } = require('./modutil');
 
@@ -74,9 +74,7 @@ const REASON_TEXT = {
   [REASON.nel]: 'network error logging header removed',
 };
 
-function describeReason(reason) {
-  return describeReasonFrom(REASON_TEXT, reason, 'unknown timing verdict');
-}
+const describeReason = describeReasonTable(REASON_TEXT, 'unknown timing verdict');
 
 module.exports = {
   REASON,

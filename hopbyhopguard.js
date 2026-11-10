@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { lowerKeys } = require('./headerutil');
 
@@ -85,13 +85,11 @@ function applyHopByHopGuard(headers) {
   return inspectHopByHop(headers);
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.HOP_BY_HOP]: '剥离了逐跳响应头',
     [REASON.CONNECTION_TOKEN]: '剥离了 Connection 声明的逐跳头',
     [REASON.OVERLONG]: 'Connection 头超长',
-  }, reason, '响应头通过逐跳校验');
-}
+  }, '响应头通过逐跳校验');
 
 module.exports = {
   REASON,

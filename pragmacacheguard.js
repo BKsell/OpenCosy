@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { deleteHeader, headerKey } = require('./headerutil');
 
@@ -44,16 +44,14 @@ function applyPragmaCacheGuard(headers) {
   return { changed: true, reason: verdict.reason, token: verdict.token || null };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: 'Pragma 仅保留 no-cache',
     [REASON.MISSING]: '未声明 Pragma',
     [REASON.BAD_DIRECTIVE]: 'Pragma 使用非标准缓存指令',
     [REASON.MULTI_VALUE]: 'Pragma 出现多个取值',
     [REASON.OVERLONG]: 'Pragma 取值超长',
     [REASON.MALFORMED]: 'Pragma 取值无法解析',
-  }, reason, 'Pragma 未知状态');
-}
+  }, 'Pragma 未知状态');
 
 module.exports = {
   REASON,

@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { lowerKeys } = require('./headerutil');
 
@@ -105,15 +105,13 @@ function applyProxyAuthGuard(headers, details) {
   return inspectProxyAuth(headers, details || {});
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.PROXY_HEADER]: '剥离代理认证头',
     [REASON.INSECURE_BASIC]: '明文链路上剥离 Basic 认证挑战',
     [REASON.NTLM_LEAK]: '剥离可泄露凭据的 NTLM/Negotiate 挑战',
     [REASON.MALFORMED]: '认证挑战结构非法',
     [REASON.TOO_MANY]: '认证挑战数量超限',
-  }, reason, '认证头通过校验');
-}
+  }, '认证头通过校验');
 
 module.exports = {
   REASON,

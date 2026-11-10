@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const REASON = Object.freeze({
   OK: 'ok',
@@ -148,9 +148,7 @@ const REASON_TEXT = {
   [REASON.SCHEME_FLOOD]: '该协议唤起次数超限',
 };
 
-function describeReason(reason) {
-  return describeReasonFrom(REASON_TEXT, reason, '未知原因');
-}
+const describeReason = describeReasonTable(REASON_TEXT, '未知原因');
 
 module.exports = {
   REASON,

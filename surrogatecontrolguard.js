@@ -1,5 +1,5 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
+const { describeReasonTable } = require('./reasontext');
 
 const { deleteHeader, headerKey } = require('./headerutil');
 
@@ -85,8 +85,7 @@ function applySurrogateControlGuard(headers) {
   return { changed: true, reason: REASON.OK, canonical: verdict.canonical };
 }
 
-function describeReason(reason) {
-  return describeReasonFrom({
+const describeReason = describeReasonTable({
     [REASON.OK]: 'Surrogate-Control 已收敛为 CDN 安全指令',
     [REASON.MISSING]: '未声明 Surrogate-Control',
     [REASON.UNKNOWN_DIRECTIVE]: 'Surrogate-Control 使用未知指令',
@@ -94,8 +93,7 @@ function describeReason(reason) {
     [REASON.MULTI_VALUE]: 'Surrogate-Control 出现多个取值',
     [REASON.OVERLONG]: 'Surrogate-Control 取值超长',
     [REASON.MALFORMED]: 'Surrogate-Control 取值无法解析',
-  }, reason, 'Surrogate-Control 未知状态');
-}
+  }, 'Surrogate-Control 未知状态');
 
 module.exports = {
   REASON,
