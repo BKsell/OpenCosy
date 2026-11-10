@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 const { pruneOlderThan, countSince, resetCooldown } = require('./modutil');
 
 // inpageguard.js —— history.pushState/replaceState 触发的同文档导航收口内核。
@@ -148,25 +149,18 @@ function decideInPageNav(state, rawUrl, now) {
   };
 }
 
+const IN_PAGE_REASON_TEXT = {
+  [REJECT_BAD_URL]: '同文档导航目标不是合法 URL，已忽略',
+  [REJECT_SCHEME]: '同文档导航使用了不允许的协议，已忽略',
+  [REJECT_TOO_LONG]: `同文档导航 URL 超过 ${MAX_INPAGE_URL_LEN} 字符上限，已忽略`,
+  [REJECT_CONTROL]: '同文档导航 URL 含控制字符，已忽略',
+  [HOLD_DUPLICATE]: '网页短时间重复压入相同地址，已合并',
+  [HOLD_BURST]: '网页高频修改历史记录（历史劫持/刷屏），已临时收敛',
+  [HOLD_COOLDOWN]: '同文档导航冷却期内的重复更新已忽略',
+};
+
 function describeInPageReason(reason) {
-  switch (reason) {
-    case REJECT_BAD_URL:
-      return '同文档导航目标不是合法 URL，已忽略';
-    case REJECT_SCHEME:
-      return '同文档导航使用了不允许的协议，已忽略';
-    case REJECT_TOO_LONG:
-      return `同文档导航 URL 超过 ${MAX_INPAGE_URL_LEN} 字符上限，已忽略`;
-    case REJECT_CONTROL:
-      return '同文档导航 URL 含控制字符，已忽略';
-    case HOLD_DUPLICATE:
-      return '网页短时间重复压入相同地址，已合并';
-    case HOLD_BURST:
-      return '网页高频修改历史记录（历史劫持/刷屏），已临时收敛';
-    case HOLD_COOLDOWN:
-      return '同文档导航冷却期内的重复更新已忽略';
-    default:
-      return '同文档导航';
-  }
+  return describeReasonFrom(IN_PAGE_REASON_TEXT, reason, '同文档导航');
 }
 
 module.exports = {
