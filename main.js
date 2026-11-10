@@ -405,7 +405,6 @@ const unloadGuard = require('./unloadguard');
 const inpageGuard = require('./inpageguard');
 // r32：控制台 / 悬停状态栏 / 主题色 / 媒体状态 / 插件崩溃 / 光标 / 历史条目事件收口内核。
 const consoleGuard = require('./consoleguard');
-const hoverGuard = require('./hoverguard');
 const themeGuard = require('./themeguard');
 const mediaGuard = require('./mediaguard');
 const crashGuard = require('./crashguard');
@@ -417,7 +416,6 @@ const tabGroups = require('./tabgroups');
 const tabOrderDiff = require('./taborderdiff');
 // r33：意外原生子窗口 / iframe 生命周期 / 屏幕捕获状态 / DevTools 开关 / 右键参数 /
 // IPC 入参形状，六个此前 0 接线的收口内核。
-const childWindowGuard = require('./childwindowguard');
 const frameGuard = require('./frameguard');
 const captureGuard = require('./captureguard');
 const devtoolsSwitchGuard = require('./devtoolswitchguard');
