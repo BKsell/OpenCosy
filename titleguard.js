@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 const { pruneOlderThan, countSince } = require('./modutil');
 
 // titleguard.js —— 标签页标题与网站图标的净化、长度与更新频率收口内核。
@@ -169,17 +170,14 @@ function resolveFaviconHref(href, pageUrl) {
   return href;
 }
 
+const TITLE_REASON_TEXT = {
+  [HOLD_BURST]: '网页高频修改标题（标题闪烁 / 伪加载），已临时收敛更新',
+  [HOLD_SAME]: '网页短时间重复上报相同标题，已忽略',
+  [TITLE_SANITIZED]: '标签标题含控制字符或超长，已净化',
+};
+
 function describeTitleReason(reason) {
-  switch (reason) {
-    case HOLD_BURST:
-      return '网页高频修改标题（标题闪烁 / 伪加载），已临时收敛更新';
-    case HOLD_SAME:
-      return '网页短时间重复上报相同标题，已忽略';
-    case TITLE_SANITIZED:
-      return '标签标题含控制字符或超长，已净化';
-    default:
-      return '标签标题更新';
-  }
+  return describeReasonFrom(TITLE_REASON_TEXT, reason, '标签标题更新');
 }
 
 module.exports = {
