@@ -1,3 +1,4 @@
+const { describeReasonFrom } = require('./reasontext');
 const path = require('path');
 const { safeInt, isPlainObject } = require('./modutil');
 
@@ -34,22 +35,23 @@ const REASON = {
   IO_ERROR: 'io-error',
 };
 
+const JOURNAL_REJECT_TEXT = {
+  [REASON.OK]: '记录合法',
+  [REASON.BAD_SHAPE]: '下载记录结构非法',
+  [REASON.BAD_ID]: '下载记录 ID 非法',
+  [REASON.BAD_URL]: '下载记录地址非法',
+  [REASON.BAD_FILENAME]: '下载记录文件名非法',
+  [REASON.BAD_STATE]: '下载记录状态非法',
+  [REASON.BAD_PATH]: '下载记录路径越界',
+  [REASON.BAD_BYTES]: '下载记录字节数非法',
+  [REASON.BAD_TIME]: '下载记录时间戳非法',
+  [REASON.TOO_MANY]: '下载记录条数超限',
+  [REASON.TOO_LARGE]: '下载记录文件超大',
+  [REASON.IO_ERROR]: '下载记录读写失败',
+};
+
 function describeJournalReject(reason) {
-  switch (reason) {
-    case REASON.OK: return '记录合法';
-    case REASON.BAD_SHAPE: return '下载记录结构非法';
-    case REASON.BAD_ID: return '下载记录 ID 非法';
-    case REASON.BAD_URL: return '下载记录地址非法';
-    case REASON.BAD_FILENAME: return '下载记录文件名非法';
-    case REASON.BAD_STATE: return '下载记录状态非法';
-    case REASON.BAD_PATH: return '下载记录路径越界';
-    case REASON.BAD_BYTES: return '下载记录字节数非法';
-    case REASON.BAD_TIME: return '下载记录时间戳非法';
-    case REASON.TOO_MANY: return '下载记录条数超限';
-    case REASON.TOO_LARGE: return '下载记录文件超大';
-    case REASON.IO_ERROR: return '下载记录读写失败';
-    default: return '未知下载记录问题';
-  }
+  return describeReasonFrom(JOURNAL_REJECT_TEXT, reason, '未知下载记录问题');
 }
 
 function cleanId(value) {
