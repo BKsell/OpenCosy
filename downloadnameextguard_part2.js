@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const REASON = {
   ok: 'ok',
@@ -31,19 +32,20 @@ const RESERVED_DEVICE_NAMES = new Set([
 
 const MAX_NAME_LENGTH = 200;
 
+const REASON_TEXT = {
+  [REASON.ok]: 'download name acceptable',
+  [REASON.doubleExtension]: 'executable hidden behind a decoy extension',
+  [REASON.bidiOverride]: 'name carries a bidi override',
+  [REASON.controlChars]: 'name carries control characters',
+  [REASON.trailingDotSpace]: 'name ends with dots or spaces',
+  [REASON.reservedDevice]: 'name maps to a reserved device',
+  [REASON.hiddenFile]: 'name resolves to a hidden file',
+  [REASON.tooLong]: 'name exceeds the length budget',
+  [REASON.malformed]: 'Content-Disposition cannot be parsed',
+};
+
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.ok: return 'download name acceptable';
-    case REASON.doubleExtension: return 'executable hidden behind a decoy extension';
-    case REASON.bidiOverride: return 'name carries a bidi override';
-    case REASON.controlChars: return 'name carries control characters';
-    case REASON.trailingDotSpace: return 'name ends with dots or spaces';
-    case REASON.reservedDevice: return 'name maps to a reserved device';
-    case REASON.hiddenFile: return 'name resolves to a hidden file';
-    case REASON.tooLong: return 'name exceeds the length budget';
-    case REASON.malformed: return 'Content-Disposition cannot be parsed';
-    default: return 'unknown download name verdict';
-  }
+  return describeReasonFrom(REASON_TEXT, reason, 'unknown download name verdict');
 }
 
 module.exports = { describeReason };
