@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 const { pruneOlderThan, originFromUrl } = require('./modutil');
 
 // fullscreenguard.js —— HTML 全屏与键盘锁（navigator.keyboard.lock）的滥用收口内核。
@@ -126,26 +127,22 @@ function noteKeyboardUnlock(state) {
 }
 
 // describeKeyboardDecision / describeAbuse 给出安全事件中文文案。
+const KEYBOARD_REASON_TEXT = {
+  [DENY_NOT_FULLSCREEN]: '网页在非全屏状态请求键盘锁（可能意图劫持 Esc 等按键），已阻止',
+  [DENY_RATE_LIMITED]: '网页在短时间内反复请求键盘锁，已按滥用限速阻止',
+  [DENY_BAD_STATE]: '键盘锁请求缺少有效内容状态，已阻止',
+};
+
+const ABUSE_TEXT = {
+  [ABUSE_FLICKER]: '网页在短时间内高频进出全屏（疑似全屏点击劫持），已记录',
+};
+
 function describeKeyboardReason(reason) {
-  switch (reason) {
-    case DENY_NOT_FULLSCREEN:
-      return '网页在非全屏状态请求键盘锁（可能意图劫持 Esc 等按键），已阻止';
-    case DENY_RATE_LIMITED:
-      return '网页在短时间内反复请求键盘锁，已按滥用限速阻止';
-    case DENY_BAD_STATE:
-      return '键盘锁请求缺少有效内容状态，已阻止';
-    default:
-      return '键盘锁请求';
-  }
+  return describeReasonFrom(KEYBOARD_REASON_TEXT, reason, '键盘锁请求');
 }
 
 function describeAbuse(kind) {
-  switch (kind) {
-    case ABUSE_FLICKER:
-      return '网页在短时间内高频进出全屏（疑似全屏点击劫持），已记录';
-    default:
-      return '全屏状态异常';
-  }
+  return describeReasonFrom(ABUSE_TEXT, kind, '全屏状态异常');
 }
 
 module.exports = {
