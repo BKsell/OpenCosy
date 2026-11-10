@@ -1,11 +1,13 @@
 'use strict';
 
 const searchIpc = require('./cosyipcsearch');
-const extensionIpc = require('./cosyipcextension');
+const cosyipcextinstall = require('./cosyipcextinstall');
+const cosycertipc = require('./cosycertipc');
 
 function bindDeps(x) {
   searchIpc.bindDeps(x);
-  extensionIpc.bindDeps(x);
+  cosyipcextinstall.bindDeps(x);
+  cosycertipc.bindDeps(x);
 }
 
 function registerFindIpc() {
@@ -17,11 +19,11 @@ function registerTabOverviewIpc() {
 }
 
 function registerExtensionIpc() {
-  extensionIpc.registerExtensionIpc();
+  cosyipcextinstall.registerExtensionIpc();
 }
 
 function registerCertificateIpc() {
-  extensionIpc.registerCertificateIpc();
+  cosycertipc.registerCertificateIpc();
 }
 
 module.exports = { bindDeps, registerFindIpc, registerTabOverviewIpc, registerExtensionIpc, registerCertificateIpc };
