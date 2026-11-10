@@ -20,6 +20,8 @@
 
 // 会被钓鱼者高频蹭的品牌核心词（小写）。与 brandguard 各有一份：
 // 本模块只需要“有没有出现品牌词”这一布尔判断，不做编辑距离，单独列更清晰。
+const { mapToLatinLookalike, decodePunyLabel } = require('./navguard');
+
 const BRAND_TOKENS = [
   'paypal', 'apple', 'appleid', 'icloud', 'google', 'gmail', 'microsoft',
   'windows', 'office', 'live', 'outlook', 'hotmail', 'amazon', 'aws',
@@ -47,6 +49,7 @@ const WEIGHTS = {
   bareIPv4: 45,
   brandInUserinfo: 25,
   punycodeWithBrand: 40,
+  homoglyphBrand: 40,
   suspiciousTldWithBrand: 25,
   unusualPortWithBrand: 15,
   deepSubdomainWithBrand: 15,
@@ -108,6 +111,17 @@ function hostHasPercentEncoding(hostname) {
   return /%[0-9a-fA-F]{2}/.test(hostname);
 }
 
+function foldLookalikeHost(hostname) {
+  const out = [];
+  for (const rawLabel of String(hostname || '').split('.')) {
+    if (!rawLabel) continue;
+    const label = rawLabel.startsWith('xn--') ? (decodePunyLabel(rawLabel) || rawLabel) : rawLabel;
+    const cand = mapToLatinLookalike(label);
+    if (cand && cand.ok) out.push(cand.mapped);
+  }
+  return out.join('.');
+}
+
 function foldCompat(rawHost) {
   const raw = String(rawHost || '').toLowerCase();
   try {
@@ -160,6 +174,8 @@ function analyze(rawUrl) {
   // 原始主机，子域/注册域等结构判断仍用规范化后的 hostname。
   const rawHost = extractRawHost(rawUrl);
   const hostFold = foldCompat(rawHost);
+  const lookalikeFold = foldLookalikeHost(hostname);
+  const brandInLookalike = lookalikeFold ? findBrandToken(lookalikeFold) : null;
 
   const signals = [];
   const add = (code, detail) => {
@@ -180,7 +196,7 @@ function analyze(rawUrl) {
   const brandInRegistrable = findBrandToken(regLabel);
   const brandInPath = findBrandToken(pathText);
   const brandOnHost = findBrandToken(hostFold);
-  const brandAnywhere = brandInUserinfo || brandOnLeft || brandInRegistrable || brandInPath || brandOnHost;
+  const brandAnywhere = brandInUserinfo || brandOnLeft || brandInRegistrable || brandInPath || brandOnHost || brandInLookalike;
 
   // 1) userinfo：http://paypal.com@evil.com 是最经典的地址栏障眼法。
   if (userinfo || u.password) {
@@ -210,6 +226,10 @@ function analyze(rawUrl) {
   const hasPuny = hostname.split('.').some(l => l.startsWith('xn--'));
   if (hasPuny && brandAnywhere) {
     add('punycodeWithBrand', 'punycode 国际域名叠加品牌词：' + brandAnywhere);
+  }
+
+  if (lookalikeFold && brandInLookalike) {
+    add('homoglyphBrand', '同形异义字主机折叠成拉丁后暴露品牌词：' + lookalikeFold);
   }
 
   // 5) 可疑廉价 TLD + 品牌词。
