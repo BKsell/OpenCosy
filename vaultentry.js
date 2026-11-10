@@ -50,6 +50,11 @@ function normalizeLabel(label) {
   return t;
 }
 
+// metadataAad 把明文元数据绑进 GCM 认证范围，篡改种类/标签/轮数会让解封直接失败。
+function metadataAad(kind, label, kdf, rounds, updated) {
+  return Buffer.from(JSON.stringify([kind, label, kdf, rounds, updated]), 'utf8');
+}
+
 // sealEntry 加密一个条目。payload 必须可 JSON 序列化且小于上限。
 function sealEntry(masterKey, kdf, id, saltBuf, rounds, kind, label, payload) {
   if (kdf === KDF_PBKDF2 && normalizeRounds(rounds) < MIN_PBKDF2_ROUNDS) {
@@ -62,6 +67,8 @@ function sealEntry(masterKey, kdf, id, saltBuf, rounds, kind, label, payload) {
   const key = deriveEntryKey(masterKey, kdf, saltBuf, rounds);
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const updated = Date.now();
+  cipher.setAAD(metadataAad(kind, label, kdf, rounds, updated));
   const enc = Buffer.concat([cipher.update(plain), cipher.final()]);
   const tag = cipher.getAuthTag();
   return {
@@ -75,7 +82,8 @@ function sealEntry(masterKey, kdf, id, saltBuf, rounds, kind, label, payload) {
       c: enc.toString('hex'),
       iv: iv.toString('hex'),
       g: tag.toString('hex'),
-      u: Date.now(),
+      u: updated,
+      a: 1,
     },
   };
 }
@@ -110,6 +118,14 @@ function openEntry(masterKey, entry) {
   if (enc.length > MAX_PAYLOAD_BYTES) return { ok: false, reason: 'bad-ciphertext' };
   try {
     const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+    if (entry.a === 1) {
+      const kind = normalizeKind(entry.t);
+      const label = normalizeLabel(entry.n);
+      if (kind === '' || label === '') return { ok: false, reason: 'bad-entry' };
+      const updated = Number.isInteger(entry.u) ? entry.u : -1;
+      const aadRounds = kdf === KDF_PBKDF2 ? rounds : (Number.isInteger(entry.r) ? entry.r : 0);
+      decipher.setAAD(metadataAad(kind, label, kdf, aadRounds, updated));
+    }
     decipher.setAuthTag(tag);
     const plain = Buffer.concat([decipher.update(enc), decipher.final()]);
     return { ok: true, payload: JSON.parse(plain.toString('utf8')) };
