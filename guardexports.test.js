@@ -15,6 +15,10 @@ const API = {
     'classifyCertError', 'exceptionMatches', 'shortFingerprint', 'errorInfo', 'HARD_DENY_CODES'],
   deeplinkguard: ['reviewStartupArg', 'describeReason', 'pickDeepLinkFromArgv'],
   switchguard: ['SEVERITY_CRITICAL', 'auditSwitches', 'collectSources'],
+  hoverguard: ['createHoverState', 'decideHoverUrl', 'describeHoverReason', 'resetForNavigation',
+    'HOVER_SHOW', 'HOVER_DROP', 'DROP_FLOOD'],
+  childwindowguard: ['createChildWindowState', 'evaluateChildWindow', 'resetForNavigation',
+    'CHILD_ALLOW', 'CHILD_CLOSE', 'CHILD_ISOLATE'],
 };
 
 for (const [modName, names] of Object.entries(API)) {
@@ -50,4 +54,21 @@ test('switchguard blocks security-disabling launch switches', () => {
   assert.deepEqual(audit.criticalFlags.map((f) => f.raw).sort(),
     ['--disable-web-security', '--no-sandbox']);
   assert.equal(guard.auditSwitches(guard.collectSources({ argv: ['cosy.exe', '/app'], env: {} })).hasCritical, false);
+});
+
+test('hoverguard throttles and resets hover previews', () => {
+  const guard = require('./hoverguard');
+  const state = guard.createHoverState();
+  assert.equal(guard.decideHoverUrl(state, 'https://example.com/a', 1000).action, guard.HOVER_SHOW);
+  assert.equal(guard.decideHoverUrl(state, 'https://example.com/a', 1001).action, guard.HOVER_HOLD);
+  guard.resetForNavigation(state);
+  assert.equal(state.times.length, 0);
+});
+
+test('childwindowguard closes dangerous child schemes', () => {
+  const guard = require('./childwindowguard');
+  const verdict = guard.evaluateChildWindow(
+    { url: 'javascript:alert(1)', prefs: {}, openerPresent: true },
+    guard.createChildWindowState(), 1000);
+  assert.equal(verdict.action, guard.CHILD_CLOSE);
 });
