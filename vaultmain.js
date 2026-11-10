@@ -123,14 +123,28 @@ function createNewVault(masterPassword) {
   return { ok: true, keyPersisted, ...vaultStatusSnapshot() };
 }
 
+function createLimiter() {
+  return (d.vaultLimiterCore || require('./vaultlimit')).createUnlockLimiter(d.vaultLimiterOptions || {});
+}
+
+let unlockLimiter = null;
+
 function unlockVault(masterPassword) {
+  if (!unlockLimiter) unlockLimiter = createLimiter();
+  const gate = unlockLimiter.check();
+  if (!gate.ok) return gate;
   if (typeof masterPassword !== 'string' || masterPassword === '') {
+    unlockLimiter.fail();
     return { ok: false, reason: 'bad-password' };
   }
   if (!d.vaultState) return { ok: false, reason: 'no-vault' };
   const key = Buffer.from(masterPassword, 'utf8');
   const loaded = d.vaultCore.loadVault(JSON.stringify(d.vaultState), key);
-  if (!loaded.ok) return { ok: false, reason: loaded.reason };
+  if (!loaded.ok) {
+    unlockLimiter.fail();
+    return { ok: false, reason: loaded.reason };
+  }
+  unlockLimiter.reset();
   d.vaultHandle = loaded.vault;
   d.vaultUsePasswordMode = true;
   return { ok: true, ...vaultStatusSnapshot() };
