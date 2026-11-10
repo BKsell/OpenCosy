@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { safeInt, isPlainObject } = require('./modutil');
 const safeNonNegativeInt = safeInt;
@@ -32,21 +33,22 @@ function normalizeHost(value) {
   return host;
 }
 
+const RESUME_REJECT_TEXT = {
+  [REASON.OK]: '可以续传',
+  [REASON.BAD_SHAPE]: '续传记录结构非法',
+  [REASON.BAD_URL]: '续传地址非法',
+  [REASON.BAD_SCHEME]: '续传地址不是 HTTPS',
+  [REASON.BAD_HOST]: '续传目标主机与原始主机不一致',
+  [REASON.BAD_PATH]: '续传临时文件路径越界',
+  [REASON.PART_MISSING]: '续传临时文件不存在',
+  [REASON.SIZE_MISMATCH]: '续传临时文件大小与记录不一致',
+  [REASON.STALE]: '续传记录已过期',
+  [REASON.BAD_BYTES]: '续传字节计数非法',
+  [REASON.TOO_LARGE]: '续传体积超过上限',
+};
+
 function describeResumeReject(reason) {
-  switch (reason) {
-    case REASON.OK: return '可以续传';
-    case REASON.BAD_SHAPE: return '续传记录结构非法';
-    case REASON.BAD_URL: return '续传地址非法';
-    case REASON.BAD_SCHEME: return '续传地址不是 HTTPS';
-    case REASON.BAD_HOST: return '续传目标主机与原始主机不一致';
-    case REASON.BAD_PATH: return '续传临时文件路径越界';
-    case REASON.PART_MISSING: return '续传临时文件不存在';
-    case REASON.SIZE_MISMATCH: return '续传临时文件大小与记录不一致';
-    case REASON.STALE: return '续传记录已过期';
-    case REASON.BAD_BYTES: return '续传字节计数非法';
-    case REASON.TOO_LARGE: return '续传体积超过上限';
-    default: return '未知续传问题';
-  }
+  return describeReasonFrom(RESUME_REJECT_TEXT, reason, '未知续传问题');
 }
 
 function auditResumeCandidate(entry, options = {}) {
