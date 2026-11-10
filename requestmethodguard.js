@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { isHttpUrl } = require('./modutil');
 
@@ -63,17 +64,18 @@ function evaluateRequestMethod(input = {}) {
   return { action: 'allow', reason: REASON.OK, detail: '' };
 }
 
+const REASON_TEXT = {
+  [REASON.OK]: '请求方法合法',
+  [REASON.UNSAFE_METHOD]: '危险 HTTP 方法',
+  [REASON.UNKNOWN_METHOD]: '非常规请求方法',
+  [REASON.CONTROL_CHAR]: '请求 URL 含控制字符',
+  [REASON.URL_USERINFO]: 'URL 内嵌凭据',
+  [REASON.BLOCKED_SCHEME]: '协议被请求守卫禁用',
+  [REASON.DATA_NAVIGATION]: 'data: 顶层导航',
+};
+
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK: return '请求方法合法';
-    case REASON.UNSAFE_METHOD: return '危险 HTTP 方法';
-    case REASON.UNKNOWN_METHOD: return '非常规请求方法';
-    case REASON.CONTROL_CHAR: return '请求 URL 含控制字符';
-    case REASON.URL_USERINFO: return 'URL 内嵌凭据';
-    case REASON.BLOCKED_SCHEME: return '协议被请求守卫禁用';
-    case REASON.DATA_NAVIGATION: return 'data: 顶层导航';
-    default: return '未知原因';
-  }
+  return describeReasonFrom(REASON_TEXT, reason, '未知原因');
 }
 
 module.exports = {
