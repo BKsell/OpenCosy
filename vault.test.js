@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const crypto = require('crypto');
 const V = require('./vault');
+const vaultentry = require('./vaultentry');
 
 function randomKey() {
   return crypto.randomBytes(32);
@@ -274,4 +275,38 @@ test('sealEntry 拒绝越界轮数，openEntry 拒绝长度不符的盐与超大
   const huge = Object.assign({}, sealed.entry, { c: 'a'.repeat((VE.MAX_PAYLOAD_BYTES + 1) * 2) });
   assert.strictEqual(VE.openEntry(key, huge).reason, 'bad-ciphertext');
   assert.strictEqual(VE.openEntry(key, sealed.entry).ok, true);
+});
+
+test('元数据绑定进 GCM 认证：改标签/种类/时间都解不开', () => {
+  const key = Buffer.from('master-password');
+  const salt = Buffer.alloc(16, 9);
+  const sealed = vaultentry.sealEntry(key, vaultentry.KDF_PBKDF2, vaultentry.newId(), salt, 310000,
+    'recovery', '二次验证恢复码', { codes: ['a'] });
+  assert.strictEqual(sealed.ok, true);
+  assert.strictEqual(sealed.entry.a, 1);
+  assert.strictEqual(vaultentry.openEntry(key, sealed.entry).ok, true);
+  const relabel = { ...sealed.entry, n: '普通笔记' };
+  assert.deepStrictEqual(vaultentry.openEntry(key, relabel), { ok: false, reason: 'auth-failed' });
+  const rekind = { ...sealed.entry, t: 'note' };
+  assert.deepStrictEqual(vaultentry.openEntry(key, rekind), { ok: false, reason: 'auth-failed' });
+  const retime = { ...sealed.entry, u: sealed.entry.u + 86400000 };
+  assert.deepStrictEqual(vaultentry.openEntry(key, retime), { ok: false, reason: 'auth-failed' });
+});
+
+test('旧格式条目（无 AAD、无 a 字段）仍可解开', () => {
+  const crypto = require('crypto');
+  const key = Buffer.from('master-password');
+  const salt = Buffer.alloc(16, 3);
+  const derived = vaultentry.deriveEntryKey(key, vaultentry.KDF_PBKDF2, salt, 310000);
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', derived, iv);
+  const enc = Buffer.concat([cipher.update(Buffer.from(JSON.stringify({ legacy: true })), 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  const legacy = {
+    t: 'note', n: '旧条目', k: 'pbkdf2', r: 310000,
+    s: salt.toString('hex'), c: enc.toString('hex'), iv: iv.toString('hex'), g: tag.toString('hex'), u: 1,
+  };
+  const opened = vaultentry.openEntry(key, legacy);
+  assert.strictEqual(opened.ok, true);
+  assert.deepStrictEqual(opened.payload, { legacy: true });
 });
