@@ -1,4 +1,5 @@
 'use strict';
+const { describeReasonFrom } = require('./reasontext');
 
 const { headerValues, setHeader } = require('./headerutil');
 
@@ -84,15 +85,16 @@ function applyContentDispositionGuard(headers, details = {}) {
   return { changed: true, verdict };
 }
 
+const REASON_TEXT = {
+  [REASON.OK]: '内容类型无需降级',
+  [REASON.EXECUTABLE_INLINE]: '可执行文件以 inline 下发，强制转为下载',
+  [REASON.ARCHIVE_INLINE]: '压缩包以 inline 下发，强制转为下载',
+  [REASON.HEADER_INJECTION]: 'Content-Disposition 含控制字符',
+  [REASON.BAD_DISPOSITION]: 'Content-Disposition 类型非法',
+};
+
 function describeReason(reason) {
-  switch (reason) {
-    case REASON.OK: return '内容类型无需降级';
-    case REASON.EXECUTABLE_INLINE: return '可执行文件以 inline 下发，强制转为下载';
-    case REASON.ARCHIVE_INLINE: return '压缩包以 inline 下发，强制转为下载';
-    case REASON.HEADER_INJECTION: return 'Content-Disposition 含控制字符';
-    case REASON.BAD_DISPOSITION: return 'Content-Disposition 类型非法';
-    default: return String(reason || '');
-  }
+  return describeReasonFrom(REASON_TEXT, reason, String(reason || ''));
 }
 
 module.exports = {
