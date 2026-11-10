@@ -1,5 +1,6 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
+const { applyMemberListGuard } = require('./guardapply');
 
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -89,19 +90,7 @@ const describeReason = describeReasonTable({
   }, 'trailer 未识别状态');
 
 function applyTrailerFieldGuard(headers) {
-  const value = firstValue(headers, HEADER);
-  if (!value) return { changed: false, reason: REASON.MISSING, findings: [] };
-  const result = inspectTrailer(value);
-  const findings = [{ reason: result.reason, fields: result.fields }];
-  if (result.reason === REASON.OK) {
-    return { changed: false, reason: REASON.OK, findings };
-  }
-  if (result.fields.length === 0) {
-    deleteHeader(headers, HEADER);
-  } else {
-    headers[headerKey(headers, HEADER)] = [result.fields.join(', ')];
-  }
-  return { changed: true, reason: result.reason, findings };
+  return applyMemberListGuard(headers, HEADER, inspectTrailer, { okReason: REASON.OK, missingReason: REASON.MISSING, field: 'fields', wrap: true });
 }
 
 module.exports = {

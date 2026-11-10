@@ -1,7 +1,8 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
+const { applySingleHeaderGuard } = require('./guardapply');
 
-const { headerKey, headerText } = require('./headerutil');
+const { headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -42,11 +43,7 @@ function inspectServiceWorkerAllowed(headers) {
 }
 
 function applyServiceWorkerAllowedGuard(headers) {
-  const result = inspectServiceWorkerAllowed(headers);
-  if (!result.changed) return result;
-  const key = headerKey(headers, 'service-worker-allowed');
-  if (key) delete headers[key];
-  return result;
+  return applySingleHeaderGuard(headers, 'service-worker-allowed', inspectServiceWorkerAllowed);
 }
 
 function scopeCovers(scope, scriptPath) {

@@ -1,5 +1,6 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
+const { applySingleHeaderGuard } = require('./guardapply');
 
 const { firstValue, headerKey } = require('./headerutil');
 
@@ -45,11 +46,7 @@ function inspectContentLanguage(headers) {
 }
 
 function applyContentLanguageGuard(headers) {
-  const result = inspectContentLanguage(headers);
-  if (!result.changed) return result;
-  const key = headerKey(headers, HEADER);
-  if (key) delete headers[key];
-  return result;
+  return applySingleHeaderGuard(headers, HEADER, inspectContentLanguage);
 }
 
 const describeReason = describeReasonTable({

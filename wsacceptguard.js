@@ -1,5 +1,6 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
+const { applyFindingsGuard } = require('./guardapply');
 
 const { hasControlCharsV2 } = require('./modutil');
 const hasControlChars = hasControlCharsV2;
@@ -81,15 +82,7 @@ const describeReason = describeReasonTable({
   }, 'websocket 握手头未识别状态');
 
 function applySecWebSocketAcceptGuard(headers) {
-  const value = firstValue(headers, ACCEPT_HEADER);
-  if (!value) return { changed: false, reason: REASON.MISSING, findings: [] };
-  const result = inspectAccept(value);
-  const findings = [{ reason: result.reason }];
-  if (result.reason === REASON.OK) {
-    return { changed: false, reason: REASON.OK, findings };
-  }
-  deleteHeader(headers, ACCEPT_HEADER);
-  return { changed: true, reason: result.reason, findings };
+  return applyFindingsGuard(headers, ACCEPT_HEADER, inspectAccept, { okReason: REASON.OK, missingReason: REASON.MISSING });
 }
 
 function applySecWebSocketProtocolGuard(headers) {

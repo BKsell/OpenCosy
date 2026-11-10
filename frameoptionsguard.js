@@ -1,7 +1,8 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
+const { applySingleHeaderGuard } = require('./guardapply');
 
-const { headerKey, headerText } = require('./headerutil');
+const { headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -60,11 +61,7 @@ function inspectFrameOptions(headers) {
 }
 
 function applyFrameOptionsGuard(headers) {
-  const result = inspectFrameOptions(headers);
-  if (!result.changed) return result;
-  const key = headerKey(headers, 'x-frame-options');
-  if (key) delete headers[key];
-  return result;
+  return applySingleHeaderGuard(headers, 'x-frame-options', inspectFrameOptions);
 }
 
 const describeReason = describeReasonTable({

@@ -1,5 +1,6 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
+const { applyMemberListGuard } = require('./guardapply');
 
 const { normalizeCharset } = require('./modutil');
 const normalizeType = normalizeCharset;
@@ -79,18 +80,7 @@ const describeReason = describeReasonTable({
   }, 'accept-patch 未识别状态');
 
 function applyAcceptPatchGuard(headers) {
-  const value = firstValue(headers, HEADER);
-  if (!value) return { changed: false, reason: REASON.MISSING, types: [] };
-  const result = inspectAcceptPatch(value);
-  if (result.reason === REASON.OK) {
-    return { changed: false, reason: REASON.OK, types: result.types };
-  }
-  if (result.types.length === 0) {
-    deleteHeader(headers, HEADER);
-  } else {
-    headers[headerKey(headers, HEADER)] = [result.types.join(', ')];
-  }
-  return { changed: true, reason: result.reason, types: result.types };
+  return applyMemberListGuard(headers, HEADER, inspectAcceptPatch, { okReason: REASON.OK, missingReason: REASON.MISSING, field: 'types', wrap: false });
 }
 
 module.exports = {

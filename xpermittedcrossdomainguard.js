@@ -1,7 +1,8 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
+const { applyPinHeaderGuard } = require('./guardapply');
 
-const { countValues, firstValue, headerKey } = require('./headerutil');
+const { firstValue, headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -49,11 +50,7 @@ function inspectCrossDomainPolicy(headers) {
 }
 
 function applyCrossDomainPolicyGuard(headers) {
-  const result = inspectCrossDomainPolicy(headers);
-  if (!result.changed) return result;
-  const key = headerKey(headers, HEADER);
-  if (key) headers[key] = STRICT;
-  return result;
+  return applyPinHeaderGuard(headers, HEADER, inspectCrossDomainPolicy, STRICT);
 }
 
 const describeReason = describeReasonTable({

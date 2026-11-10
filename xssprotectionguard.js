@@ -1,7 +1,8 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
+const { applySingleHeaderGuard } = require('./guardapply');
 
-const { headerKey, headerText } = require('./headerutil');
+const { headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -23,11 +24,7 @@ function inspectXSSProtection(headers) {
 }
 
 function applyXSSProtectionGuard(headers) {
-  const result = inspectXSSProtection(headers);
-  if (!result.changed) return result;
-  const key = headerKey(headers, 'x-xss-protection');
-  if (key) delete headers[key];
-  return result;
+  return applySingleHeaderGuard(headers, 'x-xss-protection', inspectXSSProtection);
 }
 
 const describeReason = describeReasonTable({

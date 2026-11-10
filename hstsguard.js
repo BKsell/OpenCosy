@@ -1,5 +1,6 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
+const { applySingleHeaderGuard } = require('./guardapply');
 
 const { firstValue, headerKey } = require('./headerutil');
 
@@ -51,11 +52,7 @@ function inspectHsts(headers) {
 }
 
 function applyHstsGuard(headers) {
-  const result = inspectHsts(headers);
-  if (!result.changed) return result;
-  const key = headerKey(headers, 'strict-transport-security');
-  if (key) delete headers[key];
-  return result;
+  return applySingleHeaderGuard(headers, 'strict-transport-security', inspectHsts);
 }
 
 const describeReason = describeReasonTable({

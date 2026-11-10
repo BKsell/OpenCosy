@@ -1,5 +1,6 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
+const { applySingleHeaderGuard } = require('./guardapply');
 
 const { firstValue, headerKey } = require('./headerutil');
 
@@ -82,11 +83,7 @@ function inspectContentRange(headers) {
 }
 
 function applyContentRangeGuard(headers) {
-  const result = inspectContentRange(headers);
-  if (!result.changed) return result;
-  const key = headerKey(headers, 'content-range');
-  if (key) delete headers[key];
-  return result;
+  return applySingleHeaderGuard(headers, 'content-range', inspectContentRange);
 }
 
 const describeReason = describeReasonTable({

@@ -1,5 +1,6 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
+const { applyDeprecatedHeaderGuard } = require('./guardapply');
 
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -90,11 +91,7 @@ const describeReason = describeReasonTable({
   }, 'public-key-pins 未识别状态');
 
 function applyPublicKeyPinsGuard(headers) {
-  const value = firstValue(headers, HEADER);
-  if (!value) return { changed: false, reason: REASON.MISSING, pins: [] };
-  const result = inspectPublicKeyPins(value);
-  deleteHeader(headers, HEADER);
-  return { changed: true, reason: REASON.DEPRECATED, pins: result.pins };
+  return applyDeprecatedHeaderGuard(headers, HEADER, inspectPublicKeyPins, { reason: REASON.DEPRECATED, missingReason: REASON.MISSING, field: 'pins' });
 }
 
 module.exports = {

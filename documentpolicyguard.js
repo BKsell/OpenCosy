@@ -1,5 +1,6 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
+const { applyMemberListGuard } = require('./guardapply');
 
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -95,19 +96,7 @@ const describeReason = describeReasonTable({
   }, 'document-policy 未识别状态');
 
 function applyDocumentPolicyGuard(headers) {
-  const value = firstValue(headers, HEADER);
-  if (!value) return { changed: false, reason: REASON.MISSING, findings: [] };
-  const result = inspectDocumentPolicy(value);
-  const findings = [{ reason: result.reason, directives: result.directives }];
-  if (result.reason === REASON.OK) {
-    return { changed: false, reason: REASON.OK, findings };
-  }
-  if (result.directives.length === 0) {
-    deleteHeader(headers, HEADER);
-  } else {
-    headers[headerKey(headers, HEADER)] = [result.directives.join(', ')];
-  }
-  return { changed: true, reason: result.reason, findings };
+  return applyMemberListGuard(headers, HEADER, inspectDocumentPolicy, { okReason: REASON.OK, missingReason: REASON.MISSING, field: 'directives', wrap: true });
 }
 
 module.exports = {

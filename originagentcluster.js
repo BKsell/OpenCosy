@@ -1,5 +1,6 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
+const { applyPinHeaderGuard } = require('./guardapply');
 
 const { firstValue, headerKey } = require('./headerutil');
 
@@ -42,11 +43,7 @@ function inspectOriginAgentCluster(headers) {
 }
 
 function applyOriginAgentClusterGuard(headers) {
-  const result = inspectOriginAgentCluster(headers);
-  if (!result.changed) return result;
-  const key = headerKey(headers, HEADER);
-  if (key) headers[key] = STRICT;
-  return result;
+  return applyPinHeaderGuard(headers, HEADER, inspectOriginAgentCluster, STRICT);
 }
 
 const describeReason = describeReasonTable({

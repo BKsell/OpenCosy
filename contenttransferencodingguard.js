@@ -1,7 +1,8 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
+const { applySingleHeaderGuard } = require('./guardapply');
 
-const { countValues, firstValue, headerKey } = require('./headerutil');
+const { firstValue, headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -42,11 +43,7 @@ function inspectTransferEncoding(headers) {
 }
 
 function applyTransferEncodingGuard(headers) {
-  const result = inspectTransferEncoding(headers);
-  if (!result.changed) return result;
-  const key = headerKey(headers, HEADER);
-  if (key) delete headers[key];
-  return result;
+  return applySingleHeaderGuard(headers, HEADER, inspectTransferEncoding);
 }
 
 const describeReason = describeReasonTable({

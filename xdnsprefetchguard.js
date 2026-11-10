@@ -1,7 +1,8 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
+const { applyPinHeaderGuard } = require('./guardapply');
 
-const { countValues, firstValue, headerKey } = require('./headerutil');
+const { firstValue, headerKey } = require('./headerutil');
 
 const REASON = {
   OK: 'ok',
@@ -40,11 +41,7 @@ function inspectDnsPrefetch(headers) {
 }
 
 function applyDnsPrefetchGuard(headers) {
-  const result = inspectDnsPrefetch(headers);
-  if (!result.changed) return result;
-  const key = headerKey(headers, HEADER);
-  if (key) headers[key] = ALLOW;
-  return result;
+  return applyPinHeaderGuard(headers, HEADER, inspectDnsPrefetch, ALLOW);
 }
 
 const describeReason = describeReasonTable({

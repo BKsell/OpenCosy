@@ -1,5 +1,6 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
+const { applyDeprecatedHeaderGuard } = require('./guardapply');
 
 const { normalizeCharset } = require('./modutil');
 
@@ -74,11 +75,7 @@ const describeReason = describeReasonTable({
   }, 'accept-charset 未识别状态');
 
 function applyAcceptCharsetGuard(headers) {
-  const value = firstValue(headers, HEADER);
-  if (!value) return { changed: false, reason: REASON.MISSING, charsets: [] };
-  const result = inspectAcceptCharset(value);
-  deleteHeader(headers, HEADER);
-  return { changed: true, reason: REASON.DEPRECATED_HEADER, charsets: result.charsets };
+  return applyDeprecatedHeaderGuard(headers, HEADER, inspectAcceptCharset, { reason: REASON.DEPRECATED_HEADER, missingReason: REASON.MISSING, field: 'charsets' });
 }
 
 module.exports = {

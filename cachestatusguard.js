@@ -1,5 +1,6 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
+const { applyMemberListGuard } = require('./guardapply');
 
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -141,19 +142,7 @@ const describeReason = describeReasonTable({
   }, 'cache-status 未识别状态');
 
 function applyCacheStatusGuard(headers) {
-  const value = firstValue(headers, HEADER);
-  if (!value) return { changed: false, reason: REASON.MISSING, findings: [] };
-  const result = inspectCacheStatus(value);
-  const findings = [{ reason: result.reason, members: result.members }];
-  if (result.reason === REASON.OK) {
-    return { changed: false, reason: REASON.OK, findings };
-  }
-  if (result.members.length === 0) {
-    deleteHeader(headers, HEADER);
-  } else {
-    headers[headerKey(headers, HEADER)] = [result.members.join(', ')];
-  }
-  return { changed: true, reason: result.reason, findings };
+  return applyMemberListGuard(headers, HEADER, inspectCacheStatus, { okReason: REASON.OK, missingReason: REASON.MISSING, field: 'members', wrap: true });
 }
 
 module.exports = {

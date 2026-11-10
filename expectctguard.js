@@ -1,5 +1,6 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
+const { applyDeprecatedHeaderGuard } = require('./guardapply');
 
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -75,11 +76,7 @@ const describeReason = describeReasonTable({
   }, 'expect-ct 未识别状态');
 
 function applyExpectCtGuard(headers) {
-  const value = firstValue(headers, HEADER);
-  if (!value) return { changed: false, reason: REASON.MISSING, directives: [] };
-  const result = inspectExpectCt(value);
-  deleteHeader(headers, HEADER);
-  return { changed: true, reason: REASON.DEPRECATED, directives: result.directives };
+  return applyDeprecatedHeaderGuard(headers, HEADER, inspectExpectCt, { reason: REASON.DEPRECATED, missingReason: REASON.MISSING, field: 'directives' });
 }
 
 module.exports = {

@@ -1,5 +1,6 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
+const { applyMemberListGuard } = require('./guardapply');
 
 const { deleteHeader, firstValue, headerKey } = require('./headerutil');
 
@@ -83,18 +84,7 @@ const describeReason = describeReasonTable({
   }, 'priority 未识别状态');
 
 function applyPriorityGuard(headers) {
-  const value = firstValue(headers, HEADER);
-  if (!value) return { changed: false, reason: REASON.MISSING, items: [] };
-  const result = inspectPriority(value);
-  if (result.reason === REASON.OK) {
-    return { changed: false, reason: REASON.OK, items: result.items };
-  }
-  if (result.items.length === 0) {
-    deleteHeader(headers, HEADER);
-  } else {
-    headers[headerKey(headers, HEADER)] = [result.items.join(', ')];
-  }
-  return { changed: true, reason: result.reason, items: result.items };
+  return applyMemberListGuard(headers, HEADER, inspectPriority, { okReason: REASON.OK, missingReason: REASON.MISSING, field: 'items', wrap: false });
 }
 
 module.exports = {
