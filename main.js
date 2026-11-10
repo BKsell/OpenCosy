@@ -1883,7 +1883,7 @@ const INTERNAL_PAGES = {
 // tabOverviewItem 输出单标签的概览数据。字段做类型收口，避免脏标题 / 长 URL
 // 破坏网格布局；分组信息从 tabGroupModel 实时取，标签被改组后概览自动跟随。
 
-cosyipcwire2Mod.registerTabOverviewIpc();
+cosyipcwireMod.registerTabOverviewIpc();
 
 const loadTabContentCtx = {
   get addToHistory() { return addToHistory; },
@@ -2308,8 +2308,7 @@ let findRateState = findGuard.createFindState(Date.now());
 
 // applyFind 在当前活动标签上按 findState 执行一次查找。
 
-const cosyipcwire2Mod = require('./cosyipcwire2');
-cosyipcwire2Mod.bindDeps({
+cosyipcwireMod.bindDeps({
     get MAX_HISTORY_ENTRIES() { return MAX_HISTORY_ENTRIES; },
     get Menu() { return Menu; },
     get MenuItem() { return MenuItem; },
@@ -2378,7 +2377,7 @@ cosyipcwire2Mod.bindDeps({
     get zoomIn() { return zoomIn; },
     get zoomOut() { return zoomOut; },
 });
-cosyipcwire2Mod.registerFindIpc();
+cosyipcwireMod.registerFindIpc();
 
 const userDataPath = path.join(os.homedir(), 'AppData', 'Roaming', 'OpenCosy', 'browser', 'userdata');
 const extensionsPath = path.join(userDataPath, 'extensions');
@@ -2453,7 +2452,7 @@ async function unloadExtension(extensionId) {
   } catch (e) { console.error('卸载插件失败:', extensionId, e); }
 }
 
-cosyipcwire2Mod.registerExtensionIpc();
+cosyipcwireMod.registerExtensionIpc();
 
 const ALLOWED_SETTING_KEYS = {
   darkMode: v => typeof v === 'boolean',
@@ -2509,7 +2508,7 @@ cosyipcregisterMod.registerDownloadShelf();
 // 历史页快照：全量返回历史数组（上限 1000 条，磁盘加载已按 MAX_HISTORY_ENTRIES
 // 截断）。只放行历史页帧 / 主窗口外壳；返回前对每条做类型收口，绝不让脏标题
 // 或畸形 URL 进入内部页 DOM。
-cosyipcwire2Mod.registerCertificateIpc();
+cosyipcwireMod.registerCertificateIpc();
 
 // 稍后读新增（右键菜单“加入稍后读”/页面内部调用）：URL 必须经 isSafeUrl 校验
 // （http/https），标题去控制字符并限长。已存在的同 URL 条目忽略（幂等）。
