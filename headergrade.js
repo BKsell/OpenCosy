@@ -1,5 +1,6 @@
 'use strict';
 
+const { getResponseHeader, hasHeader, letterForScore } = require('./headergradeparse');
 // headergrade.js —— 远端站点“响应安全头”纯逻辑评级。
 //
 // 现代浏览器会替用户兜底很多东西，但一个站点自己有没有下发 HSTS / CSP /
@@ -72,31 +73,6 @@ const CHECKS = [
 
 // getResponseHeader 以大小写不敏感方式取第一个响应头值并规范成字符串。
 // Electron 的 responseHeaders 通常是 string[]，也兼容直接给字符串的情况。
-function getResponseHeader(headers, name) {
-  if (!headers || typeof headers !== 'object') return '';
-  const target = String(name).toLowerCase();
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() !== target) continue;
-    const v = headers[key];
-    if (Array.isArray(v)) return v.length ? String(v[0] || '') : '';
-    return v == null ? '' : String(v);
-  }
-  return '';
-}
-
-function hasHeader(headers, name) {
-  return getResponseHeader(headers, name).trim() !== '';
-}
-
-function letterForScore(percent) {
-  if (percent >= 90) return 'A';
-  if (percent >= 75) return 'B';
-  if (percent >= 60) return 'C';
-  if (percent >= 40) return 'D';
-  return 'F';
-}
-
-// parseHstsMaxAge 解析 max-age=N，非法时返回 -1。
 function parseHstsMaxAge(value) {
   const m = /max-age\s*=\s*(\d+)/i.exec(value || '');
   if (!m) return -1;
