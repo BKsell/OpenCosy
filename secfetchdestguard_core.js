@@ -1,8 +1,5 @@
 'use strict';
-const { singleAlt } = require('./modutil_core');
-const single = singleAlt;
-
-const { headerKey, rawValue } = require('./headerutil_core');
+const { applySecFetchGuard } = require('./secfetchguard_core');
 
 const REASON = {
   OK: 'ok',
@@ -18,25 +15,18 @@ const ALLOWED = new Set([
   'iframe', 'image', 'manifest', 'object', 'paintworklet', 'report', 'script',
   'sharedworker', 'style', 'track', 'video', 'worker', 'xslt',
 ]);
+const SPEC = {
+  header: HEADER,
+  allowed: ALLOWED,
+  ok: REASON.OK,
+  missing: REASON.MISSING,
+  duplicate: REASON.DUPLICATE,
+  empty: REASON.BAD_VALUE,
+  reject: REASON.UNKNOWN,
+};
 
 function applySecFetchDestGuard(headers) {
-  const raw = rawValue(headers, HEADER);
-  if (raw === null) return { changed: false, reason: REASON.MISSING };
-  const key = headerKey(headers, HEADER);
-  const value = single(raw);
-  if (value === null) {
-    delete headers[key];
-    return { changed: true, reason: REASON.DUPLICATE };
-  }
-  if (value === '') {
-    delete headers[key];
-    return { changed: true, reason: REASON.BAD_VALUE };
-  }
-  if (!ALLOWED.has(value)) {
-    delete headers[key];
-    return { changed: true, reason: REASON.UNKNOWN };
-  }
-  return { changed: false, reason: REASON.OK };
+  return applySecFetchGuard(headers, SPEC);
 }
 
 module.exports = { REASON, applySecFetchDestGuard };
