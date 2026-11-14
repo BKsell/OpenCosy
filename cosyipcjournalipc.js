@@ -38,6 +38,7 @@ d.ipcMain.handle('set-download-max-bytes', (event, payload = {}) => {
 });
 
 d.ipcMain.handle('get-download-journal', (event, payload = {}) => {
+  if (!d.isMainSender(event)) return [];
   const requested = Number.isInteger(payload.limit) && payload.limit > 0 ? payload.limit : 50;
   const limit = Math.min(requested, d.downloadJournalModule.DEFAULT_MAX_ENTRIES);
   return d.getDownloadJournal().snapshot().slice(0, limit).map((entry) => ({
