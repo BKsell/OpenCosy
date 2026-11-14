@@ -194,7 +194,7 @@ function recordSecurityEvent(type, severity, detail = '', origin = '') {
     time: Date.now(),
     type,
     severity,
-    origin: sanitizeSecurityDetail(origin),
+    origin: sanitizeSecurityDetail(normalizeOrigin(origin)),
     detail: sanitizeSecurityDetail(detail),
   };
   securityEvents.push(event);
@@ -218,6 +218,16 @@ function pruneSecurityEvents(beforeMs) {
   return removed;
 }
 
+function trimSecurityEvents(maxKeep) {
+  loadSecurityEvents();
+  const keep = Math.floor(Number(maxKeep));
+  if (!Number.isFinite(keep) || keep <= 0 || keep >= securityEvents.length) return 0;
+  const removed = securityEvents.length - keep;
+  securityEvents.splice(0, removed);
+  persistSecurityEvents();
+  return removed;
+}
+
 function exportSecurityEvents(options = {}) {
   loadSecurityEvents();
   const opts = options && typeof options === 'object' ? options : {};
@@ -237,7 +247,18 @@ function exportSecurityEvents(options = {}) {
   };
 }
 
-function listSecurityEvents(typeFilter = '', limit = 200, severityFilter = '') {
+function normalizeOrigin(origin) {
+  const raw = String(origin == null ? '' : origin).trim();
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw);
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch {
+    return raw;
+  }
+}
+
+function listSecurityEvents(typeFilter = '', limit = 200, severityFilter = '', offset = 0) {
   loadSecurityEvents();
   let items = securityEvents;
   if (typeFilter && SECURITY_EVENT_TYPES.has(typeFilter)) {
@@ -247,7 +268,9 @@ function listSecurityEvents(typeFilter = '', limit = 200, severityFilter = '') {
     items = items.filter(e => e.severity === severityFilter);
   }
   const n = Math.max(1, Math.min(Number(limit) || 200, MAX_SECURITY_EVENTS));
-  return items.slice(-n).reverse().map(e => ({ ...e }));
+  const skip = Math.max(0, Math.min(Number(offset) || 0, MAX_SECURITY_EVENTS));
+  const windowed = skip > 0 ? items.slice(0, Math.max(0, items.length - skip)) : items;
+  return windowed.slice(-n).reverse().map(e => ({ ...e }));
 }
 
 // summarizeSecurityEvents 按时间窗口聚合事件，供安全面板判断"某类事件是否集中爆发"。
@@ -256,7 +279,7 @@ function summarizeSecurityEvents(sinceMs = 3600000) {
   loadSecurityEvents();
   const windowMs = Math.max(0, Number(sinceMs) || 0);
   const cutoff = Date.now() - windowMs;
-  const summary = { total: 0, byType: {}, bySeverity: { info: 0, warn: 0, critical: 0 }, byOrigin: {}, firstTime: 0, lastTime: 0 };
+  const summary = { total: 0, byType: Object.create(null), bySeverity: { info: 0, warn: 0, critical: 0 }, byOrigin: Object.create(null), byOriginSeverity: Object.create(null), firstTime: 0, lastTime: 0 };
   for (const e of securityEvents) {
     if (e.time < cutoff) continue;
     summary.total++;
@@ -264,9 +287,13 @@ function summarizeSecurityEvents(sinceMs = 3600000) {
     const originKey = e.origin || '(unknown)';
     summary.byOrigin[originKey] = (summary.byOrigin[originKey] || 0) + 1;
     if (summary.bySeverity[e.severity] != null) summary.bySeverity[e.severity]++;
+    const cellKey = `${originKey}|${e.severity}`;
+    summary.byOriginSeverity[cellKey] = (summary.byOriginSeverity[cellKey] || 0) + 1;
     if (!summary.firstTime || e.time < summary.firstTime) summary.firstTime = e.time;
     if (e.time > summary.lastTime) summary.lastTime = e.time;
   }
+  const ranked = Object.entries(summary.byOrigin).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+  summary.topOrigins = ranked.slice(0, 5).map(([origin, count]) => ({ origin, count }));
   return summary;
 }
 
@@ -294,4 +321,4 @@ function clearSecurityEvents() {
 //   4. 落 csp-reports.json（原子 rename，最近 500 条），字段全部控制
 //      字符清洗 + 限长，UI 一律 textContent 渲染。
 
-module.exports = { securityEventStorePath, MAX_SECURITY_EVENTS, MAX_SECURITY_DETAIL_CHARS, SECURITY_EVENT_TYPES, securityEvents, securityEventsLoaded, pruneSecurityEvents, summarizeSecurityEvents, exportSecurityEvents, securityEventSaveTimer, loadSecurityEvents, persistSecurityEvents, sanitizeSecurityDetail, recordSecurityEvent, listSecurityEvents, clearSecurityEvents };
+module.exports = { securityEventStorePath, MAX_SECURITY_EVENTS, MAX_SECURITY_DETAIL_CHARS, SECURITY_EVENT_TYPES, securityEvents, securityEventsLoaded, pruneSecurityEvents, summarizeSecurityEvents, trimSecurityEvents, exportSecurityEvents, securityEventSaveTimer, loadSecurityEvents, persistSecurityEvents, sanitizeSecurityDetail, recordSecurityEvent, listSecurityEvents, clearSecurityEvents };
