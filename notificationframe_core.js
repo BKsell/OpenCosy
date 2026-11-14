@@ -1,6 +1,7 @@
 'use strict';
 
 const boundary = require('./frameboundary_core');
+const { describeAuditResult } = require('./reasontext');
 
 const ACTION = { ALLOW: 'allow', WARN: 'warn', DENY: 'deny' };
 
@@ -62,8 +63,7 @@ function evaluateNotificationFrame(input = {}) {
 }
 
 function describeNotificationFrame(decision) {
-  if (!decision || decision.reason === REASON.OK) return '通知权限帧边界校验通过';
-  return `${decision.reason}: ${decision.detail || ''}`.trim();
+  return describeAuditResult(decision, '通知权限帧边界校验通过');
 }
 
 module.exports = {
