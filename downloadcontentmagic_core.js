@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const { describeAuditResult } = require('./reasontext');
 const path = require('path');
 
 const ACTION = { OK: 'ok', WARN: 'warn', BLOCK: 'block' };
@@ -125,8 +126,7 @@ function auditDownloadedContent(input = {}) {
 }
 
 function describeContentAudit(audit) {
-  if (!audit || audit.reason === REASON.OK) return '下载内容类型校验通过';
-  return `${audit.reason}: ${audit.detail || ''}`.trim();
+  return describeAuditResult(audit, '下载内容类型校验通过');
 }
 
 module.exports = {
