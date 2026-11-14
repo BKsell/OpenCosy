@@ -1,4 +1,6 @@
 'use strict';
+const { clearStoredFile } = require('./clearsection_core');
+
 const { readStoredSection } = require('./modutil_core');
 
 let d = {};
@@ -29,11 +31,7 @@ function broadcastTabGroups() {
 }
 
 function clearStoredTabGroups() {
-  try {
-    if (d.fsSync.existsSync(d.tabGroupStorePath)) d.fsSync.unlinkSync(d.tabGroupStorePath);
-  } catch (e) {
-    console.error('清除标签分组失败:', e);
-  }
+  return clearStoredFile(d.fsSync, d.tabGroupStorePath, '清除标签分组失败:');
 }
 
 function loadStoredTabGroups() {
