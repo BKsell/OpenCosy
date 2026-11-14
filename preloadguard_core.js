@@ -1,5 +1,4 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
 const { originFromUrl } = require('./modutil_core');
 
 // preloadguard.js —— 预加载脚本（preload）异常与渲染侧致命信号的收口判定内核。
@@ -177,15 +176,6 @@ function describePreloadError(result) {
   return r.fingerprint ? `${base}: ${r.fingerprint}` : base;
 }
 
-const IGNORE_REASON_TEXT = {
-  [IGNORE_DEDUP]: '同类 preload 错误已达记录上限，已去重',
-  [IGNORE_CAPPED]: '该标签页 preload 错误总量已达上限，仅计数不再记录',
-  [IGNORE_BAD_STATE]: '缺少有效的 preload 错误状态',
-};
-
-function describeIgnoreReason(reason) {
-  return describeReasonFrom(IGNORE_REASON_TEXT, reason, 'preload 错误被忽略');
-}
 
 module.exports = {
   SEVERITY_CRITICAL,
@@ -209,5 +199,4 @@ module.exports = {
   createPreloadErrorState,
   decidePreloadError,
   describePreloadError,
-  describeIgnoreReason,
 };
