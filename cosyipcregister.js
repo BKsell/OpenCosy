@@ -3,10 +3,10 @@ let d = {};
 function bindDeps(x) {
   d = x;
 }
-const cosyipcnetguardMod = require('./cosyipcnetguard');
-const cosyipcdownloadshelfMod = require('./cosyipcdownloadshelf');
-const cosyipctabsurfaceMod = require('./cosyipctabsurface');
-const cosyipcsettingspanelMod = require('./cosyipcsettingspanel');
+const cosyipcnetguardMod = require('./cosyipcnetguard_core');
+const cosyipcdownloadshelfMod = require('./cosyipcdownloadshelf_core');
+const cosyipctabsurfaceMod = require('./cosyipctabsurface_core');
+const cosyipcsettingspanelMod = require('./cosyipcsettingspanel_core');
 function registerNetworkGuards() {
   cosyipcnetguardMod.registerNetworkGuards(d);
 }
