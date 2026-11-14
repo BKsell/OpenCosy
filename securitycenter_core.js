@@ -1,5 +1,6 @@
 const { app } = require('electron');
 const path = require('path');
+const { clearLedgerStore } = require('./ledgerclear_core');
 const fsSync = require('fs');
 const ledgerStore = require('./ledgerstore_core');
 
@@ -161,11 +162,7 @@ function listCspReports(limit = 200) {
 }
 
 function clearCspReports() {
-  loadCspReports();
-  cspReports.length = 0;
-  try { fsSync.unlinkSync(cspReportStorePath); } catch {}
-  persistCspReports();
-  return true;
+  return clearLedgerStore(loadCspReports, cspReports, cspReportStorePath, persistCspReports);
 }
 
 // removeCspReport 按 id 删除单条聚合记录（安全页面板“忽略/删除这一条”用）。
