@@ -11,7 +11,13 @@ const policy = require('./channelpolicy_core');
 const ROOT = __dirname;
 const readSrc = (n) => {
   const base = path.join(ROOT, n + '.js');
-  return fs.existsSync(base) ? fs.readFileSync(base, 'utf8') : fs.readFileSync(path.join(ROOT, n + '_core.js'), 'utf8');
+  const core = path.join(ROOT, n + '_core.js');
+  const text = fs.existsSync(base) ? fs.readFileSync(base, 'utf8') : '';
+  if (fs.existsSync(core)) {
+    const alt = fs.readFileSync(core, 'utf8');
+    if (alt.length > text.length) return alt;
+  }
+  return text;
 };
 const MAIN_SOURCE = readSrc('main')
   + '\n' + readSrc('permissionhandlers')
