@@ -82,7 +82,7 @@ function persistDownloads() {
       .map(d => d.downloadShelf.sanitizeDownloadRecord(d, d.downloadShelf.ShelfLimits));
     d.ledgerStore.writeJSONStore(downloadsStorePath(), items, { pretty: true });
   } catch (e) {
-    d.recordSecurityEvent('downloads-persist', 'error',
+    d.recordSecurityEvent('downloads-persist', 'warn',
       '下载台账落盘失败: ' + String((e && e.message) || e).slice(0, 160), '');
   }
 }
