@@ -4,7 +4,39 @@ const { registerDownloadJournalIpc } = require('./cosyipcjournalipc');
 
 const { registerVaultIpc } = require('./cosyipcvaultipc');
 
+const securityEventsCore = require('./cspsecurityevents_core');
+
+function registerSecurityEventIpc(d) {
+  d.ipcMain.handle('security-events-summary', (event, payload = {}) => {
+    if (!d.isMainSender(event)) return { success: false };
+    const raw = Number(payload && payload.sinceMs);
+    const sinceMs = Number.isFinite(raw) && raw >= 0 ? raw : 3600000;
+    return { success: true, summary: securityEventsCore.summarizeSecurityEvents(sinceMs) };
+  });
+
+  d.ipcMain.handle('security-events-prune', (event, payload = {}) => {
+    if (!d.isMainSender(event)) return { success: false };
+    const beforeMs = Number(payload && payload.beforeMs);
+    if (!Number.isFinite(beforeMs) || beforeMs <= 0) return { success: false, reason: 'invalid-before' };
+    return { success: true, removed: securityEventsCore.pruneSecurityEvents(beforeMs) };
+  });
+
+  d.ipcMain.handle('security-events-trim', (event, payload = {}) => {
+    if (!d.isMainSender(event)) return { success: false };
+    const maxKeep = Number(payload && payload.maxKeep);
+    if (!Number.isFinite(maxKeep) || maxKeep <= 0) return { success: false, reason: 'invalid-maxkeep' };
+    return { success: true, removed: securityEventsCore.trimSecurityEvents(maxKeep) };
+  });
+
+  d.ipcMain.handle('security-events-export', (event, payload = {}) => {
+    if (!d.isMainSender(event)) return { success: false };
+    const src = payload && typeof payload === 'object' ? payload : {};
+    return { success: true, archive: securityEventsCore.exportSecurityEvents({ sinceMs: src.sinceMs, type: src.type, severity: src.severity, limit: src.limit }) };
+  });
+}
+
 function registerSettingsPanels(d) {
+registerSecurityEventIpc(d);
 registerVaultIpc(d);
 d.ipcMain.handle('cleaner-enumerate', async (event) => {
   if (!d.isMainSender(event)) return { success: false };
@@ -179,4 +211,4 @@ d.ipcMain.on('reopen-tab-url', (event, url) => {
 });
 }
 
-module.exports = { registerSettingsPanels };
+module.exports = { registerSettingsPanels, registerSecurityEventIpc };
