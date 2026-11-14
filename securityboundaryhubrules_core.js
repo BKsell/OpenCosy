@@ -126,6 +126,26 @@ function sanitizeCsvRows(rows) {
   return { area: AREA.CSV, changed: result.changed, reason: result.reason, detail: result.reason };
 }
 
+function inspectSetCookie(value, requestHost) {
+  return finding(AREA.COOKIE, cookieDomain.applyCookieDomainGuard(value, requestHost));
+}
+
+function inspectContentEncoding(headers, options) {
+  return finding(AREA.ENCODING, contentEncoding.applyContentEncodingGuard(headers, options));
+}
+
+function inspectSvgScript(content) {
+  return finding(AREA.SVG, svgScript.applySvgScriptGuard(content));
+}
+
+function inspectPdfJavaScript(buffer) {
+  return finding(AREA.PDF, pdfJavaScript.applyPdfJavaScriptGuard(buffer));
+}
+
+function inspectHtmlInjection(value, options) {
+  return finding(AREA.HTML_TEXT, htmlInjection.applyHtmlInjectionGuard(value, options));
+}
+
 
 module.exports = {
   AREA,
@@ -147,4 +167,9 @@ module.exports = {
   inspectContentTypeHeader,
   inspectArchiveEntries,
   sanitizeCsvRows,
+  inspectSetCookie,
+  inspectContentEncoding,
+  inspectSvgScript,
+  inspectPdfJavaScript,
+  inspectHtmlInjection,
 };
