@@ -1,8 +1,5 @@
 'use strict';
-const { singleAlt } = require('./modutil_core');
-const single = singleAlt;
-
-const { headerKey, rawValue } = require('./headerutil_core');
+const { applySecFetchGuard } = require('./secfetchguard_core');
 
 const REASON = {
   OK: 'ok',
@@ -14,29 +11,20 @@ const REASON = {
 
 const HEADER = 'sec-fetch-mode';
 const ALLOWED = new Set(['cors', 'no-cors', 'navigate', 'same-origin', 'websocket']);
+const SPEC = {
+  header: HEADER,
+  allowed: ALLOWED,
+  ok: REASON.OK,
+  missing: REASON.MISSING,
+  duplicate: REASON.DUPLICATE,
+  empty: REASON.BAD_VALUE,
+  reject: REASON.UNSAFE,
+  trimFix: true,
+  trimReason: REASON.BAD_VALUE,
+};
 
 function applySecFetchModeGuard(headers) {
-  const raw = rawValue(headers, HEADER);
-  if (raw === null) return { changed: false, reason: REASON.MISSING };
-  const key = headerKey(headers, HEADER);
-  const value = single(raw);
-  if (value === null) {
-    delete headers[key];
-    return { changed: true, reason: REASON.DUPLICATE };
-  }
-  if (value === '') {
-    delete headers[key];
-    return { changed: true, reason: REASON.BAD_VALUE };
-  }
-  if (!ALLOWED.has(value)) {
-    delete headers[key];
-    return { changed: true, reason: REASON.UNSAFE };
-  }
-  if (value !== String(Array.isArray(raw) ? raw[0] : raw).trim()) {
-    headers[key] = value;
-    return { changed: true, reason: REASON.BAD_VALUE };
-  }
-  return { changed: false, reason: REASON.OK };
+  return applySecFetchGuard(headers, SPEC);
 }
 
 module.exports = { REASON, applySecFetchModeGuard };

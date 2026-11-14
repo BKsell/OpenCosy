@@ -19,6 +19,13 @@ function applySecFetchGuard(headers, spec) {
     delete headers[key];
     return { changed: true, reason: spec.reject };
   }
+  if (spec.trimFix) {
+    const original = String(Array.isArray(raw) ? raw[0] : raw);
+    if (value !== original.trim()) {
+      headers[key] = value;
+      return { changed: true, reason: spec.trimReason };
+    }
+  }
   return { changed: false, reason: spec.ok };
 }
 
