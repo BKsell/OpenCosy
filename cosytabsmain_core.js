@@ -1,3 +1,5 @@
+const { clearStoredFile } = require('./clearsection_core');
+
 const { readStoredSection } = require('./modutil_core');
 
 let d = {};
@@ -26,11 +28,7 @@ function loadStoredPins() {
     data => d.pinTabs.sanitizeStoredPinEntries(data.entries), '读取固定标签失败:');
 }
 function clearStoredPins() {
-  try {
-    if (d.fsSync.existsSync(d.pinStorePath)) d.fsSync.unlinkSync(d.pinStorePath);
-  } catch (e) {
-    console.error('清除固定标签失败:', e);
-  }
+  return clearStoredFile(d.fsSync, d.pinStorePath, '清除固定标签失败:');
 }
 function findTabIndexById(tabId) {
   return d.tabs.findIndex(t => t && String(t.id) === String(tabId));
@@ -68,19 +66,19 @@ function movePinnedTabsToFront() {
   d.sendToRenderer('pins-order-changed', { ids: d.pinModel.ids() });
   return true;
 }
-function pinTab(tabId) {
-  const r = applyPinnedState(tabId, true);
+function setTabPinned(tabId, pinned) {
+  const r = applyPinnedState(tabId, pinned);
   if (!r.success) return r;
   movePinnedTabsToFront();
   persistPins();
   return r;
 }
+
+function pinTab(tabId) {
+  return setTabPinned(tabId, true);
+}
 function unpinTab(tabId) {
-  const r = applyPinnedState(tabId, false);
-  if (!r.success) return r;
-  movePinnedTabsToFront();
-  persistPins();
-  return r;
+  return setTabPinned(tabId, false);
 }
 function toggleTabPinned(tabId) {
   const idx = findTabIndexById(tabId);
