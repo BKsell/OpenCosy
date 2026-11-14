@@ -1,5 +1,7 @@
 "use strict";
 
+const { RESERVED_DEVICE } = require('./downloadnamesanitize_core');
+
 const REASON = {
   ok: 'ok',
   doubleExtension: 'double-extension',
@@ -23,11 +25,7 @@ const DECOY_EXTENSIONS = new Set([
   'mp3', 'mp4', 'avi', 'mkv', 'mov', 'wav', 'flac',
 ]);
 
-const RESERVED_DEVICE_NAMES = new Set([
-  'con', 'prn', 'aux', 'nul',
-  'com1', 'com2', 'com3', 'com4', 'com5', 'com6', 'com7', 'com8', 'com9',
-  'lpt1', 'lpt2', 'lpt3', 'lpt4', 'lpt5', 'lpt6', 'lpt7', 'lpt8', 'lpt9',
-]);
+const RESERVED_DEVICE_NAMES = new Set([...RESERVED_DEVICE].map((n) => n.toLowerCase()));
 
 const MAX_NAME_LENGTH = 200;
 
