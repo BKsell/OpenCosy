@@ -62,13 +62,17 @@ function loadFpLedger() {
   loadLedgerOnce(d, 'fpLedgerLoaded', 'fpLedger', 'fpLedgerStorePath');
 }
 
-function persistFpLedger() {
-  if (d.fpLedgerSaveTimer) clearTimeout(d.fpLedgerSaveTimer);
-  d.fpLedgerSaveTimer = setTimeout(() => {
+function persistLedgerDebounced(store, timerKey, storePath, ledger) {
+  if (store[timerKey]) clearTimeout(store[timerKey]);
+  store[timerKey] = setTimeout(() => {
     try {
-      d.ledgerStore.writeJSONStore(d.fpLedgerStorePath, d.fpLedger.toJSON());
+      store.ledgerStore.writeJSONStore(storePath, ledger.toJSON());
     } catch {}
   }, 400);
+}
+
+function persistFpLedger() {
+  return persistLedgerDebounced(d, 'fpLedgerSaveTimer', d.fpLedgerStorePath, d.fpLedger);
 }
 
 function applyWebRtcPolicy() {
@@ -84,12 +88,7 @@ function loadDohLedger() {
 }
 
 function persistDohLedger() {
-  if (d.dohSaveTimer) clearTimeout(d.dohSaveTimer);
-  d.dohSaveTimer = setTimeout(() => {
-    try {
-      d.ledgerStore.writeJSONStore(d.dohStorePath, d.dohLedger.toJSON());
-    } catch {}
-  }, 400);
+  return persistLedgerDebounced(d, 'dohSaveTimer', d.dohStorePath, d.dohLedger);
 }
 
 function dohStatus() {
