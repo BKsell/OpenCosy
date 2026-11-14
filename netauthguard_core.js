@@ -1,5 +1,5 @@
 
-const { KNOWN_AUTH_SCHEMES, DEFAULT_MAX_PROMPTS_IN_WINDOW, DEFAULT_PROMPT_WINDOW_MS, DEFAULT_PROMPT_COOLDOWN_MS, AUTH_PROMPT_TIMEOUT_MS, MAX_PENDING_PROMPTS, MAX_REALM_CHARS, MAX_HOST_CHARS, MAX_USERNAME_CHARS, MAX_PASSWORD_CHARS, clampText, lowerTrim, parseHttpUrl, authHostKey, normalizeScheme, classifyServerAuth, classifyProxyAuth, AuthPromptRateLimiter } = require('./netauthcert_core');
+const { KNOWN_AUTH_SCHEMES, DEFAULT_MAX_PROMPTS_IN_WINDOW, DEFAULT_PROMPT_WINDOW_MS, DEFAULT_PROMPT_COOLDOWN_MS, AUTH_PROMPT_TIMEOUT_MS, MAX_PENDING_PROMPTS, MAX_REALM_CHARS, MAX_HOST_CHARS, MAX_USERNAME_CHARS, MAX_PASSWORD_CHARS, lowerTrim, parseHttpUrl, authHostKey, normalizeScheme, classifyServerAuth, classifyProxyAuth, AuthPromptRateLimiter } = require('./netauthcert_core');
 
 const { MAX_ISSUER_CHARS, MAX_REMEMBERED_CERT_HOSTS, MAX_SERIAL_CHARS, MAX_SUBJECT_CHARS, RememberedClientCertStore, certHostKey, chooseClientCertificate, describeAuthScheme, normalizeCertFingerprint, sanitizeAuthSubmit, sanitizeCertChoiceRecord, summarizeClientCert } = require('./netauthguard_prompt_core');
 const MAX_STATS_KEYS = 200;

@@ -1,7 +1,7 @@
 'use strict';
 const { describeReasonFrom } = require('./reasontext');
 
-const { hasControlCharV2 } = require('./modutil_core');
+require('./modutil_core');
 
 const { DEFAULT_GROUP_TITLE, FALLBACK_GROUP_COLOR, GROUP_COLORS, GROUP_COLOR_BLUE, GROUP_COLOR_CYAN, GROUP_COLOR_GREEN, GROUP_COLOR_GREY, GROUP_COLOR_ORANGE, GROUP_COLOR_PINK, GROUP_COLOR_PURPLE, GROUP_COLOR_RED, GROUP_COLOR_SET, GROUP_COLOR_YELLOW, MAX_GROUPS, MAX_GROUP_ID_LEN, MAX_GROUP_TITLE_LEN, MAX_TABS_PER_GROUP, MAX_TAB_ID_LEN, REJECT_BAD_COLOR, REJECT_CONTROL, REJECT_DUPLICATE, REJECT_EMPTY, REJECT_LIMIT, REJECT_NOT_ARRAY, REJECT_NOT_FOUND, REJECT_NOT_STRING, REJECT_PINNED, REJECT_TOO_LONG, hasControlChar, makeGroupId, sanitizeGroupColor, sanitizeGroupId, sanitizeGroupTitle, sanitizeStoredGroups, sanitizeTabId, sanitizeTabIdList } = require('./tabgroupsnorm_rules_core');
 function rehydrateGroupsByTabs(storedGroups, currentTabs) {

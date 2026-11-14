@@ -1,6 +1,6 @@
 'use strict';
 const { getSafeDirs, isInSafeDirs, isSafeUrl, sanitizePath, isPathInDir, realpathForContainment } = require('./cosysettingspaths_core');
-const { readSanitizedSection, writeSanitizedSection, saveBookmarks, loadBookmarks, saveReadingList, loadReadingList, saveSession, loadSession, clearSession, addToRecentlyClosed, getLastClosedTab, isPrivateNetworkHost, readStoredSettings } = require('./cosysettingspersist_core');
+const { saveBookmarks, loadBookmarks, saveReadingList, loadReadingList, saveSession, loadSession, clearSession, addToRecentlyClosed, getLastClosedTab, isPrivateNetworkHost, readStoredSettings } = require('./cosysettingspersist_core');
 const { getHttpStatusCode, getErrorMessage, getBrowserErrorText, isValidColor } = require('./cosysettingstext_core');
 
 let d = {};

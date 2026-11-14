@@ -1,5 +1,5 @@
 
-const { parseSetCookieEntry, extractSetCookieHeaders, MULTI_PART_SUFFIX, registrableDomain, hostOf, isThirdPartyContext, cookiePrefixViolation } = require('./cookiehelpers_core');
+const { parseSetCookieEntry, extractSetCookieHeaders, registrableDomain, hostOf, isThirdPartyContext, cookiePrefixViolation } = require('./cookiehelpers_core');
 'use strict';
 
 // cookieguard.js —— Set-Cookie 响应头加固的纯逻辑内核（不依赖 Electron）。

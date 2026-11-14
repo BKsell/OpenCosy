@@ -4,7 +4,7 @@ const { applyDeprecatedHeaderGuard } = require('./guardapply_core');
 
 const { normalizeCharset } = require('./modutil_core');
 
-const { deleteHeader, firstValue, headerKey } = require('./headerutil_core');
+require('./headerutil_core');
 
 const REASON = {
   OK: 'ok',

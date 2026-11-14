@@ -1,5 +1,5 @@
 'use strict';
-const { MAX_TREE_DEPTH, MAX_ENTRY_COUNT, MAX_TOTAL_BYTES, MAX_ENTRY_NAME_BYTES, MAX_ID_LENGTH, isAsciiAlnum, sanitizeNameToken, sanitizeVersionToken, tokenHasSeparators, containsAlnum, buildExtensionId, utf8Length, hasReservedWindowsChar, isSafeEntryName } = require('./extstorenames_core');
+const { MAX_TREE_DEPTH, MAX_ENTRY_COUNT, MAX_TOTAL_BYTES, MAX_ENTRY_NAME_BYTES, MAX_ID_LENGTH, sanitizeNameToken, sanitizeVersionToken, tokenHasSeparators, buildExtensionId, utf8Length, isSafeEntryName } = require('./extstorenames_core');
 const { hasControlCharsV2: hasControlChar } = require('./modutil_core');
 
 // extensionstore.js — 扩展存储安全内核（纯函数，不接触磁盘）。

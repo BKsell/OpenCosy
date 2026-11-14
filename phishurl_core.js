@@ -21,18 +21,7 @@
 // 会被钓鱼者高频蹭的品牌核心词（小写）。与 brandguard 各有一份：
 // 本模块只需要“有没有出现品牌词”这一布尔判断，不做编辑距离，单独列更清晰。
 const { mapToLatinLookalike, decodePunyLabel } = require('./navguard_core');
-const {
-  decodePunyHost,
-  isIPv4Literal,
-  extractRawHost,
-  hostHasPercentEncoding,
-  foldCompat,
-  tldOf,
-  registrableLabel,
-  leftLabels,
-  isLikelyMainstreamHost,
-  decodeURIComponentSafe,
-} = require('./phishhost_core');
+const { isIPv4Literal, extractRawHost, hostHasPercentEncoding, foldCompat, tldOf, registrableLabel, leftLabels, isLikelyMainstreamHost, decodeURIComponentSafe } = require('./phishhost_core');
 
 const BRAND_TOKENS = [
   'paypal', 'apple', 'appleid', 'icloud', 'google', 'gmail', 'microsoft',

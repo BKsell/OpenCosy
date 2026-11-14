@@ -1,8 +1,4 @@
-const {
-  KIND_SHELL,
-  KIND_COSY,
-  KIND_INTERNAL_FILE,
-} = require('./ipcguard_core');
+require('./ipcguard_core');
 
 
 const TIER_SHELL_ONLY = 'shell-only';

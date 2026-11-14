@@ -1,5 +1,5 @@
 'use strict';
-const { schemeOf, containsControlChar } = require('./modutil_core');
+const { schemeOf } = require('./modutil_core');
 
 // menuguard.js —— context-menu 事件 params 的统一净化内核。
 //

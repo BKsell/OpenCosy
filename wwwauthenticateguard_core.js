@@ -1,4 +1,4 @@
-const { REASON, SCHEME, QUOTED, MAX_LENGTH, MAX_CHALLENGES, hasControlChar, parseChallenge } = require('./authchallengeparse_core');
+const { REASON, MAX_LENGTH, MAX_CHALLENGES, parseChallenge } = require('./authchallengeparse_core');
 'use strict';
 const { describeReasonTable } = require('./reasontext');
 

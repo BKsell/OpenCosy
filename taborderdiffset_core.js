@@ -1,6 +1,6 @@
 'use strict';
 
-const { MAX_ORDER_IDS, sanitizeOrderIds } = require('./taborderconst_core');
+const { sanitizeOrderIds } = require('./taborderconst_core');
 
 /**
  * 在“目标顺序”中找出无需移动的最大标签集合。

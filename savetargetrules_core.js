@@ -1,6 +1,6 @@
 "use strict";
 
-const { RESERVED_NAMES, hasControlChar, hasAlternateDataStream, isReservedDeviceName } = require('./savenamechecks_core');
+const { hasControlChar, hasAlternateDataStream, isReservedDeviceName } = require('./savenamechecks_core');
 const fs = require('fs');
 const path = require('path');
 const { hasInvisibleCodePoint } = require('./downloadname_core');

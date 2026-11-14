@@ -2,7 +2,7 @@
 const { describeReasonTable } = require('./reasontext');
 const { applyMemberListGuard } = require('./guardapply_core');
 
-const { deleteHeader, firstValue, headerKey } = require('./headerutil_core');
+require('./headerutil_core');
 
 const REASON = {
   OK: 'ok',

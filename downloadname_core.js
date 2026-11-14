@@ -1,5 +1,5 @@
 
-const { MAX_NAME_BYTES, FALLBACK_NAME, FORBIDDEN_ASCII, RESERVED_DEVICE, isInvisibleCodePoint, stripControlAndInvisible, stripPathComponents, stripTrailingDotsAndSpaces, splitStemExt, deviceSegment, prefixReservedDevice, byteLength, truncateToBytes, sanitizeDownloadName, uniquePush } = require('./downloadnamesanitize_core');
+const { MAX_NAME_BYTES, FALLBACK_NAME, isInvisibleCodePoint, stripControlAndInvisible, stripTrailingDotsAndSpaces, prefixReservedDevice, sanitizeDownloadName } = require('./downloadnamesanitize_core');
 'use strict';
 
 function percentDecode(input) {

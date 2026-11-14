@@ -2,7 +2,7 @@
 const { describeReasonTable } = require('./reasontext');
 const { applySingleHeaderGuard } = require('./guardapply_core');
 
-const { firstValue, headerKey } = require('./headerutil_core');
+const { firstValue } = require('./headerutil_core');
 
 const REASON = {
   OK: 'ok',

@@ -3,7 +3,7 @@ const path = require('path');
 const fsSync = require('fs');
 const ledgerStore = require('./ledgerstore_core');
 
-const { CSP_RATE_MAX_PER_WINDOW, CSP_RATE_WINDOW_MS, MAX_CSP_REPORTS, MAX_SECURITY_DETAIL_CHARS, MAX_SECURITY_EVENTS, SECURITY_EVENT_TYPES, bindRendererNotifier, clearSecurityEvents, cspReportStorePath, listSecurityEvents, loadSecurityEvents, persistSecurityEvents, recordSecurityEvent, sanitizeSecurityDetail, securityEventSaveTimer, securityEventStorePath, securityEvents, securityEventsLoaded, sendToRenderer } = require('./securitycenter_csp_core');
+const { CSP_RATE_MAX_PER_WINDOW, CSP_RATE_WINDOW_MS, MAX_CSP_REPORTS, bindRendererNotifier, clearSecurityEvents, cspReportStorePath, listSecurityEvents, recordSecurityEvent, sendToRenderer } = require('./securitycenter_csp_core');
 const CSP_FIELD_MAX = 300;
 
 const cspReports = [];

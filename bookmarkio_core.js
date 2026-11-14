@@ -1,12 +1,6 @@
 
-const { JSON_MAX_DEPTH, JSON_MAX_ELEMENTS, JSON_MAX_STRING_CHARS, parseBoundedJSON } = require('./boundedjson_core');
-const {
-  MAX_BOOKMARKS_IMPORT,
-  MAX_IMPORT_FILE_BYTES,
-  safeBookmarkURL,
-  cleanTitle,
-  normalizeBookmark,
-} = require('./bookmarkbase_core');
+const { JSON_MAX_DEPTH, JSON_MAX_ELEMENTS, parseBoundedJSON } = require('./boundedjson_core');
+const { MAX_BOOKMARKS_IMPORT, MAX_IMPORT_FILE_BYTES, safeBookmarkURL, normalizeBookmark } = require('./bookmarkbase_core');
 const { parseHTMLBookmarks, buildExportHTML } = require('./bookmarkhtml_core');
 'use strict';
 

@@ -1,5 +1,5 @@
 
-const { MAX_QUERY_LEN, MAX_RESULTS, MAX_TAB_INPUT, SCORE, hostRange, isSplitSpace, isWordBoundary, safeLower, safeText, scoreInText, tokenize } = require('./tabsearch_ops_core');
+const { MAX_QUERY_LEN, MAX_RESULTS, MAX_TAB_INPUT, SCORE, hostRange, isWordBoundary, safeText, scoreInText, tokenize } = require('./tabsearch_ops_core');
 function scoreUrl(urlLower, token) {
   if (urlLower === '' || token === '') return 0;
   const hr = hostRange(urlLower);

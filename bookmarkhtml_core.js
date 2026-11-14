@@ -1,14 +1,6 @@
 'use strict';
 
-const {
-  MAX_BOOKMARKS_IMPORT,
-  MAX_IMPORT_FILE_BYTES,
-  safeBookmarkURL,
-  cleanTitle,
-  stripTags,
-  decodeHTMLEntities,
-  escapeHTML,
-} = require('./bookmarkbase_core');
+const { MAX_BOOKMARKS_IMPORT, safeBookmarkURL, cleanTitle, stripTags, decodeHTMLEntities, escapeHTML } = require('./bookmarkbase_core');
 
 function parseHTMLBookmarks(html) {
   const anchors = html.match(/<a\s+[^>]*href\s*=\s*"[^"]*"[^>]*>[\s\S]*?<\/a>/gi) || [];

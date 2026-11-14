@@ -1,5 +1,5 @@
 
-const { SPACE_LINK_LOCAL, SPACE_LOOPBACK, SPACE_PRIVATE, SPACE_PUBLIC, SPACE_UNKNOWN, SUBRESOURCE_TYPES, classifyIPv4, parseIPPiece, parseIPv4, parseIPv4Literal, parseIPv6 } = require('./pna_classify_core');
+const { SPACE_LINK_LOCAL, SPACE_LOOPBACK, SPACE_PRIVATE, SPACE_PUBLIC, SPACE_UNKNOWN, SUBRESOURCE_TYPES, classifyIPv4, parseIPv4, parseIPv4Literal, parseIPv6 } = require('./pna_classify_core');
 function classifyIPv6(parsed) {
   if (parsed.kind === 'v4mapped') return classifyIPv4(parsed.v4);
   const g = parsed.groups;

@@ -21,12 +21,7 @@
 //     证书错误 / 超时 / 域名解析失败一律不提供降级（避免被诱导降级）。
 
 // 结果原因常量，便于调用方留痕与测试断言。
-const {
-  classifyHost,
-  SPACE_LOOPBACK,
-  SPACE_PRIVATE,
-  SPACE_LINK_LOCAL,
-} = require('./pna_core');
+require('./pna_core');
 
 const { DEFAULT_EXCEPTION_CAPACITY, FALLBACKABLE_ERROR_CODES, MAX_HOST_BYTES, REASON_EMPTY_HOST, REASON_INVALID, REASON_NONSTANDARD_PORT, REASON_NOT_HTTP, REASON_PRIVATE_HOST, REASON_UPGRADED, REASON_USERINFO, hostLooksPrivate, isHttpString, normalizeExceptionHost, upgradeHttpUrl, urlCarriesUserinfo } = require('./httpsonly_http_core');
 function downgradeHttpsUrlForFallback(rawHttpsUrl) {

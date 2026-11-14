@@ -3,7 +3,7 @@ const { app } = require('electron');
 const ledgerStore = require('./ledgerstore_core');
 const permissionGrants = require('./permissiongrants_core');
 
-const { MAX_PERMISSION_DECISIONS, PERMISSION_DECISION_TTL_MS, REMEMBERED_PAGE_PERMISSIONS, bindSecurityRecorder, clearPermissionDecisionsForOrigin, forgetPermission, getRememberedPermission, isRememberableOrigin, listPermissionDecisions, loadPermissionDecisions, permissionDecisions, permissionDecisionsLoaded, permissionSaveTimer, permissionStoreKey, permissionStorePath, persistPermissionDecisions, recordSecurityEvent, rememberPermission } = require('./permissionstore_ops_core');
+const { PERMISSION_DECISION_TTL_MS, REMEMBERED_PAGE_PERMISSIONS, bindSecurityRecorder, clearPermissionDecisionsForOrigin, forgetPermission, getRememberedPermission, isRememberableOrigin, listPermissionDecisions, loadPermissionDecisions, permissionDecisions, persistPermissionDecisions, rememberPermission } = require('./permissionstore_ops_core');
 function auditPermissionDecisions() {
   loadPermissionDecisions();
   const report = permissionGrants.auditGrants(Object.fromEntries(permissionDecisions), {
