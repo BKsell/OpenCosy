@@ -2497,6 +2497,8 @@ cosyipcwireMod.registerBlockRulesIpc();
 
 cosyipcregisterMod.registerSettingsPanels();
 
+cosyipcregisterMod.registerPdfExport();
+
 // purgeBrowsingDataOnExit 在用户开启“退出时清除浏览数据”时执行一次性彻底清理：
 // 网络缓存、Cookie / localStorage / IndexedDB 等站点存储、历史与下载记录，
 // 以及用于恢复标签的 session.json，保证下次启动是干净状态，不留本次痕迹。
