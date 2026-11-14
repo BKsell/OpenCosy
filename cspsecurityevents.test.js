@@ -185,3 +185,85 @@ test('exportSecurityEvents 输出可归档结构且过滤生效', () => {
   assert.strictEqual(nothing.count, 0);
   s.clearSecurityEvents();
 });
+
+test('byOrigin/byType 使用无原型对象，origin 为 __proto__ 时不丢计数也不污染原型', () => {
+  const s = require('./cspsecurityevents_core');
+  s.clearSecurityEvents();
+  s.recordSecurityEvent('protocol-blocked', 'warn', 'p1', '__proto__');
+  s.recordSecurityEvent('protocol-blocked', 'warn', 'p2', 'constructor');
+  s.recordSecurityEvent('protocol-blocked', 'info', 'p3', 'https://ok.example');
+  const sum = s.summarizeSecurityEvents(0);
+  assert.strictEqual(sum.total, 3);
+  assert.strictEqual(sum.byOrigin['__proto__'], 1);
+  assert.strictEqual(sum.byOrigin.constructor, 1);
+  assert.strictEqual(sum.byOrigin['https://ok.example'], 1);
+  assert.strictEqual(Object.getPrototypeOf(sum.byOrigin), null);
+  assert.strictEqual({}.polluted, undefined);
+  s.clearSecurityEvents();
+});
+
+test('origin 规范化只保留 scheme 与 host，路径与查询串不落台账', () => {
+  const s = require('./cspsecurityevents_core');
+  s.clearSecurityEvents();
+  s.recordSecurityEvent('protocol-blocked', 'warn', 'n1', 'https://a.example/path?token=abc');
+  s.recordSecurityEvent('protocol-blocked', 'warn', 'n2', 'https://a.example/other');
+  s.recordSecurityEvent('protocol-blocked', 'warn', 'n3', '__proto__');
+  assert.strictEqual(s.securityEvents[0].origin, 'https://a.example');
+  assert.strictEqual(s.securityEvents[1].origin, 'https://a.example');
+  assert.strictEqual(s.securityEvents[2].origin, '__proto__');
+  s.clearSecurityEvents();
+});
+
+test('listSecurityEvents 支持 offset 分页且不破坏默认行为', () => {
+  const s = require('./cspsecurityevents_core');
+  s.clearSecurityEvents();
+  for (let i = 0; i < 5; i++) s.recordSecurityEvent('protocol-blocked', 'info', 'p' + i);
+  const first = s.listSecurityEvents('', 2);
+  assert.deepStrictEqual(first.map(e => e.detail), ['p4', 'p3']);
+  const second = s.listSecurityEvents('', 2, '', 2);
+  assert.deepStrictEqual(second.map(e => e.detail), ['p2', 'p1']);
+  const huge = s.listSecurityEvents('', 2, '', 1e9);
+  assert.strictEqual(huge.length, 0);
+  const neg = s.listSecurityEvents('', 2, '', -5);
+  assert.deepStrictEqual(neg.map(e => e.detail), ['p4', 'p3']);
+  s.clearSecurityEvents();
+});
+
+test('summarizeSecurityEvents 给出站点×严重级交叉计数', () => {
+  const s = require('./cspsecurityevents_core');
+  s.clearSecurityEvents();
+  s.recordSecurityEvent('protocol-blocked', 'critical', 'c', 'https://a.example');
+  s.recordSecurityEvent('protocol-blocked', 'warn', 'w', 'https://a.example');
+  s.recordSecurityEvent('protocol-blocked', 'warn', 'w2', 'https://b.example');
+  const sum = s.summarizeSecurityEvents(0);
+  assert.strictEqual(sum.byOriginSeverity['https://a.example|critical'], 1);
+  assert.strictEqual(sum.byOriginSeverity['https://a.example|warn'], 1);
+  assert.strictEqual(sum.byOriginSeverity['https://b.example|warn'], 1);
+  s.clearSecurityEvents();
+});
+
+test('summarizeSecurityEvents 给出最吵站点排行', () => {
+  const s = require('./cspsecurityevents_core');
+  s.clearSecurityEvents();
+  s.recordSecurityEvent('protocol-blocked', 'warn', 'a1', 'https://a.example');
+  s.recordSecurityEvent('protocol-blocked', 'warn', 'a2', 'https://a.example');
+  s.recordSecurityEvent('protocol-blocked', 'warn', 'a3', 'https://a.example');
+  s.recordSecurityEvent('protocol-blocked', 'warn', 'b1', 'https://b.example');
+  const sum = s.summarizeSecurityEvents(0);
+  assert.strictEqual(sum.topOrigins.length, 2);
+  assert.deepStrictEqual(sum.topOrigins[0], { origin: 'https://a.example', count: 3 });
+  assert.deepStrictEqual(sum.topOrigins[1], { origin: 'https://b.example', count: 1 });
+  s.clearSecurityEvents();
+});
+
+test('trimSecurityEvents 只保留最近 maxKeep 条并对非法值不动作', () => {
+  const s = require('./cspsecurityevents_core');
+  s.clearSecurityEvents();
+  for (let i = 0; i < 6; i++) s.recordSecurityEvent('protocol-blocked', 'info', 't' + i);
+  assert.strictEqual(s.trimSecurityEvents(2), 4);
+  assert.deepStrictEqual(s.securityEvents.map(e => e.detail), ['t4', 't5']);
+  assert.strictEqual(s.trimSecurityEvents(2), 0);
+  assert.strictEqual(s.trimSecurityEvents(0), 0);
+  assert.strictEqual(s.trimSecurityEvents(Number.NaN), 0);
+  s.clearSecurityEvents();
+});
