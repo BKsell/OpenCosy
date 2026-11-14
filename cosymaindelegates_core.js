@@ -3,7 +3,7 @@
 const cosyguardmainMod = require('./cosyguardmain_core');
 const cosysettingsmainMod = require('./cosysettingsmain_core');
 const cosyledgerchainmainMod = require('./cosyledgerchainmain');
-const cosywinmainMod = require('./cosywinmain');
+const cosywinmainMod = require('./cosywinmain_core');
 const cosytabsmainMod = require('./cosytabsmain_core');
 
 const DELEGATE_GROUPS = [
