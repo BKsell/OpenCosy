@@ -48,6 +48,9 @@ d.ipcMain.handle('import-bookmarks', async (event) => {
     }
     const filePath = result.filePaths[0];
     const stat = d.fsSync.statSync(filePath);
+    if (!stat.isFile()) {
+      return { success: false, error: '书签文件不是普通文件' };
+    }
     if (stat.size > d.bookmarkIO.MAX_IMPORT_FILE_BYTES) {
       return { success: false, error: '书签文件过大（上限 8MiB）' };
     }
