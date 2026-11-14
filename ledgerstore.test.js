@@ -166,3 +166,29 @@ test('createJSONStore: serialize 抛错时 flush 返回 false', () => {
 test('createJSONStore: 缺少 file 直接报错', () => {
   assert.throws(() => createJSONStore({}), /file/);
 });
+
+test('readJSONStore: 台账是符号链接时拒绝读取并回报 LEDGER_SYMLINK', () => {
+  const p = tempFile('link.json');
+  const target = tempFile('real.json');
+  fs.writeFileSync(target, JSON.stringify({ secret: 1 }), 'utf8');
+  try {
+    fs.symlinkSync(target, p);
+  } catch {
+    return;
+  }
+  let corrupt = null;
+  const got = readJSONStore(p, null, { onCorrupt: (err) => { corrupt = err; } });
+  assert.strictEqual(got, null);
+  assert.ok(corrupt);
+  assert.strictEqual(corrupt.code, 'LEDGER_SYMLINK');
+});
+
+test('readJSONStore: 台账路径不是普通文件时拒绝读取', () => {
+  const p = tempFile('dir.json');
+  fs.mkdirSync(p);
+  let corrupt = null;
+  const got = readJSONStore(p, null, { onCorrupt: (err) => { corrupt = err; } });
+  assert.strictEqual(got, null);
+  assert.ok(corrupt);
+  assert.strictEqual(corrupt.code, 'LEDGER_NOT_FILE');
+});
