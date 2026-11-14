@@ -8,4 +8,9 @@ function describeReasonTable(table, fallback) {
   };
 }
 
-module.exports = { describeReasonFrom, describeReasonTable };
+function describeAuditResult(result, okText) {
+  if (!result || result.reason === 'ok') return okText;
+  return `${result.reason}: ${result.detail || ''}`.trim();
+}
+
+module.exports = { describeReasonFrom, describeReasonTable, describeAuditResult };
