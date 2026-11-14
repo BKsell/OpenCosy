@@ -1,7 +1,7 @@
 'use strict';
 
 const pagesave = require('./pagesave');
-const { registerDownloadShelfIpc } = require('./cosyipcdownloadshelfipc_core');
+const { registerDownloadShelfIpc } = require('./cosyipcdownloadshelfipc');
 
 function registerDownloadIpc(d) {
 d.ipcMain.on('get-download-info', (event) => {

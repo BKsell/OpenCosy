@@ -3,7 +3,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const tg = require('./tabgroupmodel_core');
+const tg = require('./tabgroups');
 const {
   MAX_GROUPS,
   MAX_TABS_PER_GROUP,

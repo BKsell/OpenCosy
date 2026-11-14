@@ -1,6 +1,6 @@
 'use strict';
 
-const { registerTabSurfaceAuxIpc } = require('./cosyipctabsurface_aux_core');
+const { registerTabSurfaceAuxIpc } = require('./cosyipctabsurface_aux');
 
 function registerTabSurfaces(d) {
 d.ipcMain.handle('readinglist-add', (event, payload = {}) => {

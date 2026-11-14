@@ -22,7 +22,7 @@ const svgScript = require('./svgscriptguard_core');
 const pdfJavaScript = require('./pdfjavascriptguard_core');
 const htmlInjection = require('./htmlinjectionguard_core');
 
-const { AREA, CHAIN_AREAS, finding, inspectArchiveEntries, inspectContentTypeHeader, inspectCspPolicy, inspectDownloadCandidate, inspectDownloadedBuffer, inspectImportJson, inspectIntegrity, inspectIpcReply, inspectIpcRequest, inspectPathWithin, inspectProxySettings, inspectRedirectHop, inspectUpdateManifest, redactText, sanitizeClipboard, sanitizeCsvRows } = require('./securityboundaryhubrules_core');
+const { AREA, CHAIN_AREAS, finding, inspectArchiveEntries, inspectContentTypeHeader, inspectCspPolicy, inspectDownloadCandidate, inspectDownloadedBuffer, inspectImportJson, inspectIntegrity, inspectIpcReply, inspectIpcRequest, inspectPathWithin, inspectProxySettings, inspectRedirectHop, inspectUpdateManifest, redactText, sanitizeClipboard, sanitizeCsvRows } = require('./securityboundaryhub_findings');
 function inspectSvgDocument(content) {
   return finding(AREA.SVG, svgScript.applySvgScriptGuard(content));
 }

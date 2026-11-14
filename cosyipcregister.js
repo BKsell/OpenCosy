@@ -3,11 +3,10 @@ let d = {};
 function bindDeps(x) {
   d = x;
 }
-const cosyipcnetguardMod = require('./cosyipcnetguard_core');
-const cosyipcdownloadshelfMod = require('./cosyipcdownloadshelf_core');
-const cosyipctabsurfaceMod = require('./cosyipctabsurface_core');
-const cosyipcsettingspanelMod = require('./cosyipcsettingspanel_core');
-const cosyipcpdfexportMod = require('./cosyipcpdfexport');
+const cosyipcnetguardMod = require('./cosyipcnetguard');
+const cosyipcdownloadshelfMod = require('./cosyipcdownloadshelf');
+const cosyipctabsurfaceMod = require('./cosyipctabsurface');
+const cosyipcsettingspanelMod = require('./cosyipcsettingspanel');
 function registerNetworkGuards() {
   cosyipcnetguardMod.registerNetworkGuards(d);
 }
@@ -20,7 +19,4 @@ function registerTabSurfaces() {
 function registerSettingsPanels() {
   cosyipcsettingspanelMod.registerSettingsPanels(d);
 }
-function registerPdfExport() {
-  cosyipcpdfexportMod.registerPdfExport(d);
-}
-module.exports = { bindDeps, registerNetworkGuards, registerDownloadShelf, registerTabSurfaces, registerSettingsPanels, registerPdfExport };
+module.exports = { bindDeps, registerNetworkGuards, registerDownloadShelf, registerTabSurfaces, registerSettingsPanels };

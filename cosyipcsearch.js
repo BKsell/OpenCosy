@@ -85,7 +85,7 @@ d.ipcMain.on('show-more-options-menu', (event, position) => {
 });
 }
 
-const cosyipcoverview = require('./cosyipcoverview_core');
+const cosyipcoverview = require('./cosyipcoverview');
 
 function bindDepsAll(x) {
   d = x;

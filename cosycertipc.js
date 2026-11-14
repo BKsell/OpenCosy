@@ -1,6 +1,6 @@
 'use strict';
 
-const { registerCertificateBookmarkIpc } = require('./cosycertbookmarkipc_core');
+const { registerCertificateBookmarkIpc } = require('./cosycertbookmarkipc');
 
 let d = {};
 

@@ -1,6 +1,6 @@
 'use strict';
 
-const { registerBookmarks } = require('./cosyipcbookmarksipc_core');
+const { registerBookmarks } = require('./cosyipcbookmarksipc');
 function registerDownloadShelf(d) {
 d.ipcMain.on('save-settings', (event, settings) => {
   if (!d.isMainSender(event)) return;
