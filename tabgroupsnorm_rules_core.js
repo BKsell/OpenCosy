@@ -1,4 +1,4 @@
-const { hasControlCharV2 } = require('./modutil_core');
+const { hasControlCharV2, sanitizeBoundedText } = require('./modutil_core');
 
 const hasControlChar = hasControlCharV2;
 
@@ -54,18 +54,12 @@ const REJECT_EMPTY = 'empty-selection';
 
 // sanitizeGroupId 校验组 id：非空字符串、不超长、不含控制字符。
 function sanitizeGroupId(raw) {
-  if (typeof raw !== 'string') return { ok: false, reason: REJECT_NOT_STRING };
-  if (raw.length === 0 || raw.length > MAX_GROUP_ID_LEN) return { ok: false, reason: REJECT_TOO_LONG };
-  if (hasControlChar(raw)) return { ok: false, reason: REJECT_CONTROL };
-  return { ok: true, value: raw };
+  return sanitizeBoundedText(raw, MAX_GROUP_ID_LEN);
 }
 
 // sanitizeTabId 校验标签 id，规则与 pintabs.sanitizePinId 对齐。
 function sanitizeTabId(raw) {
-  if (typeof raw !== 'string') return { ok: false, reason: REJECT_NOT_STRING };
-  if (raw.length === 0 || raw.length > MAX_TAB_ID_LEN) return { ok: false, reason: REJECT_TOO_LONG };
-  if (hasControlChar(raw)) return { ok: false, reason: REJECT_CONTROL };
-  return { ok: true, value: raw };
+  return sanitizeBoundedText(raw, MAX_TAB_ID_LEN);
 }
 
 // sanitizeGroupTitle 校验标题：必须是字符串（允许空串，表示用默认标题）、不超长、
