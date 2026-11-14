@@ -47,7 +47,7 @@ d.ipcMain.handle('import-bookmarks', async (event) => {
       return { success: false, canceled: true };
     }
     const filePath = result.filePaths[0];
-    const stat = d.fsSync.statSync(filePath);
+    const stat = d.fsSync.lstatSync(filePath);
     if (!stat.isFile()) {
       return { success: false, error: '书签文件不是普通文件' };
     }
