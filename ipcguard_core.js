@@ -63,7 +63,12 @@ function classifySender(event, isShellSender, isInternalFile) {
   const frame = event.senderFrame;
   if (!frame || typeof frame.url !== 'string') return KIND_NONE;
 
-  const proto = policy.parseProtocol(frame.url);
+  let proto = '';
+  try {
+    proto = policy.parseProtocol(frame.url);
+  } catch {
+    proto = '';
+  }
   if (proto === 'cosy:') return KIND_COSY;
   if (proto === 'file:') {
     let internal = false;
@@ -125,7 +130,8 @@ function decide(channel, event, opts) {
 }
 
 // 每个通道的拒绝计数，供上层做限流，避免恶意网页刷 IPC 把安全日志 / 磁盘打爆。
-function createRateCounter() {
+function createRateCounter(maxBuckets) {
+  const limit = Number.isInteger(maxBuckets) && maxBuckets > 0 ? maxBuckets : 4096;
   const buckets = new Map();
   return {
     /**
@@ -138,6 +144,12 @@ function createRateCounter() {
       const now = Date.now();
       const b = buckets.get(key);
       if (!b || now - b.start >= windowMs) {
+        if (!b && buckets.size >= limit) {
+          for (const [k, v] of buckets) {
+            if (now - v.start >= windowMs) buckets.delete(k);
+          }
+          if (buckets.size >= limit) return false;
+        }
         buckets.set(key, { start: now, count: 1 });
         return true;
       }
