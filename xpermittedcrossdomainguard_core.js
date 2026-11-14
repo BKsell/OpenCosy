@@ -1,0 +1,69 @@
+'use strict';
+const { describeReasonTable } = require('./reasontext');
+const { applyPinHeaderGuard } = require('./guardapply_core');
+
+const { firstValue, headerKey } = require('./headerutil_core');
+
+const REASON = {
+  OK: 'ok',
+  MISSING: 'missing',
+  MALFORMED: 'malformed',
+  OVERLONG: 'overlong',
+  BROAD_POLICY: 'broad-policy',
+  MULTI_VALUE: 'multi-value',
+};
+
+const HEADER = 'x-permitted-cross-domain-policies';
+const STRICT = 'none';
+const MAX_VALUE_LENGTH = 96;
+const BROAD = new Set(['all', 'master-only', 'by-content-type', 'by-ftp-filename']);
+
+function parseCrossDomainPolicy(value) {
+  if (typeof value !== 'string') return { reason: REASON.MALFORMED, policy: null };
+  const text = value.trim().toLowerCase();
+  if (!text) return { reason: REASON.MALFORMED, policy: null };
+  if (text.length > MAX_VALUE_LENGTH) return { reason: REASON.OVERLONG, policy: null };
+  if (text === STRICT) return { reason: REASON.OK, policy: STRICT };
+  if (BROAD.has(text)) return { reason: REASON.BROAD_POLICY, policy: text };
+  const tokens = text.split(',').map((token) => token.trim()).filter((token) => token !== '');
+  if (tokens.length === 0) return { reason: REASON.MALFORMED, policy: null };
+  if (tokens.includes('all')) return { reason: REASON.BROAD_POLICY, policy: 'all' };
+  for (const token of tokens) {
+    if (BROAD.has(token)) return { reason: REASON.BROAD_POLICY, policy: token };
+    if (token !== 'none') return { reason: REASON.MALFORMED, policy: null };
+  }
+  if (tokens.length > 1) return { reason: REASON.MULTI_VALUE, policy: null };
+  return { reason: REASON.OK, policy: STRICT };
+}
+
+function inspectCrossDomainPolicy(headers) {
+  const result = inspectSingleHeader(headers, HEADER, parseCrossDomainPolicy, REASON.MISSING, REASON.MULTI_VALUE, REASON.OK);
+  return { changed: result.changed, reason: result.reason, policy: result.parsed ? result.parsed.policy : null };
+}
+
+function applyCrossDomainPolicyGuard(headers) {
+  return applyPinHeaderGuard(headers, HEADER, inspectCrossDomainPolicy, STRICT);
+}
+
+const describeReason = describeReasonTable({
+    [REASON.MALFORMED]: 'X-Permitted-Cross-Domain-Policies 取值非法，已收紧为 none',
+    [REASON.OVERLONG]: 'X-Permitted-Cross-Domain-Policies 字段超长，已收紧为 none',
+    [REASON.BROAD_POLICY]: '跨域策略放宽了 flash 读取范围，已收紧为 none',
+    [REASON.MULTI_VALUE]: 'X-Permitted-Cross-Domain-Policies 多头下发，已收敛为单值',
+    [REASON.MISSING]: '响应未声明 X-Permitted-Cross-Domain-Policies',
+  }, '跨域策略为 none');
+
+module.exports = {
+  REASON,
+  HEADER,
+  STRICT,
+  MAX_VALUE_LENGTH,
+  BROAD,
+  headerKey,
+  firstValue,
+  countValues,
+  parseCrossDomainPolicy,
+  inspectCrossDomainPolicy,
+  applyCrossDomainPolicyGuard,
+  describeReason,
+};
