@@ -1,6 +1,7 @@
 'use strict';
 
 const boundary = require('./frameboundary_core');
+const { describeAuditResult } = require('./reasontext');
 
 const ACTION = { ALLOW: 'allow', WARN: 'warn', DENY: 'deny' };
 
@@ -61,8 +62,7 @@ function evaluateClipboardFrame(input = {}) {
 }
 
 function describeClipboardFrame(decision) {
-  if (!decision || decision.reason === REASON.OK) return '剪贴板写入帧边界校验通过';
-  return `${decision.reason}: ${decision.detail || ''}`.trim();
+  return describeAuditResult(decision, '剪贴板写入帧边界校验通过');
 }
 
 module.exports = {
