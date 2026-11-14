@@ -18,7 +18,7 @@ const {
   createHoverState,
   resetForNavigation,
   sanitizeHoverUrl
-} = require('./hoverguard_rules');
+} = require('./hoverguardrules_core');
 
 // decideHoverUrl 裁决一次 update-target-url。
 function decideHoverUrl(state, rawUrl, now) {
