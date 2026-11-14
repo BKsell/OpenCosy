@@ -1,6 +1,7 @@
 'use strict';
 
 const boundary = require('./frameboundary_core');
+const { describeAuditResult } = require('./reasontext');
 
 const ACTION = { ALLOW: 'allow', WARN: 'warn', DENY: 'deny' };
 
@@ -46,8 +47,7 @@ function evaluatePointerLockFrame(input = {}) {
 }
 
 function describePointerLockFrame(decision) {
-  if (!decision || decision.reason === REASON.OK) return '指针锁定帧边界校验通过';
-  return `${decision.reason}: ${decision.detail || ''}`.trim();
+  return describeAuditResult(decision, '指针锁定帧边界校验通过');
 }
 
 module.exports = { ACTION, REASON, evaluatePointerLockFrame, describePointerLockFrame };
