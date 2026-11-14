@@ -1,5 +1,7 @@
 'use strict';
 
+const { openSingletonTab } = require('./singletontab_core');
+
 let d = {};
 
 function bindDeps(next) {
@@ -104,12 +106,7 @@ function clampReaderInt(value, max) {
 }
 
 function openReaderTab() {
-  const existing = d.tabs.findIndex(t => t && t.url === d.READER_PAGE_URL);
-  if (existing >= 0) {
-    if (existing !== d.currentTabIndex) d.switchToTab(existing);
-    return d.tabs[existing];
-  }
-  return d.createNewTab(d.READER_PAGE_URL);
+  return openSingletonTab(d, d.READER_PAGE_URL);
 }
 
 module.exports = { keepReaderUrl, scrubReaderUrls, sanitizeReaderNodes, enterReaderMode, sanitizeReaderArticle, clampReaderInt, openReaderTab, bindDeps };
