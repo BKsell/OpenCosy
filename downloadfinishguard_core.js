@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('path');
+const { describeAuditResult } = require('./reasontext');
 
 const ACTION = { OK: 'ok', WARN: 'warn', BLOCK: 'block' };
 
@@ -77,8 +78,7 @@ function auditDownloadResult(input = {}) {
 }
 
 function describeDownloadAudit(audit) {
-  if (!audit || audit.reason === REASON.OK) return '下载落盘校验通过';
-  return `${audit.reason}: ${audit.detail || ''}`.trim();
+  return describeAuditResult(audit, '下载落盘校验通过');
 }
 
 module.exports = {
