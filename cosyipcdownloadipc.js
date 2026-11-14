@@ -133,7 +133,9 @@ d.ipcMain.handle('save-current-page', async (event, data) => {
     const resolved = d.path.resolve(requested);
     const safeRoot = d.getSafeDirs().find((dir) => d.isPathInDir(resolved, dir));
     if (!safeRoot) return { ok: false, reason: 'outside-safe-dirs' };
-    target = pagesave.normalizeSavePath(resolved, ['.html', '.htm'], '.html');
+    const checked = d.downloadSaveTarget.auditSaveTargetReal(safeRoot, resolved, d.path.basename(resolved));
+    if (!checked || !checked.ok) return { ok: false, reason: 'unsafe-target' };
+    target = pagesave.normalizeSavePath(checked.path, ['.html', '.htm'], '.html');
   } else {
     target = d.path.join(d.app.getPath('downloads'), pagesave.buildSaveName(wc.getTitle(), '.html'));
   }
