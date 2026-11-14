@@ -44,11 +44,11 @@ function loadUaPolicyStateFromDisk() {
 }
 
 function persistUaPolicyState() {
-  try { atomicWriteJSON(d.uaPolicyPath, d.uaPolicyState); } catch (e) { console.error('写入 UA 策略失败:', e); }
+  try { atomicWriteJSON(d.uaPolicyPath, d.uaPolicyState); } catch (e) { console.error('写入 UA 策略失败:', e); d.recordSecurityEvent('ledger-persist', 'warn', String(e && e.message || e), ''); }
 }
 
 function persistRateLimitState() {
-  try { atomicWriteJSON(d.rateLimitPath, { bytesPerSecond: d.downloadRateLimit }); } catch (e) { console.error('写入下载限速失败:', e); }
+  try { atomicWriteJSON(d.rateLimitPath, { bytesPerSecond: d.downloadRateLimit }); } catch (e) { console.error('写入下载限速失败:', e); d.recordSecurityEvent('ledger-persist', 'warn', String(e && e.message || e), ''); }
 }
 
 function applyUaPolicyToSession(targetSession) {
@@ -84,11 +84,11 @@ function loadVaultStateFromDisk() {
 
 function persistVaultState() {
   if (!d.vaultState) return;
-  try { atomicWriteJSON(d.vaultStorePath, d.vaultState); } catch (e) { console.error('写入保险库失败:', e); }
+  try { atomicWriteJSON(d.vaultStorePath, d.vaultState); } catch (e) { console.error('写入保险库失败:', e); d.recordSecurityEvent('ledger-persist', 'warn', String(e && e.message || e), ''); }
 }
 
 function persistCleanAudit() {
-  try { atomicWriteJSON(d.cleanAuditPath, d.cleanAuditLog); } catch (e) { console.error('写入清理审计失败:', e); }
+  try { atomicWriteJSON(d.cleanAuditPath, d.cleanAuditLog); } catch (e) { console.error('写入清理审计失败:', e); d.recordSecurityEvent('ledger-persist', 'warn', String(e && e.message || e), ''); }
 }
 
 function persistVaultKey(keyBuf) {
