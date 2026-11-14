@@ -30,16 +30,8 @@ function parseTransferEncoding(value) {
 }
 
 function inspectTransferEncoding(headers) {
-  const value = firstValue(headers, HEADER);
-  if (!value) return { changed: false, reason: REASON.MISSING, token: null };
-  if (countValues(headers, HEADER) > 1) {
-    return { changed: true, reason: REASON.MULTI_VALUE, token: null };
-  }
-  const parsed = parseTransferEncoding(value);
-  if (parsed.reason === REASON.OK) {
-    return { changed: false, reason: REASON.OK, token: parsed.token };
-  }
-  return { changed: true, reason: parsed.reason, token: parsed.token };
+  const result = inspectSingleHeader(headers, HEADER, parseTransferEncoding, REASON.MISSING, REASON.MULTI_VALUE, REASON.OK);
+  return { changed: result.changed, reason: result.reason, token: result.parsed ? result.parsed.token : null };
 }
 
 function applyTransferEncodingGuard(headers) {
