@@ -1,3 +1,5 @@
+const { openSingletonTab } = require('./singletontab_core');
+
 let d = {};
 function bindDeps(x) {
   d = x;
@@ -31,21 +33,11 @@ function getUrlProtocol(url) {
 }
 
 function openTaskManagerTab() {
-  const existing = d.tabs.findIndex(t => t && t.url === d.TASK_MANAGER_URL);
-  if (existing >= 0) {
-    if (existing !== d.currentTabIndex) d.switchToTab(existing);
-    return d.tabs[existing];
-  }
-  return d.createNewTab(d.TASK_MANAGER_URL);
+  return openSingletonTab(d, d.TASK_MANAGER_URL);
 }
 
 function openTabOverviewTab() {
-  const existing = d.tabs.findIndex(t => t && t.url === d.TAB_OVERVIEW_URL);
-  if (existing >= 0) {
-    if (existing !== d.currentTabIndex) d.switchToTab(existing);
-    return d.tabs[existing];
-  }
-  return d.createNewTab(d.TAB_OVERVIEW_URL);
+  return openSingletonTab(d, d.TAB_OVERVIEW_URL);
 }
 
 function showErrorPage(tab, errorCode, errorDescription, validatedURL) {
