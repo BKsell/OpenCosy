@@ -1,6 +1,5 @@
 const { app, dialog } = require('electron');
 const path = require('path');
-const { clearLedgerStore } = require('./ledgerclear_core');
 const fsSync = require('fs');
 const urlResolve = require('./urlresolve_core');
 
@@ -57,7 +56,11 @@ function removeDownloadHashRecord(id) {
 }
 
 function clearDownloadHashes() {
-  return clearLedgerStore(loadDownloadHashes, downloadHashRecords, downloadHashStorePath, persistDownloadHashes);
+  loadDownloadHashes();
+  downloadHashRecords.length = 0;
+  try { fsSync.unlinkSync(downloadHashStorePath); } catch {}
+  persistDownloadHashes();
+  return true;
 }
 
 // normalizeExpectedHash 校验用户粘贴的期望摘要：支持 64 位 hex，
