@@ -116,3 +116,72 @@ test('clearSecurityEvents 清空内存与落盘', () => {
   s.clearSecurityEvents();
   assert.strictEqual(s.securityEvents.length, 0);
 });
+
+test('listSecurityEvents 支持按严重级过滤且不影响类型过滤', () => {
+  const s = require('./cspsecurityevents_core');
+  s.clearSecurityEvents();
+  s.recordSecurityEvent('protocol-blocked', 'critical', 'c1');
+  s.recordSecurityEvent('protocol-blocked', 'warn', 'w1');
+  s.recordSecurityEvent('download-quota', 'critical', 'c2');
+  const crit = s.listSecurityEvents('', 200, 'critical');
+  assert.strictEqual(crit.length, 2);
+  assert.ok(crit.every(e => e.severity === 'critical'));
+  const both = s.listSecurityEvents('protocol-blocked', 200, 'critical');
+  assert.strictEqual(both.length, 1);
+  assert.strictEqual(both[0].detail, 'c1');
+  const bad = s.listSecurityEvents('', 200, 'nope');
+  assert.strictEqual(bad.length, 3);
+  s.clearSecurityEvents();
+});
+
+test('summarizeSecurityEvents 按 origin 聚合', () => {
+  const s = require('./cspsecurityevents_core');
+  s.clearSecurityEvents();
+  s.recordSecurityEvent('protocol-blocked', 'warn', 'x', 'https://a.example');
+  s.recordSecurityEvent('protocol-blocked', 'warn', 'y', 'https://a.example');
+  s.recordSecurityEvent('protocol-blocked', 'info', 'z', 'https://b.example');
+  s.recordSecurityEvent('protocol-blocked', 'info', 'z2', '');
+  const sum = s.summarizeSecurityEvents(0);
+  assert.strictEqual(sum.byOrigin['https://a.example'], 2);
+  assert.strictEqual(sum.byOrigin['https://b.example'], 1);
+  assert.strictEqual(sum.byOrigin['(unknown)'], 1);
+  s.clearSecurityEvents();
+});
+
+test('pruneSecurityEvents 按时间删除旧事件并落盘', () => {
+  const s = require('./cspsecurityevents_core');
+  s.clearSecurityEvents();
+  s.recordSecurityEvent('protocol-blocked', 'info', 'old1');
+  s.recordSecurityEvent('protocol-blocked', 'info', 'old2');
+  s.recordSecurityEvent('protocol-blocked', 'info', 'new1');
+  s.securityEvents[0].time = 1000;
+  s.securityEvents[1].time = 1001;
+  const removed = s.pruneSecurityEvents(1500);
+  assert.strictEqual(removed, 2);
+  assert.strictEqual(s.securityEvents.length, 1);
+  assert.strictEqual(s.securityEvents[0].detail, 'new1');
+  assert.strictEqual(s.pruneSecurityEvents(0), 0);
+  assert.strictEqual(s.pruneSecurityEvents(Number.NaN), 0);
+  s.clearSecurityEvents();
+});
+
+test('exportSecurityEvents 输出可归档结构且过滤生效', () => {
+  const s = require('./cspsecurityevents_core');
+  s.clearSecurityEvents();
+  s.recordSecurityEvent('protocol-blocked', 'warn', 'e1', 'https://a.example');
+  s.recordSecurityEvent('download-quota', 'critical', 'e2');
+  const out = s.exportSecurityEvents({});
+  assert.strictEqual(out.schema, 'cosy.security-events/v1');
+  assert.strictEqual(out.count, 2);
+  assert.strictEqual(out.events.length, 2);
+  assert.ok(out.events[0].time <= out.events[1].time);
+  assert.ok(out.summary.total >= 2);
+  const crit = s.exportSecurityEvents({ severity: 'critical' });
+  assert.strictEqual(crit.count, 1);
+  assert.strictEqual(crit.events[0].detail, 'e2');
+  const limited = s.exportSecurityEvents({ limit: 1 });
+  assert.strictEqual(limited.count, 1);
+  const nothing = s.exportSecurityEvents({ sinceMs: Date.now() + 60000 });
+  assert.strictEqual(nothing.count, 0);
+  s.clearSecurityEvents();
+});
