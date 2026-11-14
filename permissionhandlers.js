@@ -85,14 +85,30 @@ function create(ctx) {
     // openExternal 不再静默放行：弹一次原生确认。这里拿不到具体 URL，
     // 真正带 URL 的外部协议请求走 confirmAndOpenExternal IPC。
     if (permission === 'openExternal') {
+      const frame = permissionFrameInput(webContents, details, details && details.requestingUrl);
+      const sourceOrigin = urlResolve.safeOrigin(frame.requestUrl) || urlResolve.safeOrigin(frame.topUrl);
+      if (!frame.isMainFrame) {
+        recordSecurityEvent('external-open-subframe', 'warn', '子框架请求打开外部程序，已拒绝', sourceOrigin);
+        callback(false);
+        return;
+      }
+      if (!frame.tabActive || !frame.windowFocused) {
+        recordSecurityEvent('external-open-background', 'warn', '后台页面请求打开外部程序，已拒绝', sourceOrigin);
+        callback(false);
+        return;
+      }
+      recordSecurityEvent('external-open-prompt', 'info', '弹窗询问是否允许打开外部程序', sourceOrigin);
       const choice = dialog.showMessageBoxSync(readMainWindow(), {
         type: 'question',
         buttons: ['允许', '拒绝'],
         defaultId: 1,
         cancelId: 1,
         title: '网站请求打开外部程序',
-        message: '当前网站请求调用系统外部应用，是否允许？'
+        message: `${sourceOrigin || '当前页面'} 请求调用系统外部应用，是否允许？`
       });
+      if (choice !== 0) {
+        recordSecurityEvent('external-open-denied', 'warn', '用户拒绝了打开外部程序的请求', sourceOrigin);
+      }
       callback(choice === 0);
       return;
     }
