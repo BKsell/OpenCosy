@@ -37,16 +37,8 @@ function parseCrossDomainPolicy(value) {
 }
 
 function inspectCrossDomainPolicy(headers) {
-  const value = firstValue(headers, HEADER);
-  if (!value) return { changed: false, reason: REASON.MISSING, policy: null };
-  if (countValues(headers, HEADER) > 1) {
-    return { changed: true, reason: REASON.MULTI_VALUE, policy: null };
-  }
-  const parsed = parseCrossDomainPolicy(value);
-  if (parsed.reason === REASON.OK) {
-    return { changed: false, reason: REASON.OK, policy: parsed.policy };
-  }
-  return { changed: true, reason: parsed.reason, policy: parsed.policy };
+  const result = inspectSingleHeader(headers, HEADER, parseCrossDomainPolicy, REASON.MISSING, REASON.MULTI_VALUE, REASON.OK);
+  return { changed: result.changed, reason: result.reason, policy: result.parsed ? result.parsed.policy : null };
 }
 
 function applyCrossDomainPolicyGuard(headers) {
