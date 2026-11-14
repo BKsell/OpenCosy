@@ -74,4 +74,13 @@ function countValues(headers, name) {
   return typeof raw === 'string' ? 1 : 0;
 }
 
-module.exports = { countValues, deleteHeader, firstText, firstTextLower, firstValue, headerKey, headerText, headerValues, lowerKeys, rawValue, setHeader };
+function inspectSingleHeader(headers, header, parse, missingReason, multiReason, okReason) {
+  const value = firstValue(headers, header);
+  if (!value) return { changed: false, reason: missingReason, parsed: null };
+  if (countValues(headers, header) > 1) return { changed: true, reason: multiReason, parsed: null };
+  const parsed = parse(value);
+  if (parsed.reason === okReason) return { changed: false, reason: okReason, parsed };
+  return { changed: true, reason: parsed.reason, parsed };
+}
+
+module.exports = { countValues, deleteHeader, firstText, firstTextLower, firstValue, headerKey, headerText, headerValues, inspectSingleHeader, lowerKeys, rawValue, setHeader };
