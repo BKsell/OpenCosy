@@ -137,7 +137,7 @@ function loadSecurityEvents() {
     const data = ledgerStore.readJSONStore(securityEventStorePath, {});
     const entries = Array.isArray(data && data.events) ? data.events : null;
     if (!entries) return;
-    for (const e of entries) {
+    for (const e of entries.slice(-MAX_SECURITY_EVENTS)) {
       if (!e || typeof e !== 'object') continue;
       if (!SECURITY_EVENT_TYPES.has(e.type)) continue;
       if (e.severity !== 'info' && e.severity !== 'warn' && e.severity !== 'critical') continue;
@@ -178,6 +178,7 @@ function sanitizeSecurityDetail(s) {
   str = str.replace(/[\x00-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim();
   str = str.replace(/(https?:\/\/)[^/@\s]+@/gi, '$1[REDACTED]@');
   str = str.replace(/([?&](?:token|key|secret|password|code|sig|apikey|api_key|access_token|refresh_token)=)[^&\s]+/gi, '$1[REDACTED]');
+  str = str.replace(/(authorization\s*[:=]\s*)(?:bearer|basic|digest|negotiate|ntlm|token)\s+[\w\-.=+/]+/gi, '$1[REDACTED]');
   if (str.length > MAX_SECURITY_DETAIL_CHARS) {
     str = str.slice(0, MAX_SECURITY_DETAIL_CHARS) + '…';
   }
@@ -215,6 +216,24 @@ function listSecurityEvents(typeFilter = '', limit = 200) {
   return items.slice(-n).reverse().map(e => ({ ...e }));
 }
 
+// summarizeSecurityEvents 按时间窗口聚合事件，供安全面板判断"某类事件是否集中爆发"。
+// 面板此前只能拉最近 N 条自己在渲染层数，类型一多就没有全局视图。
+function summarizeSecurityEvents(sinceMs = 3600000) {
+  loadSecurityEvents();
+  const windowMs = Math.max(0, Number(sinceMs) || 0);
+  const cutoff = Date.now() - windowMs;
+  const summary = { total: 0, byType: {}, bySeverity: { info: 0, warn: 0, critical: 0 }, firstTime: 0, lastTime: 0 };
+  for (const e of securityEvents) {
+    if (e.time < cutoff) continue;
+    summary.total++;
+    summary.byType[e.type] = (summary.byType[e.type] || 0) + 1;
+    if (summary.bySeverity[e.severity] != null) summary.bySeverity[e.severity]++;
+    if (!summary.firstTime || e.time < summary.firstTime) summary.firstTime = e.time;
+    if (e.time > summary.lastTime) summary.lastTime = e.time;
+  }
+  return summary;
+}
+
 function clearSecurityEvents() {
   loadSecurityEvents();
   securityEvents.length = 0;
@@ -239,4 +258,4 @@ function clearSecurityEvents() {
 //   4. 落 csp-reports.json（原子 rename，最近 500 条），字段全部控制
 //      字符清洗 + 限长，UI 一律 textContent 渲染。
 
-module.exports = { securityEventStorePath, MAX_SECURITY_EVENTS, MAX_SECURITY_DETAIL_CHARS, SECURITY_EVENT_TYPES, securityEvents, securityEventsLoaded, securityEventSaveTimer, loadSecurityEvents, persistSecurityEvents, sanitizeSecurityDetail, recordSecurityEvent, listSecurityEvents, clearSecurityEvents };
+module.exports = { securityEventStorePath, MAX_SECURITY_EVENTS, MAX_SECURITY_DETAIL_CHARS, SECURITY_EVENT_TYPES, securityEvents, securityEventsLoaded, summarizeSecurityEvents, securityEventSaveTimer, loadSecurityEvents, persistSecurityEvents, sanitizeSecurityDetail, recordSecurityEvent, listSecurityEvents, clearSecurityEvents };
