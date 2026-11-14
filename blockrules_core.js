@@ -142,16 +142,19 @@ function emptyRulesOrEmpty(err, empty) {
 // saveRules 原子写规则文件：先写临时文件再 rename，避免半写损坏。
 // 返回 { ok, reason }。
 function saveRules(filePath, rules) {
+  let tmp = '';
   try {
     const dir = path.dirname(filePath);
     fs.mkdirSync(dir, { recursive: true });
-    const tmp = path.join(dir, '.blockrules.' + process.pid + '.tmp');
+    tmp = path.join(dir, '.blockrules.' + process.pid + '.' + Date.now().toString(36) + '.tmp');
     const json = JSON.stringify(rules, null, 2);
     fs.writeFileSync(tmp, json, 'utf8');
+    const fd = fs.openSync(tmp, 'r+');
+    try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
     fs.renameSync(tmp, filePath);
     return { ok: true };
   } catch (err) {
-    try { fs.unlinkSync(path.join(path.dirname(filePath), '.blockrules.' + process.pid + '.tmp')); } catch { /* ignore */ }
+    try { if (tmp) fs.unlinkSync(tmp); } catch { /* ignore */ }
     return { ok: false, reason: String(err && err.message || err) };
   }
 }
