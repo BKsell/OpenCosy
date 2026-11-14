@@ -1,4 +1,4 @@
-const { hasControlCharV2 } = require('./modutil_core');
+const { hasControlCharV2, sanitizeBoundedText } = require('./modutil_core');
 
 const hasControlChar = hasControlCharV2;
 
@@ -53,10 +53,7 @@ function sanitizePinId(raw) {
 // 通过完整的 isSafeUrl（协议白名单由调用方在真正导航时再判），这里只挡非字符串、
 // 超长与控制字符，避免脏数据进入比较。
 function sanitizePinUrl(raw) {
-  if (typeof raw !== 'string') return { ok: false, reason: REJECT_NOT_STRING };
-  if (raw.length === 0 || raw.length > MAX_PIN_URL_LEN) return { ok: false, reason: REJECT_TOO_LONG };
-  if (hasControlChar(raw)) return { ok: false, reason: REJECT_CONTROL };
-  return { ok: true, value: raw };
+  return sanitizeBoundedText(raw, MAX_PIN_URL_LEN);
 }
 
 // PinModel 维护固定标签的有序集合。顺序即固定区从左到右的展示顺序。
