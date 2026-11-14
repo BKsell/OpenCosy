@@ -1,0 +1,167 @@
+'use strict';
+
+const { MAX_NAME_BYTES, MAX_STEM_BYTES, MAX_EXT_BYTES, foldName, nameBytes, splitExtension, truncateToBytes, addTakenName, normalizeTaken, buildName } = require('./downloadnameutil_core');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const MAX_ATTEMPTS = 1000;
+
+const REASON = Object.freeze({
+  OK: 'ok',
+  TAKEN: 'taken',
+  EXHAUSTED: 'exhausted',
+  INVALID_NAME: 'invalid-name',
+  INVALID_DIR: 'invalid-dir',
+  CLAIM_FAILED: 'claim-failed',
+});
+
+function planUniquePath(input) {
+  const source = input && typeof input === 'object' ? input : {};
+  const dir = typeof source.dir === 'string' ? source.dir : '';
+  const filename = typeof source.filename === 'string' ? source.filename.trim() : '';
+  const caseInsensitive = source.caseInsensitive !== false;
+  if (!dir || !path.isAbsolute(dir)) {
+    return { ok: false, reason: REASON.INVALID_DIR, name: '', path: '', attempts: 0 };
+  }
+  if (!filename || filename === '.' || filename === '..' || filename.includes('/') || filename.includes('\\')) {
+    return { ok: false, reason: REASON.INVALID_NAME, name: '', path: '', attempts: 0 };
+  }
+  const limited = source.maxAttempts === undefined ? MAX_ATTEMPTS : Number(source.maxAttempts);
+  const maxAttempts = Number.isFinite(limited) && limited > 0 ? Math.floor(limited) : MAX_ATTEMPTS;
+  const taken = normalizeTaken(source.taken);
+  const folded = splitExtension(filename);
+  let stem = truncateToBytes(folded.stem, MAX_STEM_BYTES);
+  if (!stem) stem = 'download';
+  const ext = folded.ext;
+  let truncated = stem !== folded.stem;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const name = buildName(stem, ext, attempt);
+    if (nameBytes(name) > MAX_NAME_BYTES) {
+      const overflow = nameBytes(name) - MAX_NAME_BYTES;
+      stem = truncateToBytes(stem, Math.max(1, nameBytes(stem) - overflow));
+      truncated = true;
+      continue;
+    }
+    const key = caseInsensitive ? foldName(name) : name;
+    if (!taken.has(key)) {
+      return {
+        ok: true,
+        reason: REASON.OK,
+        name,
+        path: path.join(dir, name),
+        attempts: attempt,
+        truncated,
+        caseInsensitive,
+      };
+    }
+  }
+  return {
+    ok: false,
+    reason: REASON.EXHAUSTED,
+    name: '',
+    path: '',
+    attempts: maxAttempts,
+    truncated,
+  };
+}
+
+function claimUniquePath(input, options) {
+  const fsSync = (options && options.fs) || fs;
+  const source = input && typeof input === 'object' ? input : {};
+  const caseInsensitive = source.caseInsensitive !== false;
+  const taken = normalizeTaken(source.taken);
+  const limited = source.maxAttempts === undefined ? MAX_ATTEMPTS : Number(source.maxAttempts);
+  const maxAttempts = Number.isFinite(limited) && limited > 0 ? Math.floor(limited) : MAX_ATTEMPTS;
+  const planInput = { ...source, taken, maxAttempts };
+  for (let round = 0; round < maxAttempts; round += 1) {
+    const plan = planUniquePath(planInput);
+    if (!plan.ok) return { ...plan, claimed: false };
+    try {
+      const fd = fsSync.openSync(plan.path, 'wx', 0o600);
+      fsSync.closeSync(fd);
+      return { ...plan, claimed: true };
+    } catch (claimError) {
+      if (!claimError || claimError.code !== 'EEXIST') {
+        return {
+          ok: false,
+          reason: REASON.CLAIM_FAILED,
+          name: '',
+          path: '',
+          attempts: plan.attempts,
+          claimed: false,
+          error: claimError,
+        };
+      }
+      taken.add(caseInsensitive ? foldName(plan.name) : plan.name);
+    }
+  }
+  return {
+    ok: false,
+    reason: REASON.EXHAUSTED,
+    name: '',
+    path: '',
+    attempts: maxAttempts,
+    claimed: false,
+  };
+}
+
+function describeAllocation(plan) {
+  if (!plan || typeof plan !== 'object') return '下载文件名分配结果缺失';
+  switch (plan.reason) {
+    case REASON.OK:
+      return plan.attempts > 1
+        ? `已避开重名，保存为 ${plan.name}（第 ${plan.attempts} 次尝试）`
+        : `保存为 ${plan.name}`;
+    case REASON.EXHAUSTED:
+      return `同名文件过多，${plan.attempts} 次尝试后仍无法分配文件名`;
+    case REASON.INVALID_NAME:
+      return '下载文件名为空或含路径分隔符';
+    case REASON.INVALID_DIR:
+      return '下载目录不是绝对路径';
+    default:
+      return `文件名分配失败：${String(plan.reason || 'unknown')}`;
+  }
+}
+
+function reserveIndex(entries, name, caseInsensitive) {
+  if (typeof name !== 'string' || name.length === 0) return false;
+  const key = caseInsensitive === false ? name : foldName(name);
+  if (Array.isArray(entries)) {
+    const exists = entries.some((entry) => typeof entry === 'string'
+      && ((caseInsensitive === false ? entry : foldName(entry)) === key));
+    if (exists) return false;
+    entries.push(name);
+    return true;
+  }
+  if (entries instanceof Set) {
+    const exists = [...entries].some((entry) => typeof entry === 'string'
+      && ((caseInsensitive === false ? entry : foldName(entry)) === key));
+    if (exists) return false;
+    entries.add(name);
+    return true;
+  }
+  if (entries && typeof entries === 'object') {
+    const exists = Object.keys(entries).some((entry) => (caseInsensitive === false ? entry : foldName(entry)) === key);
+    if (exists) return false;
+    entries[name] = true;
+    return true;
+  }
+  return false;
+}
+
+module.exports = {
+  MAX_ATTEMPTS,
+  MAX_NAME_BYTES,
+  MAX_STEM_BYTES,
+  MAX_EXT_BYTES,
+  REASON,
+  foldName,
+  nameBytes,
+  splitExtension,
+  truncateToBytes,
+  normalizeTaken,
+  planUniquePath,
+  claimUniquePath,
+  describeAllocation,
+  reserveIndex,
+};

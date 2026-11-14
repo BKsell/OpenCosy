@@ -1,0 +1,41 @@
+'use strict';
+const { rawValue, headerKey } = require('./headerutil_core');
+const { singleAlt } = require('./modutil_core');
+const single = singleAlt;
+
+const REASON = {
+  OK: 'ok',
+  MISSING: 'missing',
+  BAD_VALUE: 'bad-value',
+  DUPLICATE: 'duplicate',
+  TOO_LONG: 'too-long',
+};
+
+const IMF = /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} GMT$/;
+const MAX_LENGTH = 40;
+
+function checkConditionalDate(headers, header) {
+  const raw = rawValue(headers, header);
+  if (raw === null) return { changed: false, reason: REASON.MISSING };
+  const key = headerKey(headers, header);
+  const value = single(raw);
+  if (value === null) {
+    delete headers[key];
+    return { changed: true, reason: REASON.DUPLICATE };
+  }
+  if (value === '') {
+    delete headers[key];
+    return { changed: true, reason: REASON.BAD_VALUE };
+  }
+  if (value.length > MAX_LENGTH) {
+    delete headers[key];
+    return { changed: true, reason: REASON.TOO_LONG };
+  }
+  if (!IMF.test(value) || !Number.isFinite(Date.parse(value))) {
+    delete headers[key];
+    return { changed: true, reason: REASON.BAD_VALUE };
+  }
+  return { changed: false, reason: REASON.OK };
+}
+
+module.exports = { REASON, checkConditionalDate };
