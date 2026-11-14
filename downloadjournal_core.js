@@ -68,7 +68,11 @@ function createDownloadJournal(options = {}) {
     }
     let text = '';
     try {
-      const stat = fsImpl.statSync(filePath);
+      const stat = fsImpl.lstatSync(filePath);
+      if (!stat.isFile()) {
+        lastRejected = [REASON.IO_ERROR];
+        return { entries: [], rejected: [REASON.IO_ERROR] };
+      }
       if (stat.size > maxFileBytes) {
         lastRejected = [REASON.TOO_LARGE];
         return { entries: [], rejected: [REASON.TOO_LARGE] };
