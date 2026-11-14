@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('node:path');
+const { byteLength } = require('./downloadnamesanitize_core');
 
 const MAX_NAME_BYTES = 240;
 const MAX_STEM_BYTES = 200;
@@ -11,7 +12,7 @@ function foldName(name) {
 }
 
 function nameBytes(name) {
-  return Buffer.byteLength(String(name), 'utf8');
+  return byteLength(String(name));
 }
 
 function splitExtension(name) {
