@@ -1,6 +1,6 @@
 'use strict';
 
-const { registerRuntimeTabsIpc } = require('./cosyruntimetabsipc');
+const { registerRuntimeTabsIpc } = require('./cosyruntimetabsipc_core');
 
 let d = {};
 
