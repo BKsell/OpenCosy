@@ -1,6 +1,7 @@
 'use strict';
 
 const net = require('net');
+const { describeAuditResult } = require('./reasontext');
 
 const ACTION = { ALLOW: 'allow', WARN: 'warn', BLOCK: 'block' };
 
@@ -150,8 +151,7 @@ function evaluateDownloadUrl(rawUrl, options = {}) {
 }
 
 function describeDownloadUrl(decision) {
-  if (!decision || decision.reason === REASON.OK) return '下载地址通过校验';
-  return `${decision.reason}: ${decision.detail || ''}`.trim();
+  return describeAuditResult(decision, '下载地址通过校验');
 }
 
 module.exports = {
