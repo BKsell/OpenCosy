@@ -1,6 +1,6 @@
 'use strict';
 
-const { registerTabMenuIpc } = require('./cosyipctabmenuipc');
+const { registerTabMenuIpc } = require('./cosyipctabmenuipc_core');
 
 let d = {};
 
