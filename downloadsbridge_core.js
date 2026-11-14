@@ -168,7 +168,7 @@ function loadDownloads() {
     d.downloads.length = 0;
     d.downloads.push(...clean);
   } catch (e) {
-    d.recordSecurityEvent('downloads-load', 'error',
+    d.recordSecurityEvent('downloads-load', 'warn',
       '下载台账读取失败: ' + String((e && e.message) || e).slice(0, 160), '');
   }
 }
