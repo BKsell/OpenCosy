@@ -1,8 +1,8 @@
 'use strict';
 
-const { registerDownloadJournalIpc } = require('./cosyipcjournalipc');
+const { registerDownloadJournalIpc } = require('./cosyipcjournalipc_core');
 
-const { registerVaultIpc } = require('./cosyipcvaultipc');
+const { registerVaultIpc } = require('./cosyipcvaultipc_core');
 
 function registerSettingsPanels(d) {
 registerVaultIpc(d);
