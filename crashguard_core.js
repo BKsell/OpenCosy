@@ -1,5 +1,4 @@
 'use strict';
-const { describeReasonFrom } = require('./reasontext');
 
 // crashguard.js —— 插件/进程崩溃事件（webContents 'plugin-crashed'）收口内核。
 //
@@ -125,14 +124,6 @@ function decidePluginCrash(state, name, version, now) {
   };
 }
 
-const CRASH_REASON_TEXT = {
-  [SUPPRESS_LOOP]: '同一插件在短时间内反复崩溃，重复崩溃提示已折叠',
-  [DROP_BAD_FIELD]: '崩溃事件携带了非法的插件名称或版本字段，已忽略',
-};
-
-function describeCrashReason(reason) {
-  return describeReasonFrom(CRASH_REASON_TEXT, reason, '插件崩溃');
-}
 
 module.exports = {
   CRASH_NOTIFY,
@@ -149,5 +140,4 @@ module.exports = {
   createCrashState,
   resetForNavigation,
   decidePluginCrash,
-  describeCrashReason,
 };
