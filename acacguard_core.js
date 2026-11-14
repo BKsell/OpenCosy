@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerKey } = require('./headerutil_core');
+const { firstText, headerKey } = require('./headerutil_core');
 
 const REASON = {
   OK: 'ok',
@@ -12,18 +12,10 @@ const REASON = {
 const ORIGIN_HEADER = 'access-control-allow-origin';
 const CREDENTIALS_HEADER = 'access-control-allow-credentials';
 
-function textValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return '';
-  const raw = headers[key];
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  return typeof value === 'string' ? value.trim() : '';
-}
-
 function applyAcacGuard(headers) {
   const credKey = headerKey(headers, CREDENTIALS_HEADER);
   if (!credKey) {
-    const origin = textValue(headers, ORIGIN_HEADER);
+    const origin = firstText(headers, ORIGIN_HEADER);
     if (origin && origin !== '*') return { changed: false, reason: REASON.MISSING };
     return { changed: false, reason: REASON.MISSING };
   }
@@ -33,7 +25,7 @@ function applyAcacGuard(headers) {
     delete headers[credKey];
     return { changed: true, reason: REASON.BAD_VALUE };
   }
-  const origin = textValue(headers, ORIGIN_HEADER);
+  const origin = firstText(headers, ORIGIN_HEADER);
   if (origin === '*') {
     delete headers[credKey];
     return { changed: true, reason: REASON.WILDCARD_CREDENTIALS };

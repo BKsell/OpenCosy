@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerKey } = require('./headerutil_core');
+const { firstTextLower } = require('./headerutil_core');
 
 const REASON = {
   OK: 'ok',
@@ -38,28 +38,20 @@ const DESTS = new Set([
   'xslt',
 ]);
 
-function textValue(headers, name) {
-  const key = headerKey(headers, name);
-  if (!key) return '';
-  const raw = headers[key];
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  return typeof value === 'string' ? value.trim().toLowerCase() : '';
-}
-
 function applySecFetchSiteGuard(headers) {
   const key = headerKey(headers, SITE_HEADER);
   if (!key) return { changed: false, reason: REASON.MISSING };
-  const site = textValue(headers, SITE_HEADER);
+  const site = firstTextLower(headers, SITE_HEADER);
   if (!SITES.has(site)) {
     delete headers[key];
     return { changed: true, reason: REASON.BAD_VALUE };
   }
-  const mode = textValue(headers, MODE_HEADER);
+  const mode = firstTextLower(headers, MODE_HEADER);
   if (mode && !MODES.has(mode)) {
     delete headers[headerKey(headers, MODE_HEADER)];
     return { changed: true, reason: REASON.BAD_VALUE };
   }
-  const dest = textValue(headers, DEST_HEADER);
+  const dest = firstTextLower(headers, DEST_HEADER);
   if (dest && !DESTS.has(dest)) {
     delete headers[headerKey(headers, DEST_HEADER)];
     return { changed: true, reason: REASON.BAD_VALUE };

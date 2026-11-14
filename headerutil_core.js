@@ -58,6 +58,14 @@ function firstValue(headers, name) {
   return typeof value === 'string' ? value : '';
 }
 
+function firstText(headers, name) {
+  return firstValue(headers, name).trim();
+}
+
+function firstTextLower(headers, name) {
+  return firstText(headers, name).toLowerCase();
+}
+
 function countValues(headers, name) {
   const key = headerKey(headers, name);
   if (!key) return 0;
@@ -66,4 +74,4 @@ function countValues(headers, name) {
   return typeof raw === 'string' ? 1 : 0;
 }
 
-module.exports = { countValues, deleteHeader, firstValue, headerKey, headerText, headerValues, lowerKeys, rawValue, setHeader };
+module.exports = { countValues, deleteHeader, firstText, firstTextLower, firstValue, headerKey, headerText, headerValues, lowerKeys, rawValue, setHeader };
