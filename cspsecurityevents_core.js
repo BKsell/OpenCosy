@@ -206,11 +206,45 @@ function recordSecurityEvent(type, severity, detail = '', origin = '') {
 }
 
 // listSecurityEvents 返回事件副本（最新在前）。type 为空表示全部。
-function listSecurityEvents(typeFilter = '', limit = 200) {
+function pruneSecurityEvents(beforeMs) {
+  loadSecurityEvents();
+  const cut = Number(beforeMs);
+  if (!Number.isFinite(cut) || cut <= 0) return 0;
+  const kept = securityEvents.filter(e => e.time >= cut);
+  const removed = securityEvents.length - kept.length;
+  if (removed === 0) return 0;
+  securityEvents.splice(0, securityEvents.length, ...kept);
+  persistSecurityEvents();
+  return removed;
+}
+
+function exportSecurityEvents(options = {}) {
+  loadSecurityEvents();
+  const opts = options && typeof options === 'object' ? options : {};
+  const sinceMs = Math.max(0, Number(opts.sinceMs) || 0);
+  const typeFilter = typeof opts.type === 'string' ? opts.type : '';
+  const severityFilter = typeof opts.severity === 'string' ? opts.severity : '';
+  const limit = Math.max(1, Math.min(Number(opts.limit) || MAX_SECURITY_EVENTS, MAX_SECURITY_EVENTS));
+  const events = listSecurityEvents(typeFilter, limit, severityFilter)
+    .filter(e => e.time >= sinceMs)
+    .reverse();
+  return {
+    schema: 'cosy.security-events/v1',
+    exportedAt: Date.now(),
+    count: events.length,
+    summary: summarizeSecurityEvents(sinceMs),
+    events,
+  };
+}
+
+function listSecurityEvents(typeFilter = '', limit = 200, severityFilter = '') {
   loadSecurityEvents();
   let items = securityEvents;
   if (typeFilter && SECURITY_EVENT_TYPES.has(typeFilter)) {
-    items = securityEvents.filter(e => e.type === typeFilter);
+    items = items.filter(e => e.type === typeFilter);
+  }
+  if (severityFilter === 'info' || severityFilter === 'warn' || severityFilter === 'critical') {
+    items = items.filter(e => e.severity === severityFilter);
   }
   const n = Math.max(1, Math.min(Number(limit) || 200, MAX_SECURITY_EVENTS));
   return items.slice(-n).reverse().map(e => ({ ...e }));
@@ -222,11 +256,13 @@ function summarizeSecurityEvents(sinceMs = 3600000) {
   loadSecurityEvents();
   const windowMs = Math.max(0, Number(sinceMs) || 0);
   const cutoff = Date.now() - windowMs;
-  const summary = { total: 0, byType: {}, bySeverity: { info: 0, warn: 0, critical: 0 }, firstTime: 0, lastTime: 0 };
+  const summary = { total: 0, byType: {}, bySeverity: { info: 0, warn: 0, critical: 0 }, byOrigin: {}, firstTime: 0, lastTime: 0 };
   for (const e of securityEvents) {
     if (e.time < cutoff) continue;
     summary.total++;
     summary.byType[e.type] = (summary.byType[e.type] || 0) + 1;
+    const originKey = e.origin || '(unknown)';
+    summary.byOrigin[originKey] = (summary.byOrigin[originKey] || 0) + 1;
     if (summary.bySeverity[e.severity] != null) summary.bySeverity[e.severity]++;
     if (!summary.firstTime || e.time < summary.firstTime) summary.firstTime = e.time;
     if (e.time > summary.lastTime) summary.lastTime = e.time;
@@ -258,4 +294,4 @@ function clearSecurityEvents() {
 //   4. 落 csp-reports.json（原子 rename，最近 500 条），字段全部控制
 //      字符清洗 + 限长，UI 一律 textContent 渲染。
 
-module.exports = { securityEventStorePath, MAX_SECURITY_EVENTS, MAX_SECURITY_DETAIL_CHARS, SECURITY_EVENT_TYPES, securityEvents, securityEventsLoaded, summarizeSecurityEvents, securityEventSaveTimer, loadSecurityEvents, persistSecurityEvents, sanitizeSecurityDetail, recordSecurityEvent, listSecurityEvents, clearSecurityEvents };
+module.exports = { securityEventStorePath, MAX_SECURITY_EVENTS, MAX_SECURITY_DETAIL_CHARS, SECURITY_EVENT_TYPES, securityEvents, securityEventsLoaded, pruneSecurityEvents, summarizeSecurityEvents, exportSecurityEvents, securityEventSaveTimer, loadSecurityEvents, persistSecurityEvents, sanitizeSecurityDetail, recordSecurityEvent, listSecurityEvents, clearSecurityEvents };
