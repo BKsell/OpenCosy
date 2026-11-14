@@ -1,6 +1,7 @@
 'use strict';
 
 const boundary = require('./frameboundary_core');
+const { describeAuditResult } = require('./reasontext');
 
 const ACTION = { ALLOW: 'allow', WARN: 'warn', DENY: 'deny' };
 
@@ -51,8 +52,7 @@ function evaluatePopupFrame(input = {}) {
 }
 
 function describePopupFrame(decision) {
-  if (!decision || decision.reason === REASON.OK) return '弹窗帧边界校验通过';
-  return `${decision.reason}: ${decision.detail || ''}`.trim();
+  return describeAuditResult(decision, '弹窗帧边界校验通过');
 }
 
 module.exports = { ACTION, REASON, MAX_POPUP_FRAME_DEPTH, evaluatePopupFrame, describePopupFrame };
