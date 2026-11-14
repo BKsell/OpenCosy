@@ -10,7 +10,7 @@ const SOURCES = [
   require('./cosyledgerchainmain'),
   require('./cosysettingsmain_core'),
   require('./cosytabsmain_core'),
-  require('./cosywinmain'),
+  require('./cosywinmain_core'),
 ];
 
 test('委托层导出的每个名字都能在唯一来源模块找到实现', () => {
