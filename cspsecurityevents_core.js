@@ -176,6 +176,7 @@ function persistSecurityEvents() {
 function sanitizeSecurityDetail(s) {
   let str = String(s == null ? '' : s);
   str = str.replace(/[\x00-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim();
+  str = str.replace(/(^|[\s"'(])(?:[A-Z]:\\Users\\|\/(?:home|Users)\/)[^\\/\s"'<>]+/g, '$1[USER-HOME]');
   str = str.replace(/(https?:\/\/)[^/@\s]+@/gi, '$1[REDACTED]@');
   str = str.replace(/([?&](?:token|key|secret|password|code|sig|apikey|api_key|access_token|refresh_token)=)[^&\s]+/gi, '$1[REDACTED]');
   str = str.replace(/(authorization\s*[:=]\s*)(?:bearer|basic|digest|negotiate|ntlm|token)\s+[\w\-.=+/]+/gi, '$1[REDACTED]');
@@ -278,7 +279,7 @@ function listSecurityEvents(typeFilter = '', limit = 200, severityFilter = '', o
 function summarizeSecurityEvents(sinceMs = 3600000) {
   loadSecurityEvents();
   const windowMs = Math.max(0, Number(sinceMs) || 0);
-  const cutoff = Date.now() - windowMs;
+  const cutoff = windowMs > 0 ? Date.now() - windowMs : 0;
   const summary = { total: 0, byType: Object.create(null), bySeverity: { info: 0, warn: 0, critical: 0 }, byOrigin: Object.create(null), byOriginSeverity: Object.create(null), firstTime: 0, lastTime: 0 };
   for (const e of securityEvents) {
     if (e.time < cutoff) continue;
