@@ -24,28 +24,24 @@ function normalizeHostRule(raw) {
   return v;
 }
 
-// normalizeGlobRule 校验 glob 模式：必须是 http(s) URL 模板，含 * 通配，字符集受限。
-function normalizeGlobRule(raw) {
+function normalizeUrlRule(raw, requireWildcard) {
   if (typeof raw !== 'string') return null;
   const v = raw.trim();
   if (!v || v.length > MAX_RULE_LEN) return null;
   if (!/^https?:\/\//i.test(v)) return null;
-  // 只允许 URL 安全字符与 * 通配；禁空格、控制字符、引号。
   if (/[\s"'<>\\]/.test(v)) return null;
-  // 必须有 * 才称得上模式（纯固定 URL 用 path 规则更合适）。
-  if (!v.includes('*')) return null;
+  if (v.includes('*') !== requireWildcard) return null;
   return v;
+}
+
+// normalizeGlobRule 校验 glob 模式：必须是 http(s) URL 模板，含 * 通配，字符集受限。
+function normalizeGlobRule(raw) {
+  return normalizeUrlRule(raw, true);
 }
 
 // normalizePathRule 校验 path 规则：host + 路径前缀。
 function normalizePathRule(raw) {
-  if (typeof raw !== 'string') return null;
-  const v = raw.trim();
-  if (!v || v.length > MAX_RULE_LEN) return null;
-  if (!/^https?:\/\//i.test(v)) return null;
-  if (/[\s"'<>\\]/.test(v)) return null;
-  if (v.includes('*')) return null;
-  return v;
+  return normalizeUrlRule(raw, false);
 }
 
 // parseRuleLine 解析单行规则文本（支持 "host:evil.com" / "glob:https://*.x/*" / "path:https://x/ads/"）。
