@@ -40,6 +40,11 @@ const SHELL_ONLY_CHANNELS = new Set([
   // 单条权限请求的应答也收口到外壳：否则被攻破的内置页可替用户自动“允许”权限
   'permission-response',
   'reset-trackers',
+  // 安全事件台账的汇总/裁剪/导出：只给外壳，内置页不得读或清审计
+  'security-events-summary',
+  'security-events-prune',
+  'security-events-trim',
+  'security-events-export',
   // 安全/隐私台账的清空（防止内置页被攻破后销毁证据）
   'clear-downloads',
   'clear-security-events',
