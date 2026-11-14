@@ -1,5 +1,6 @@
 'use strict';
 
+const { loadLedgerOnce } = require('./ledgerhydrate_core');
 let d = {};
 
 function bindDeps(next) {
@@ -7,11 +8,7 @@ function bindDeps(next) {
 }
 
 function loadCookieLedger() {
-  if (d.cookieLedgerLoaded) return;
-  d.cookieLedgerLoaded = true;
-  try {
-    d.cookieLedger.load(d.ledgerStore.readJSONStore(d.cookieLedgerStorePath, {}));
-  } catch {}
+  loadLedgerOnce(d, 'cookieLedgerLoaded', 'cookieLedger', 'cookieLedgerStorePath');
 }
 
 function persistCookieLedger() {
