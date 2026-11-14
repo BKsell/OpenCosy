@@ -32,17 +32,13 @@ function isHttpExceptionHost(urlOrHost) {
 
 function loadUaPolicyStateFromDisk() {
   try {
-    if (d.fsSync.existsSync(d.uaPolicyPath)) {
-      const raw = JSON.parse(d.fsSync.readFileSync(d.uaPolicyPath, 'utf8'));
-      d.uaPolicyState = d.uaPolicyCore.sanitizePolicy(raw);
-    }
+    const raw = d.ledgerStore.readJSONStore(d.uaPolicyPath, null);
+    if (raw) d.uaPolicyState = d.uaPolicyCore.sanitizePolicy(raw);
   } catch (e) { console.error('读取 UA 策略失败:', e); }
   try {
-    if (d.fsSync.existsSync(d.rateLimitPath)) {
-      const raw = JSON.parse(d.fsSync.readFileSync(d.rateLimitPath, 'utf8'));
-      if (raw && Number.isFinite(raw.bytesPerSecond) && raw.bytesPerSecond >= 0) {
-        d.downloadRateLimit = Math.floor(raw.bytesPerSecond);
-      }
+    const raw = d.ledgerStore.readJSONStore(d.rateLimitPath, null);
+    if (raw && Number.isFinite(raw.bytesPerSecond) && raw.bytesPerSecond >= 0) {
+      d.downloadRateLimit = Math.floor(raw.bytesPerSecond);
     }
   } catch (e) { console.error('读取下载限速失败:', e); }
 }
@@ -72,36 +68,18 @@ function applyRateLimitToItem(item) {
 }
 
 function atomicWriteJSON(filePath, obj) {
-  const dir = d.path.dirname(filePath);
-  const tmp = d.path.join(dir, '.' + d.path.basename(filePath) + '.tmp-' + process.pid + '-'
-    + (d.atomicWriteSeq += 1) + '-' + Date.now().toString(36));
-  let fd = null;
-  try {
-    fd = d.fsSync.openSync(tmp, 'wx', 0o600);
-    d.fsSync.writeFileSync(fd, JSON.stringify(obj), 'utf8');
-    d.fsSync.fsyncSync(fd);
-    d.fsSync.closeSync(fd);
-    fd = null;
-    d.fsSync.renameSync(tmp, filePath);
-  } catch (e) {
-    if (fd !== null) { try { d.fsSync.closeSync(fd); } catch {} }
-    try { d.fsSync.unlinkSync(tmp); } catch {}
-    throw e;
-  }
+  d.ledgerStore.atomicWrite(filePath, JSON.stringify(obj), { mode: 0o600 });
 }
 
 function loadVaultStateFromDisk() {
-  try {
-    if (d.fsSync.existsSync(d.vaultStorePath)) {
-      d.vaultState = JSON.parse(d.fsSync.readFileSync(d.vaultStorePath, 'utf8'));
-    }
-  } catch (e) { console.error('读取保险库失败:', e); }
-  try {
-    if (d.fsSync.existsSync(d.cleanAuditPath)) {
-      d.cleanAuditLog = JSON.parse(d.fsSync.readFileSync(d.cleanAuditPath, 'utf8'));
-      if (!Array.isArray(d.cleanAuditLog)) d.cleanAuditLog = [];
-    }
-  } catch (e) { console.error('读取清理审计失败:', e); }
+  const state = d.ledgerStore.readJSONStore(d.vaultStorePath, null, {
+    onCorrupt: (e) => console.error('读取保险库失败:', e),
+  });
+  if (state) d.vaultState = state;
+  const audit = d.ledgerStore.readJSONStore(d.cleanAuditPath, null, {
+    onCorrupt: (e) => console.error('读取清理审计失败:', e),
+  });
+  if (Array.isArray(audit)) d.cleanAuditLog = audit;
 }
 
 function persistVaultState() {
