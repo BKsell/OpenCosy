@@ -267,3 +267,46 @@ test('trimSecurityEvents 只保留最近 maxKeep 条并对非法值不动作', (
   assert.strictEqual(s.trimSecurityEvents(Number.NaN), 0);
   s.clearSecurityEvents();
 });
+
+test('summarizeSecurityEvents(0) 表示不限时间窗口，不因跨毫秒丢事件', () => {
+  const s = require('./cspsecurityevents_core');
+  let bad = 0;
+  for (let k = 0; k < 120; k++) {
+    s.clearSecurityEvents();
+    s.recordSecurityEvent('protocol-blocked', 'warn', 'x', 'https://a.example');
+    s.recordSecurityEvent('protocol-blocked', 'warn', 'y', 'https://a.example');
+    s.recordSecurityEvent('protocol-blocked', 'info', 'z', 'https://b.example');
+    s.recordSecurityEvent('protocol-blocked', 'info', 'z2', '');
+    const sum = s.summarizeSecurityEvents(0);
+    if (sum.total !== 4 || sum.byOrigin['https://a.example'] !== 2) bad++;
+  }
+  assert.strictEqual(bad, 0);
+  s.clearSecurityEvents();
+});
+
+test('summarizeSecurityEvents 正窗口仍然按 cutoff 过滤', () => {
+  const s = require('./cspsecurityevents_core');
+  s.clearSecurityEvents();
+  s.recordSecurityEvent('protocol-blocked', 'warn', 'recent', 'https://a.example');
+  const sum = s.summarizeSecurityEvents(3600000);
+  assert.strictEqual(sum.total, 1);
+  assert.strictEqual(sum.byOrigin['https://a.example'], 1);
+  s.clearSecurityEvents();
+});
+
+test('detail 家目录路径脱敏且不误伤 URL 的 /home/', () => {
+  const s = require('./cspsecurityevents_core');
+  s.clearSecurityEvents();
+  s.recordSecurityEvent('ledger-persist', 'info', 'saved to C:\\Users\\张三\\Downloads\\a.zip', 'https://a.example');
+  s.recordSecurityEvent('ledger-persist', 'info', 'saved to /home/alice/.minecraft/x.jar', 'https://a.example');
+  s.recordSecurityEvent('nav-blocked', 'warn', 'https://x.com/home/feed ok', 'https://x.com');
+  const items = s.listSecurityEvents().map(e => e.detail);
+  assert.ok(items.includes('[USER-HOME]\\Downloads\\a.zip') || items.some(d => d.includes('[USER-HOME]') && d.includes('Downloads')), items.join('|'));
+  assert.ok(items.some(d => d.includes('[USER-HOME]') && d.includes('.minecraft')), items.join('|'));
+  assert.ok(items.includes('https://x.com/home/feed ok'), items.join('|'));
+  for (const d of items) {
+    assert.ok(!d.includes('张三'), d);
+    assert.ok(!d.includes('alice'), d);
+  }
+  s.clearSecurityEvents();
+});
