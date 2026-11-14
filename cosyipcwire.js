@@ -1,11 +1,11 @@
 'use strict';
 
-const protocolIpc = require('./cosyipcprotocol');
-const messagingIpc = require('./cosyipcmessaging');
-const searchIpc = require('./cosyipcsearch');
-const cosyipcextinstall = require('./cosyipcextinstall');
-const cosycertipc = require('./cosycertipc');
-const siteDataIpc = require('./cosyipcsitedataipc');
+const protocolIpc = require('./cosyipcprotocol_core');
+const messagingIpc = require('./cosyipcmessaging_core');
+const searchIpc = require('./cosyipcsearch_core');
+const cosyipcextinstall = require('./cosyipcextinstall_core');
+const cosycertipc = require('./cosycertipc_core');
+const siteDataIpc = require('./cosyipcsitedataipc_core');
 
 let d = {};
 
