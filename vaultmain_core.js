@@ -75,7 +75,9 @@ function initVaultOnStartup() {
   d.loadVaultStateFromDisk();
   if (!d.fsSync.existsSync(d.vaultKeyPath)) return { ok: true, unlocked: false, reason: 'no-key' };
   try {
-    const raw = JSON.parse(d.fsSync.readFileSync(d.vaultKeyPath, 'utf8'));
+    const raw = d.ledgerStore.readJSONStore(d.vaultKeyPath, null, {
+      onCorrupt: (e) => console.error('读取保险库密钥失败:', e),
+    });
     if (!raw || raw.v !== 1 || typeof raw.wrapped !== 'string') return { ok: true, unlocked: false };
     if (raw.s !== 'safe') {
       d.recordSecurityEvent('vault-key', 'critical',
