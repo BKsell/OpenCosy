@@ -1,5 +1,6 @@
 'use strict';
 
+const pagesave = require('./pagesave');
 const { registerDownloadShelfIpc } = require('./cosyipcdownloadshelfipc');
 
 function registerDownloadIpc(d) {
@@ -117,6 +118,32 @@ d.ipcMain.handle('clear-protocol-decision', (event, data) => {
   const origin = data && typeof data.origin === 'string' ? data.origin : '';
   const scheme = data && typeof data.scheme === 'string' ? data.scheme : '';
   return d.forgetProtocolDecision(origin, scheme);
+});
+
+d.ipcMain.handle('save-current-page', async (event, data) => {
+  if (!d.isMainSender(event)) return { ok: false, reason: 'unauthorized' };
+  const tab = d.tabs && d.tabs[d.currentTabIndex];
+  const wc = tab && tab.view && tab.view.webContents;
+  if (!wc || (typeof wc.isDestroyed === 'function' && wc.isDestroyed())) {
+    return { ok: false, reason: 'no-tab' };
+  }
+  const requested = data && typeof data.path === 'string' ? data.path : '';
+  let target = '';
+  if (requested) {
+    const resolved = d.path.resolve(requested);
+    const safeRoot = d.getSafeDirs().find((dir) => d.isPathInDir(resolved, dir));
+    if (!safeRoot) return { ok: false, reason: 'outside-safe-dirs' };
+    target = pagesave.normalizeSavePath(resolved, ['.html', '.htm'], '.html');
+  } else {
+    target = d.path.join(d.app.getPath('downloads'), pagesave.buildSaveName(wc.getTitle(), '.html'));
+  }
+  if (!target) return { ok: false, reason: 'bad-path' };
+  try {
+    await wc.savePage(target, 'HTMLComplete');
+    return { ok: true, path: target };
+  } catch (err) {
+    return { ok: false, reason: 'save-failed', message: err && err.message ? err.message : 'unknown' };
+  }
 });
 
 d.ipcMain.on('clear-downloads', (event) => {

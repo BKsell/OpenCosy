@@ -51,7 +51,7 @@ const GENERAL_CHANNELS = new Set([
   // 书签 / 历史只读
   'get-bookmarks', 'get-history',
   // 下载常规操作（非清除、非哈希）
-  'get-download-info', 'start-download', 'show-save-dialog', 'get-downloads',
+  'get-download-info', 'start-download', 'show-save-dialog', 'save-current-page', 'get-downloads',
   'pause-download', 'resume-download', 'cancel-download', 'retry-download',
   'remove-download', 'shelf-show-all', 'get-download-shelf',
   // 页面状态只读
