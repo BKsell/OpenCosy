@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const guard = require('./urlentryguard');
+const guard = require('./urlentryguard_core');
 
 const reasons = {
   empty: 'empty',

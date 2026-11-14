@@ -5,7 +5,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const magicGuard = require('./downloadcontentmagic');
+const magicGuard = require('./downloadcontentmagic_core');
 
 function tempFile(name, bytes) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cosy-magic-'));

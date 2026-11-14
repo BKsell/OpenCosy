@@ -1,8 +1,8 @@
-const { REASON, SCHEME, QUOTED, MAX_LENGTH, MAX_CHALLENGES, hasControlChar, parseChallenge } = require('./authchallengeparse');
+const { REASON, SCHEME, QUOTED, MAX_LENGTH, MAX_CHALLENGES, hasControlChar, parseChallenge } = require('./authchallengeparse_core');
 'use strict';
 const { describeReasonTable } = require('./reasontext');
 
-const { headerKey } = require('./headerutil');
+const { headerKey } = require('./headerutil_core');
 
 function inspectAuthenticate(headers, name) {
   const key = headerKey(headers, name);

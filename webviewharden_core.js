@@ -1,7 +1,7 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
 
-const { parseUrl } = require('./modutil');
+const { parseUrl } = require('./modutil_core');
 const safeParse = parseUrl;
 
 // webviewharden.js —— <webview> 挂载（will-attach-webview）的完整安全策略。

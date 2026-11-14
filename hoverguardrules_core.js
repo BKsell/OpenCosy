@@ -1,6 +1,6 @@
 'use strict';
 
-const { pruneOlderThan, countSince } = require('./modutil');
+const { pruneOlderThan, countSince } = require('./modutil_core');
 
 // hoverguard.js —— 鼠标悬停链接（update-target-url）状态栏显示收口内核。
 //

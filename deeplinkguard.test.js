@@ -2,8 +2,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const schemes = require('./deeplinkguard_schemes');
-const { pickDeepLinkFromArgv } = require('./deeplinkguard');
+const schemes = require('./deeplinkguard_schemes_core');
+const { pickDeepLinkFromArgv } = require('./deeplinkguard_core');
 
 test('reviewStartupArg rejects web deeplinks carrying credentials', () => {
   assert.deepEqual(schemes.reviewStartupArg('https://user:pw@evil.example/x'), {

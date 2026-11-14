@@ -15,7 +15,7 @@ const {
   atomicWrite,
   writeJSONStore,
   createJSONStore,
-} = require('./ledgerstore');
+} = require('./ledgerstore_core');
 
 function tempFile(name) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ledgerstore-'));

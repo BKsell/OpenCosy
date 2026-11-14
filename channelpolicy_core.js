@@ -24,9 +24,9 @@ const {
   KIND_SHELL,
   KIND_COSY,
   KIND_INTERNAL_FILE,
-} = require('./ipcguard');
+} = require('./ipcguard_core');
 
-const { CERT_FLOW_CHANNELS, COSY_ONLY_CHANNELS, SHELL_ONLY_CHANNELS, TIER_CERT_FLOW, TIER_COSY_ONLY, TIER_GENERAL, TIER_SHELL_ONLY } = require('./channelpolicy_frame');
+const { CERT_FLOW_CHANNELS, COSY_ONLY_CHANNELS, SHELL_ONLY_CHANNELS, TIER_CERT_FLOW, TIER_COSY_ONLY, TIER_GENERAL, TIER_SHELL_ONLY } = require('./channelpolicy_frame_core');
 const GENERAL_CHANNELS = new Set([
   // 标签导航
   'create-tab', 'switch-tab', 'close-tab', 'navigate-tab', 'navigate-back',

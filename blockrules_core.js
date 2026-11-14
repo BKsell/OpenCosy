@@ -13,7 +13,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const { MAX_RULES, MAX_RULE_LEN, MAX_FILE_BYTES, RULE_RE, createEmptyRules, normalizeHostRule, normalizeGlobRule, normalizePathRule, parseRuleLine, addRule, removeRule, importRulesText, exportRulesText, ruleCount } = require('./blockruleparse');
+const { MAX_RULES, MAX_RULE_LEN, MAX_FILE_BYTES, RULE_RE, createEmptyRules, normalizeHostRule, normalizeGlobRule, normalizePathRule, parseRuleLine, addRule, removeRule, importRulesText, exportRulesText, ruleCount } = require('./blockruleparse_core');
 
 function globMatch(pattern, text) {
   const pn = pattern.length;

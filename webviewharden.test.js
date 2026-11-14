@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const wv = require('./webviewharden');
+const wv = require('./webviewharden_core');
 
 test('合法 https guest 通过并拿到安全基线', () => {
   const r = wv.review({}, { src: 'https://example.com/app' });

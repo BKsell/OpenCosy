@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const live = require('./downloadchainlive');
+const live = require('./downloadchainlive_core');
 
 test('no chain means continue', () => {
   for (const input of [null, undefined, []]) {

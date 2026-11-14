@@ -1,7 +1,7 @@
 'use strict';
-const { isObj } = require('./modutil');
+const { isObj } = require('./modutil_core');
 
-const { hostOf } = require('./fpguard_rules');
+const { hostOf } = require('./fpguard_rules_core');
 
 // createFingerprintLedger 建一个按“主机 + 类别”聚合的有界台账。
 // category ∈ client-hints / ad-signals / ping / accept-ch。
@@ -100,4 +100,4 @@ function createFingerprintLedger(limit) {
   return { record, toJSON, load, stats, entries, clear, size, hostOf };
 }
 
-module.exports = { createFingerprintLedger, ...require('./fpguard_rules') };
+module.exports = { createFingerprintLedger, ...require('./fpguard_rules_core') };

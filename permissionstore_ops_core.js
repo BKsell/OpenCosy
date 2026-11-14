@@ -1,7 +1,7 @@
 const path = require('path');
 const { app } = require('electron');
-const ledgerStore = require('./ledgerstore');
-const permissionGrants = require('./permissiongrants');
+const ledgerStore = require('./ledgerstore_core');
+const permissionGrants = require('./permissiongrants_core');
 
 
 let recordSecurityEvent = () => {};

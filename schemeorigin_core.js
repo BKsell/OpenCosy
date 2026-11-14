@@ -1,7 +1,7 @@
 'use strict';
 const { describeReasonFrom } = require('./reasontext');
 
-const { parseUrl } = require('./modutil');
+const { parseUrl } = require('./modutil_core');
 const safeParse = parseUrl;
 
 // schemeorigin.js —— 顶层导航的“目标协议 × 发起来源”安全矩阵。

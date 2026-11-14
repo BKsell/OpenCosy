@@ -16,7 +16,7 @@
 
 // pna 提供唯一的 IPv4/IPv6 字面量归一化（含 inet_aton 短格式 / 进制混淆），
 // 本模块只复用其解析，私网“范围口径”仍由下方 v4InPrivateRange 自己决定。
-const pna = require('./pna');
+const pna = require('./pna_core');
 
 // normalizeHostname 把来自 URL.hostname / Cookie domain 的主机名归一成可直接比较的形态：
 // 去首尾空白、转小写、剥掉 IPv6 的一对方括号、去掉结尾的一个或多个根点。

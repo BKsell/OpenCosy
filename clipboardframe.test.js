@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const guard = require('./clipboardframe');
+const guard = require('./clipboardframe_core');
 
 const SITE = 'https://app.test/editor';
 

@@ -1,6 +1,6 @@
 'use strict';
-const { stripControlChars, collapseSpaces, sanitizeDisplayTitle, fallbackTitleFor } = require('./modutil');
-const urlEntry = require('./urlentryguard');
+const { stripControlChars, collapseSpaces, sanitizeDisplayTitle, fallbackTitleFor } = require('./modutil_core');
+const urlEntry = require('./urlentryguard_core');
 
 // restoreguard.js —— 退出 / 崩溃后“会话标签恢复”与“最近关闭标签”落盘读取的
 // 写入净化 + 逐条校验 + 有界维护内核。

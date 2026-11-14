@@ -7,7 +7,7 @@ const {
   applyMemberListGuard,
   applyPinHeaderGuard,
   applySingleHeaderGuard,
-} = require('./guardapply');
+} = require('./guardapply_core');
 
 function headersOf(entries) {
   return entries;

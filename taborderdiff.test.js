@@ -3,7 +3,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const d = require('./taborderdiff');
+const d = require('./taborderdiff_core');
 const {
   MAX_ORDER_IDS,
   MAX_ORDER_ID_LEN,

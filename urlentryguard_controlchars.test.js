@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { sanitizeWebUrl } = require('./urlentryguard');
+const { sanitizeWebUrl } = require('./urlentryguard_core');
 
 const REASONS = Object.freeze({
   empty: 'empty',

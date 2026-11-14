@@ -1,7 +1,7 @@
 'use strict';
-const { TITLE_ACCEPT, TITLE_HOLD, HOLD_BURST, HOLD_SAME, TITLE_SANITIZED, MAX_TITLE_LEN, TITLE_BURST_WINDOW_MS, TITLE_BURST_LIMIT, TITLE_LONG_WINDOW_MS, TITLE_LONG_LIMIT, TITLE_SAME_MS, MAX_FAVICONS, MAX_FAVICON_URL_LEN, sanitizeTabTitle } = require('./titleclean');
+const { TITLE_ACCEPT, TITLE_HOLD, HOLD_BURST, HOLD_SAME, TITLE_SANITIZED, MAX_TITLE_LEN, TITLE_BURST_WINDOW_MS, TITLE_BURST_LIMIT, TITLE_LONG_WINDOW_MS, TITLE_LONG_LIMIT, TITLE_SAME_MS, MAX_FAVICONS, MAX_FAVICON_URL_LEN, sanitizeTabTitle } = require('./titleclean_core');
 const { describeReasonFrom } = require('./reasontext');
-const { pruneOlderThan, countSince } = require('./modutil');
+const { pruneOlderThan, countSince } = require('./modutil_core');
 
 // titleguard.js —— 标签页标题与网站图标的净化、长度与更新频率收口内核。
 //

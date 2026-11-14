@@ -2,7 +2,7 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const p = require('./preloadpolicy');
+const p = require('./preloadpolicy_core');
 
 test('parseProtocol 只认真实 scheme，大小写归一', () => {
   assert.equal(p.parseProtocol('https://example.com'), 'https:');

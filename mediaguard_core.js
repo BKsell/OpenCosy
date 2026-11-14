@@ -1,6 +1,6 @@
 'use strict';
 const { describeReasonFrom } = require('./reasontext');
-const { pruneOlderThan, countSince } = require('./modutil');
+const { pruneOlderThan, countSince } = require('./modutil_core');
 
 // mediaguard.js —— 媒体播放状态事件（media-started-playing / media-paused）收口内核。
 //

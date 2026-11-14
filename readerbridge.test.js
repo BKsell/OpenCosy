@@ -2,8 +2,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const readerCore = require('./reader');
-const bridge = require('./readerbridge');
+const readerCore = require('./reader_core');
+const bridge = require('./readerbridge_core');
 
 bridge.bindDeps({ readerCore });
 

@@ -1,7 +1,7 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
 
-const { isHttpUrl } = require('./modutil');
+const { isHttpUrl } = require('./modutil_core');
 
 const REASON = Object.freeze({
   OK: 'ok',

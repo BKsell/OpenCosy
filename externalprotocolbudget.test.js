@@ -2,7 +2,7 @@
 
 const nodeTest = require('node:test');
 const assert = require('node:assert');
-const budget = require('./externalprotocolbudget');
+const budget = require('./externalprotocolbudget_core');
 
 const { REASON, scrubTarget, createExternalBudget, describeReason } = budget;
 

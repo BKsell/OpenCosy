@@ -4,7 +4,7 @@ const { app, dialog } = require('electron');
 const path = require('path');
 const fsSync = require('fs');
 const nodeCrypto = require('crypto');
-const ledgerStore = require('./ledgerstore');
+const ledgerStore = require('./ledgerstore_core');
 
 let sendToRenderer = () => {};
 

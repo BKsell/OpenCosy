@@ -2,7 +2,7 @@
 
 const { app, BrowserWindow, WebContentsView, ipcMain, session, protocol, Menu, MenuItem, dialog, shell, globalShortcut, clipboard, net, nativeTheme, webContents, safeStorage } = require('electron');
 const path = require('path');
-const winPolicy = require('./winpolicy');
+const winPolicy = require('./winpolicy_core');
 
 function createWindow(ctx, ) {
   const {

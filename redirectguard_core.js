@@ -1,7 +1,7 @@
 'use strict';
 const { describeReasonFrom } = require('./reasontext');
 
-const { safeParse } = require('./modutil');
+const { safeParse } = require('./modutil_core');
 const safeParseUrl = safeParse;
 
 // redirectguard.js —— 服务端重定向链（will-redirect / will-frame-redirect）专用守卫。

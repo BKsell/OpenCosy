@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const quota = require('./downloadquota');
+const quota = require('./downloadquota_core');
 
 test('reserve accepts known-good host', () => {
   const q = new quota.DownloadQuota();

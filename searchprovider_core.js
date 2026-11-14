@@ -1,6 +1,6 @@
 'use strict';
 
-const { hasControlCharV3 } = require('./modutil');
+const { hasControlCharV3 } = require('./modutil_core');
 const hasControlChar = hasControlCharV3;
 
 // searchprovider.js —— 默认搜索引擎 / 搜索建议提供方内核。

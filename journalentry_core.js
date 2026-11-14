@@ -1,6 +1,6 @@
 const { describeReasonFrom } = require('./reasontext');
 const path = require('path');
-const { safeInt, isPlainObject } = require('./modutil');
+const { safeInt, isPlainObject } = require('./modutil_core');
 
 const DEFAULT_MAX_ENTRIES = 200;
 const DEFAULT_MAX_FILE_BYTES = 256 * 1024;

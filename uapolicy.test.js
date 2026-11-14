@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const uap = require('./uapolicy');
+const uap = require('./uapolicy_core');
 
 test('默认策略保持 default 模式且无自定义串', () => {
   assert.equal(uap.DEFAULT_POLICY.mode, uap.MODES.DEFAULT);

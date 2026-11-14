@@ -1,8 +1,8 @@
 'use strict';
-const { singleAlt } = require('./modutil');
+const { singleAlt } = require('./modutil_core');
 const tokenOf = singleAlt;
 
-const { headerKey, rawValue } = require('./headerutil');
+const { headerKey, rawValue } = require('./headerutil_core');
 
 const REASON = {
   OK: 'ok',

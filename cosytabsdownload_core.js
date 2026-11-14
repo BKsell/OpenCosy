@@ -101,7 +101,7 @@ function analyzeDownloadSafety(filename, mime) {
   return d.dloadGuard.analyzeDownloadName(filename, mime);
 }
 
-const cosytabsurfaces = require('./cosytabsurfaces');
+const cosytabsurfaces = require('./cosytabsurfaces_core');
 
 function bindDepsAll(x) {
   d = x;

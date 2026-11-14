@@ -1,13 +1,13 @@
 
-const { JSON_MAX_DEPTH, JSON_MAX_ELEMENTS, JSON_MAX_STRING_CHARS, parseBoundedJSON } = require('./boundedjson');
+const { JSON_MAX_DEPTH, JSON_MAX_ELEMENTS, JSON_MAX_STRING_CHARS, parseBoundedJSON } = require('./boundedjson_core');
 const {
   MAX_BOOKMARKS_IMPORT,
   MAX_IMPORT_FILE_BYTES,
   safeBookmarkURL,
   cleanTitle,
   normalizeBookmark,
-} = require('./bookmarkbase');
-const { parseHTMLBookmarks, buildExportHTML } = require('./bookmarkhtml');
+} = require('./bookmarkbase_core');
+const { parseHTMLBookmarks, buildExportHTML } = require('./bookmarkhtml_core');
 'use strict';
 
 // bookmarkio.js —— 书签的导入 / 导出。

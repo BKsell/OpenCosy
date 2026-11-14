@@ -4,7 +4,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const br = require('./blockrules');
+const br = require('./blockrules_core');
 
 function tmpRulesFile(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'brtest-'));

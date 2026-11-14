@@ -29,7 +29,7 @@ var OPEN_RISK_EXTS = new Set([
 ]);
 
 // pna 提供唯一的 IP 字面量归一化 / 空间分类，私网判定不再在本模块另写一份。
-var pna = require('./pna');
+var pna = require('./pna_core');
 
 // isPrivateHostname 判定主机是否为私网 / 回环（与主进程口径一致，内核自带一份
 // 轻量实现，避免与 Electron 主文件产生循环依赖）。

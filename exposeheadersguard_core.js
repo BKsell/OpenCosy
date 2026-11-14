@@ -1,8 +1,8 @@
 'use strict';
-const { rawValue } = require('./headerutil');
-const { splitList } = require('./modutil');
+const { rawValue } = require('./headerutil_core');
+const { splitList } = require('./modutil_core');
 
-const { headerKey } = require('./headerutil');
+const { headerKey } = require('./headerutil_core');
 
 const REASON = {
   OK: 'ok',

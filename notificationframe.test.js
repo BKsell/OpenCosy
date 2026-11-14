@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const guard = require('./notificationframe');
+const guard = require('./notificationframe_core');
 
 const SITE = 'https://chat.test/room';
 

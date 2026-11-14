@@ -1,13 +1,13 @@
 'use strict';
 
-const { safeInt, isPlainObject } = require('./modutil');
+const { safeInt, isPlainObject } = require('./modutil_core');
 
 const fs = require('fs');
 const path = require('path');
-const downloadResume = require('./downloadresume');
-const downloadReconcile = require('./downloadreconcile');
+const downloadResume = require('./downloadresume_core');
+const downloadReconcile = require('./downloadreconcile_core');
 
-const { DEFAULT_MAX_ENTRIES, DEFAULT_MAX_FILE_BYTES, DEFAULT_RETENTION_MS, MAX_URL_CHARS, MAX_FILENAME_CHARS, MAX_PATH_CHARS, MAX_ID_CHARS, STATE, VALID_STATES, REASON, describeJournalReject, cleanId, cleanFilename, cleanURL, cleanPathWithin, normalizeEntry } = require('./journalentry');
+const { DEFAULT_MAX_ENTRIES, DEFAULT_MAX_FILE_BYTES, DEFAULT_RETENTION_MS, MAX_URL_CHARS, MAX_FILENAME_CHARS, MAX_PATH_CHARS, MAX_ID_CHARS, STATE, VALID_STATES, REASON, describeJournalReject, cleanId, cleanFilename, cleanURL, cleanPathWithin, normalizeEntry } = require('./journalentry_core');
 
 function createDownloadJournal(options = {}) {
   const opts = isPlainObject(options) ? options : {};

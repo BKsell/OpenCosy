@@ -5,7 +5,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const ct = require('./container');
+const ct = require('./container_core');
 
 test('宏 Office 文档判为 confirm', () => {
   for (const f of ['invoice.docm', 'table.xlsm', 'deck.pptm', 'addin.xlam']) {

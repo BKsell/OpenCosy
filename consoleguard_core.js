@@ -1,6 +1,6 @@
 'use strict';
 const { describeReasonFrom } = require('./reasontext');
-const { pruneOlderThan, countSince } = require('./modutil');
+const { pruneOlderThan, countSince } = require('./modutil_core');
 
 // consoleguard.js —— 渲染进程 console-message 事件的不可信输入收口内核。
 //

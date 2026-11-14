@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const wp = require('./winpolicy');
+const wp = require('./winpolicy_core');
 
 const APP_ROOT = path.resolve('/opt/opencosy');
 

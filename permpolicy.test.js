@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const p = require('./permpolicy');
+const p = require('./permpolicy_core');
 
 test('特性名白名单：未知特性被拒绝', () => {
   assert.equal(p.isValidFeatureName('camera'), true);

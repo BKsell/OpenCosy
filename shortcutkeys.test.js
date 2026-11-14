@@ -11,7 +11,7 @@ const {
   ruleMatches,
   matchShortcut,
   describeAccelerator,
-} = require('./shortcutkeys');
+} = require('./shortcutkeys_core');
 
 // mk 构造一个 before-input-event 的 input；默认 keyDown，修饰键默认未按下。
 function mk(key, mod) {

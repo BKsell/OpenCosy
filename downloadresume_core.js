@@ -1,7 +1,7 @@
 'use strict';
 const { describeReasonFrom } = require('./reasontext');
 
-const { safeInt, isPlainObject } = require('./modutil');
+const { safeInt, isPlainObject } = require('./modutil_core');
 const safeNonNegativeInt = safeInt;
 
 const path = require('path');

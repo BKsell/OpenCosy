@@ -1,6 +1,6 @@
 'use strict';
 
-const { schemeOf, httpOrigin: originFromUrl, resetRateWindow: resetForNavigation } = require('./modutil');
+const { schemeOf, httpOrigin: originFromUrl, resetRateWindow: resetForNavigation } = require('./modutil_core');
 
 // childwindowguard.js —— 网页意外创建的“原生子窗口”收口内核（did-create-window）。
 //

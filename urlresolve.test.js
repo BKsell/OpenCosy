@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { safeOrigin, safeHostname, safeHost, safeProtocol } = require('./urlresolve');
+const { safeOrigin, safeHostname, safeHost, safeProtocol } = require('./urlresolve_core');
 
 test('safeOrigin 正常解析与端口保留', () => {
   assert.strictEqual(safeOrigin('https://example.com/a?b=1'), 'https://example.com');

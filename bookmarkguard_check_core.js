@@ -1,5 +1,5 @@
-const { stripControlChars, collapseSpaces, sanitizeDisplayTitle, fallbackTitleFor } = require('./modutil');
-const urlEntry = require('./urlentryguard');
+const { stripControlChars, collapseSpaces, sanitizeDisplayTitle, fallbackTitleFor } = require('./modutil_core');
+const urlEntry = require('./urlentryguard_core');
 
 
 // bookmarkguard.js —— 书签（收藏夹）落盘 / 读取 / 导入合并的“写入净化 + 逐条校验

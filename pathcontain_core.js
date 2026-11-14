@@ -1,6 +1,6 @@
 'use strict';
 
-const { IS_WIN, foldCase, trimTrailingSep, stripExtended, splitSegments, hasDriveLetter } = require('./pathcontainbasic');
+const { IS_WIN, foldCase, trimTrailingSep, stripExtended, splitSegments, hasDriveLetter } = require('./pathcontainbasic_core');
 const path = require('path');
 
 

@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const notify = require('./downloadnotify');
+const notify = require('./downloadnotify_core');
 
 // makeDeps 构造可覆写的桩依赖：默认平台支持、记录 showNotification 调用。
 function makeDeps(overrides) {

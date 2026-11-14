@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const D = require('./downloadname');
+const D = require('./downloadname_core');
 
 test('sanitizeDownloadName 剥掉路径组件，只留文件名', () => {
   const r = D.sanitizeDownloadName('../../etc/passwd');

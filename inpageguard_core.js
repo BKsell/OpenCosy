@@ -1,6 +1,6 @@
 'use strict';
 const { describeReasonFrom } = require('./reasontext');
-const { pruneOlderThan, countSince, resetCooldown } = require('./modutil');
+const { pruneOlderThan, countSince, resetCooldown } = require('./modutil_core');
 
 // inpageguard.js —— history.pushState/replaceState 触发的同文档导航收口内核。
 //

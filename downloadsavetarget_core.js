@@ -1,11 +1,11 @@
-const { RESERVED_NAMES, hasControlChar, hasAlternateDataStream, isReservedDeviceName } = require('./savenamechecks');
+const { RESERVED_NAMES, hasControlChar, hasAlternateDataStream, isReservedDeviceName } = require('./savenamechecks_core');
 'use strict';
-const { MAX_SAVE_NAME_CHARS, MAX_SAVE_PATH_CHARS, REASON, auditSaveName, auditSaveTarget, SAVE_TARGET_REJECT_TEXT, describeSaveTargetReject } = require('./savetargetrules');
+const { MAX_SAVE_NAME_CHARS, MAX_SAVE_PATH_CHARS, REASON, auditSaveName, auditSaveTarget, SAVE_TARGET_REJECT_TEXT, describeSaveTargetReject } = require('./savetargetrules_core');
 const { describeReasonFrom } = require('./reasontext');
 
 const fs = require('fs');
 const path = require('path');
-const { hasInvisibleCodePoint } = require('./downloadname');
+const { hasInvisibleCodePoint } = require('./downloadname_core');
 
 
 

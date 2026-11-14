@@ -1,5 +1,5 @@
 'use strict';
-const { hasControlChars } = require('./modutil');
+const { hasControlChars } = require('./modutil_core');
 const { describeReasonTable } = require('./reasontext');
 
 const REASON = {

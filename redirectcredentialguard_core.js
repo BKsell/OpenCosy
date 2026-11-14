@@ -1,5 +1,5 @@
 'use strict';
-const { parseUrl } = require('./modutil');
+const { parseUrl } = require('./modutil_core');
 const { describeReasonTable } = require('./reasontext');
 
 const REASON = {

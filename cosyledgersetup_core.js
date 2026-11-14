@@ -63,7 +63,7 @@ function setupSystemEventGuards() {
   });
 }
 function setupExtraSessionHardening() {
-  return require('./sessionhardening').setupExtraSessionHardening(d.setupExtraSessionHardeningCtx, );
+  return require('./sessionhardening_core').setupExtraSessionHardening(d.setupExtraSessionHardeningCtx, );
 }
 
 module.exports = { bindDeps, setupNetworkStatus, setupSystemEventGuards, setupExtraSessionHardening };

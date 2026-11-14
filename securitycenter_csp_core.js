@@ -1,8 +1,8 @@
-const { securityEventStorePath, MAX_SECURITY_EVENTS, MAX_SECURITY_DETAIL_CHARS, loadSecurityEvents, persistSecurityEvents, sanitizeSecurityDetail, recordSecurityEvent, listSecurityEvents, clearSecurityEvents } = require('./cspsecurityevents');
+const { securityEventStorePath, MAX_SECURITY_EVENTS, MAX_SECURITY_DETAIL_CHARS, loadSecurityEvents, persistSecurityEvents, sanitizeSecurityDetail, recordSecurityEvent, listSecurityEvents, clearSecurityEvents } = require('./cspsecurityevents_core');
 const { app } = require('electron');
 const path = require('path');
 const fsSync = require('fs');
-const ledgerStore = require('./ledgerstore');
+const ledgerStore = require('./ledgerstore_core');
 
 
 let sendToRenderer = () => {};

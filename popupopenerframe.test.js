@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const guard = require('./popupopenerframe');
+const guard = require('./popupopenerframe_core');
 
 const SITE = 'https://portal.test/home';
 

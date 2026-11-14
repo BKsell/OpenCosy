@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const sp = require('./searchprovider');
+const sp = require('./searchprovider_core');
 
 test('内置 provider 覆盖四种搜索引擎且模板合法', () => {
   const ids = sp.BUILTIN_PROVIDERS.map(p => p.id);

@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const resume = require('./downloadresume');
+const resume = require('./downloadresume_core');
 
 const ROOT = path.join(os.tmpdir(), 'cosy-resume-root');
 

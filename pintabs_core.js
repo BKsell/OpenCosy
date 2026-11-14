@@ -1,7 +1,7 @@
 'use strict';
 const { describeReasonFrom } = require('./reasontext');
 
-const { hasControlCharV2 } = require('./modutil');
+const { hasControlCharV2 } = require('./modutil_core');
 
 const { CLOSE_ALL, CLOSE_LEFT, CLOSE_MODES, CLOSE_OTHERS, CLOSE_RIGHT, MAX_PINNED_TABS, MAX_PIN_ID_LEN, MAX_PIN_URL_LEN, PinModel, REJECT_CONTROL, REJECT_LIMIT, REJECT_NOT_STRING, REJECT_TOO_LONG, hasControlChar, sanitizePinId, sanitizePinUrl, sanitizeStoredPins } = require('./pintabs_ops');
 function sanitizeStoredPinEntries(raw) {

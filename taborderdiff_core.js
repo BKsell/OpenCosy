@@ -8,8 +8,8 @@ const {
   hasControlChar,
   isValidOrderId,
   sanitizeOrderIds,
-} = require('./taborderconst');
-const { longestStableSet, diffOrder, isSameOrder } = require('./taborderdiffset');
+} = require('./taborderconst_core');
+const { longestStableSet, diffOrder, isSameOrder } = require('./taborderdiffset_core');
 
 // taborderdiff.js —— 标签栏顺序差异（reorder diff）纯逻辑内核。
 //

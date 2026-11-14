@@ -1,5 +1,5 @@
 
-const { SKIP_TAGS, NOISE_TAGS, OUTPUT_BLOCK_TAGS, OUTPUT_INLINE_TAGS, CONTAINER_TAGS, READER_MAX_NODES, READER_MAX_DEPTH, READER_MAX_TEXT_CHARS, READER_MAX_LINK_CHARS, READER_MIN_ARTICLE_CHARS, READER_WPM, isWhitespaceCode, collapseSpaces, normalizeTagName, isSkippable, isNoise, isOutputBlock, isOutputInline, isContainer, elementText, safeHref, safeImageSrc, linkDensity, punctuationCount, scoreContainer, cleanTitle, estimateReadMinutes, clampInt } = require('./readertext');
+const { SKIP_TAGS, NOISE_TAGS, OUTPUT_BLOCK_TAGS, OUTPUT_INLINE_TAGS, CONTAINER_TAGS, READER_MAX_NODES, READER_MAX_DEPTH, READER_MAX_TEXT_CHARS, READER_MAX_LINK_CHARS, READER_MIN_ARTICLE_CHARS, READER_WPM, isWhitespaceCode, collapseSpaces, normalizeTagName, isSkippable, isNoise, isOutputBlock, isOutputInline, isContainer, elementText, safeHref, safeImageSrc, linkDensity, punctuationCount, scoreContainer, cleanTitle, estimateReadMinutes, clampInt } = require('./readertext_core');
 'use strict';
 
 // reader.js —— 阅读模式（Reader Mode）的“抽取与净化”纯内核。

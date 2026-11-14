@@ -1,7 +1,7 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
 
-const { headerKey } = require('./headerutil');
+const { headerKey } = require('./headerutil_core');
 
 const REASON = {
   OK: 'ok',

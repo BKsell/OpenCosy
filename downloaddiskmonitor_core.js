@@ -1,6 +1,6 @@
 'use strict';
 
-const diskSpace = require('./downloaddiskspace');
+const diskSpace = require('./downloaddiskspace_core');
 
 const DEFAULT_NOTIFY_INTERVAL_MS = 60 * 1000;
 const DEFAULT_RESUME_RATIO = 1.5;

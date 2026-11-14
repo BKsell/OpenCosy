@@ -1,6 +1,6 @@
 'use strict';
 
-const { headerKey, rawValue } = require('./headerutil');
+const { headerKey, rawValue } = require('./headerutil_core');
 
 const REASON = {
   OK: 'ok',

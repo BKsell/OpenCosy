@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { stripControlChars, sanitizeDisplayTitle } = require('./modutil');
+const { stripControlChars, sanitizeDisplayTitle } = require('./modutil_core');
 
 test('双向覆盖与零宽格式字符被清除，标题不再能被视觉反转', () => {
   const raw = '\u202e' + 'spj.exe' + '\u202c';

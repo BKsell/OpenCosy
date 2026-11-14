@@ -1,25 +1,25 @@
 'use strict';
 
 const { app, BrowserWindow, WebContentsView, ipcMain, session, protocol, Menu, MenuItem, dialog, shell, globalShortcut, clipboard, net, nativeTheme, webContents, safeStorage } = require('electron');
-const dloadGuard = require('./dloadguard');
-const downloadAdmission = require('./downloadadmission');
-const downloadChain = require('./downloadchain');
-const downloadChainLive = require('./downloadchainlive');
-const downloadContentMagic = require('./downloadcontentmagic');
-const downloadDiskSpace = require('./downloaddiskspace');
-const downloadFinishGuard = require('./downloadfinishguard');
-const downloadHostGuard = require('./downloadhostguard');
-const downloadJournalModule = require('./downloadjournal');
-const downloadName = require('./downloadname');
-const downloadQuotaCore = require('./downloadquota');
-const downloadRateGuard = require('./downloadratelimit');
-const downloadSaveTarget = require('./downloadsavetarget');
-const downloadSizeGuard = require('./downloadsizeguard');
-const downloadSourceTrustGuard = require('./downloadsourcetrustguard');
+const dloadGuard = require('./dloadguard_core');
+const downloadAdmission = require('./downloadadmission_core');
+const downloadChain = require('./downloadchain_core');
+const downloadChainLive = require('./downloadchainlive_core');
+const downloadContentMagic = require('./downloadcontentmagic_core');
+const downloadDiskSpace = require('./downloaddiskspace_core');
+const downloadFinishGuard = require('./downloadfinishguard_core');
+const downloadHostGuard = require('./downloadhostguard_core');
+const downloadJournalModule = require('./downloadjournal_core');
+const downloadName = require('./downloadname_core');
+const downloadQuotaCore = require('./downloadquota_core');
+const downloadRateGuard = require('./downloadratelimit_core');
+const downloadSaveTarget = require('./downloadsavetarget_core');
+const downloadSizeGuard = require('./downloadsizeguard_core');
+const downloadSourceTrustGuard = require('./downloadsourcetrustguard_core');
 const fsSync = require('fs');
-const navigationTimeoutGuard = require('./navigationtimeoutguard');
+const navigationTimeoutGuard = require('./navigationtimeoutguard_core');
 const path = require('path');
-const quarantine = require('./quarantine');
+const quarantine = require('./quarantine_core');
 
 function handleDownloadEvent(ctx, event, item, webContents) {
   const {

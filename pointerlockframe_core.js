@@ -1,6 +1,6 @@
 'use strict';
 
-const boundary = require('./frameboundary');
+const boundary = require('./frameboundary_core');
 
 const ACTION = { ALLOW: 'allow', WARN: 'warn', DENY: 'deny' };
 

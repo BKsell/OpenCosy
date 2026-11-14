@@ -1,6 +1,6 @@
 'use strict';
 const { describeReasonFrom } = require('./reasontext');
-const { pruneOlderThan, countSince } = require('./modutil');
+const { pruneOlderThan, countSince } = require('./modutil_core');
 
 // entryguard.js —— 导航条目提交事件（webContents 'navigation-entry-committed'）收口内核。
 //

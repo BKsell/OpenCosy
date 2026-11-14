@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const path = require('path');
 const os = require('os');
-const extStore = require('./extensionstore');
+const extStore = require('./extensionstore_core');
 
 test('sanitizeNameToken keeps alnum and replaces the rest', () => {
   assert.strictEqual(extStore.sanitizeNameToken('CoolExt'), 'CoolExt');

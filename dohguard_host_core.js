@@ -2,7 +2,7 @@
 
 // 复用 PNA 内核的 IPv4 inet_aton 归一化与地址空间分类，避免本模块再维护一份
 // 短格式 / 进制解析，保证“混淆 IP 字面量”在各守卫处判定一致。
-const pna = require('./pna');
+const pna = require('./pna_core');
 
 // isLoopbackIPv4 / isPrivateIPv4 等按无类别整数比较，避免字符串误判。
 function parseIPv4(host) {

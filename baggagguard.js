@@ -1,6 +1,6 @@
 'use strict';
 
-const { REASON, applyStructuredHeaderGuard } = require('./structuredheaderguard');
+const { REASON, applyStructuredHeaderGuard } = require('./structuredheaderguard_core');
 
 const HEADER = 'baggage';
 const MAX_MEMBERS = 16;

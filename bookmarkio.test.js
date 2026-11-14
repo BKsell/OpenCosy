@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const bmio = require('./bookmarkio');
+const bmio = require('./bookmarkio_core');
 
 test('有界 JSON：正常数组解析', () => {
   const data = bmio.parseBoundedJSON('[{"url":"https://a.example/","title":"A"},{"url":"https://b.example/"}]');

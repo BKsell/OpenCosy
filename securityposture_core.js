@@ -1,4 +1,4 @@
-const { asBytes } = require('./modutil');
+const { asBytes } = require('./modutil_core');
 const toCount = asBytes;
 const GRADE_ORDER = ['A', 'B', 'C', 'D', 'F'];
 

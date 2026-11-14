@@ -64,7 +64,7 @@ const {
   describeReject,
   hasControlChar,
   makeGroupId,
-} = require('./tabgroupsnorm');
+} = require('./tabgroupsnorm_core');
 
 // TabGroup 是单个分组的可变数据对象。tabIds 即组内从左到右的展示顺序。
 class TabGroup {

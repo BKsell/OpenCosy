@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const ledgerModule = require('./permissiondenyledger');
+const ledgerModule = require('./permissiondenyledger_core');
 
 test('首次记录放行写入', () => {
   const ledger = ledgerModule.createDenyLedger({ windowMs: 60000, maxPerKey: 3, now: () => 1000 });

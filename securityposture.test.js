@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const posture = require('./securityposture');
+const posture = require('./securityposture_core');
 
 test('scorePosture gives top grade for a hardened profile', () => {
   const report = posture.scorePosture({

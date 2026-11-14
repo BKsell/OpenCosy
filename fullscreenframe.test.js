@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const guard = require('./fullscreenframe');
+const guard = require('./fullscreenframe_core');
 
 const SITE = 'https://video.test/watch';
 

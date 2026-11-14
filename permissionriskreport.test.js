@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const report = require('./permissionriskreport');
+const report = require('./permissionriskreport_core');
 
 function decision(origin, permission, state = 'allow') {
   return { origin, permission, decision: state === 'deny' ? 'deny' : 'allow', updatedAt: 1, state };

@@ -4,7 +4,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const shelf = require('./downloadshelf');
+const shelf = require('./downloadshelf_core');
 
 test('stripControlChars removes C0 and ANSI sequences', () => {
   assert.strictEqual(shelf.stripControlChars('a\x00b\x1b[31mc\x1b]0;title\x07d'), 'abcd');

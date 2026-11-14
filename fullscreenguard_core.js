@@ -1,6 +1,6 @@
 'use strict';
 const { describeReasonFrom } = require('./reasontext');
-const { pruneOlderThan, originFromUrl } = require('./modutil');
+const { pruneOlderThan, originFromUrl } = require('./modutil_core');
 
 // fullscreenguard.js —— HTML 全屏与键盘锁（navigator.keyboard.lock）的滥用收口内核。
 //

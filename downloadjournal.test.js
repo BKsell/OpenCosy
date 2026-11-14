@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const journals = require('./downloadjournal');
+const journals = require('./downloadjournal_core');
 
 function makeRoot() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cosy-journal-'));
@@ -114,7 +114,7 @@ test('interrupted entry without a part file is not resumable', () => {
   }));
   const entry = journal.snapshot()[0];
   assert.equal(entry.resumable, false);
-  assert.equal(entry.resumeReason, require('./downloadresume').REASON.PART_MISSING);
+  assert.equal(entry.resumeReason, require('./downloadresume_core').REASON.PART_MISSING);
 });
 
 test('clear empties the journal', () => {

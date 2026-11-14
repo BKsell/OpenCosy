@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const guard = require('./pathcontainmentguard');
+const guard = require('./pathcontainmentguard_core');
 
 test('inspectPath rejects empty and non-string input', () => {
   assert.strictEqual(guard.inspectPath('C:/base', '').reason, guard.REASON.EMPTY);

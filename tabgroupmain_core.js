@@ -1,5 +1,5 @@
 'use strict';
-const { readStoredSection } = require('./modutil');
+const { readStoredSection } = require('./modutil_core');
 
 let d = {};
 

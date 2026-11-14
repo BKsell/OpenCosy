@@ -1,8 +1,8 @@
 'use strict';
-const { DIALOG_SHOW, DIALOG_SUPPRESS, DIALOG_ALERT, DIALOG_CONFIRM, DIALOG_PROMPT, DIALOG_BEFOREUNLOAD, DIALOG_OTHER, SUPPRESS_BURST, SUPPRESS_LONG, SUPPRESS_COOLDOWN, SUPPRESS_DUPLICATE, SUPPRESS_MALFORMED, DIALOG_BURST_WINDOW_MS, DIALOG_BURST_LIMIT, DIALOG_LONG_WINDOW_MS, DIALOG_LONG_LIMIT, DIALOG_COOLDOWN_MS, DIALOG_DUP_MS, DIALOG_MESSAGE_MAX_LEN, JS_TYPES, createDialogState, decideDialog } = require('./dialogguardpolicy');
-const { classifyType, isBeforeUnload, normalizeMessage, DIALOG_REASON_TEXT, describeDialogReason } = require('./dialogguardtext');
+const { DIALOG_SHOW, DIALOG_SUPPRESS, DIALOG_ALERT, DIALOG_CONFIRM, DIALOG_PROMPT, DIALOG_BEFOREUNLOAD, DIALOG_OTHER, SUPPRESS_BURST, SUPPRESS_LONG, SUPPRESS_COOLDOWN, SUPPRESS_DUPLICATE, SUPPRESS_MALFORMED, DIALOG_BURST_WINDOW_MS, DIALOG_BURST_LIMIT, DIALOG_LONG_WINDOW_MS, DIALOG_LONG_LIMIT, DIALOG_COOLDOWN_MS, DIALOG_DUP_MS, DIALOG_MESSAGE_MAX_LEN, JS_TYPES, createDialogState, decideDialog } = require('./dialogguardpolicy_core');
+const { classifyType, isBeforeUnload, normalizeMessage, DIALOG_REASON_TEXT, describeDialogReason } = require('./dialogguardtext_core');
 const { describeReasonFrom } = require('./reasontext');
-const { pruneOlderThan, countSince, originFromUrl, resetCooldown, inCooldown } = require('./modutil');
+const { pruneOlderThan, countSince, originFromUrl, resetCooldown, inCooldown } = require('./modutil_core');
 
 // dialogguard.js —— 网页 JS 模态对话框（alert/confirm/prompt）的滥用/DoS 收口内核。
 //

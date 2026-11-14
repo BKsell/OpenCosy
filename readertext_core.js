@@ -9,7 +9,7 @@ const {
   cleanTitle,
   estimateReadMinutes,
   clampInt,
-} = require('./readertextscore');
+} = require('./readertextscore_core');
 
 const SKIP_TAGS = new Set([
   'script', 'style', 'noscript', 'template', 'iframe', 'frame', 'object', 'embed',

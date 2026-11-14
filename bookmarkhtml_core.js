@@ -8,7 +8,7 @@ const {
   stripTags,
   decodeHTMLEntities,
   escapeHTML,
-} = require('./bookmarkbase');
+} = require('./bookmarkbase_core');
 
 function parseHTMLBookmarks(html) {
   const anchors = html.match(/<a\s+[^>]*href\s*=\s*"[^"]*"[^>]*>[\s\S]*?<\/a>/gi) || [];

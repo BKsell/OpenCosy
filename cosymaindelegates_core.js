@@ -1,10 +1,10 @@
 'use strict';
 
-const cosyguardmainMod = require('./cosyguardmain');
-const cosysettingsmainMod = require('./cosysettingsmain');
+const cosyguardmainMod = require('./cosyguardmain_core');
+const cosysettingsmainMod = require('./cosysettingsmain_core');
 const cosyledgerchainmainMod = require('./cosyledgerchainmain');
 const cosywinmainMod = require('./cosywinmain');
-const cosytabsmainMod = require('./cosytabsmain');
+const cosytabsmainMod = require('./cosytabsmain_core');
 
 const DELEGATE_GROUPS = [
   [cosyguardmainMod, ['noteGuardResult', 'noteGuardDenied', 'allowPopupForTab', 'getContentsState',

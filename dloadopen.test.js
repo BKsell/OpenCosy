@@ -3,7 +3,7 @@
 // dloadopen 单元测试：覆盖“通知点击 / 下载列表打开”两条入口共用的判定。
 const test = require('node:test');
 const assert = require('node:assert');
-const dloadOpen = require('./dloadopen');
+const dloadOpen = require('./dloadopen_core');
 
 const { ACTION } = dloadOpen;
 

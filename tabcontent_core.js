@@ -1,13 +1,13 @@
 'use strict';
 
 const { app, BrowserWindow, WebContentsView, ipcMain, session, protocol, Menu, MenuItem, dialog, shell, globalShortcut, clipboard, net, nativeTheme, webContents, safeStorage } = require('electron');
-const inpageGuard = require('./inpageguard');
-const menuGuard = require('./menuguard');
+const inpageGuard = require('./inpageguard_core');
+const menuGuard = require('./menuguard_core');
 const path = require('path');
-const popupGuard = require('./popupguard');
-const searchProvider = require('./searchprovider');
-const titleGuard = require('./titleguard');
-const winPolicy = require('./winpolicy');
+const popupGuard = require('./popupguard_core');
+const searchProvider = require('./searchprovider_core');
+const titleGuard = require('./titleguard_core');
+const winPolicy = require('./winpolicy_core');
 
 function loadTabContent(ctx, tab) {
   const {

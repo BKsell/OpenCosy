@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const boundary = require('./frameboundary');
+const boundary = require('./frameboundary_core');
 
 test('originOf 只接受 http(s) 站点', () => {
   assert.equal(boundary.originOf('https://Example.COM/a?b=1'), 'https://example.com');

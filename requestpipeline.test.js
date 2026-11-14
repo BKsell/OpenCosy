@@ -14,7 +14,7 @@ const {
   isHttpUrl,
   decideRequest,
   applyPipeline,
-} = require('./requestpipeline');
+} = require('./requestpipeline_core');
 
 // 空守卫：默认全部“不命中”，便于按需只打开某一支。
 function baseDeps(overrides) {

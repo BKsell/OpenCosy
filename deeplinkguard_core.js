@@ -1,7 +1,7 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
 
-const { isSwitchLike, reviewStartupArg } = require('./deeplinkguard_schemes');
+const { isSwitchLike, reviewStartupArg } = require('./deeplinkguard_schemes_core');
 
 // MAX_ARGV_SCAN 限制我们愿意扫描的命令行参数数量，防止异常超长 argv 拖垮启动。
 const MAX_ARGV_SCAN = 64;
@@ -46,4 +46,4 @@ const REASON_TEXT = {
 
 const describeReason = describeReasonTable(REASON_TEXT, '不安全的深链');
 
-module.exports = { MAX_ARGV_SCAN, describeReason, pickDeepLinkFromArgv, ...require('./deeplinkguard_schemes') };
+module.exports = { MAX_ARGV_SCAN, describeReason, pickDeepLinkFromArgv, ...require('./deeplinkguard_schemes_core') };

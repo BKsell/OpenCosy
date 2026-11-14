@@ -1,7 +1,7 @@
-const { single, originFromUrl, resetCooldown, splitList, stripControlChars, collapseSpaces, schemeOf, originOf, isObj, splitItems } = require('./modutiltext');
+const { single, originFromUrl, resetCooldown, splitList, stripControlChars, collapseSpaces, schemeOf, originOf, isObj, splitItems } = require('./modutiltext_core');
 "use strict";
 
-const { hasAsciiControlChar, hasUnicodeControlChar, parseUrl } = require('./modutilctrl');
+const { hasAsciiControlChar, hasUnicodeControlChar, parseUrl } = require('./modutilctrl_core');
 function pruneOlderThan(list, cutoff) {
   let i = 0;
   while (i < list.length && list[i] < cutoff) i++;

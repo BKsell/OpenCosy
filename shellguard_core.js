@@ -1,7 +1,7 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
 
-const { containsControlChar, isExecutableName } = require('./shellguard_check');
+const { containsControlChar, isExecutableName } = require('./shellguard_check_core');
 
 const MAX_PATH_LENGTH = 1024;
 
@@ -58,4 +58,4 @@ const REASON_TEXT = {
 
 const describeReason = describeReasonTable(REASON_TEXT, '不安全的外部唤起');
 
-module.exports = { MAX_PATH_LENGTH, describeReason, reviewLocalLaunchPath, ...require('./shellguard_check') };
+module.exports = { MAX_PATH_LENGTH, describeReason, reviewLocalLaunchPath, ...require('./shellguard_check_core') };

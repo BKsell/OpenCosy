@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const guard = require('./downloadsizeguard');
+const guard = require('./downloadsizeguard_core');
 
 test('normalizeLimit 把越界与脏值收敛到合法区间', () => {
   assert.strictEqual(guard.normalizeLimit(0), 0);

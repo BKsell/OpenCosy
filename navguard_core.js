@@ -10,7 +10,7 @@ const {
   countScripts,
   mapToLatinLookalike,
   decodePunyLabel,
-} = require('./navguardlookalike');
+} = require('./navguardlookalike_core');
 
 // navguard.js —— 顶层导航安全内核：IDN 同形异义字（homograph）钓鱼 +
 // HTTPS → HTTP 降级导航。纯判定逻辑，不接触 Electron，便于 node:test。

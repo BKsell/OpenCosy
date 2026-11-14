@@ -1,6 +1,6 @@
 'use strict';
 
-const { getResponseHeader, hasHeader, letterForScore } = require('./headergradeparse');
+const { getResponseHeader, hasHeader, letterForScore } = require('./headergradeparse_core');
 // headergrade.js —— 远端站点“响应安全头”纯逻辑评级。
 //
 // 现代浏览器会替用户兜底很多东西，但一个站点自己有没有下发 HSTS / CSP /

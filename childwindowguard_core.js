@@ -9,7 +9,7 @@ const {
   CHILD_LONG_WINDOW_MS,
   evaluateChildUrl,
   evaluateWebPreferences
-} = require('./childwindowguard_rules');
+} = require('./childwindowguard_rules_core');
 
 const CHILD_LONG_MAX = 24;
 

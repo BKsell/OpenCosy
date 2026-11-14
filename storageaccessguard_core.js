@@ -1,5 +1,5 @@
 'use strict';
-const { originFromUrl } = require('./modutil');
+const { originFromUrl } = require('./modutil_core');
 
 // storageaccessguard.js —— 跨框架会话存储 / 缓存分区访问的观测与洪泛检测内核。
 //

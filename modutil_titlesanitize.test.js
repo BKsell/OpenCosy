@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { sanitizeDisplayTitle } = require('./modutil');
+const { sanitizeDisplayTitle } = require('./modutil_core');
 
 function loneSurrogate(s) {
   for (let i = 0; i < s.length; i++) {

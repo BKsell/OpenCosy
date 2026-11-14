@@ -1,4 +1,4 @@
-const { hasControlCharV2 } = require('./modutil');
+const { hasControlCharV2 } = require('./modutil_core');
 
 const hasControlChar = hasControlCharV2;
 

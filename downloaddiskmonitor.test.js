@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const monitor = require('./downloaddiskmonitor');
+const monitor = require('./downloaddiskmonitor_core');
 
 const MB = 1024 * 1024;
 const GB = 1024 * 1024 * 1024;

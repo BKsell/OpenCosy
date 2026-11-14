@@ -1,7 +1,7 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
 
-const { applyVerdictHeaderGuard } = require('./guardapply');
+const { applyVerdictHeaderGuard } = require('./guardapply_core');
 
 const REASON = {
   OK: 'ok',

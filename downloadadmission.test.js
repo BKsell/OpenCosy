@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const admission = require('./downloadadmission');
+const admission = require('./downloadadmission_core');
 
 // 表驱动测试用的 dloadguard 决策常量（与真实 dloadGuard.DECISION 同形）。
 const DECISION = { REJECT: 'reject', CONFIRM: 'confirm', WARN: 'warn', ALLOW: 'allow' };

@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const ts = require('./tabsearch');
+const ts = require('./tabsearch_core');
 
 // mkTab 快速构造一条标签；title/url 缺省给空串，便于聚焦被测字段。
 function mkTab(id, title, url, extra) {

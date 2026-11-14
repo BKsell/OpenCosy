@@ -1,6 +1,6 @@
 'use strict';
 const { describeReasonFrom } = require('./reasontext');
-const { originFromUrl } = require('./modutil');
+const { originFromUrl } = require('./modutil_core');
 
 // revokeguard.js —— 设备授权“撤销（revoked）”事件的统一收口内核。
 //

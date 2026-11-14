@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { createUnlockLimiter } = require('./vaultlimit');
+const { createUnlockLimiter } = require('./vaultlimit_core');
 
 function fakeClock() {
   let t = 0;

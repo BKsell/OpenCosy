@@ -3,13 +3,13 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const delegates = require('./cosymaindelegates');
+const delegates = require('./cosymaindelegates_core');
 
 const SOURCES = [
-  require('./cosyguardmain'),
+  require('./cosyguardmain_core'),
   require('./cosyledgerchainmain'),
-  require('./cosysettingsmain'),
-  require('./cosytabsmain'),
+  require('./cosysettingsmain_core'),
+  require('./cosytabsmain_core'),
   require('./cosywinmain'),
 ];
 

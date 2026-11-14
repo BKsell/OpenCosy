@@ -1,6 +1,6 @@
 'use strict';
 
-const sessionGuard = require('./sessionguard');
+const sessionGuard = require('./sessionguard_core');
 
 function setupExtraSessionHardening(ctx) {
   const {

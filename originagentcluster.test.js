@@ -2,7 +2,7 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert');
-const guard = require('./originagentcluster');
+const guard = require('./originagentcluster_core');
 
 function h(value) {
   return { 'Origin-Agent-Cluster': value };

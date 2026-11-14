@@ -1,6 +1,6 @@
 "use strict";
 
-const { safeParse } = require('./modutil');
+const { safeParse } = require('./modutil_core');
 
 const MAX_URL_LENGTH = 4096;
 const MAX_MAILTO_ADDRS = 20;

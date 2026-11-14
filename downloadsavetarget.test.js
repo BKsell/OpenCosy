@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const path = require('path');
-const target = require('./downloadsavetarget');
+const target = require('./downloadsavetarget_core');
 
 const ROOT = path.join(path.sep, 'home', 'tester', 'Downloads');
 
@@ -101,7 +101,7 @@ test('descriptions are unique and non empty', () => {
 });
 
 test('auditSaveName 拒绝双向覆写与零宽字符', () => {
-  const T = require('./downloadsavetarget');
+  const T = require('./downloadsavetarget_core');
   assert.strictEqual(T.auditSaveName('invoice\u202egnp.exe'), T.REASON.BAD_NAME);
   assert.strictEqual(T.auditSaveName('mod\u200b.jar'), T.REASON.BAD_NAME);
   assert.strictEqual(T.auditSaveName('a\ufeffb.txt'), T.REASON.BAD_NAME);
@@ -110,7 +110,7 @@ test('auditSaveName 拒绝双向覆写与零宽字符', () => {
 
 test('auditSaveTargetReal 拒绝父目录符号链接逃逸', () => {
   const fsSync = require('fs');
-  const { auditSaveTargetReal, auditSaveTarget, REASON } = require('./downloadsavetarget');
+  const { auditSaveTargetReal, auditSaveTarget, REASON } = require('./downloadsavetarget_core');
   const root = fsSync.mkdtempSync(require('os').tmpdir() + '/cosy-root-');
   const outside = fsSync.mkdtempSync(require('os').tmpdir() + '/cosy-out-');
   const linkedDir = root + '/linked';

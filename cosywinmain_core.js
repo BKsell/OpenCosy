@@ -18,11 +18,11 @@ function getDefaultTabUrl() {
 }
 
 function createWindow() {
-  return require('./windowfactory').createWindow(d.createWindowCtx, );
+  return require('./windowfactory_core').createWindow(d.createWindowCtx, );
 }
 
 function registerShortcuts() {
-  return require('./shortcutrouter').registerShortcuts(d.registerShortcutsCtx, );
+  return require('./shortcutrouter_core').registerShortcuts(d.registerShortcutsCtx, );
 }
 
 function getUrlProtocol(url) {
@@ -174,7 +174,7 @@ function buildTabPidMap() {
 }
 
 function loadTabContent(tab) {
-  return require('./tabcontent').loadTabContent(d.loadTabContentCtx, tab);
+  return require('./tabcontent_core').loadTabContent(d.loadTabContentCtx, tab);
 }
 
 function showCosyError(tab, code, message, reason) {

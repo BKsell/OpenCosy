@@ -1,6 +1,6 @@
 'use strict';
 const { describeReasonFrom } = require('./reasontext');
-const { pruneOlderThan, countSince, originFromUrl, resetCooldown, inCooldown } = require('./modutil');
+const { pruneOlderThan, countSince, originFromUrl, resetCooldown, inCooldown } = require('./modutil_core');
 
 // printguard.js —— 网页 window.print() 打印请求的滥用/DoS 收口内核。
 //

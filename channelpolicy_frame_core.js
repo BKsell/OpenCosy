@@ -2,7 +2,7 @@ const {
   KIND_SHELL,
   KIND_COSY,
   KIND_INTERNAL_FILE,
-} = require('./ipcguard');
+} = require('./ipcguard_core');
 
 
 const TIER_SHELL_ONLY = 'shell-only';

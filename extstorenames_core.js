@@ -1,7 +1,7 @@
 "use strict";
 
 const path = require('path');
-const { hasControlCharsV2: hasControlChar } = require('./modutil');
+const { hasControlCharsV2: hasControlChar } = require('./modutil_core');
 
 const MAX_TREE_DEPTH = 12;          // extensions/<id> 之下允许的最大目录深度
 

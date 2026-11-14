@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const R = require('./downloadratelimit');
+const R = require('./downloadratelimit_core');
 
 test('DownloadRateLimiter 允许窗口内的正常下载', () => {
   const limiter = new R.DownloadRateLimiter({ windowMs: 10000, perHostMax: 12, globalMax: 120 });

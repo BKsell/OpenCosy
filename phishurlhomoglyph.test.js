@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert');
-const { analyze } = require('./phishurl');
+const { analyze } = require('./phishurl_core');
 
 const CYRILLIC_PAYPAL = 'https://раураl.com/login';
 const PUNY_PAYPAL = 'https://xn--l-7sba6dbr.com/login';

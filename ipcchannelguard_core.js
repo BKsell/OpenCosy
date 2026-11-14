@@ -1,6 +1,6 @@
 'use strict';
 
-const { hasControlChar } = require('./modutil');
+const { hasControlChar } = require('./modutil_core');
 
 // ipcchannelguard.js —— 渲染层“原始 IPC 通道”（ipc-message / ipc-message-sync）收口。
 //

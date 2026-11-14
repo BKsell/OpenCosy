@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const reader = require('./reader');
+const reader = require('./reader_core');
 
 test('safeHref 只放行 http/https，挡掉危险与相对链接', () => {
   assert.equal(reader.safeHref('https://example.com/a'), 'https://example.com/a');

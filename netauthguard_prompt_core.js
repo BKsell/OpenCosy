@@ -1,4 +1,4 @@
-const { KNOWN_AUTH_SCHEMES, DEFAULT_MAX_PROMPTS_IN_WINDOW, DEFAULT_PROMPT_WINDOW_MS, DEFAULT_PROMPT_COOLDOWN_MS, AUTH_PROMPT_TIMEOUT_MS, MAX_PENDING_PROMPTS, MAX_REALM_CHARS, MAX_HOST_CHARS, MAX_USERNAME_CHARS, MAX_PASSWORD_CHARS, clampText, lowerTrim, parseHttpUrl, authHostKey, normalizeScheme, classifyServerAuth, classifyProxyAuth, AuthPromptRateLimiter } = require('./netauthcert');
+const { KNOWN_AUTH_SCHEMES, DEFAULT_MAX_PROMPTS_IN_WINDOW, DEFAULT_PROMPT_WINDOW_MS, DEFAULT_PROMPT_COOLDOWN_MS, AUTH_PROMPT_TIMEOUT_MS, MAX_PENDING_PROMPTS, MAX_REALM_CHARS, MAX_HOST_CHARS, MAX_USERNAME_CHARS, MAX_PASSWORD_CHARS, clampText, lowerTrim, parseHttpUrl, authHostKey, normalizeScheme, classifyServerAuth, classifyProxyAuth, AuthPromptRateLimiter } = require('./netauthcert_core');
 
 'use strict';
 

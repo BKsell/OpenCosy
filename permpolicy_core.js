@@ -1,5 +1,5 @@
 'use strict';
-const { isObj } = require('./modutil');
+const { isObj } = require('./modutil_core');
 
 // permpolicy.js —— Permissions-Policy 响应头的可测试构建 / 解析内核。
 //

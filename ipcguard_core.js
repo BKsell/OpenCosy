@@ -21,7 +21,7 @@
 // 特别注意：标签视图同样可以 loadFile 打开“用户磁盘上的本地 html”，那种 file: 帧
 //   不是外壳，归类为 local-file 并按不可信处理——不能仅凭 file: 协议就放权。
 
-const policy = require('./preloadpolicy');
+const policy = require('./preloadpolicy_core');
 
 // 受信帧分三类：
 //   shell         —— 主窗口外壳 webContents（event.sender === mainWindow.webContents），

@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert');
-const { analyze } = require('./phishurl');
+const { analyze } = require('./phishurl_core');
 
 test('全角主机经 NFKC 折叠后命中兼容字符信号', () => {
   const r = analyze('https://ｅｘａｍｐｌｅ.ｃｏｍ/login');

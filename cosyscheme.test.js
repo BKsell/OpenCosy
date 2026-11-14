@@ -16,7 +16,7 @@ const {
   resolveCosyFilePath,
   isPathInsideDir,
   resolveAllowedFileUrl,
-} = require('./cosyscheme');
+} = require('./cosyscheme_core');
 
 test('privilegedSchemeOptions 为 cosy 登记标准安全特权', () => {
   const opts = privilegedSchemeOptions();

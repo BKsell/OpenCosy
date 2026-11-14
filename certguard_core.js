@@ -20,7 +20,7 @@ const {
   parseCommonName,
   resolveFingerprint,
   summarizeCertificate
-} = require('./certguard_resolve');
+} = require('./certguard_resolve_core');
 
 // 不可放行的“硬错误”：吊销 / 公钥固定 / CT 强制失败意味着这张证书即便用户
 // 现在愿意冒险也不应被覆盖（Chrome 对这些同样不提供继续入口）。
@@ -105,4 +105,4 @@ function sanitizeExceptionRecord(raw) {
   };
 }
 
-module.exports = { HARD_DENY_CODES, classifyCertError, createException, errorInfo, exceptionMatches, sanitizeExceptionRecord, shortFingerprint, ...require('./certguard_resolve') };
+module.exports = { HARD_DENY_CODES, classifyCertError, createException, errorInfo, exceptionMatches, sanitizeExceptionRecord, shortFingerprint, ...require('./certguard_resolve_core') };

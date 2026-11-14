@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const exporter = require('./downloadjournalexport');
+const exporter = require('./downloadjournalexport_core');
 
 function entry(overrides = {}) {
   return {

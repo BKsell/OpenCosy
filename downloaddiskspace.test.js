@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const disk = require('./downloaddiskspace');
+const disk = require('./downloaddiskspace_core');
 
 const GB = 1024 * 1024 * 1024;
 

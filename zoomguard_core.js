@@ -1,6 +1,6 @@
 'use strict';
 const { describeReasonFrom } = require('./reasontext');
-const { pruneOlderThan } = require('./modutil');
+const { pruneOlderThan } = require('./modutil_core');
 
 // zoomguard.js —— 页面缩放级别（zoom-changed / setZoomLevel）的越界与事件洪泛收口。
 //

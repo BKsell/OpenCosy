@@ -5,36 +5,40 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 
-const ipcGuard = require('./ipcguard');
-const policy = require('./channelpolicy');
+const ipcGuard = require('./ipcguard_core');
+const policy = require('./channelpolicy_core');
 
 const ROOT = __dirname;
-const MAIN_SOURCE = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8')
-  + '\n' + fs.readFileSync(path.join(ROOT, 'permissionhandlers.js'), 'utf8')
-  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcregister.js'), 'utf8')
-  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcwire.js'), 'utf8')
-  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcprotocol.js'), 'utf8')
-  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyruntimestate.js'), 'utf8')
-  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyruntimetabsipc.js'), 'utf8')
-  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcmessaging.js'), 'utf8')
-  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcdownloadipc.js'), 'utf8')
-  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcdownloadshelfipc.js'), 'utf8')
-  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcsearch.js'), 'utf8')
-  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcoverview.js'), 'utf8')
-  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcextinstall.js'), 'utf8')
-  + '\n' + fs.readFileSync(path.join(ROOT, 'cosycertipc.js'), 'utf8')
-  + '\n' + fs.readFileSync(path.join(ROOT, 'cosycertbookmarkipc.js'), 'utf8')
-  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcsitedataipc.js'), 'utf8')
-  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcnetguard.js'), 'utf8')
-  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcdownloadshelf.js'), 'utf8')
-  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipctabmenuipc.js'), 'utf8')
-  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcbookmarksipc.js'), 'utf8')
-  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipctabsurface.js'), 'utf8')
-  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipctabsurface_aux.js'), 'utf8')
-  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcsettingspanel.js'), 'utf8')
-  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcjournalipc.js'), 'utf8')
-  + '\n' + fs.readFileSync(path.join(ROOT, 'cosyipcvaultipc.js'), 'utf8');
-const PRELOAD_SOURCE = fs.readFileSync(path.join(ROOT, 'preload.js'), 'utf8');
+const readSrc = (n) => {
+  const base = path.join(ROOT, n + '.js');
+  return fs.existsSync(base) ? fs.readFileSync(base, 'utf8') : fs.readFileSync(path.join(ROOT, n + '_core.js'), 'utf8');
+};
+const MAIN_SOURCE = readSrc('main')
+  + '\n' + readSrc('permissionhandlers')
+  + '\n' + readSrc('cosyipcregister')
+  + '\n' + readSrc('cosyipcwire')
+  + '\n' + readSrc('cosyipcprotocol')
+  + '\n' + readSrc('cosyruntimestate')
+  + '\n' + readSrc('cosyruntimetabsipc')
+  + '\n' + readSrc('cosyipcmessaging')
+  + '\n' + readSrc('cosyipcdownloadipc')
+  + '\n' + readSrc('cosyipcdownloadshelfipc')
+  + '\n' + readSrc('cosyipcsearch')
+  + '\n' + readSrc('cosyipcoverview')
+  + '\n' + readSrc('cosyipcextinstall')
+  + '\n' + readSrc('cosycertipc')
+  + '\n' + readSrc('cosycertbookmarkipc')
+  + '\n' + readSrc('cosyipcsitedataipc')
+  + '\n' + readSrc('cosyipcnetguard')
+  + '\n' + readSrc('cosyipcdownloadshelf')
+  + '\n' + readSrc('cosyipctabmenuipc')
+  + '\n' + readSrc('cosyipcbookmarksipc')
+  + '\n' + readSrc('cosyipctabsurface')
+  + '\n' + readSrc('cosyipctabsurface_aux')
+  + '\n' + readSrc('cosyipcsettingspanel')
+  + '\n' + readSrc('cosyipcjournalipc')
+  + '\n' + readSrc('cosyipcvaultipc');
+const PRELOAD_SOURCE = readSrc('preload');
 
 const ANY_FRAME_CHANNELS = new Set(['report-csp-violation']);
 const RENDERER_EVENT_NAMES = new Set(['cert-error-blocked', 'cert-exception-updated']);

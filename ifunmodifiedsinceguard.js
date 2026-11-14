@@ -1,5 +1,5 @@
 'use strict';
-const { REASON, checkConditionalDate } = require('./conditionaldate');
+const { REASON, checkConditionalDate } = require('./conditionaldate_core');
 
 const HEADER = 'if-unmodified-since';
 

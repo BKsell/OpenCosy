@@ -1,6 +1,6 @@
 'use strict';
 
-const { containsControlChar, httpOrigin: originFromUrl } = require('./modutil');
+const { containsControlChar, httpOrigin: originFromUrl } = require('./modutil_core');
 
 // frameguard.js —— frame-created 事件的纯逻辑守卫内核（iframe / 子框架生命周期）。
 //

@@ -1,7 +1,7 @@
 'use strict';
 
 const { app, BrowserWindow, WebContentsView, ipcMain, session, protocol, Menu, MenuItem, dialog, shell, globalShortcut, clipboard, net, nativeTheme, webContents, safeStorage } = require('electron');
-const shortcutKeys = require('./shortcutkeys');
+const shortcutKeys = require('./shortcutkeys_core');
 
 function registerShortcuts(ctx, ) {
   const {

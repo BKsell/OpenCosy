@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const grants = require('./permissiongrants');
+const grants = require('./permissiongrants_core');
 
 const NOW = 1_760_000_000_000;
 const DAY = 24 * 60 * 60 * 1000;

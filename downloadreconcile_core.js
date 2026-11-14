@@ -1,7 +1,7 @@
 'use strict';
 const { describeReasonFrom } = require('./reasontext');
 
-const { safeIntV2 } = require('./modutil');
+const { safeIntV2 } = require('./modutil_core');
 const safeInt = safeIntV2;
 
 const VERDICT = {

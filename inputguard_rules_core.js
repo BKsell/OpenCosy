@@ -1,5 +1,5 @@
 'use strict';
-const { hasControlCharsV2: containsControlChar } = require('./modutil');
+const { hasControlCharsV2: containsControlChar } = require('./modutil_core');
 
 const REASON = Object.freeze({
   NOT_STRING: 'not-string',

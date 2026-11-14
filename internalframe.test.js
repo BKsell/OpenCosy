@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { frameHost, isInternalHostFrame, makeInternalFrameSender } = require('./internalframe');
+const { frameHost, isInternalHostFrame, makeInternalFrameSender } = require('./internalframe_core');
 
 function eventOf(url, sender) {
   return { sender, senderFrame: { url } };

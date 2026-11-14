@@ -24,7 +24,7 @@ const {
   REASON,
   asPlainObject,
   isPlainObject
-} = require('./inputguard_rules');
+} = require('./inputguard_rules_core');
 
 // measureObject：在不序列化的前提下，递归度量一个 JSON-like 值的嵌套深度、键总数
 // 与粗略字符体量。opts.maxDepth / maxKeys / maxBytes 任一越界即返回 ok:false。
@@ -86,4 +86,4 @@ function assertShape(input, spec) {
   return { ok: true, value: out, field: '', reason: '' };
 }
 
-module.exports = { measureObject, assertShape, ...require('./inputguard_rules') };
+module.exports = { measureObject, assertShape, ...require('./inputguard_rules_core') };

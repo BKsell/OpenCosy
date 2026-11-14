@@ -3,7 +3,7 @@ const {
   SPACE_LOOPBACK,
   SPACE_PRIVATE,
   SPACE_LINK_LOCAL,
-} = require('./pna');
+} = require('./pna_core');
 
 const REASON_NOT_HTTP = 'not-http';
 const REASON_INVALID = 'invalid-url';

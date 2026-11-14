@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const sg = require('./schemeorigin');
+const sg = require('./schemeorigin_core');
 
 test('originSpace 正确归类', () => {
   assert.equal(sg.originSpace('https://example.com/'), 'web');

@@ -1,8 +1,8 @@
 'use strict';
-const { DEFAULT_TTL_MS, DEFAULT_MAX_PER_ORIGIN, DEFAULT_MAX_ORIGINS, MIN_TTL_MS, MAX_TTL_MS, KEY_SEPARATOR, HIGH_RISK_WEIGHT, STATE, normalizeTtl, splitKey, grantKey, recordTime, effectiveDecision } = require('./grantrules');
+const { DEFAULT_TTL_MS, DEFAULT_MAX_PER_ORIGIN, DEFAULT_MAX_ORIGINS, MIN_TTL_MS, MAX_TTL_MS, KEY_SEPARATOR, HIGH_RISK_WEIGHT, STATE, normalizeTtl, splitKey, grantKey, recordTime, effectiveDecision } = require('./grantrules_core');
 const { describeReasonFrom } = require('./reasontext');
 
-const { safeIntV2 } = require('./modutil');
+const { safeIntV2 } = require('./modutil_core');
 const safeInt = safeIntV2;
 
 

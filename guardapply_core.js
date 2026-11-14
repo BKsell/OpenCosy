@@ -1,6 +1,6 @@
 'use strict';
 
-const { deleteHeader, firstValue, headerKey } = require('./headerutil');
+const { deleteHeader, firstValue, headerKey } = require('./headerutil_core');
 
 function applySingleHeaderGuard(headers, header, inspect) {
   const result = inspect(headers);

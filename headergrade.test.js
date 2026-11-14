@@ -7,7 +7,7 @@ const {
   letterForScore,
   parseHstsMaxAge,
   gradeSecurityHeaders,
-} = require('./headergrade');
+} = require('./headergrade_core');
 
 test('getResponseHeader is case-insensitive and handles arrays/strings', () => {
   const h = { 'Content-Type': ['text/html; charset=utf-8'], 'X-Test': 'abc' };

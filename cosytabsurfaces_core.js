@@ -7,7 +7,7 @@ function bindDeps(x) {
 }
 
 function handleDownloadEvent(event, item, webContents) {
-  return require('./downloadsevents').handleDownloadEvent(d.handleDownloadEventCtx, event, item, webContents);
+  return require('./downloadsevents_core').handleDownloadEvent(d.handleDownloadEventCtx, event, item, webContents);
 }
 
 function downloadJournalFileProbe() {

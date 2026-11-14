@@ -1,6 +1,6 @@
 'use strict';
 
-const { isObj } = require('./modutil');
+const { isObj } = require('./modutil_core');
 
 // fpguard.js —— 出站指纹与跨站追踪收敛（纯内核，无 Electron 依赖，可单测）。
 //

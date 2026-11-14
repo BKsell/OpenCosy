@@ -1,6 +1,6 @@
 'use strict';
 
-const { REASON, applyStructuredHeaderGuard } = require('./structuredheaderguard');
+const { REASON, applyStructuredHeaderGuard } = require('./structuredheaderguard_core');
 
 const HEADER = 'tracestate';
 const MAX_ENTRIES = 32;

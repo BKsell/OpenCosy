@@ -3,8 +3,8 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const crypto = require('crypto');
-const V = require('./vault');
-const vaultentry = require('./vaultentry');
+const V = require('./vault_core');
+const vaultentry = require('./vaultentry_core');
 
 function randomKey() {
   return crypto.randomBytes(32);
@@ -248,7 +248,7 @@ test('mergeFromState 拒绝坏格式 / 错 key / 超量备份', () => {
   assert.strictEqual(b.vault.mergeFromState(good).reason, 'locked');
 });
 
-const VE = require('./vaultentry');
+const VE = require('./vaultentry_core');
 
 test('openEntry 拒绝文件里伪造的超大 PBKDF2 轮数（防主进程被拖死）', () => {
   const key = randomKey();

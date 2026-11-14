@@ -1,7 +1,7 @@
 'use strict';
 
-const { REASON, EXECUTABLE_EXTENSIONS, DECOY_EXTENSIONS, RESERVED_DEVICE_NAMES, MAX_NAME_LENGTH, hasBidiOverride, hasControlChars, extensionOf, baseNameOf } = require('./nameextrules');
-const { parseDisposition, headerValues, replaceHeader, quoteFilename } = require('./dispositionparse');
+const { REASON, EXECUTABLE_EXTENSIONS, DECOY_EXTENSIONS, RESERVED_DEVICE_NAMES, MAX_NAME_LENGTH, hasBidiOverride, hasControlChars, extensionOf, baseNameOf } = require('./nameextrules_core');
+const { parseDisposition, headerValues, replaceHeader, quoteFilename } = require('./dispositionparse_core');
 const { describeReasonTable } = require('./reasontext');
 
 

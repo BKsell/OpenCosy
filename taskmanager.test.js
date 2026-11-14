@@ -11,7 +11,7 @@ const {
   formatMemoryKB,
   summarizeProcesses,
   aggregateByKind,
-} = require('./taskmanager');
+} = require('./taskmanager_core');
 
 function metric(over) {
   return Object.assign({

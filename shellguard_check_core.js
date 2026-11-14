@@ -1,7 +1,7 @@
 'use strict';
 
-const { MAX_URL_LENGTH, MAX_MAILTO_ADDRS, MAX_TEL_DIGITS, DEFAULT_EXTERNAL_SCHEMES, EXECUTABLE_SUFFIXES, containsControlChar, containsEncodedControl, MAIL_TOKEN, reviewMailto, reviewTel, reviewExternalUrl, isExecutableName } = require('./shellguardreview');
-const { safeParse } = require('./modutil');
+const { MAX_URL_LENGTH, MAX_MAILTO_ADDRS, MAX_TEL_DIGITS, DEFAULT_EXTERNAL_SCHEMES, EXECUTABLE_SUFFIXES, containsControlChar, containsEncodedControl, MAIL_TOKEN, reviewMailto, reviewTel, reviewExternalUrl, isExecutableName } = require('./shellguardreview_core');
+const { safeParse } = require('./modutil_core');
 
 // shellguard.js —— 交给系统 Shell 执行的“外部唤起”消毒内核。
 //

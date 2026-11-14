@@ -1,8 +1,8 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
-const { applySingleHeaderGuard } = require('./guardapply');
+const { applySingleHeaderGuard } = require('./guardapply_core');
 
-const { headerKey } = require('./headerutil');
+const { headerKey } = require('./headerutil_core');
 
 const REASON = {
   OK: 'ok',

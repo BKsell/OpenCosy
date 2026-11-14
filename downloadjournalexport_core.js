@@ -1,4 +1,4 @@
-const { asBytes } = require('./modutil');
+const { asBytes } = require('./modutil_core');
 const EXPORT_VERSION = 1;
 const REDACTED_PATH = '[local-path]';
 const MAX_EXPORT_ENTRIES = 500;

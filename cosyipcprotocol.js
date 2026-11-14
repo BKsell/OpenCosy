@@ -112,7 +112,7 @@ d.ipcMain.handle('dissolve-tab-group', (event, payload) => {
 });
 }
 
-const cosyruntimestate = require('./cosyruntimestate');
+const cosyruntimestate = require('./cosyruntimestate_core');
 
 function bindDepsAll(x) {
   d = x;

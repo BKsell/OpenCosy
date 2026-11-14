@@ -1,5 +1,5 @@
 'use strict';
-const { ARCHIVE_EXTS, MACRO_OFFICE_EXTS, LEGACY_OFFICE_MACRO_EXTS, SELF_EXTRACTING_EXTS, KIND_ARCHIVE, KIND_MACRO_OFFICE, KIND_LEGACY_OFFICE, KIND_SELF_EXTRACTING, KIND_NONE, RISK_ALLOW, RISK_WARN, RISK_CONFIRM, extLower, classifyContainer, describeContainerRisk, isContainerExt } = require('./containerkind');
+const { ARCHIVE_EXTS, MACRO_OFFICE_EXTS, LEGACY_OFFICE_MACRO_EXTS, SELF_EXTRACTING_EXTS, KIND_ARCHIVE, KIND_MACRO_OFFICE, KIND_LEGACY_OFFICE, KIND_SELF_EXTRACTING, KIND_NONE, RISK_ALLOW, RISK_WARN, RISK_CONFIRM, extLower, classifyContainer, describeContainerRisk, isContainerExt } = require('./containerkind_core');
 
 // container.js —— 下载“容器类文件”的风险判定内核。
 //

@@ -1,6 +1,6 @@
 'use strict';
 
-const { safeInt } = require('./modutil');
+const { safeInt } = require('./modutil_core');
 
 const DEFAULT_LIMIT_BYTES = 8 * 1024 * 1024 * 1024;
 const MIN_LIMIT_BYTES = 16 * 1024 * 1024;

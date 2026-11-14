@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const protocolRate = require('./protocolrate');
+const protocolRate = require('./protocolrate_core');
 
 test('前三次放行，第四次在同一窗口内被限流', () => {
   const limiter = protocolRate.createLimiter({ windowMs: 60000, maxPerWindow: 3, duplicateWindowMs: 0 });

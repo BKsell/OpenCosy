@@ -1,5 +1,5 @@
 
-const { MULTI_PART_SUFFIX, SUSPICIOUS_WORDS, BRANDS, MIN_TYPO_LABEL_LEN, hostFromUrl, normalizeHost, registrableHost, registrableLabel } = require('./brandtable');
+const { MULTI_PART_SUFFIX, SUSPICIOUS_WORDS, BRANDS, MIN_TYPO_LABEL_LEN, hostFromUrl, normalizeHost, registrableHost, registrableLabel } = require('./brandtable_core');
 'use strict';
 
 // brandguard.js —— 品牌仿冒 / 拼写劫持（typosquatting）检测的纯逻辑。

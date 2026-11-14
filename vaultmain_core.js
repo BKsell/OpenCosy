@@ -124,7 +124,7 @@ function createNewVault(masterPassword) {
 }
 
 function createLimiter() {
-  return (d.vaultLimiterCore || require('./vaultlimit')).createUnlockLimiter(d.vaultLimiterOptions || {});
+  return (d.vaultLimiterCore || require('./vaultlimit_core')).createUnlockLimiter(d.vaultLimiterOptions || {});
 }
 
 let unlockLimiter = null;

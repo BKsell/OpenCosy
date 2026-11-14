@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const C = require('./cleaner');
+const C = require('./cleaner_core');
 
 function sampleEntries() {
   return [

@@ -1,9 +1,9 @@
 "use strict";
 
-const { RESERVED_NAMES, hasControlChar, hasAlternateDataStream, isReservedDeviceName } = require('./savenamechecks');
+const { RESERVED_NAMES, hasControlChar, hasAlternateDataStream, isReservedDeviceName } = require('./savenamechecks_core');
 const fs = require('fs');
 const path = require('path');
-const { hasInvisibleCodePoint } = require('./downloadname');
+const { hasInvisibleCodePoint } = require('./downloadname_core');
 const { describeReasonFrom } = require('./reasontext');
 
 const MAX_SAVE_NAME_CHARS = 180;

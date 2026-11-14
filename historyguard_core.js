@@ -1,6 +1,6 @@
 'use strict';
-const { stripControlChars, collapseSpaces, sanitizeDisplayTitle } = require('./modutil');
-const urlEntry = require('./urlentryguard');
+const { stripControlChars, collapseSpaces, sanitizeDisplayTitle } = require('./modutil_core');
+const urlEntry = require('./urlentryguard_core');
 
 // historyguard.js —— 浏览器本地导航历史的“写入净化 + 有界维护 + 时间范围清理”内核。
 //

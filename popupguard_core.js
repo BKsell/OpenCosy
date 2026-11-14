@@ -1,5 +1,5 @@
 'use strict';
-const { schemeOf } = require('./modutil');
+const { schemeOf } = require('./modutil_core');
 
 // popupguard.js —— window.open / target=_blank 弹窗的纯逻辑安全内核。
 //

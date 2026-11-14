@@ -1,6 +1,6 @@
 'use strict';
 
-const { MAX_NAME_BYTES, MAX_STEM_BYTES, MAX_EXT_BYTES, foldName, nameBytes, splitExtension, truncateToBytes, addTakenName, normalizeTaken, buildName } = require('./downloadnameutil');
+const { MAX_NAME_BYTES, MAX_STEM_BYTES, MAX_EXT_BYTES, foldName, nameBytes, splitExtension, truncateToBytes, addTakenName, normalizeTaken, buildName } = require('./downloadnameutil_core');
 const fs = require('node:fs');
 const path = require('node:path');
 

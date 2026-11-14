@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { createSlotReservation, REASON } = require('./downloadslotreservation');
+const { createSlotReservation, REASON } = require('./downloadslotreservation_core');
 
 test('首次占用成功', () => {
   const slots = createSlotReservation();

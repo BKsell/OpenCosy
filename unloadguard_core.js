@@ -1,6 +1,6 @@
 'use strict';
 const { describeReasonFrom } = require('./reasontext');
-const { pruneOlderThan, countSince, resetCooldown } = require('./modutil');
+const { pruneOlderThan, countSince, resetCooldown } = require('./modutil_core');
 
 // unloadguard.js —— 页面 beforeunload 强留页（will-prevent-unload）滥用收口内核。
 //

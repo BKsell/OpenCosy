@@ -1,6 +1,6 @@
 'use strict';
 const { describeReasonFrom } = require('./reasontext');
-const { originFromUrl } = require('./modutil');
+const { originFromUrl } = require('./modutil_core');
 
 // devtoolsguard.js —— 开发者工具内“在浏览器打开链接”（devtools-open-url）的收口内核。
 //

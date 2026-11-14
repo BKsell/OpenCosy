@@ -4,7 +4,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const uc = require('./urlclean');
+const uc = require('./urlclean_core');
 const { cleanUrl, unwrapRedirectTarget, cleanShareTarget, isWebUrl } = uc;
 
 test('剥离 utm 与 fbclid 等营销参数，保留功能参数', () => {

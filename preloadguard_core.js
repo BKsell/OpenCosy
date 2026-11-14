@@ -1,6 +1,6 @@
 'use strict';
 const { describeReasonFrom } = require('./reasontext');
-const { originFromUrl } = require('./modutil');
+const { originFromUrl } = require('./modutil_core');
 
 // preloadguard.js —— 预加载脚本（preload）异常与渲染侧致命信号的收口判定内核。
 //

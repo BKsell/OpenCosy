@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const pu = require('./phishurl');
+const pu = require('./phishurl_core');
 
 function signalsOf(r) {
   return new Set((r && r.signals || []).map(s => s.code));

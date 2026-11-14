@@ -1,4 +1,4 @@
-const { readStoredSection } = require('./modutil');
+const { readStoredSection } = require('./modutil_core');
 
 let d = {};
 function bindDeps(x) {
@@ -132,7 +132,7 @@ function planAndCloseTabs(mode, anchorId) {
   return { success: true, closed, kept: plan.keepIds };
 }
 
-const downloadTabSurface = require('./cosytabsdownload');
+const downloadTabSurface = require('./cosytabsdownload_core');
 
 function bindDepsAll(x) {
   d = x;

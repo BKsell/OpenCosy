@@ -26,9 +26,9 @@ const {
   SPACE_LOOPBACK,
   SPACE_PRIVATE,
   SPACE_LINK_LOCAL,
-} = require('./pna');
+} = require('./pna_core');
 
-const { DEFAULT_EXCEPTION_CAPACITY, FALLBACKABLE_ERROR_CODES, MAX_HOST_BYTES, REASON_EMPTY_HOST, REASON_INVALID, REASON_NONSTANDARD_PORT, REASON_NOT_HTTP, REASON_PRIVATE_HOST, REASON_UPGRADED, REASON_USERINFO, hostLooksPrivate, isHttpString, normalizeExceptionHost, upgradeHttpUrl, urlCarriesUserinfo } = require('./httpsonly_http');
+const { DEFAULT_EXCEPTION_CAPACITY, FALLBACKABLE_ERROR_CODES, MAX_HOST_BYTES, REASON_EMPTY_HOST, REASON_INVALID, REASON_NONSTANDARD_PORT, REASON_NOT_HTTP, REASON_PRIVATE_HOST, REASON_UPGRADED, REASON_USERINFO, hostLooksPrivate, isHttpString, normalizeExceptionHost, upgradeHttpUrl, urlCarriesUserinfo } = require('./httpsonly_http_core');
 function downgradeHttpsUrlForFallback(rawHttpsUrl) {
   if (typeof rawHttpsUrl !== 'string' || rawHttpsUrl === '') return '';
   for (let i = 0; i < rawHttpsUrl.length; i++) {

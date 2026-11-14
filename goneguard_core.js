@@ -1,7 +1,7 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
 
-const { parseUrl } = require('./modutil');
+const { parseUrl } = require('./modutil_core');
 
 // goneguard.js —— 渲染进程 / GPU 进程崩溃与页面无响应的处置策略（纯判定内核）。
 //

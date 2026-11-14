@@ -1,3 +1,3 @@
 'use strict';
 
-module.exports = require('./securityboundaryhubrules');
+module.exports = require('./securityboundaryhubrules_core');

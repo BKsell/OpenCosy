@@ -1,7 +1,7 @@
 'use strict';
 const { describeReasonTable } = require('./reasontext');
 
-const { headerValues, setHeader } = require('./headerutil');
+const { headerValues, setHeader } = require('./headerutil_core');
 
 const REASON = Object.freeze({
   OK: 'ok',

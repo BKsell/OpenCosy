@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const path = require('node:path');
-const collision = require('./downloadpathcollision');
+const collision = require('./downloadpathcollision_core');
 
 const DIR = path.resolve('/downloads');
 

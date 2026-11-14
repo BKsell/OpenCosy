@@ -1,6 +1,6 @@
 "use strict";
 
-const { safeIntV2: safeInt } = require('./modutil');
+const { safeIntV2: safeInt } = require('./modutil_core');
 
 const DEFAULT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 

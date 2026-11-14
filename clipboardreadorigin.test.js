@@ -2,7 +2,7 @@
 
 const nodeTest = require('node:test');
 const assert = require('node:assert');
-const clip = require('./clipboardreadorigin');
+const clip = require('./clipboardreadorigin_core');
 
 const { REASON, isSecureContextUrl, originOf, decideClipboardRead, describeReason } = clip;
 

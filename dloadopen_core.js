@@ -10,9 +10,9 @@
 // 本内核只回答“这一步该不该打开、要不要先确认、还是只定位不执行”，把 UI 与
 // 系统调用留给调用方（main 进程）。判定输入全部来自文件名与来源信息，便于单测。
 
-const dloadGuard = require('./dloadguard');
-const containerGuard = require('./container');
-const quarantine = require('./quarantine');
+const dloadGuard = require('./dloadguard_core');
+const containerGuard = require('./container_core');
+const quarantine = require('./quarantine_core');
 
 const ACTION = Object.freeze({
   OPEN: 'open',       // 直接交给系统打开

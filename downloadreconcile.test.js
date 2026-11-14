@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const reconcile = require('./downloadreconcile');
+const reconcile = require('./downloadreconcile_core');
 
 function entry(id, overrides = {}) {
   return {

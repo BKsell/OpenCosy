@@ -1,6 +1,6 @@
 'use strict';
 
-const { hasControlCharV3 } = require('./modutil');
+const { hasControlCharV3 } = require('./modutil_core');
 const hasControlChar = hasControlCharV3;
 
 // uapolicy.js —— User-Agent 覆盖策略内核（防指纹 / 自定义标识）。

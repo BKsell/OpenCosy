@@ -18,9 +18,9 @@
 
 const crypto = require('crypto');
 
-const { VAULT_FORMAT, KDF_HKDF, KDF_PBKDF2, DEFAULT_PBKDF2_ROUNDS, ID_BYTES, KEY_BYTES, MAX_LABEL_BYTES, MAX_PAYLOAD_BYTES, MAX_ENTRIES, MIN_MASTER_KEY_BYTES, deriveEntryKey, newId, normalizeKind, normalizeLabel, sealEntry, openEntry } = require('./vaultentry');
+const { VAULT_FORMAT, KDF_HKDF, KDF_PBKDF2, DEFAULT_PBKDF2_ROUNDS, ID_BYTES, KEY_BYTES, MAX_LABEL_BYTES, MAX_PAYLOAD_BYTES, MAX_ENTRIES, MIN_MASTER_KEY_BYTES, deriveEntryKey, newId, normalizeKind, normalizeLabel, sealEntry, openEntry } = require('./vaultentry_core');
 
-const { Vault } = require('./vault_store');
+const { Vault } = require('./vault_store_core');
 function createVault(masterKey, opts) {
   opts = opts || {};
   let key = masterKey;

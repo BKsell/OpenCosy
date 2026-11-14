@@ -20,7 +20,7 @@ const {
   analyzeFlag,
   splitExtraLaunchArgs,
   tokenizeSwitchArgs
-} = require('./switchguard_decide');
+} = require('./switchguard_decide_core');
 
 // auditSwitches 审计 argv 与环境变量两类来源。
 // input: { argv:string[], extraLaunchArgs:string }

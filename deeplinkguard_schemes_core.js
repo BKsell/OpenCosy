@@ -1,6 +1,6 @@
 'use strict';
 
-const { safeParse } = require('./modutil');
+const { safeParse } = require('./modutil_core');
 // deeplinkguard.js —— 进程入口深链（命令行 argv / open-file / open-url）消毒内核。
 //
 // 威胁模型：

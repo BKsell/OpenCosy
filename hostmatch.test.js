@@ -8,7 +8,7 @@ const {
   hostMatchesList,
   parseIPv4Parts,
   isPrivateHostname,
-} = require('./hostmatch');
+} = require('./hostmatch_core');
 
 test('normalizeHostname 小写/去空白/去方括号/去尾根点', () => {
   assert.strictEqual(normalizeHostname('Example.COM'), 'example.com');

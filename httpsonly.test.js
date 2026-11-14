@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const H = require('./httpsonly');
+const H = require('./httpsonly_core');
 
 test('isHttpString 接受任意大小写的 http scheme', () => {
   assert.strictEqual(H.isHttpString('http://a.com'), true);

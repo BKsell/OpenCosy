@@ -3,7 +3,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const pinCore = require('./pintabs');
+const pinCore = require('./pintabs_core');
 const {
   MAX_PINNED_TABS,
   CLOSE_ALL,

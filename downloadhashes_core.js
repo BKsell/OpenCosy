@@ -1,7 +1,7 @@
 const { app, dialog } = require('electron');
 const path = require('path');
 const fsSync = require('fs');
-const urlResolve = require('./urlresolve');
+const urlResolve = require('./urlresolve_core');
 
 const {
   MAX_DOWNLOAD_HASH_RECORDS,
@@ -13,8 +13,8 @@ const {
   persistDownloadHashes,
   sendToRenderer,
   upsertDownloadHashRecord
-} = require('./downloadhashes_store');
-const downloadHashStore = require('./downloadhashes_store');
+} = require('./downloadhashes_store_core');
+const downloadHashStore = require('./downloadhashes_store_core');
 
 // queueDownloadHashing 把一次下载完成事件排进串行摘要链。
 // 摘要是附加能力，任何失败都静默跳过，绝不能影响下载本身的可用性。

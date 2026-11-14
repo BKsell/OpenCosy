@@ -7,7 +7,7 @@
 
 
 
-const { MIN_FREE_BYTES, LOW_FREE_BYTES, RESERVE_RATIO, MAX_RESERVE_BYTES, MAX_NAME_BYTES, ACTION, PROGRESS, REASON, safeBytes, requiredReserve, requiredFreeBytes } = require('./diskbudget');
+const { MIN_FREE_BYTES, LOW_FREE_BYTES, RESERVE_RATIO, MAX_RESERVE_BYTES, MAX_NAME_BYTES, ACTION, PROGRESS, REASON, safeBytes, requiredReserve, requiredFreeBytes } = require('./diskbudget_core');
 function evaluateSpace(input) {
   const source = input && typeof input === 'object' ? input : {};
   const freeBytes = safeBytes(source.freeBytes);

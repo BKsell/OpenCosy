@@ -1,6 +1,6 @@
 'use strict';
 const { describeReasonFrom } = require('./reasontext');
-const { pruneOlderThan, countSince, resetCooldown } = require('./modutil');
+const { pruneOlderThan, countSince, resetCooldown } = require('./modutil_core');
 
 // findguard.js —— 页内查找（Ctrl+F → findInPage）IPC 请求的输入与频率收口内核。
 //

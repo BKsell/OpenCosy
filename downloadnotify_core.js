@@ -20,7 +20,7 @@
 const KIND_COMPLETE = 'complete';
 const KIND_ERROR = 'error';
 
-const { stripControlChars, truncateUtf8, formatSize } = require('./downloadnotifytext');
+const { stripControlChars, truncateUtf8, formatSize } = require('./downloadnotifytext_core');
 
 const TITLE_MAX = 64;
 const BODY_MAX = 256;

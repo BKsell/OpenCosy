@@ -1,7 +1,7 @@
 'use strict';
 
 // mixedguard.js —— 混合内容（Mixed Content）判定纯逻辑内核（不依赖 Electron）。
-const { classifyHost, SPACE_LOOPBACK } = require('./pna');
+const { classifyHost, SPACE_LOOPBACK } = require('./pna_core');
 //
 // 场景：用户通过 HTTPS 打开的页面，却去加载 HTTP 的子资源。HTTP 子资源在传输
 // 途中可被中间人改写，等于把整页 HTTPS 的保护拆掉。现代 Chrome 的策略是：

@@ -1,5 +1,5 @@
 'use strict';
-const { originFromUrl } = require('./modutil');
+const { originFromUrl } = require('./modutil_core');
 
 // displayguard.js —— 屏幕共享（getDisplayMedia）与蓝牙设备选择的默认拒绝策略内核。
 //

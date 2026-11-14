@@ -1,6 +1,6 @@
 'use strict';
 const { describeReasonFrom } = require('./reasontext');
-const { originFromUrl } = require('./modutil');
+const { originFromUrl } = require('./modutil_core');
 
 // devicerguard.js —— 串口 / HID / USB 设备“选择器”回调的统一收口内核。
 //

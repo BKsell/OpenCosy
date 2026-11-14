@@ -23,21 +23,21 @@ const API = {
 
 for (const [modName, names] of Object.entries(API)) {
   test(`${modName} exports the API main.js injects`, () => {
-    const mod = require(`./${modName}`);
+    const mod = require(`./${modName}_core`);
     const missing = names.filter((n) => mod[n] === undefined);
     assert.deepEqual(missing, []);
   });
 }
 
 test('shellguard rejects non-allowlisted external schemes', () => {
-  const shell = require('./shellguard');
+  const shell = require('./shellguard_core');
   const review = shell.reviewExternalUrl('javascript:alert(1)', ['mailto', 'tel', 'https']);
   assert.equal(review.ok, false);
   assert.equal(shell.describeReason(review.reason).length > 0, true);
 });
 
 test('deeplinkguard resolves startup args end to end', () => {
-  const guard = require('./deeplinkguard');
+  const guard = require('./deeplinkguard_core');
   const link = guard.pickDeepLinkFromArgv(['cosy.exe', '--x', 'https://example.com/a']);
   assert.equal(link.ok, true);
   assert.equal(guard.reviewStartupArg('cosy://evil/x').reason, 'host');
@@ -45,7 +45,7 @@ test('deeplinkguard resolves startup args end to end', () => {
 });
 
 test('switchguard blocks security-disabling launch switches', () => {
-  const guard = require('./switchguard');
+  const guard = require('./switchguard_core');
   const audit = guard.auditSwitches(guard.collectSources({
     argv: ['cosy.exe', '/app', '--disable-web-security'],
     env: { ELECTRON_EXTRA_LAUNCH_ARGS: '--no-sandbox' },
@@ -57,7 +57,7 @@ test('switchguard blocks security-disabling launch switches', () => {
 });
 
 test('hoverguard throttles and resets hover previews', () => {
-  const guard = require('./hoverguard');
+  const guard = require('./hoverguard_core');
   const state = guard.createHoverState();
   assert.equal(guard.decideHoverUrl(state, 'https://example.com/a', 1000).action, guard.HOVER_SHOW);
   assert.equal(guard.decideHoverUrl(state, 'https://example.com/a', 1001).action, guard.HOVER_HOLD);
@@ -66,7 +66,7 @@ test('hoverguard throttles and resets hover previews', () => {
 });
 
 test('childwindowguard closes dangerous child schemes', () => {
-  const guard = require('./childwindowguard');
+  const guard = require('./childwindowguard_core');
   const verdict = guard.evaluateChildWindow(
     { url: 'javascript:alert(1)', prefs: {}, openerPresent: true },
     guard.createChildWindowState(), 1000);

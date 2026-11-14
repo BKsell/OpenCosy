@@ -22,7 +22,7 @@
 'use strict';
 
 // ShelfLimits 限定快照各字段的边界。
-const { stripControlChars, truncateRunes, clampNumber } = require('./downloadshelftrim');
+const { stripControlChars, truncateRunes, clampNumber } = require('./downloadshelftrim_core');
 
 const ShelfLimits = Object.freeze({
   maxItems: 3,          // 与浏览器下载栏一致，只展示最近 3 条

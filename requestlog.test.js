@@ -13,7 +13,7 @@ const {
   stats,
   clear,
   hydrate,
-} = require('./requestlog');
+} = require('./requestlog_core');
 
 test('hostFromUrl only accepts http(s) and lowercases', () => {
   assert.equal(hostFromUrl('https://Example.COM:8443/a?b=1'), 'example.com');

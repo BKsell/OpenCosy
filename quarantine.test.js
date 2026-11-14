@@ -5,7 +5,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const q = require('./quarantine');
+const q = require('./quarantine_core');
 
 test('公网 http(s) 归 Internet(3)', () => {
   assert.equal(q.zoneForUrl('https://example.com/a.zip'), q.ZONE_INTERNET);

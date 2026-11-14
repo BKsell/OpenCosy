@@ -1,5 +1,5 @@
 'use strict';
-const { persistHeaderGrades, listHeaderGrades, clearHeaderGrades, getHeaderGradeStats, loadRequestLog, persistRequestLog, listRequestLogEntries, getRequestLogStats, clearRequestLog } = require('./cosyledgerlog');
+const { persistHeaderGrades, listHeaderGrades, clearHeaderGrades, getHeaderGradeStats, loadRequestLog, persistRequestLog, listRequestLogEntries, getRequestLogStats, clearRequestLog } = require('./cosyledgerlog_core');
 let d = {};
 function bindDeps(x) {
   d = x;

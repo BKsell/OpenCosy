@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const C = require('./downloadchain');
+const C = require('./downloadchain_core');
 
 test('analyzeDownloadChain 放行无链与空链', () => {
   const none = C.analyzeDownloadChain(null);

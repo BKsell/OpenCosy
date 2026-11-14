@@ -1,7 +1,7 @@
 'use strict';
-const { stripControlChars, collapseSpaces, fallbackTitleFor } = require('./modutil');
+const { stripControlChars, collapseSpaces, fallbackTitleFor } = require('./modutil_core');
 
-const { ALLOWED_PROTOCOLS, MAX_BOOKMARK_ITEMS, MAX_TITLE_CHARS, MAX_URL_CHARS, SKIP_BAD_DATE, SKIP_BAD_PROTOCOL, SKIP_BAD_URL, SKIP_NOT_OBJECT, SKIP_URL_TOO_LONG, constants, isValidISOTimestamp, sanitizeBookmarkItem, sanitizeBookmarkTitle, sanitizeBookmarkUrl } = require('./bookmarkguard_check');
+const { ALLOWED_PROTOCOLS, MAX_BOOKMARK_ITEMS, MAX_TITLE_CHARS, MAX_URL_CHARS, SKIP_BAD_DATE, SKIP_BAD_PROTOCOL, SKIP_BAD_URL, SKIP_NOT_OBJECT, SKIP_URL_TOO_LONG, constants, isValidISOTimestamp, sanitizeBookmarkItem, sanitizeBookmarkTitle, sanitizeBookmarkUrl } = require('./bookmarkguard_check_core');
 function createBookmarkState(initialItems) {
   const items = Array.isArray(initialItems) ? initialItems.slice(0, MAX_BOOKMARK_ITEMS) : [];
   return { items };

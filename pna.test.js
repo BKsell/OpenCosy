@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const pna = require('./pna');
+const pna = require('./pna_core');
 const {
   SPACE_PUBLIC, SPACE_LINK_LOCAL, SPACE_PRIVATE, SPACE_LOOPBACK, SPACE_UNKNOWN,
 } = pna;

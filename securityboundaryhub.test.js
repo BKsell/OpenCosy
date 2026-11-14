@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const crypto = require('node:crypto');
-const hub = require('./securityboundaryhub');
+const hub = require('./securityboundaryhub_core');
 
 test('安全响应头链路无告警', () => {
   const r = hub.inspectResponseHeaders({ 'content-type': 'text/html; charset=utf-8', 'content-encoding': 'gzip', 'content-length': '1024', 'set-cookie': 'sid=1; Path=/; Secure' }, 'example.com');

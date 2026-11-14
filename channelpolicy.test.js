@@ -2,8 +2,8 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const cp = require('./channelpolicy');
-const g = require('./ipcguard');
+const cp = require('./channelpolicy_core');
+const g = require('./ipcguard_core');
 
 const SHELL = g.KIND_SHELL;
 const COSY = g.KIND_COSY;

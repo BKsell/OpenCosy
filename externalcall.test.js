@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const E = require('./externalcall');
+const E = require('./externalcall_core');
 
 function harness(overrides) {
   const calls = { tabs: [], events: [] };

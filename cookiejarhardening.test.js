@@ -2,7 +2,7 @@
 
 const nodeTest = require('node:test');
 const assert = require('node:assert');
-const guard = require('./cookiejarhardening');
+const guard = require('./cookiejarhardening_core');
 
 const {
   REASON,

@@ -1,7 +1,7 @@
 'use strict';
-const { isObj } = require('./modutil');
+const { isObj } = require('./modutil_core');
 
-const { validateDohServer } = require('./dohguard_host');
+const { validateDohServer } = require('./dohguard_host_core');
 
 // dohguard.js —— 安全 DNS（DNS-over-HTTPS）选择与校验内核（无 Electron 依赖，可单测）。
 //
@@ -111,4 +111,4 @@ function createDohLedger(limit) {
   return { add, list, toJSON, load, clear, size: () => rows.length };
 }
 
-module.exports = { DEFAULT_MODE, KNOWN_PROVIDERS, SECURE_DNS_MODES, createDohLedger, getProviderById, normalizeMode, resolveControls, resolveServer, ...require('./dohguard_host') };
+module.exports = { DEFAULT_MODE, KNOWN_PROVIDERS, SECURE_DNS_MODES, createDohLedger, getProviderById, normalizeMode, resolveControls, resolveServer, ...require('./dohguard_host_core') };
