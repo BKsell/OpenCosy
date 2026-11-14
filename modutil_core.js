@@ -155,6 +155,13 @@ function isHttpUrl(url) {
     && (url.startsWith('http://') || url.startsWith('https://'));
 }
 
+function sanitizeBoundedText(raw, maxLen) {
+  if (typeof raw !== 'string') return { ok: false, reason: 'not-string' };
+  if (raw.length === 0 || raw.length > maxLen) return { ok: false, reason: 'too-long' };
+  if (hasControlCharV2(raw)) return { ok: false, reason: 'control-char' };
+  return { ok: true, value: raw };
+}
+
 module.exports = Object.assign({}, {
   tokensOf,
   containsControlChar,
@@ -191,5 +198,6 @@ module.exports = Object.assign({}, {
   parseUrl,
   safeParse,
   hasControlCharsV2,
+  sanitizeBoundedText,
   headerValues,
 });;
