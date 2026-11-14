@@ -11,44 +11,39 @@ function writeSanitizedSection(sectionPath, items) {
   d.ledgerStore.writeJSONStore(sectionPath, cleaned, { pretty: true });
   return cleaned;
 }
-function saveBookmarks() {
-  const bookmarksPath = d.path.join(d.app.getPath('userData'), 'bookmarks.json');
+function persistSection(fileName, key, label) {
+  const sectionPath = d.path.join(d.app.getPath('userData'), fileName);
   try {
-    // r35：写盘前统一过 bookmarkguard——只落 http/https、title 去控制字符并限长、
-    // 按 url 去重并收敛到硬上界。无论书签来自批量收藏 / 单条新增 / 导入，都在此收口，
-    // 避免不可信标题或海量条目污染 bookmarks.json。
-    d.bookmarks = writeSanitizedSection(bookmarksPath, d.bookmarks);
+    d[key] = writeSanitizedSection(sectionPath, d[key]);
   } catch (e) {
-    console.error('保存书签失败:', e);
+    console.error(label + '失败:', e);
   }
+}
+function restoreSection(fileName, key, label) {
+  const sectionPath = d.path.join(d.app.getPath('userData'), fileName);
+  try {
+    const cleaned = readSanitizedSection(sectionPath);
+    if (cleaned !== null) d[key] = cleaned;
+  } catch (e) {
+    console.error(label + '读取失败:', e);
+  }
+}
+function saveBookmarks() {
+  // r35：写盘前统一过 bookmarkguard——只落 http/https、title 去控制字符并限长、
+  // 按 url 去重并收敛到硬上界。无论书签来自批量收藏 / 单条新增 / 导入，都在此收口，
+  // 避免不可信标题或海量条目污染 bookmarks.json。
+  persistSection('bookmarks.json', 'bookmarks', '保存书签');
 }
 function loadBookmarks() {
-  const bookmarksPath = d.path.join(d.app.getPath('userData'), 'bookmarks.json');
-  try {
-    // bookmarks.json 不是信任边界（可被手改 / 同步盘 / 恶意进程替换 / 崩溃截断）：
-    // 非数组视为空，逐条做对象 / 字段 / scheme 校验，脏项丢弃，绝不把脏结构送进 UI。
-    const cleaned = readSanitizedSection(bookmarksPath);
-    if (cleaned !== null) d.bookmarks = cleaned;
-  } catch (e) {
-    console.error('读取书签失败:', e);
-  }
+  // bookmarks.json 不是信任边界（可被手改 / 同步盘 / 恶意进程替换 / 崩溃截断）：
+  // 非数组视为空，逐条做对象 / 字段 / scheme 校验，脏项丢弃，绝不把脏结构送进 UI。
+  restoreSection('bookmarks.json', 'bookmarks', '读取书签');
 }
 function saveReadingList() {
-  const rlPath = d.path.join(d.app.getPath('userData'), 'readinglist.json');
-  try {
-    d.readingList = writeSanitizedSection(rlPath, d.readingList);
-  } catch (e) {
-    console.error('保存稍后读失败:', e);
-  }
+  persistSection('readinglist.json', 'readingList', '保存稍后读');
 }
 function loadReadingList() {
-  const rlPath = d.path.join(d.app.getPath('userData'), 'readinglist.json');
-  try {
-    const cleaned = readSanitizedSection(rlPath);
-    if (cleaned !== null) d.readingList = cleaned;
-  } catch (e) {
-    console.error('读取稍后读失败:', e);
-  }
+  restoreSection('readinglist.json', 'readingList', '读取稍后读');
 }
 function saveSession() {
   try {
