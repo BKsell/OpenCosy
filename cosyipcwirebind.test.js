@@ -31,9 +31,9 @@ test('单次绑定覆盖五个 IPC 子模块用到的全部依赖', () => {
   for (const name of MODULES) {
     const entry = path.join(ROOT, name + '.js');
     const core = path.join(ROOT, name + '_core.js');
-    const text = fs.existsSync(core) && fs.statSync(core).size > fs.statSync(entry).size
-      ? fs.readFileSync(core, 'utf8')
-      : fs.readFileSync(entry, 'utf8');
+    const text = (!fs.existsSync(core) || (fs.existsSync(entry) && fs.statSync(entry).size > fs.statSync(core).size))
+      ? fs.readFileSync(entry, 'utf8')
+      : fs.readFileSync(core, 'utf8');
     const used = new Set();
     const re = /\bd\.([A-Za-z0-9_]+)/g;
     let m;
