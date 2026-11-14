@@ -1,0 +1,170 @@
+'use strict';
+
+// 复用 PNA 内核的 IPv4 inet_aton 归一化与地址空间分类，避免本模块再维护一份
+// 短格式 / 进制解析，保证“混淆 IP 字面量”在各守卫处判定一致。
+const pna = require('./pna_core');
+
+// isLoopbackIPv4 / isPrivateIPv4 等按无类别整数比较，避免字符串误判。
+function parseIPv4(host) {
+  if (typeof host !== 'string') return null;
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (!m) return null;
+  const parts = [m[1], m[2], m[3], m[4]].map(Number);
+  for (const n of parts) {
+    if (n < 0 || n > 255) return null;
+  }
+  // 拒绝前导零歧义（如 010.0.0.1 八进制/十进制不一致）。
+  for (let i = 0; i < 4; i++) {
+    if (m[i + 1].length > 1 && m[i + 1][0] === '0') return null;
+  }
+  return ((parts[0] << 24) >>> 0) + ((parts[1] << 16) >>> 0) + (parts[2] << 8) + parts[3];
+}
+
+function ipv4IsLoopback(ip) {
+  // 127.0.0.0/8
+  return (ip >>> 24) === 127;
+}
+
+function ipv4IsPrivate(ip) {
+  if (ipv4IsLoopback(ip)) return true;
+  const a = (ip >>> 24) & 0xff;
+  const b = (ip >>> 16) & 0xff;
+  if (a === 10) return true;                       // 10.0.0.0/8
+  if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
+  if (a === 192 && b === 168) return true;         // 192.168.0.0/16
+  if (a === 169 && b === 254) return true;         // 169.254.0.0/16 链路本地/云元数据
+  if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10 CGNAT
+  if (a === 0) return true;                        // 0.0.0.0/8 本机网络
+
+  return false;
+}
+
+// parseIPv6 仅用于识别字面量回环 / 链路本地 / 唯一本地地址，做保守判定。
+// 返回规范化后的小写十六进制串（展开 ::），失败返回 null。
+function parseIPv6(host) {
+  if (typeof host !== 'string') return null;
+  let h = host.toLowerCase();
+  if (h.startsWith('[')) {
+    if (!h.endsWith(']')) return null;
+    h = h.slice(1, -1);
+  }
+  if (h.indexOf('.') !== -1) {
+    // 嵌 IPv4 仅接受标准 IPv4-mapped（::ffff:a.b.c.d）；其它形式（含已废弃的
+    // IPv4-compatible ::a.b.c.d）保守处理，避免怪异字面量绕过私网判定。
+    const lastColon = h.lastIndexOf(':');
+    const prefix = h.slice(0, lastColon + 1);
+    const v4 = parseIPv4(h.slice(lastColon + 1));
+    if (v4 === null) return null;
+    if (prefix.endsWith('::ffff:')) {
+      // 兼容完整映射前缀；::7f00:1 这类环回同样落到 v4 私网判定。
+      return ipv4IsPrivate(v4) ? 'private' : 'public-v4mapped';
+    }
+    // 非标准映射前缀：私网仍判私网（如 ::127.0.0.1），公网则按非法拒绝。
+    return ipv4IsPrivate(v4) ? 'private' : null;
+  }
+  const dbl = h.split('::');
+  if (dbl.length > 2) return null;
+  let groups;
+  if (dbl.length === 2) {
+    const head = dbl[0] ? dbl[0].split(':') : [];
+    const tail = dbl[1] ? dbl[1].split(':') : [];
+    const missing = 8 - head.length - tail.length;
+    if (missing < 0) return null;
+    groups = head.concat(new Array(missing).fill('0'), tail);
+  } else {
+    groups = h.split(':');
+  }
+  if (groups.length !== 8) return null;
+  const norm = [];
+  for (const g of groups) {
+    if (!/^[0-9a-f]{1,4}$/.test(g)) return null;
+    norm.push(g.padStart(4, '0'));
+  }
+  return norm.join(':');
+}
+
+function ipv6IsPrivate(norm) {
+  if (norm === 'private') return true;
+  if (norm === 'public-v4mapped') return false;
+  if (typeof norm !== 'string' || norm.length !== 39) return false;
+  const first = norm.slice(0, 4);
+  if (first === '0000' && norm.endsWith('0001')) return true; // ::1
+  if (first.startsWith('fe8') || first.startsWith('fe9') ||
+      first.startsWith('fea') || first.startsWith('feb')) return true; // fe80::/10
+  if (first[0] === 'f' && (first[1] === 'c' || first[1] === 'd')) return true; // fc00::/7
+  if (norm.startsWith('0000:0000:0000:0000:0000:ffff')) {
+    // 非 mapped-private 已在 parse 阶段标 public-v4mapped，理论上不会到这。
+    return false;
+  }
+  return false;
+}
+
+// hostIsPrivateLiteral 判断主机是否为回环 / 内网 / 链路本地的 IP 字面量或本机名。
+// 普通域名（即便其公网解析恰好在内网）无法在不发 DNS 的情况下判定，这里不拦。
+function hostIsPrivateLiteral(host) {
+  if (typeof host !== 'string' || !host) return true;
+  const h = host.toLowerCase().replace(/\.$/, '');
+  if (h === 'localhost' || h.endsWith('.localhost')) return true;
+  if (h.endsWith('.local') || h.endsWith('.internal')) return true;
+  if (h.indexOf(':') !== -1) {
+    const norm = parseIPv6(h);
+    if (norm === null) return true; // 非法 IPv6 字面量，保守拒绝
+    return ipv6IsPrivate(norm);
+  }
+  const v4 = parseIPv4(h);
+  if (v4 !== null) return ipv4IsPrivate(v4);
+  // 形如四段点分数字却无法解析（越界 / 前导零）的字面量，绝不能当普通域名放行，
+  // 否则会被解析器按数字 IP 歧义处理，绕过私网判定。
+  if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h)) return true;
+  // 一至三段短格式 / 进制混淆（127.1、0x7f.0.1、2130706433、017700000001 等）
+  // 严格 parseIPv4 不认，但系统解析器会按 inet_aton 还原成真实地址；复用 PNA 的
+  // 归一化内核按还原后的地址空间判定，防止把 DoH 端点用混淆写法指到回环 / 内网。
+  const lit = pna.parseIPv4Literal(h);
+  if (lit !== null) return pna.classifyIPv4(lit) !== pna.SPACE_PUBLIC;
+  // 纯整数 / 十六进制整数主机名在部分解析器里会被当作 32 位 IP，同样拒绝。
+  if (/^\d+$/.test(h) || /^0x[0-9a-f]+$/i.test(h)) return true;
+  return false;
+}
+
+// validateDohServer 校验自定义 / 白名单 DoH 服务器 URL。
+// 返回 { ok:true, template } 或 { ok:false, reason }。
+function validateDohServer(rawUrl) {
+  if (typeof rawUrl !== 'string' || !rawUrl.trim()) {
+    return { ok: false, reason: 'empty' };
+  }
+  let u;
+  try {
+    u = new URL(rawUrl.trim());
+  } catch {
+    return { ok: false, reason: 'invalid-url' };
+  }
+  if (u.protocol !== 'https:') return { ok: false, reason: 'not-https' };
+  if (u.username || u.password) return { ok: false, reason: 'credentials' };
+  if (!u.hostname) return { ok: false, reason: 'no-host' };
+  if (hostIsPrivateLiteral(u.hostname)) return { ok: false, reason: 'private-or-loopback' };
+  // 仅允许默认 443 或显式 https 高端口，禁止把模板指向常见内网管理端口。
+  if (u.port && !(u.port === '443')) {
+    const portNum = Number(u.port);
+    if (!Number.isInteger(portNum) || portNum < 1024 || portNum > 65535) {
+      return { ok: false, reason: 'bad-port' };
+    }
+  }
+  if (u.search && u.search.indexOf('dns') === -1) {
+    // 允许带 {?dns} 模板或无查询；不允许奇怪的固定查询串。
+    if (!/\{\?dns\}/.test(u.search)) return { ok: false, reason: 'bad-query' };
+  }
+  if (u.hash) return { ok: false, reason: 'fragment' };
+  // 规范化：去查询里的 {?dns} 之外参数这里不动，直接用主机 + /dns-query 路径判定。
+  if (!u.pathname || u.pathname === '/') return { ok: false, reason: 'no-path' };
+  return { ok: true, template: u.toString() };
+}
+
+module.exports = {
+  hostIsPrivateLiteral,
+  ipv4IsLoopback,
+  ipv4IsPrivate,
+  ipv6IsPrivate,
+  parseIPv4,
+  parseIPv6,
+  validateDohServer
+};
