@@ -112,8 +112,9 @@ function decideBlocked(rawUrl, compiled, trackerHosts) {
 function loadRules(filePath) {
   const empty = createEmptyRules();
   try {
+    if (!fs.lstatSync(filePath).isFile()) return empty;
     const st = fs.statSync(filePath);
-    if (!st.isFile() || st.size > MAX_FILE_BYTES) return empty;
+    if (st.size > MAX_FILE_BYTES) return empty;
     const text = fs.readFileSync(filePath, 'utf8');
     const data = JSON.parse(text);
     if (!data || typeof data !== 'object' || data.version !== 1) return empty;
