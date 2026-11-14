@@ -2,6 +2,7 @@
 
 const { app } = require('electron');
 const path = require('path');
+const { clearLedgerStore } = require('./ledgerclear_core');
 const fsSync = require('fs');
 const ledgerStore = require('./ledgerstore_core');
 
@@ -298,11 +299,7 @@ function summarizeSecurityEvents(sinceMs = 3600000) {
 }
 
 function clearSecurityEvents() {
-  loadSecurityEvents();
-  securityEvents.length = 0;
-  try { fsSync.unlinkSync(securityEventStorePath); } catch {}
-  persistSecurityEvents();
-  return true;
+  return clearLedgerStore(loadSecurityEvents, securityEvents, securityEventStorePath, persistSecurityEvents);
 }
 
 // ===== CSP 违规报告中心（csp-reports.json / cosy://security 面板）=====
