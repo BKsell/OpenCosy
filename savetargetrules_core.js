@@ -1,0 +1,85 @@
+"use strict";
+
+const { RESERVED_NAMES, hasControlChar, hasAlternateDataStream, isReservedDeviceName } = require('./savenamechecks_core');
+const fs = require('fs');
+const path = require('path');
+const { hasInvisibleCodePoint } = require('./downloadname_core');
+const { describeReasonFrom } = require('./reasontext');
+
+const MAX_SAVE_NAME_CHARS = 180;
+
+const MAX_SAVE_PATH_CHARS = 1024;
+
+const REASON = {
+  OK: 'ok',
+  EMPTY_ROOT: 'empty-root',
+  EMPTY_TARGET: 'empty-target',
+  BAD_PATH: 'bad-path',
+  BAD_NAME: 'bad-name',
+  OUTSIDE_ROOT: 'outside-root',
+  RESERVED_NAME: 'reserved-name',
+  BAD_EXTENSION_SHAPE: 'bad-extension-shape',
+  REALPATH_UNRESOLVED: 'realpath-unresolved',
+};
+
+function auditSaveName(name) {
+  if (typeof name !== 'string' || name.length === 0) return REASON.BAD_NAME;
+  if (name.length > MAX_SAVE_NAME_CHARS) return REASON.BAD_NAME;
+  if (hasControlChar(name)) return REASON.BAD_NAME;
+  if (hasInvisibleCodePoint(name)) return REASON.BAD_NAME;
+  if (name.includes('/') || name.includes('\\')) return REASON.BAD_NAME;
+  if (name === '.' || name === '..') return REASON.BAD_NAME;
+  if (name.endsWith('.') || name.endsWith(' ')) return REASON.BAD_NAME;
+  if (hasAlternateDataStream(name)) return REASON.BAD_NAME;
+  if (isReservedDeviceName(name)) return REASON.RESERVED_NAME;
+  if (name.startsWith('.') && name.length <= 2) return REASON.BAD_NAME;
+  return REASON.OK;
+}
+
+function auditSaveTarget(rootDir, targetPath, name) {
+  if (typeof rootDir !== 'string' || rootDir.trim().length === 0) {
+    return { ok: false, reason: REASON.EMPTY_ROOT, path: '', name: '' };
+  }
+  if (typeof targetPath !== 'string' || targetPath.trim().length === 0) {
+    return { ok: false, reason: REASON.EMPTY_TARGET, path: '', name: '' };
+  }
+  if (targetPath.length > MAX_SAVE_PATH_CHARS || hasControlChar(targetPath)) {
+    return { ok: false, reason: REASON.BAD_PATH, path: '', name: '' };
+  }
+  if (!path.isAbsolute(targetPath)) {
+    return { ok: false, reason: REASON.BAD_PATH, path: '', name: '' };
+  }
+  const fileName = typeof name === 'string' && name.length > 0 ? name : path.basename(targetPath);
+  const nameVerdict = auditSaveName(fileName);
+  if (nameVerdict !== REASON.OK) {
+    return { ok: false, reason: nameVerdict, path: '', name: fileName };
+  }
+  const rootAbs = path.resolve(rootDir);
+  const targetAbs = path.resolve(targetPath);
+  const relative = path.relative(rootAbs, targetAbs);
+  if (relative.length === 0 || relative.startsWith('..') || path.isAbsolute(relative)) {
+    return { ok: false, reason: REASON.OUTSIDE_ROOT, path: targetAbs, name: fileName };
+  }
+  if (path.basename(targetAbs) !== fileName) {
+    return { ok: false, reason: REASON.BAD_PATH, path: targetAbs, name: fileName };
+  }
+  return { ok: true, reason: REASON.OK, path: targetAbs, name: fileName };
+}
+
+const SAVE_TARGET_REJECT_TEXT = {
+  [REASON.OK]: '保存目标通过校验',
+  [REASON.EMPTY_ROOT]: '下载保存根目录为空',
+  [REASON.EMPTY_TARGET]: '下载保存路径为空',
+  [REASON.BAD_PATH]: '下载保存路径不是合法的绝对路径',
+  [REASON.BAD_NAME]: '下载文件名包含非法字符或结构',
+  [REASON.OUTSIDE_ROOT]: '下载保存路径越出下载目录',
+  [REASON.RESERVED_NAME]: '下载文件名是系统保留设备名',
+  [REASON.BAD_EXTENSION_SHAPE]: '下载文件名扩展名结构异常',
+  [REASON.REALPATH_UNRESOLVED]: '下载保存路径的真实父目录无法解析',
+};
+
+function describeSaveTargetReject(reason) {
+  return describeReasonFrom(SAVE_TARGET_REJECT_TEXT, reason, '下载保存目标未通过校验');
+}
+
+module.exports = { MAX_SAVE_NAME_CHARS, MAX_SAVE_PATH_CHARS, REASON, auditSaveName, auditSaveTarget, SAVE_TARGET_REJECT_TEXT, describeSaveTargetReject };
