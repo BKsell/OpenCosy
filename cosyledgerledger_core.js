@@ -1,5 +1,6 @@
 'use strict';
 const { persistHeaderGrades, listHeaderGrades, clearHeaderGrades, getHeaderGradeStats, loadRequestLog, persistRequestLog, listRequestLogEntries, getRequestLogStats, clearRequestLog } = require('./cosyledgerlog_core');
+const { loadLedgerOnce } = require('./ledgerhydrate_core');
 let d = {};
 function bindDeps(x) {
   d = x;
@@ -58,11 +59,7 @@ function recordPnaBlock(details, verdict) {
 }
 
 function loadFpLedger() {
-  if (d.fpLedgerLoaded) return;
-  d.fpLedgerLoaded = true;
-  try {
-    d.fpLedger.load(d.ledgerStore.readJSONStore(d.fpLedgerStorePath, {}));
-  } catch {}
+  loadLedgerOnce(d, 'fpLedgerLoaded', 'fpLedger', 'fpLedgerStorePath');
 }
 
 function persistFpLedger() {
@@ -83,11 +80,7 @@ function applyWebRtcPolicy() {
 }
 
 function loadDohLedger() {
-  if (d.dohLedgerLoaded) return;
-  d.dohLedgerLoaded = true;
-  try {
-    d.dohLedger.load(d.ledgerStore.readJSONStore(d.dohStorePath, {}));
-  } catch {}
+  loadLedgerOnce(d, 'dohLedgerLoaded', 'dohLedger', 'dohStorePath');
 }
 
 function persistDohLedger() {
