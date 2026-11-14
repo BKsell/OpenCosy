@@ -39,10 +39,32 @@ function resolveMaxBytes(maxBytes) {
 function readBoundedText(filePath, maxBytes) {
   const limit = resolveMaxBytes(maxBytes);
   let size = -1;
+  let statInfo;
   try {
-    size = fs.statSync(filePath).size;
+    statInfo = fs.statSync(filePath);
+    size = statInfo.size;
   } catch (err) {
     if (isMissingFileError(err)) return { missing: true };
+    throw err;
+  }
+  // 台账目录位于用户可写的 userData 下，符号链接可把读取指向任意本地文件。
+  // lstat 与 stat 的 isFile 双重校验把“读到的必须是普通文件”钉死，避免台账
+  // 被软链换成别的路径后整段读进主进程。
+  let linkInfo;
+  try {
+    linkInfo = fs.lstatSync(filePath);
+  } catch (err) {
+    if (isMissingFileError(err)) return { missing: true };
+    throw err;
+  }
+  if (linkInfo.isSymbolicLink()) {
+    const err = new Error(`ledger store is a symbolic link: ${filePath}`);
+    err.code = 'LEDGER_SYMLINK';
+    throw err;
+  }
+  if (!statInfo.isFile()) {
+    const err = new Error(`ledger store is not a regular file: ${filePath}`);
+    err.code = 'LEDGER_NOT_FILE';
     throw err;
   }
   if (size > limit) {
