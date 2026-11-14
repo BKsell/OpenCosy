@@ -1,0 +1,73 @@
+'use strict';
+const { describeReasonTable } = require('./reasontext');
+
+const { deleteHeader, firstValue, headerKey } = require('./headerutil');
+
+const REASON = {
+  OK: 'ok',
+  MISSING: 'missing',
+  NONE_ONLY: 'none-only',
+  UNKNOWN_UNIT: 'unknown-unit',
+  MULTI_VALUE: 'multi-value',
+  OVERLONG: 'overlong',
+  UNBACKED_BYTES: 'unbacked-bytes',
+  MALFORMED: 'malformed',
+};
+
+const MAX_VALUE_LENGTH = 48;
+const UNIT_PATTERN = /^(none|bytes|items)$/i;
+
+function hasByteEvidence(headers) {
+  return Boolean(headerKey(headers, 'content-length')) || Boolean(headerKey(headers, 'content-range'));
+}
+
+function inspectAcceptRanges(value, headers) {
+  if (value === undefined || value === null) return { reason: REASON.MISSING };
+  if (typeof value !== 'string') return { reason: REASON.MALFORMED };
+  const text = value.trim();
+  if (!text) return { reason: REASON.MALFORMED };
+  if (text.length > MAX_VALUE_LENGTH) return { reason: REASON.OVERLONG };
+  if (text.includes(',')) return { reason: REASON.MULTI_VALUE };
+  const match = UNIT_PATTERN.exec(text);
+  if (!match) return { reason: REASON.UNKNOWN_UNIT };
+  const unit = match[1].toLowerCase();
+  if (unit === 'none') return { reason: REASON.NONE_ONLY, unit };
+  if (unit === 'items') return { reason: REASON.UNKNOWN_UNIT, unit };
+  if (!hasByteEvidence(headers)) return { reason: REASON.UNBACKED_BYTES, unit };
+  return { reason: REASON.OK, unit };
+}
+
+function applyAcceptRangesGuard(headers) {
+  const key = headerKey(headers, 'accept-ranges');
+  if (!key) return { changed: false, reason: REASON.MISSING };
+  const raw = headers[key];
+  if (Array.isArray(raw) && raw.length > 1) {
+    delete headers[key];
+    return { changed: true, reason: REASON.MULTI_VALUE, previous: raw.slice(0, 4) };
+  }
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  const verdict = inspectAcceptRanges(value, headers);
+  if (verdict.reason === REASON.OK || verdict.reason === REASON.NONE_ONLY) {
+    return { changed: false, reason: verdict.reason, unit: verdict.unit };
+  }
+  delete headers[key];
+  return { changed: true, reason: verdict.reason, unit: verdict.unit || null };
+}
+
+const describeReason = describeReasonTable({
+    [REASON.OK]: 'Accept-Ranges 支持字节范围',
+    [REASON.MISSING]: '未声明 Accept-Ranges',
+    [REASON.NONE_ONLY]: 'Accept-Ranges 声明不支持范围请求',
+    [REASON.UNKNOWN_UNIT]: 'Accept-Ranges 使用未知单位',
+    [REASON.MULTI_VALUE]: 'Accept-Ranges 出现多个取值',
+    [REASON.OVERLONG]: 'Accept-Ranges 取值超长',
+    [REASON.UNBACKED_BYTES]: 'Accept-Ranges 声称 bytes 但缺少长度证据',
+    [REASON.MALFORMED]: 'Accept-Ranges 取值无法解析',
+  }, 'Accept-Ranges 未知状态');
+
+module.exports = {
+  REASON,
+  inspectAcceptRanges,
+  applyAcceptRangesGuard,
+  describeReason,
+};
